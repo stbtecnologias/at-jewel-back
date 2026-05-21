@@ -19,7 +19,6 @@ import { HealthController } from './health.controller';
         entities: [ProdutoOrmEntity, ErpEventoOrmEntity],
         synchronize: false,
         logging: config.get('NODE_ENV') !== 'production',
-        timezone: 'local',
       }),
     }),
     ErpModule,
