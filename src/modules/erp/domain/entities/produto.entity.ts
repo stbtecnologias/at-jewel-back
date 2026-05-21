@@ -19,6 +19,8 @@ export interface ProdutoProps {
   observacao?: string | null;
   fotoUrl?: string | null;
   ativo: boolean;
+  criadoEm?: Date;
+  atualizadoEm?: Date;
 }
 
 export class Produto {
@@ -42,6 +44,8 @@ export class Produto {
   readonly observacao: string | null;
   readonly fotoUrl: string | null;
   readonly ativo: boolean;
+  readonly criadoEm: Date | undefined;
+  readonly atualizadoEm: Date | undefined;
 
   private constructor(props: ProdutoProps) {
     this.id = props.id;
@@ -64,6 +68,8 @@ export class Produto {
     this.observacao = props.observacao ?? null;
     this.fotoUrl = props.fotoUrl ?? null;
     this.ativo = props.ativo;
+    this.criadoEm = props.criadoEm;
+    this.atualizadoEm = props.atualizadoEm;
   }
 
   static create(props: ProdutoProps): Produto {

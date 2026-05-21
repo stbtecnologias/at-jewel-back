@@ -1,8 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { FindOptionsWhere, Repository } from 'typeorm';
 import { Produto } from '../../../../domain/entities/produto.entity';
-import { IProdutoRepository } from '../../../../domain/ports/repositories/produto-repository.port';
+import {
+  FiltroProduto,
+  IProdutoRepository,
+} from '../../../../domain/ports/repositories/produto-repository.port';
 import { ProdutoOrmEntity } from '../entities/produto.orm-entity';
 
 @Injectable()
@@ -26,6 +29,35 @@ export class ProdutoRepository implements IProdutoRepository {
   async findByCodigoErp(codigoErp: string): Promise<Produto | null> {
     const entity = await this.repo.findOneBy({ codigoErp });
     return entity ? this.toDomain(entity) : null;
+  }
+
+  async findAll(filtros: FiltroProduto): Promise<Produto[]> {
+    const where: FindOptionsWhere<ProdutoOrmEntity> = {};
+    if (filtros.categoria !== undefined) where.categoria = filtros.categoria;
+    if (filtros.familia !== undefined) where.familia = filtros.familia;
+    if (filtros.ativo !== undefined) where.ativo = filtros.ativo;
+
+    const entities = await this.repo.find({ where, order: { criadoEm: 'DESC' } });
+    return entities.map((e) => this.toDomain(e));
+  }
+
+  async findById(id: string): Promise<Produto | null> {
+    const entity = await this.repo.findOneBy({ id });
+    return entity ? this.toDomain(entity) : null;
+  }
+
+  async save(produto: Produto): Promise<Produto> {
+    const data: Partial<ProdutoOrmEntity> = {
+      ...this.toOrm(produto),
+      ...(produto.id ? { id: produto.id } : {}),
+    };
+    const entity = this.repo.create(data);
+    const saved = await this.repo.save(entity);
+    return this.toDomain(saved);
+  }
+
+  async remover(id: string): Promise<void> {
+    await this.repo.delete(id);
   }
 
   private toOrm(p: Produto): Partial<ProdutoOrmEntity> {
@@ -74,6 +106,8 @@ export class ProdutoRepository implements IProdutoRepository {
       observacao: o.observacao,
       fotoUrl: o.fotoUrl,
       ativo: o.ativo,
+      criadoEm: o.criadoEm,
+      atualizadoEm: o.atualizadoEm,
     });
   }
 }

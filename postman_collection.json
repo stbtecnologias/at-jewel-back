@@ -1,0 +1,263 @@
+{
+  "info": {
+    "_postman_id": "atjewel-api-v1",
+    "name": "A.T. JEWEL API",
+    "description": "Coleção de endpoints da API A.T. Jewel\n\n**Variáveis:**\n- `base_url` — URL base da API (padrão: http://localhost:3000)\n- `safira_key` — Chave de autenticação do ERP Safira\n- `produto_id` — ID de produto (preenchido automaticamente após POST /produtos)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3000", "type": "string" },
+    { "key": "safira_key", "value": "test-key-local", "type": "string" },
+    { "key": "produto_id", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "ERP — Webhook Safira",
+      "description": "Endpoints internos chamados pelo ERP Safira. Requerem header X-Safira-Key.",
+      "item": [
+        {
+          "name": "Sincronizar produto via ERP",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Safira-Key", "value": "{{safira_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"evento_id\": \"550e8400-e29b-41d4-a716-446655440001\",\n  \"codigo_erp\": \"PROD-001\",\n  \"categoria\": \"JEWEL\",\n  \"familia\": \"ANEL\",\n  \"unidade\": \"UN\",\n  \"valor_venda\": 299.90,\n  \"colecao\": \"Verao 2025\",\n  \"cor\": \"18k amarelo\",\n  \"tamanho\": \"17\",\n  \"tipo_pedra\": \"Zirconia\",\n  \"descricao_etiqueta\": \"Anel Solitario Zirconia 18k\",\n  \"peso_gramas\": 2.8500,\n  \"valor_compra\": 120.00,\n  \"valor_custo\": 130.00,\n  \"margem_percentual\": 130.69,\n  \"observacao\": \"Produto importado via webhook Safira\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/erp/produtos",
+              "host": ["{{base_url}}"],
+              "path": ["erp", "produtos"]
+            },
+            "description": "Recebe evento de produto do ERP Safira. Idempotente: enviar o mesmo evento_id retorna `idempotente: true` sem reprocessar."
+          },
+          "response": []
+        },
+        {
+          "name": "Sincronizar produto via ERP (reenvio idempotente)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Safira-Key", "value": "{{safira_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"evento_id\": \"550e8400-e29b-41d4-a716-446655440001\",\n  \"codigo_erp\": \"PROD-001\",\n  \"categoria\": \"JEWEL\",\n  \"familia\": \"ANEL\",\n  \"unidade\": \"UN\",\n  \"valor_venda\": 299.90\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/erp/produtos",
+              "host": ["{{base_url}}"],
+              "path": ["erp", "produtos"]
+            },
+            "description": "Mesmo evento_id — deve retornar `{ ok: true, idempotente: true }` sem criar duplicata."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Produtos — CRUD",
+      "description": "CRUD público de produtos. Sem autenticação no momento.",
+      "item": [
+        {
+          "name": "Listar todos os produtos",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Retorna array', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/produtos",
+              "host": ["{{base_url}}"],
+              "path": ["produtos"]
+            },
+            "description": "Retorna todos os produtos sem filtro."
+          },
+          "response": []
+        },
+        {
+          "name": "Listar produtos — filtrar por categoria",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/produtos?categoria=JEWEL",
+              "host": ["{{base_url}}"],
+              "path": ["produtos"],
+              "query": [
+                { "key": "categoria", "value": "JEWEL" },
+                { "key": "familia", "value": "ANEL", "disabled": true },
+                { "key": "ativo", "value": "true", "disabled": true }
+              ]
+            },
+            "description": "Filtros disponíveis: `categoria`, `familia`, `ativo` (true/false)."
+          },
+          "response": []
+        },
+        {
+          "name": "Buscar produto por ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Tem id', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body).to.have.property('id');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/produtos/{{produto_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["produtos", "{{produto_id}}"]
+            },
+            "description": "Retorna 404 se o produto não existir."
+          },
+          "response": []
+        },
+        {
+          "name": "Criar produto",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "if (body.id) {",
+                  "  pm.collectionVariables.set('produto_id', body.id);",
+                  "  console.log('produto_id salvo:', body.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"categoria\": \"JEWEL\",\n  \"familia\": \"ANEL\",\n  \"unidade\": \"UN\",\n  \"valor_venda\": 450.00,\n  \"colecao\": \"Classicos\",\n  \"cor\": \"Prata\",\n  \"tamanho\": \"18\",\n  \"tipo_pedra\": \"Esmeralda\",\n  \"descricao_etiqueta\": \"Anel Classico Esmeralda Prata\",\n  \"peso_gramas\": 3.2000,\n  \"valor_compra\": 180.00,\n  \"valor_custo\": 190.00,\n  \"margem_percentual\": 136.84,\n  \"observacao\": \"Produto criado manualmente\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/produtos",
+              "host": ["{{base_url}}"],
+              "path": ["produtos"]
+            },
+            "description": "Cria produto diretamente (sem ERP). O `produto_id` é salvo automaticamente na variável de coleção para uso nos próximos requests."
+          },
+          "response": []
+        },
+        {
+          "name": "Atualizar produto (PATCH parcial)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"valor_venda\": 499.00,\n  \"observacao\": \"Preco atualizado para promocao\",\n  \"ativo\": true\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/produtos/{{produto_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["produtos", "{{produto_id}}"]
+            },
+            "description": "Atualização parcial — apenas os campos enviados são alterados. Campos omitidos mantêm o valor atual."
+          },
+          "response": []
+        },
+        {
+          "name": "Desativar produto",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ativo\": false\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/produtos/{{produto_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["produtos", "{{produto_id}}"]
+            },
+            "description": "Desativa o produto sem excluí-lo do banco."
+          },
+          "response": []
+        },
+        {
+          "name": "Remover produto",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/produtos/{{produto_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["produtos", "{{produto_id}}"]
+            },
+            "description": "Remove o produto permanentemente. Retorna 204 sem body. Retorna 404 se não existir."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
