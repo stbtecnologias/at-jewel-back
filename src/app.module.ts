@@ -5,6 +5,7 @@ import { ErpModule } from './modules/erp/erp.module';
 import { ErpEventoOrmEntity } from './modules/erp/infrastructure/database/typeorm/entities/erp-evento.orm-entity';
 import { ProdutoOrmEntity } from './modules/erp/infrastructure/database/typeorm/entities/produto.orm-entity';
 import { ProdutosModule } from './modules/produtos/produtos.module';
+import { HealthController } from './health.controller';
 
 @Module({
   imports: [
@@ -24,5 +25,6 @@ import { ProdutosModule } from './modules/produtos/produtos.module';
     ErpModule,
     ProdutosModule,
   ],
+  controllers: [HealthController],
 })
 export class AppModule {}
