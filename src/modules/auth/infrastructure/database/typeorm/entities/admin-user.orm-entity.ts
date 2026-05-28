@@ -14,6 +14,9 @@ export class AdminUserOrmEntity {
   @Column({ name: 'refresh_token_hash', type: 'varchar', length: 64, nullable: true })
   refreshTokenHash: string | null;
 
+  @Column({ name: 'refresh_token_expires_at', type: 'timestamptz', nullable: true })
+  refreshTokenExpiresAt: Date | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 }

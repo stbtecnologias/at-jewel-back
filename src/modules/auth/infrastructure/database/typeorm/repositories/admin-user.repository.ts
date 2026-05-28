@@ -28,8 +28,15 @@ export class AdminUserRepository implements IAdminUserRepository {
     return this.toDomain(saved);
   }
 
-  async updateRefreshToken(id: string, hash: string | null): Promise<void> {
-    await this.repo.update(id, { refreshTokenHash: hash });
+  async updateRefreshToken(
+    id: string,
+    hash: string | null,
+    expiresAt: Date | null,
+  ): Promise<void> {
+    await this.repo.update(id, {
+      refreshTokenHash: hash,
+      refreshTokenExpiresAt: expiresAt,
+    });
   }
 
   private toDomain(row: AdminUserOrmEntity): AdminUser {
@@ -38,6 +45,7 @@ export class AdminUserRepository implements IAdminUserRepository {
       row.email,
       row.passwordHash,
       row.refreshTokenHash,
+      row.refreshTokenExpiresAt,
       row.createdAt,
     );
   }

@@ -4,5 +4,13 @@ export interface IAdminUserRepository {
   findByEmail(email: string): Promise<AdminUser | null>;
   findById(id: string): Promise<AdminUser | null>;
   create(email: string, passwordHash: string): Promise<AdminUser>;
-  updateRefreshToken(id: string, hash: string | null): Promise<void>;
+  /**
+   * Atualiza o hash do refresh token corrente e o timestamp de expiracao.
+   * Passar `null` em ambos invalida a sessao (logout, revogacao).
+   */
+  updateRefreshToken(
+    id: string,
+    hash: string | null,
+    expiresAt: Date | null,
+  ): Promise<void>;
 }
