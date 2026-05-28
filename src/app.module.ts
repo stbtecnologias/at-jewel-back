@@ -6,6 +6,8 @@ import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { AuthModule } from './modules/auth/auth.module';
 import { AdminUserOrmEntity } from './modules/auth/infrastructure/database/typeorm/entities/admin-user.orm-entity';
 import { ApiKeyOrmEntity } from './modules/auth/infrastructure/database/typeorm/entities/api-key.orm-entity';
+import { AgenteEventosModule } from './modules/agente-eventos/agente-eventos.module';
+import { AgenteEventoOrmEntity } from './modules/agente-eventos/infrastructure/database/typeorm/entities/agente-evento.orm-entity';
 import { ClientesModule } from './modules/clientes/clientes.module';
 import { ClienteOrmEntity } from './modules/clientes/infrastructure/database/typeorm/entities/cliente.orm-entity';
 import { ClientePerfilOrmEntity } from './modules/clientes/infrastructure/database/typeorm/entities/cliente-perfil.orm-entity';
@@ -46,6 +48,7 @@ import { HealthController } from './health.controller';
           ClienteOrmEntity,
           ClientePerfilOrmEntity,
           VendedoraOrmEntity,
+          AgenteEventoOrmEntity,
         ],
         synchronize: false,
         logging: config.get('NODE_ENV') !== 'production',
@@ -56,6 +59,7 @@ import { HealthController } from './health.controller';
     ProdutosModule,
     ClientesModule,
     VendedorasModule,
+    AgenteEventosModule,
   ],
   controllers: [HealthController],
   providers: [
