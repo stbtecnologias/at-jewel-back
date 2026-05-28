@@ -2,6 +2,18 @@ import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'crypt
 
 const ALGORITHM = 'aes-256-gcm';
 
+// Versao do formato do ciphertext. Permite rotacao futura de chave:
+// quando ENCRYPTION_KEY mudar, ciphertexts antigos podem ser lidos com
+// a chave legada e re-escritos com a chave nova, identificados pela versao.
+//
+// Formato atual (v1): "v1:<iv_hex>:<authTag_hex>:<ciphertext_hex>"
+// Formato legado (sem versao): "<iv_hex>:<authTag_hex>:<ciphertext_hex>"
+//   - aceito apenas na LEITURA, para compatibilidade com qualquer dado
+//     que tenha sido escrito antes desta versao.
+//
+// Sempre escrevemos com prefixo de versao. Nunca produzir formato legado.
+const CURRENT_KEY_VERSION = 'v1';
+
 function getKey(): Buffer {
   const hex = process.env.ENCRYPTION_KEY;
   if (!hex || hex.length !== 64) {
@@ -16,8 +28,29 @@ function getHmacSecret(): string {
   return secret;
 }
 
-// Ciphertext format: <iv_hex>:<authTag_hex>:<ciphertext_hex>
-// Each segment is separated by ':' to allow single-pass parsing.
+// Parse aceita formato v1 (com prefixo) e legado (sem prefixo, 3 segmentos).
+// Retorna null se o input nao for nenhum dos dois.
+function parseCiphertext(value: string): { iv: Buffer; authTag: Buffer; data: Buffer } | null {
+  const parts = value.split(':');
+
+  let ivHex: string, authTagHex: string, dataHex: string;
+
+  if (parts.length === 4 && parts[0] === CURRENT_KEY_VERSION) {
+    [, ivHex, authTagHex, dataHex] = parts;
+  } else if (parts.length === 3) {
+    // Formato legado — pre-versionamento. Aceito na leitura.
+    [ivHex, authTagHex, dataHex] = parts;
+  } else {
+    return null;
+  }
+
+  return {
+    iv: Buffer.from(ivHex, 'hex'),
+    authTag: Buffer.from(authTagHex, 'hex'),
+    data: Buffer.from(dataHex, 'hex'),
+  };
+}
+
 export const encryptedTransformer = {
   to(value: string | null | undefined): string | null {
     if (value == null) return null;
@@ -25,19 +58,18 @@ export const encryptedTransformer = {
     const cipher = createCipheriv(ALGORITHM, getKey(), iv);
     const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
     const authTag = cipher.getAuthTag();
-    return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted.toString('hex')}`;
+    return `${CURRENT_KEY_VERSION}:${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted.toString('hex')}`;
   },
 
   from(value: string | null | undefined): string | null {
     if (value == null) return null;
-    const parts = value.split(':');
-    if (parts.length !== 3) return null;
-    const [ivHex, authTagHex, encryptedHex] = parts;
-    const decipher = createDecipheriv(ALGORITHM, getKey(), Buffer.from(ivHex, 'hex'));
-    decipher.setAuthTag(Buffer.from(authTagHex, 'hex'));
+    const parsed = parseCiphertext(value);
+    if (parsed == null) return null;
+
+    const decipher = createDecipheriv(ALGORITHM, getKey(), parsed.iv);
+    decipher.setAuthTag(parsed.authTag);
     return (
-      decipher.update(Buffer.from(encryptedHex, 'hex')).toString('utf8') +
-      decipher.final('utf8')
+      decipher.update(parsed.data).toString('utf8') + decipher.final('utf8')
     );
   },
 };
