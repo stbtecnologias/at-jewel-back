@@ -14,6 +14,10 @@ import {
   Min,
 } from 'class-validator';
 import {
+  SanitizeJson,
+  SanitizeText,
+} from '../../../../../shared/http/sanitize/sanitize-text.transform';
+import {
   ESTADOS_CONVERSA,
   MOTIVACOES_COMPRA,
   NIVEIS_CONHECIMENTO,
@@ -53,10 +57,12 @@ export class AtualizarPerfilClienteDto {
   @IsOptional()
   @IsString()
   @MaxLength(2000)
+  @SanitizeText()
   intencaoCompra?: string | null;
 
   @IsOptional()
   @IsObject()
+  @SanitizeJson()
   wishlist?: object | null;
 
   @IsOptional()
@@ -76,11 +82,13 @@ export class AtualizarPerfilClienteDto {
   @IsOptional()
   @IsString()
   @MaxLength(2000)
+  @SanitizeText()
   resumoTriagem?: string | null;
 
   @IsOptional()
   @IsString()
   @MaxLength(2000)
+  @SanitizeText()
   notasInternas?: string | null;
 
   @IsOptional()
@@ -88,6 +96,7 @@ export class AtualizarPerfilClienteDto {
   @ArrayMaxSize(50)
   @IsString({ each: true })
   @MaxLength(50, { each: true })
+  @SanitizeText()
   tags?: string[];
 
   @IsOptional()

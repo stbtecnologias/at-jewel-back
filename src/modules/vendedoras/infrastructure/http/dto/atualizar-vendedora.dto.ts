@@ -9,6 +9,7 @@ import {
   IsUUID,
   MaxLength,
 } from 'class-validator';
+import { SanitizeText } from '../../../../../shared/http/sanitize/sanitize-text.transform';
 import { STATUS_DISPONIBILIDADE, TIPOS_VENDEDORA } from '../../../domain/entities/enums';
 import type {
   StatusDisponibilidadeVendedora,
@@ -19,6 +20,7 @@ export class AtualizarVendedoraDto {
   @IsOptional()
   @IsString()
   @MaxLength(255)
+  @SanitizeText()
   nome?: string;
 
   @IsOptional()
@@ -38,6 +40,7 @@ export class AtualizarVendedoraDto {
   @ArrayMaxSize(20)
   @IsString({ each: true })
   @MaxLength(50, { each: true })
+  @SanitizeText()
   especialidades?: string[];
 
   @IsOptional()

@@ -9,6 +9,7 @@ import {
   IsUUID,
   MaxLength,
 } from 'class-validator';
+import { SanitizeText } from '../../../../../shared/http/sanitize/sanitize-text.transform';
 import { TIPOS_VENDEDORA } from '../../../domain/entities/enums';
 import type { TipoVendedora } from '../../../domain/entities/enums';
 
@@ -21,6 +22,7 @@ export class CriarVendedoraDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)
+  @SanitizeText()
   nome: string;
 
   @IsOptional()
@@ -32,6 +34,7 @@ export class CriarVendedoraDto {
   @ArrayMaxSize(20)
   @IsString({ each: true })
   @MaxLength(50, { each: true })
+  @SanitizeText()
   especialidades?: string[];
 
   @IsOptional()
