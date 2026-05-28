@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { AuthModule } from './modules/auth/auth.module';
@@ -17,6 +17,7 @@ import { ProdutoOrmEntity } from './modules/erp/infrastructure/database/typeorm/
 import { ProdutosModule } from './modules/produtos/produtos.module';
 import { VendedorasModule } from './modules/vendedoras/vendedoras.module';
 import { VendedoraOrmEntity } from './modules/vendedoras/infrastructure/database/typeorm/entities/vendedora.orm-entity';
+import { GlobalExceptionFilter } from './shared/http/filters/global-exception.filter';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -63,6 +64,8 @@ import { HealthController } from './health.controller';
   ],
   controllers: [HealthController],
   providers: [
+    // Filtro global de excecoes — shape consistente, sem vazar stack em prod.
+    { provide: APP_FILTER, useClass: GlobalExceptionFilter },
     // Aplica o ThrottlerGuard a todas as rotas globalmente.
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
