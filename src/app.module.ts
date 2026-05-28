@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
+import { LoggerModule } from 'nestjs-pino';
 import { AuthModule } from './modules/auth/auth.module';
 import { AdminUserOrmEntity } from './modules/auth/infrastructure/database/typeorm/entities/admin-user.orm-entity';
 import { ApiKeyOrmEntity } from './modules/auth/infrastructure/database/typeorm/entities/api-key.orm-entity';
@@ -18,11 +19,15 @@ import { ProdutosModule } from './modules/produtos/produtos.module';
 import { VendedorasModule } from './modules/vendedoras/vendedoras.module';
 import { VendedoraOrmEntity } from './modules/vendedoras/infrastructure/database/typeorm/entities/vendedora.orm-entity';
 import { GlobalExceptionFilter } from './shared/http/filters/global-exception.filter';
+import { buildLoggerOptions } from './shared/logger/logger.module-options';
 import { HealthController } from './health.controller';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    // Logger estruturado Pino: JSON em prod, pretty em dev. Request ID por
+    // requisicao + redacao de PII e secrets. Substitui console.log.
+    LoggerModule.forRoot(buildLoggerOptions()),
     // Rate limiting global. Default agressivo o suficiente para conter abuso
     // sem incomodar uso legitimo. Endpoints sensiveis (login, lookup) podem
     // sobrescrever via @Throttle no controller.

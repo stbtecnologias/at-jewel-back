@@ -3,12 +3,22 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { json, urlencoded } from 'express';
 import helmet from 'helmet';
+import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   // Desabilita os body parsers padrao para podermos aplicar limites de tamanho
   // explicitos abaixo (mitigacao de DoS por payload grande).
-  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  // bufferLogs=true segura logs de startup ate que o LoggerModule estar pronto.
+  const app = await NestFactory.create(AppModule, {
+    bodyParser: false,
+    bufferLogs: true,
+  });
+
+  // Substitui o logger default do Nest pelo Pino. Tudo (NestJS internals
+  // + nosso codigo) passa a logar via Pino — JSON em prod, pretty em dev.
+  app.useLogger(app.get(Logger));
+
   const config = app.get(ConfigService);
 
   // Security headers padrao (X-Frame-Options, X-Content-Type-Options,
@@ -46,7 +56,7 @@ async function bootstrap() {
 
   const port = config.get<string>('PORT') ?? 3000;
   await app.listen(port);
-  console.log(`A.T. JEWEL API rodando na porta ${port}`);
+  app.get(Logger).log(`A.T. JEWEL API rodando na porta ${port}`, 'Bootstrap');
 }
 
 bootstrap();
