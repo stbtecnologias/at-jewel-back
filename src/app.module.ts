@@ -13,6 +13,8 @@ import { ErpModule } from './modules/erp/erp.module';
 import { ErpEventoOrmEntity } from './modules/erp/infrastructure/database/typeorm/entities/erp-evento.orm-entity';
 import { ProdutoOrmEntity } from './modules/erp/infrastructure/database/typeorm/entities/produto.orm-entity';
 import { ProdutosModule } from './modules/produtos/produtos.module';
+import { VendedorasModule } from './modules/vendedoras/vendedoras.module';
+import { VendedoraOrmEntity } from './modules/vendedoras/infrastructure/database/typeorm/entities/vendedora.orm-entity';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -43,6 +45,7 @@ import { HealthController } from './health.controller';
           ApiKeyOrmEntity,
           ClienteOrmEntity,
           ClientePerfilOrmEntity,
+          VendedoraOrmEntity,
         ],
         synchronize: false,
         logging: config.get('NODE_ENV') !== 'production',
@@ -52,6 +55,7 @@ import { HealthController } from './health.controller';
     ErpModule,
     ProdutosModule,
     ClientesModule,
+    VendedorasModule,
   ],
   controllers: [HealthController],
   providers: [
