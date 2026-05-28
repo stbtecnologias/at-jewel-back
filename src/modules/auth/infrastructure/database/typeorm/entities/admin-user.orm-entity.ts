@@ -1,4 +1,5 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import type { AdminRole } from '../../../../domain/entities/admin-user.entity';
 
 @Entity('admin_users')
 export class AdminUserOrmEntity {
@@ -19,4 +20,7 @@ export class AdminUserOrmEntity {
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
+
+  @Column({ type: 'enum', enum: ['ADMIN', 'GERENTE', 'VENDEDORA'], default: 'ADMIN' })
+  role: AdminRole;
 }

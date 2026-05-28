@@ -113,7 +113,7 @@ describe('RefreshTokenUseCase', () => {
     // Access token novo emitido.
     expect(result.accessToken).toBe('access-jwt');
     expect(jwt.sign).toHaveBeenCalledWith(
-      { sub: 'a', email: 'e' },
+      { sub: 'a', email: 'e', role: 'ADMIN' },
       { expiresIn: '15m' },
     );
   });

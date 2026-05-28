@@ -29,7 +29,7 @@ export class LoginAdminUseCase {
     if (!passwordMatch) throw new UnauthorizedException('Credenciais inválidas');
 
     const accessToken = this.jwtService.sign(
-      { sub: admin.id, email: admin.email },
+      { sub: admin.id, email: admin.email, role: admin.role },
       { expiresIn: '15m' },
     );
 

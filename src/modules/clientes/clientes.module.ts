@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuthModule } from '../auth/auth.module';
 import { AtualizarPerfilClienteUseCase } from './application/use-cases/atualizar-perfil-cliente.use-case';
 import { BuscarClienteUseCase } from './application/use-cases/buscar-cliente.use-case';
 import { BuscarClientePorWhatsappUseCase } from './application/use-cases/buscar-cliente-por-whatsapp.use-case';
@@ -16,7 +17,10 @@ import { ClientePerfilRepository } from './infrastructure/database/typeorm/repos
 import { ClientesController } from './infrastructure/http/controllers/clientes.controller';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([ClienteOrmEntity, ClientePerfilOrmEntity])],
+  imports: [
+    TypeOrmModule.forFeature([ClienteOrmEntity, ClientePerfilOrmEntity]),
+    AuthModule,
+  ],
   controllers: [ClientesController],
   providers: [
     CriarClienteUseCase,

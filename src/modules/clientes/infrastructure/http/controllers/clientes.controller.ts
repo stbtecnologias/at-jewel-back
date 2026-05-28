@@ -10,7 +10,14 @@ import {
   Patch,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
+import { Roles } from '../../../../auth/infrastructure/http/decorators/roles.decorator';
+import { RequireScopes } from '../../../../auth/infrastructure/http/decorators/scopes.decorator';
+import { ApiKeyGuard } from '../../../../auth/infrastructure/http/guards/api-key.guard';
+import { JwtAuthGuard } from '../../../../auth/infrastructure/http/guards/jwt-auth.guard';
+import { RolesGuard } from '../../../../auth/infrastructure/http/guards/roles.guard';
+import { ScopesGuard } from '../../../../auth/infrastructure/http/guards/scopes.guard';
 import { AtualizarPerfilClienteUseCase } from '../../../application/use-cases/atualizar-perfil-cliente.use-case';
 import { BuscarClienteUseCase } from '../../../application/use-cases/buscar-cliente.use-case';
 import { BuscarClientePorWhatsappUseCase } from '../../../application/use-cases/buscar-cliente-por-whatsapp.use-case';
@@ -21,10 +28,11 @@ import { CriarClienteDto } from '../dto/criar-cliente.dto';
 import { FiltroClienteDto } from '../dto/filtro-cliente.dto';
 import { LookupClienteDto } from '../dto/lookup-cliente.dto';
 
-// TODO(S4): aplicar guards de autorizacao quando RBAC for implementado.
-// Endpoints chamados pelo n8n (POST /clientes, GET /clientes/lookup, PATCH /perfil)
-// devem exigir API Key. Endpoints do dashboard (GET /clientes, GET /:id) podem
-// aceitar JWT ou API Key.
+// Estrategia de auth por endpoint:
+//  - Endpoints de operacao do agente (lookup, criar, atualizar perfil) =>
+//    API Key com scopes especificos (chamados por n8n)
+//  - Endpoints de leitura administrativa (listar, buscar) =>
+//    JWT + role ADMIN/GERENTE
 @Controller('clientes')
 export class ClientesController {
   constructor(
@@ -36,23 +44,27 @@ export class ClientesController {
   ) {}
 
   @Get()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'GERENTE')
   async listarClientes(@Query() filtros: FiltroClienteDto) {
     const clientes = await this.listar.execute(filtros);
-    // Listagem nao expoe perfil — apenas dados operacionais (sem hashes).
     return clientes.map((c) => c.toPublic());
   }
 
   @Get('lookup')
+  @UseGuards(ApiKeyGuard, ScopesGuard)
+  @RequireScopes('clientes:read')
   async lookupPorWhatsapp(@Query() query: LookupClienteDto) {
     const cliente = await this.buscarPorWhatsapp.execute(query.whatsapp);
     if (!cliente) {
-      // 404 e o sinal claro para o n8n decidir entre "cria novo" ou "ignora".
       throw new NotFoundException('Cliente nao encontrado para esse whatsapp');
     }
     return cliente.toPublic();
   }
 
   @Get(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'GERENTE', 'VENDEDORA')
   async buscarPorId(@Param('id', ParseUUIDPipe) id: string) {
     const cliente = await this.buscar.execute(id);
     return cliente.toPublic();
@@ -60,6 +72,8 @@ export class ClientesController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @UseGuards(ApiKeyGuard, ScopesGuard)
+  @RequireScopes('clientes:write')
   async criarCliente(@Body() dto: CriarClienteDto) {
     const cliente = await this.criar.execute({
       nome: dto.nome,
@@ -76,6 +90,8 @@ export class ClientesController {
   }
 
   @Patch(':id/perfil')
+  @UseGuards(ApiKeyGuard, ScopesGuard)
+  @RequireScopes('clientes:write')
   async atualizar(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AtualizarPerfilClienteDto,

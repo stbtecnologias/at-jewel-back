@@ -56,7 +56,7 @@ export class RefreshTokenUseCase {
     await this.adminUserRepo.updateRefreshToken(admin.id, newHash, newExpiresAt);
 
     const accessToken = this.jwtService.sign(
-      { sub: admin.id, email: admin.email },
+      { sub: admin.id, email: admin.email, role: admin.role },
       { expiresIn: '15m' },
     );
 

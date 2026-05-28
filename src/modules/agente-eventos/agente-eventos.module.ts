@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuthModule } from '../auth/auth.module';
 import { ListarEventosUseCase } from './application/use-cases/listar-eventos.use-case';
 import { RegistrarEventoUseCase } from './application/use-cases/registrar-evento.use-case';
 import { AGENTE_EVENTO_REPOSITORY } from './domain/ports/injection-tokens';
@@ -8,7 +9,7 @@ import { AgenteEventoRepository } from './infrastructure/database/typeorm/reposi
 import { AgenteEventosController } from './infrastructure/http/controllers/agente-eventos.controller';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([AgenteEventoOrmEntity])],
+  imports: [TypeOrmModule.forFeature([AgenteEventoOrmEntity]), AuthModule],
   controllers: [AgenteEventosController],
   providers: [
     RegistrarEventoUseCase,

@@ -47,6 +47,7 @@ export class AdminUserRepository implements IAdminUserRepository {
       row.refreshTokenHash,
       row.refreshTokenExpiresAt,
       row.createdAt,
+      row.role,
     );
   }
 }

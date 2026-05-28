@@ -1,3 +1,7 @@
+export type AdminRole = 'ADMIN' | 'GERENTE' | 'VENDEDORA';
+
+export const ADMIN_ROLES: readonly AdminRole[] = ['ADMIN', 'GERENTE', 'VENDEDORA'] as const;
+
 export class AdminUser {
   constructor(
     public readonly id: string,
@@ -6,5 +10,6 @@ export class AdminUser {
     public refreshTokenHash: string | null,
     public refreshTokenExpiresAt: Date | null,
     public readonly createdAt: Date,
+    public readonly role: AdminRole = 'ADMIN',
   ) {}
 }

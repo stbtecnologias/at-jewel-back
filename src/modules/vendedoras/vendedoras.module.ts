@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuthModule } from '../auth/auth.module';
 import { AtualizarVendedoraUseCase } from './application/use-cases/atualizar-vendedora.use-case';
 import { BuscarVendedoraUseCase } from './application/use-cases/buscar-vendedora.use-case';
 import { CriarVendedoraUseCase } from './application/use-cases/criar-vendedora.use-case';
@@ -10,7 +11,7 @@ import { VendedoraRepository } from './infrastructure/database/typeorm/repositor
 import { VendedorasController } from './infrastructure/http/controllers/vendedoras.controller';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([VendedoraOrmEntity])],
+  imports: [TypeOrmModule.forFeature([VendedoraOrmEntity]), AuthModule],
   controllers: [VendedorasController],
   providers: [
     CriarVendedoraUseCase,
