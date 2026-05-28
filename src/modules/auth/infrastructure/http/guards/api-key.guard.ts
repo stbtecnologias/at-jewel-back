@@ -1,0 +1,29 @@
+import {
+  CanActivate,
+  ExecutionContext,
+  Inject,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { Request } from 'express';
+import { ValidarApiKeyUseCase } from '../../../application/use-cases/validar-api-key.use-case';
+
+@Injectable()
+export class ApiKeyGuard implements CanActivate {
+  constructor(
+    @Inject(ValidarApiKeyUseCase)
+    private readonly validarApiKey: ValidarApiKeyUseCase,
+  ) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<Request>();
+    const rawKey = request.headers['x-api-key'] as string | undefined;
+
+    if (!rawKey) throw new UnauthorizedException('x-api-key ausente');
+
+    const apiKey = await this.validarApiKey.execute(rawKey);
+    if (!apiKey) throw new UnauthorizedException('API Key inválida ou revogada');
+
+    return true;
+  }
+}
