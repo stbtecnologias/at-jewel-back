@@ -5,6 +5,7 @@ export interface CreateApiKeyData {
   keyPrefix: string;
   keyHash: string;
   createdById: string;
+  permissions?: Record<string, unknown>;
 }
 
 export interface IApiKeyRepository {

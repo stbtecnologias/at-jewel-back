@@ -36,6 +36,7 @@ export class ApiKeyRepository implements IApiKeyRepository {
       keyPrefix: data.keyPrefix,
       keyHash: data.keyHash,
       createdById: data.createdById,
+      permissions: data.permissions ?? {},
     });
     const saved = await this.repo.save(row);
     return this.toDomain(saved);
