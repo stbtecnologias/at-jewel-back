@@ -1,6 +1,10 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ClientesModule } from '../clientes/clientes.module';
+import { VendasModule } from '../vendas/vendas.module';
+import { VendedorasModule } from '../vendedoras/vendedoras.module';
 import { AtualizarProdutoViaErpUseCase } from './application/use-cases/atualizar-produto-via-erp.use-case';
+import { RegistrarVendaViaErpUseCase } from './application/use-cases/registrar-venda-via-erp.use-case';
 import {
   ERP_EVENTO_REPOSITORY,
   PRODUTO_REPOSITORY,
@@ -13,10 +17,19 @@ import { ErpController } from './infrastructure/http/controllers/erp.controller'
 import { SafiraAuthGuard } from './infrastructure/http/guards/safira-auth.guard';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([ProdutoOrmEntity, ErpEventoOrmEntity])],
+  imports: [
+    TypeOrmModule.forFeature([ProdutoOrmEntity, ErpEventoOrmEntity]),
+    // VendasModule exporta VENDA_REPOSITORY (inclui o upsert por codigo_erp do
+    // agregado). Clientes/Vendedoras exportam seus repositorios para resolver
+    // as FKs por codigo_erp sem acessar tabelas de outro dominio por SQL cru.
+    VendasModule,
+    ClientesModule,
+    VendedorasModule,
+  ],
   controllers: [ErpController],
   providers: [
     AtualizarProdutoViaErpUseCase,
+    RegistrarVendaViaErpUseCase,
     SafiraAuthGuard,
     {
       provide: PRODUTO_REPOSITORY,

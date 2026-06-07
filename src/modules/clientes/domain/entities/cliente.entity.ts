@@ -99,4 +99,35 @@ export class Cliente {
       perfil: this.perfil?.toPublic() ?? null,
     };
   }
+
+  // Serializacao REDUZIDA para o agente (n8n/Anastasia), consumida pelo
+  // endpoint de lookup por API Key. O retorno deste metodo viaja para o
+  // contexto do LLM externo (OpenAI) a cada turno, entao expoe SOMENTE o
+  // minimo necessario para a triagem. NUNCA inclui PII de contato
+  // (telefone1/2, email, whatsapp), dados financeiros (limiteCredito,
+  // observacaoCredito), notas internas, endereco, documentos ou o nome
+  // completo — minimizacao de dados e barreira anti-injecao indireta
+  // (LGPD Art. 6 III). Espelha o padrao de Vendedora.toAgentePublic().
+  toAgenteContexto(): Record<string, unknown> {
+    const p = this.perfil;
+    return {
+      clienteId: this.id,
+      // Apenas o primeiro nome — o nome completo e minimizado.
+      primeiroNome: this.extrairPrimeiroNome(this.nome),
+      origemContato: p?.origemContato ?? null,
+      estadoConversa: p?.estadoConversa ?? null,
+      tipoCompra: p?.tipoCompra ?? null,
+      urgencia: p?.urgencia ?? null,
+      nivelConhecimento: p?.nivelConhecimento ?? null,
+      motivacaoCompra: p?.motivacaoCompra ?? null,
+      tags: p?.tags ?? [],
+      scorePerfil: p?.scorePerfil ?? null,
+      intencaoCompra: p?.intencaoCompra ?? null,
+      resumoTriagem: p?.resumoTriagem ?? null,
+    };
+  }
+
+  private extrairPrimeiroNome(nomeCompleto: string): string {
+    return nomeCompleto.trim().split(/\s+/)[0] ?? '';
+  }
 }

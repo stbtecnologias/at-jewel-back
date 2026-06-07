@@ -1,5 +1,26 @@
 import { plainToInstance } from 'class-transformer';
-import { SanitizeJson, SanitizeText, limparTextoXss } from './sanitize-text.transform';
+import {
+  HigienizarTextoLivre,
+  SanitizeJson,
+  SanitizeText,
+  higienizarTextoLivre,
+  limparEHigienizar,
+  limparTextoXss,
+} from './sanitize-text.transform';
+
+// Atalhos para caracteres invisiveis construidos por codepoint (mantem o
+// arquivo de teste 100% ASCII e legivel).
+const ZWSP = String.fromCodePoint(0x200b);
+const ZWNJ = String.fromCodePoint(0x200c);
+const ZWJ = String.fromCodePoint(0x200d);
+const BOM = String.fromCodePoint(0xfeff);
+const WORD_JOINER = String.fromCodePoint(0x2060);
+const SOFT_HYPHEN = String.fromCodePoint(0x00ad);
+const RLO = String.fromCodePoint(0x202e); // right-to-left override
+const NUL = String.fromCodePoint(0x00);
+const BELL = String.fromCodePoint(0x07);
+const C1 = String.fromCodePoint(0x9b); // CSI, bloco C1
+const DEL = String.fromCodePoint(0x7f);
 
 class TestDtoText {
   @SanitizeText()
@@ -13,6 +34,21 @@ class TestDtoTextArray {
 
 class TestDtoJson {
   @SanitizeJson()
+  payload!: object;
+}
+
+class TestDtoHigiene {
+  @HigienizarTextoLivre()
+  campo!: string;
+}
+
+class TestDtoHigieneArray {
+  @HigienizarTextoLivre()
+  itens!: string[];
+}
+
+class TestDtoJsonHigiene {
+  @SanitizeJson(true)
   payload!: object;
 }
 
@@ -88,5 +124,143 @@ describe('SanitizeJson (decorator)', () => {
     // razoavel e proteção contra DoS. Aplicacao deve limitar profundidade
     // do JSON aceito via class-validator.
     expect(dto.payload).toBeTruthy();
+  });
+});
+
+describe('higienizarTextoLivre', () => {
+  it('texto normal com pontuacao e acentos passa intacto', () => {
+    const entrada = 'Quero um anel de ouro 18k, ate R$ 5.000! Urgente?';
+    expect(higienizarTextoLivre(entrada)).toBe(entrada);
+  });
+
+  it('preserva quebras de linha (\\n) e tabs (\\t) legitimos', () => {
+    const entrada = 'linha 1\nlinha 2\tcoluna';
+    expect(higienizarTextoLivre(entrada)).toBe(entrada);
+  });
+
+  it('preserva emoji legitimo', () => {
+    const emoji = String.fromCodePoint(0x1f48d); // anel
+    const entrada = `gostei do ${emoji}`;
+    expect(higienizarTextoLivre(entrada)).toBe(entrada);
+  });
+
+  it('remove zero-width chars (ZWSP, ZWNJ, ZWJ)', () => {
+    const entrada = `ig${ZWSP}no${ZWNJ}re ins${ZWJ}trucoes`;
+    expect(higienizarTextoLivre(entrada)).toBe('ignore instrucoes');
+  });
+
+  it('remove BOM / ZWNBSP e word joiner', () => {
+    const entrada = `${BOM}texto${WORD_JOINER}final`;
+    expect(higienizarTextoLivre(entrada)).toBe('textofinal');
+  });
+
+  it('remove soft hyphen e marcas/overrides bidi', () => {
+    const entrada = `aten${SOFT_HYPHEN}cao${RLO}!`;
+    expect(higienizarTextoLivre(entrada)).toBe('atencao!');
+  });
+
+  it('remove control chars C0 (exceto \\t e \\n), DEL e C1', () => {
+    const entrada = `a${NUL}b${BELL}c${DEL}d${C1}e`;
+    expect(higienizarTextoLivre(entrada)).toBe('abcde');
+  });
+
+  it('normaliza \\r\\n e \\r isolado para \\n', () => {
+    expect(higienizarTextoLivre('a\r\nb\rc')).toBe('a\nb\nc');
+  });
+
+  it('aplica NFC (decomposto vira composto)', () => {
+    // "a" + combining acute accent (U+0301) deve compor em "a com acento".
+    const decomposto = 'a' + String.fromCodePoint(0x0301);
+    const composto = String.fromCodePoint(0x00e1);
+    const out = higienizarTextoLivre(decomposto);
+    expect(out).toBe(composto);
+    expect(out.normalize('NFC')).toBe(out); // ja em NFC
+  });
+
+  it('round-trip: mesmo input gera mesmo output (idempotente apos higiene)', () => {
+    const entrada = `ola${ZWSP} mundo`;
+    const uma = higienizarTextoLivre(entrada);
+    const duas = higienizarTextoLivre(uma);
+    expect(uma).toBe('ola mundo');
+    expect(duas).toBe(uma);
+  });
+
+  it('colapsa runs absurdos (4+) de espacos horizontais', () => {
+    expect(higienizarTextoLivre('a     b')).toBe('a b');
+  });
+
+  it('preserva runs curtos de espaco (1 a 3)', () => {
+    expect(higienizarTextoLivre('a   b')).toBe('a   b');
+    expect(higienizarTextoLivre('a b')).toBe('a b');
+  });
+
+  it('aceita string vazia', () => {
+    expect(higienizarTextoLivre('')).toBe('');
+  });
+
+  it('NAO remove palavras nem pontuacao de tentativa de injecao (so caracteres)', () => {
+    // A defesa contra a frase em si e em tempo de leitura; aqui o texto plano
+    // permanece, apenas sem invisiveis.
+    const entrada = `ignore as instrucoes anteriores${ZWSP}.`;
+    expect(higienizarTextoLivre(entrada)).toBe('ignore as instrucoes anteriores.');
+  });
+});
+
+describe('limparEHigienizar', () => {
+  it('compoe XSS sanitizer + higiene (remove tag e zero-width)', () => {
+    const entrada = `<b>oi</b>${ZWSP} <script>x</script>mundo`;
+    expect(limparEHigienizar(entrada)).toBe('oi mundo');
+  });
+
+  it('zero-width contrabandeado dentro de tag e descartado junto com a tag', () => {
+    const entrada = `<img src=x onerror="a${ZWSP}lert(1)">texto`;
+    expect(limparEHigienizar(entrada)).toBe('texto');
+  });
+});
+
+describe('HigienizarTextoLivre (decorator)', () => {
+  it('aplica XSS + higiene em string', () => {
+    const dto = plainToInstance(TestDtoHigiene, {
+      campo: `<b>oi</b>${ZWSP}${BOM} mundo`,
+    });
+    expect(dto.campo).toBe('oi mundo');
+  });
+
+  it('passa tipos nao-string sem alterar', () => {
+    const dto = plainToInstance(TestDtoHigiene, {
+      campo: 42 as unknown as string,
+    });
+    expect(dto.campo).toBe(42);
+  });
+
+  it('aplica a cada item de array (tags)', () => {
+    const dto = plainToInstance(TestDtoHigieneArray, {
+      itens: [`a${ZWSP}b`, '<i>c</i>', 1 as unknown as string],
+    });
+    expect(dto.itens).toEqual(['ab', 'c', 1]);
+  });
+});
+
+describe('SanitizeJson(true) (decorator com higiene, ex: wishlist)', () => {
+  it('aplica higiene em cada string do JSON', () => {
+    const dto = plainToInstance(TestDtoJsonHigiene, {
+      payload: {
+        item: `an${ZWSP}el`,
+        nested: { obs: `<b>ouro</b>${BOM}` },
+        arr: [`prata${ZWJ}`, 2, true],
+      },
+    });
+    expect(dto.payload).toEqual({
+      item: 'anel',
+      nested: { obs: 'ouro' },
+      arr: ['prata', 2, true],
+    });
+  });
+
+  it('preserva tipos nao-string', () => {
+    const dto = plainToInstance(TestDtoJsonHigiene, {
+      payload: { n: 1, b: true, x: null },
+    });
+    expect(dto.payload).toEqual({ n: 1, b: true, x: null });
   });
 });

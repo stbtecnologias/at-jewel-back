@@ -18,6 +18,10 @@ import { ProdutoOrmEntity } from './modules/erp/infrastructure/database/typeorm/
 import { ProdutosModule } from './modules/produtos/produtos.module';
 import { VendedorasModule } from './modules/vendedoras/vendedoras.module';
 import { VendedoraOrmEntity } from './modules/vendedoras/infrastructure/database/typeorm/entities/vendedora.orm-entity';
+import { VendasModule } from './modules/vendas/vendas.module';
+import { VendaOrmEntity } from './modules/vendas/infrastructure/database/typeorm/entities/venda.orm-entity';
+import { ItemVendaOrmEntity } from './modules/vendas/infrastructure/database/typeorm/entities/item-venda.orm-entity';
+import { PagamentoVendaOrmEntity } from './modules/vendas/infrastructure/database/typeorm/entities/pagamento-venda.orm-entity';
 import { GlobalExceptionFilter } from './shared/http/filters/global-exception.filter';
 import { buildLoggerOptions } from './shared/logger/logger.module-options';
 import { HealthController } from './health.controller';
@@ -54,6 +58,9 @@ import { HealthController } from './health.controller';
           ClienteOrmEntity,
           ClientePerfilOrmEntity,
           VendedoraOrmEntity,
+          VendaOrmEntity,
+          ItemVendaOrmEntity,
+          PagamentoVendaOrmEntity,
           AgenteEventoOrmEntity,
         ],
         synchronize: false,
@@ -65,6 +72,7 @@ import { HealthController } from './health.controller';
     ProdutosModule,
     ClientesModule,
     VendedorasModule,
+    VendasModule,
     AgenteEventosModule,
   ],
   controllers: [HealthController],

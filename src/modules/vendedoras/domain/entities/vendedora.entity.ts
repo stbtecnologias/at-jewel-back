@@ -73,4 +73,18 @@ export class Vendedora {
       atualizadoEm: this.atualizadoEm,
     };
   }
+
+  // Serializacao reduzida para o agente (n8n) no passo de roteamento.
+  // Expoe APENAS os campos necessarios ao algoritmo de match. Nao inclui
+  // PII de contato interno (email/whatsappInterno) nem vinculo de identidade
+  // (id/adminUserId), respeitando minimizacao de dados (LGPD Art. 6 III).
+  toAgentePublic(): Record<string, unknown> {
+    return {
+      codigoErp: this.codigoErp,
+      nome: this.nome,
+      tipo: this.tipo,
+      especialidades: this.especialidades,
+      statusDisponibilidade: this.statusDisponibilidade,
+    };
+  }
 }

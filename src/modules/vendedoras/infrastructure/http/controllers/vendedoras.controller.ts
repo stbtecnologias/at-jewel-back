@@ -12,31 +12,48 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Roles } from '../../../../auth/infrastructure/http/decorators/roles.decorator';
+import { RequireScopes } from '../../../../auth/infrastructure/http/decorators/scopes.decorator';
+import { ApiKeyGuard } from '../../../../auth/infrastructure/http/guards/api-key.guard';
 import { JwtAuthGuard } from '../../../../auth/infrastructure/http/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../../auth/infrastructure/http/guards/roles.guard';
+import { ScopesGuard } from '../../../../auth/infrastructure/http/guards/scopes.guard';
 import { AtualizarVendedoraUseCase } from '../../../application/use-cases/atualizar-vendedora.use-case';
 import { BuscarVendedoraUseCase } from '../../../application/use-cases/buscar-vendedora.use-case';
 import { CriarVendedoraUseCase } from '../../../application/use-cases/criar-vendedora.use-case';
 import { ListarVendedorasUseCase } from '../../../application/use-cases/listar-vendedoras.use-case';
+import { ListarVendedorasDisponiveisUseCase } from '../../../application/use-cases/listar-vendedoras-disponiveis.use-case';
 import { AtualizarVendedoraDto } from '../dto/atualizar-vendedora.dto';
 import { CriarVendedoraDto } from '../dto/criar-vendedora.dto';
 import { FiltroVendedoraDto } from '../dto/filtro-vendedora.dto';
 
-// Estrategia de auth:
-//  - Leitura (GET) => JWT qualquer role (ADMIN/GERENTE/VENDEDORA)
+// Estrategia de auth por endpoint:
+//  - Roteamento do agente (GET /disponiveis) => API Key + scope
+//    'vendedoras:read' (chamado por n8n; serializacao reduzida sem PII)
+//  - Leitura administrativa (GET, GET /:id) => JWT qualquer role
+//    (ADMIN/GERENTE/VENDEDORA)
 //  - Escrita (POST/PATCH) => JWT + role ADMIN (criar e mudar status/tipo
 //    sao operacoes administrativas; a propria vendedora nao se cadastra)
 @Controller('vendedoras')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class VendedorasController {
   constructor(
     private readonly criar: CriarVendedoraUseCase,
     private readonly buscar: BuscarVendedoraUseCase,
     private readonly listar: ListarVendedorasUseCase,
+    private readonly listarDisponiveis: ListarVendedorasDisponiveisUseCase,
     private readonly atualizar: AtualizarVendedoraUseCase,
   ) {}
 
+  // Declarado antes de GET /:id para nao ser capturado pela rota de param.
+  @Get('disponiveis')
+  @UseGuards(ApiKeyGuard, ScopesGuard)
+  @RequireScopes('vendedoras:read')
+  async listarDisponiveisParaAgente() {
+    const lista = await this.listarDisponiveis.execute();
+    return lista.map((v) => v.toAgentePublic());
+  }
+
   @Get()
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN', 'GERENTE', 'VENDEDORA')
   async listarVendedoras(@Query() filtros: FiltroVendedoraDto) {
     const lista = await this.listar.execute(filtros);
@@ -44,6 +61,7 @@ export class VendedorasController {
   }
 
   @Get(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN', 'GERENTE', 'VENDEDORA')
   async buscarPorId(@Param('id', ParseUUIDPipe) id: string) {
     const v = await this.buscar.execute(id);
@@ -52,6 +70,7 @@ export class VendedorasController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   async criarVendedora(@Body() dto: CriarVendedoraDto) {
     const v = await this.criar.execute({
@@ -67,6 +86,7 @@ export class VendedorasController {
   }
 
   @Patch(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   async atualizarVendedora(
     @Param('id', ParseUUIDPipe) id: string,

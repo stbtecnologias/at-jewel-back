@@ -14,8 +14,8 @@ import {
   Min,
 } from 'class-validator';
 import {
+  HigienizarTextoLivre,
   SanitizeJson,
-  SanitizeText,
 } from '../../../../../shared/http/sanitize/sanitize-text.transform';
 import {
   ESTADOS_CONVERSA,
@@ -57,12 +57,12 @@ export class AtualizarPerfilClienteDto {
   @IsOptional()
   @IsString()
   @MaxLength(2000)
-  @SanitizeText()
+  @HigienizarTextoLivre()
   intencaoCompra?: string | null;
 
   @IsOptional()
   @IsObject()
-  @SanitizeJson()
+  @SanitizeJson(true)
   wishlist?: object | null;
 
   @IsOptional()
@@ -82,13 +82,13 @@ export class AtualizarPerfilClienteDto {
   @IsOptional()
   @IsString()
   @MaxLength(2000)
-  @SanitizeText()
+  @HigienizarTextoLivre()
   resumoTriagem?: string | null;
 
   @IsOptional()
   @IsString()
   @MaxLength(2000)
-  @SanitizeText()
+  @HigienizarTextoLivre()
   notasInternas?: string | null;
 
   @IsOptional()
@@ -96,7 +96,7 @@ export class AtualizarPerfilClienteDto {
   @ArrayMaxSize(50)
   @IsString({ each: true })
   @MaxLength(50, { each: true })
-  @SanitizeText()
+  @HigienizarTextoLivre()
   tags?: string[];
 
   @IsOptional()

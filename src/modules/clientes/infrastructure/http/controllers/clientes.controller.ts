@@ -59,7 +59,9 @@ export class ClientesController {
     if (!cliente) {
       throw new NotFoundException('Cliente nao encontrado para esse whatsapp');
     }
-    return cliente.toPublic();
+    // View REDUZIDA: esta resposta vai para o contexto do LLM externo via
+    // n8n. NAO usar toPublic() aqui (vazaria PII/financeiro/notas internas).
+    return cliente.toAgenteContexto();
   }
 
   @Get(':id')

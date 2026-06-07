@@ -31,5 +31,6 @@ import { ClientesController } from './infrastructure/http/controllers/clientes.c
     { provide: CLIENTE_REPOSITORY, useClass: ClienteRepository },
     { provide: CLIENTE_PERFIL_REPOSITORY, useClass: ClientePerfilRepository },
   ],
+  exports: [CLIENTE_REPOSITORY],
 })
 export class ClientesModule {}
