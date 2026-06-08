@@ -140,6 +140,21 @@ export class VendaRepository implements IVendaRepository {
     return rows.map((r) => this.toDomain(r));
   }
 
+  async listarVendedoraIdsPorCliente(clienteId: string): Promise<string[]> {
+    // Apenas vendas concluidas e ativas contam como relacionamento previo.
+    // Seleciona somente a FK distinta da vendedora — nenhum dado de venda
+    // nem PII do cliente trafega. clienteId vem parametrizado.
+    const rows = await this.repo
+      .createQueryBuilder('v')
+      .select('DISTINCT v.vendedora_id', 'vendedora_id')
+      .where('v.cliente_id = :clienteId', { clienteId })
+      .andWhere('v.status = :status', { status: 'concluida' })
+      .andWhere('v.ativo = true')
+      .andWhere('v.vendedora_id IS NOT NULL')
+      .getRawMany<{ vendedora_id: string }>();
+    return rows.map((r) => r.vendedora_id);
+  }
+
   // Postgres retorna DECIMAL como string. Converte preservando null.
   private numeroOuNull(valor: string | null): number | null {
     return valor != null ? Number(valor) : null;

@@ -25,9 +25,11 @@ import { ListarVendedorasUseCase } from '../../../application/use-cases/listar-v
 import { ListarVendedorasDisponiveisUseCase } from '../../../application/use-cases/listar-vendedoras-disponiveis.use-case';
 import { ListarVendedorasMetricasUseCase } from '../../../application/use-cases/listar-vendedoras-metricas.use-case';
 import { RefreshVendedorasMetricasUseCase } from '../../../application/use-cases/refresh-vendedoras-metricas.use-case';
+import { SugerirVendedorasUseCase } from '../../../application/use-cases/sugerir-vendedoras.use-case';
 import { AtualizarVendedoraDto } from '../dto/atualizar-vendedora.dto';
 import { CriarVendedoraDto } from '../dto/criar-vendedora.dto';
 import { FiltroVendedoraDto } from '../dto/filtro-vendedora.dto';
+import { SugerirVendedoraDto } from '../dto/sugerir-vendedora.dto';
 
 // Estrategia de auth por endpoint:
 //  - Roteamento do agente (GET /disponiveis) => API Key + scope
@@ -41,6 +43,9 @@ import { FiltroVendedoraDto } from '../dto/filtro-vendedora.dto';
 //    nao deve ver a performance/carteira das colegas).
 //  - Refresh (POST /metricas/refresh) => JWT + ADMIN. Operacao de job,
 //    disparada por cron/n8n externo diariamente.
+//  - Sugestao (POST /sugerir) => API Key + scope 'vendedoras:read'. Roteamento
+//    da Anastasia: recebe dados de triagem e devolve vendedoras ranqueadas
+//    (score + motivos). Sem metricas cruas nem PII de cliente no retorno.
 @Controller('vendedoras')
 export class VendedorasController {
   constructor(
@@ -52,6 +57,7 @@ export class VendedorasController {
     private readonly listarMetricas: ListarVendedorasMetricasUseCase,
     private readonly buscarMetricas: BuscarVendedoraMetricasUseCase,
     private readonly refreshMetricas: RefreshVendedorasMetricasUseCase,
+    private readonly sugerir: SugerirVendedorasUseCase,
   ) {}
 
   // Rotas estaticas de metricas declaradas ANTES de GET /:id para nao
@@ -79,6 +85,22 @@ export class VendedorasController {
   async listarDisponiveisParaAgente() {
     const lista = await this.listarDisponiveis.execute();
     return lista.map((v) => v.toAgentePublic());
+  }
+
+  // Roteamento da Anastasia (n8n). Recebe dados de triagem e devolve
+  // vendedoras ranqueadas. Mesmo scope de leitura do agente. A logica de
+  // score fica no servidor (testavel; metricas nao chegam ao LLM).
+  @Post('sugerir')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(ApiKeyGuard, ScopesGuard)
+  @RequireScopes('vendedoras:read')
+  async sugerirVendedoras(@Body() dto: SugerirVendedoraDto) {
+    return this.sugerir.execute({
+      clienteId: dto.clienteId ?? null,
+      especialidade: dto.especialidade ?? null,
+      ticketEstimado: dto.ticketEstimado ?? null,
+      limit: dto.limit,
+    });
   }
 
   @Get()

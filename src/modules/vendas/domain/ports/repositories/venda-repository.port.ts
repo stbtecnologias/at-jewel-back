@@ -45,4 +45,14 @@ export interface IVendaRepository {
    * data_venda desc (mais recentes primeiro).
    */
   listar(filtros: FiltroVenda): Promise<Venda[]>;
+
+  /**
+   * Retorna os IDs (UUID) DISTINTOS de vendedoras que tiveram ao menos uma
+   * venda CONCLUIDA e ativa para o cliente informado. Usado pelo algoritmo de
+   * sugestao (roteamento da Anastasia) para detectar relacionamento previo.
+   *
+   * Retorna so a FK da vendedora — nenhum dado de venda nem PII do cliente.
+   * Vendas canceladas/pendentes ou inativas NAO contam como relacionamento.
+   */
+  listarVendedoraIdsPorCliente(clienteId: string): Promise<string[]>;
 }
