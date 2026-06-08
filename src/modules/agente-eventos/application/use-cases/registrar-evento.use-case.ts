@@ -3,6 +3,7 @@ import { AgenteEvento } from '../../domain/entities/agente-evento.entity';
 import type { NomeAgente } from '../../domain/entities/enums';
 import { AGENTE_EVENTO_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { IAgenteEventoRepository } from '../../domain/ports/repositories/agente-evento-repository.port';
+import { chavesForaDaAllowlist } from '../utils/allowlist-payload';
 import { detectarPiiNoPayload } from '../utils/detectar-pii';
 
 export interface RegistrarEventoInput {
@@ -23,8 +24,22 @@ export class RegistrarEventoUseCase {
   ) {}
 
   async execute(input: RegistrarEventoInput): Promise<AgenteEvento> {
-    // Defesa em profundidade: rejeita payload com aparencia de PII.
-    // Veja detectar-pii.ts para o motivo (REGRA DE OURO do agente_eventos).
+    // Defesa em profundidade — camada 1 (allowlist, H-002): so chaves de topo
+    // conhecidas e estritamente operacionais entram no payload. Qualquer chave
+    // desconhecida e barrada antes de inspecionar valores. Veja
+    // allowlist-payload.ts. Nao ecoamos valores — apenas o nome da chave.
+    const chavesInvalidas = chavesForaDaAllowlist(input.payload);
+    if (chavesInvalidas.length > 0) {
+      throw new UnprocessableEntityException({
+        message:
+          'Payload contem chave(s) fora da allowlist de agente_eventos',
+        chavesInvalidas,
+      });
+    }
+
+    // Camada 2 (blocklist heuristica): rejeita payload com aparencia de PII,
+    // mesmo dentro de chaves permitidas. Veja detectar-pii.ts (REGRA DE OURO
+    // do agente_eventos).
     const motivos = detectarPiiNoPayload(input.payload);
     if (motivos.length > 0) {
       throw new UnprocessableEntityException({

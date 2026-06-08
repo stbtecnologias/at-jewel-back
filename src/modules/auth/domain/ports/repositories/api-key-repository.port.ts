@@ -6,6 +6,8 @@ export interface CreateApiKeyData {
   keyHash: string;
   createdById: string;
   permissions?: Record<string, unknown>;
+  // M-002: expiracao opcional. null/ausente = nao expira.
+  expiresAt?: Date | null;
 }
 
 export interface IApiKeyRepository {

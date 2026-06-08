@@ -2,6 +2,7 @@ import {
   ArrayMaxSize,
   ArrayUnique,
   IsArray,
+  IsDateString,
   IsIn,
   IsOptional,
   IsString,
@@ -26,4 +27,11 @@ export class CriarApiKeyDto {
   @ArrayUnique()
   @IsIn([...SCOPES_VALIDOS], { each: true })
   scopes?: ApiKeyScope[];
+
+  // M-002: instante de expiracao (ISO 8601). Omitido = chave nao expira.
+  // A expiracao limita a janela de abuso caso a chave vaze. O ApiKeyGuard
+  // rejeita (401) chamadas feitas apos esse instante.
+  @IsOptional()
+  @IsDateString()
+  expiresAt?: string;
 }

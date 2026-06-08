@@ -28,6 +28,10 @@ export class ApiKeyOrmEntity {
   @Column({ name: 'last_used_at', type: 'timestamptz', nullable: true })
   lastUsedAt: Date | null;
 
+  // M-002: expiracao opcional. NULL = nao expira (legado).
+  @Column({ name: 'expires_at', type: 'timestamptz', nullable: true })
+  expiresAt: Date | null;
+
   @Column({ name: 'created_by_id', type: 'uuid' })
   createdById: string;
 

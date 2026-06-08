@@ -50,6 +50,70 @@ describe('RegistrarEventoUseCase', () => {
     expect(repo.registrar).toHaveBeenCalled();
   });
 
+  describe('allowlist de chaves de payload (H-002)', () => {
+    it('aceita payload apenas com chaves permitidas', async () => {
+      repo.registrar.mockImplementation((e) => Promise.resolve(e));
+
+      await expect(
+        useCase.execute({
+          agente: 'anastasia',
+          tipoEvento: 'vendedora_sugerida',
+          payload: {
+            estado: 'READY_FOR_ROUTING',
+            vendedoraSugerida: 'V-007',
+            totalSugestoes: 3,
+            score: 0.91,
+            correlationId: 'corr-123',
+            duracaoMs: 142,
+          },
+        }),
+      ).resolves.toBeDefined();
+      expect(repo.registrar).toHaveBeenCalled();
+    });
+
+    it('rejeita payload com chave fora da allowlist (422)', async () => {
+      await expect(
+        useCase.execute({
+          agente: 'anastasia',
+          tipoEvento: 'transicao_estado',
+          payload: { estado: 'OK', chaveDesconhecida: 'valor' },
+        }),
+      ).rejects.toThrow(UnprocessableEntityException);
+      expect(repo.registrar).not.toHaveBeenCalled();
+    });
+
+    it('a chave invalida e reportada sem ecoar o valor', async () => {
+      let capturado: unknown;
+      try {
+        await useCase.execute({
+          agente: 'anastasia',
+          tipoEvento: 'transicao_estado',
+          payload: { estado: 'OK', chaveDesconhecida: 'segredo-nao-deve-vazar' },
+        });
+      } catch (err) {
+        capturado = (err as UnprocessableEntityException).getResponse();
+      }
+
+      expect(capturado).toMatchObject({
+        chavesInvalidas: ['chaveDesconhecida'],
+      });
+      expect(JSON.stringify(capturado)).not.toContain('segredo-nao-deve-vazar');
+    });
+
+    it('PII em chave PERMITIDA ainda e barrado pela camada de deteccao', async () => {
+      await expect(
+        useCase.execute({
+          agente: 'anastasia',
+          tipoEvento: 'vendedora_sugerida',
+          // 'motivo' esta na allowlist, mas o valor carrega um telefone:
+          // a segunda camada (detectarPiiNoPayload) deve barrar.
+          payload: { motivo: 'cliente pediu retorno no (85) 9 8888-7777' },
+        }),
+      ).rejects.toThrow(UnprocessableEntityException);
+      expect(repo.registrar).not.toHaveBeenCalled();
+    });
+  });
+
   describe('deteccao de PII (rejeita com 422)', () => {
     it('rejeita payload com telefone', async () => {
       await expect(

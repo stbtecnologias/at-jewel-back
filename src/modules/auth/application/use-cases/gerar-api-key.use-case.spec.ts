@@ -122,6 +122,57 @@ describe('GerarApiKeyUseCase', () => {
     expect(savedHash).toBe(expected);
   });
 
+  it('repassa expiresAt para o repositorio e no resultado (M-002)', async () => {
+    const exp = new Date('2026-12-31T00:00:00Z');
+    repo.create.mockImplementation(async (data) =>
+      new ApiKey(
+        'id',
+        data.name,
+        data.keyPrefix,
+        data.keyHash,
+        data.permissions ?? {},
+        true,
+        null,
+        data.createdById,
+        new Date(),
+        null,
+        data.expiresAt ?? null,
+      ),
+    );
+
+    const result = await useCase.execute('n8n', 'admin-1', [], exp);
+
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ expiresAt: exp }),
+    );
+    expect(result.expiresAt).toEqual(exp);
+  });
+
+  it('expiresAt default e null quando nao passado (M-002)', async () => {
+    repo.create.mockImplementation(async (data) =>
+      new ApiKey(
+        'id',
+        data.name,
+        data.keyPrefix,
+        data.keyHash,
+        data.permissions ?? {},
+        true,
+        null,
+        data.createdById,
+        new Date(),
+        null,
+        data.expiresAt ?? null,
+      ),
+    );
+
+    const result = await useCase.execute('n8n', 'admin-1');
+
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ expiresAt: null }),
+    );
+    expect(result.expiresAt).toBeNull();
+  });
+
   it('resultado nao expoe keyHash', async () => {
     repo.create.mockImplementation(async (data) =>
       new ApiKey(

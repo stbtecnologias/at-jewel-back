@@ -24,6 +24,13 @@ export class ApiKeyGuard implements CanActivate {
     const apiKey = await this.validarApiKey.execute(rawKey);
     if (!apiKey) throw new UnauthorizedException('API Key inválida ou revogada');
 
+    // M-002: rejeita chave expirada. Chave sem expiracao (expiresAt null)
+    // nunca expira. A comparacao usa o instante atual a cada request, entao
+    // uma chave cacheada que cruza a expiracao ainda e barrada aqui.
+    if (apiKey.isExpired()) {
+      throw new UnauthorizedException('API Key expirada');
+    }
+
     return true;
   }
 }

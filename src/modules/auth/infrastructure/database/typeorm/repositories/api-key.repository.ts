@@ -37,6 +37,7 @@ export class ApiKeyRepository implements IApiKeyRepository {
       keyHash: data.keyHash,
       createdById: data.createdById,
       permissions: data.permissions ?? {},
+      expiresAt: data.expiresAt ?? null,
     });
     const saved = await this.repo.save(row);
     return this.toDomain(saved);
@@ -62,6 +63,7 @@ export class ApiKeyRepository implements IApiKeyRepository {
       row.createdById,
       row.createdAt,
       row.revokedAt,
+      row.expiresAt,
     );
   }
 }

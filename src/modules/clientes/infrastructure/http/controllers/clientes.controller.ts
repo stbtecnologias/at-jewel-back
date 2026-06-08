@@ -12,6 +12,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { Roles } from '../../../../auth/infrastructure/http/decorators/roles.decorator';
 import { RequireScopes } from '../../../../auth/infrastructure/http/decorators/scopes.decorator';
 import { ApiKeyGuard } from '../../../../auth/infrastructure/http/guards/api-key.guard';
@@ -51,6 +52,13 @@ export class ClientesController {
     return clientes.map((c) => c.toPublic());
   }
 
+  // Throttle estrito (20 req/min/IP): lookup por whatsapp e o endpoint de
+  // maior risco de ENUMERACAO (descobrir clientes testando telefones) caso a
+  // API key vaze. Limite agressivo abaixo do global (100/min). NOTA: rate
+  // limit por IP e mitigacao PARCIAL — a defesa real e scope minimo
+  // (clientes:read), expiracao da chave (M-002) e a view reduzida
+  // toAgenteContexto (C-001). Esta camada apenas reduz a velocidade de abuso.
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Get('lookup')
   @UseGuards(ApiKeyGuard, ScopesGuard)
   @RequireScopes('clientes:read')

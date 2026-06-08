@@ -11,6 +11,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { Roles } from '../../../../auth/infrastructure/http/decorators/roles.decorator';
 import { RequireScopes } from '../../../../auth/infrastructure/http/decorators/scopes.decorator';
 import { ApiKeyGuard } from '../../../../auth/infrastructure/http/guards/api-key.guard';
@@ -79,6 +80,11 @@ export class VendedorasController {
   }
 
   // Declarado antes de GET /:id para nao ser capturado pela rota de param.
+  // Throttle estrito (20 req/min/IP), consistente com os demais endpoints de
+  // agente (API key). Rate limit por IP e mitigacao PARCIAL: a defesa real e
+  // scope minimo (vendedoras:read), expiracao da chave (M-002) e a view
+  // reduzida toAgentePublic (sem PII/metricas cruas).
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Get('disponiveis')
   @UseGuards(ApiKeyGuard, ScopesGuard)
   @RequireScopes('vendedoras:read')
@@ -90,6 +96,10 @@ export class VendedorasController {
   // Roteamento da Anastasia (n8n). Recebe dados de triagem e devolve
   // vendedoras ranqueadas. Mesmo scope de leitura do agente. A logica de
   // score fica no servidor (testavel; metricas nao chegam ao LLM).
+  // Throttle estrito (20 req/min/IP), consistente com /disponiveis e
+  // /clientes/lookup. Mesma ressalva: mitigacao parcial; defesa real e scope
+  // minimo + expiracao da chave + retorno reduzido (score + motivos, sem PII).
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('sugerir')
   @HttpCode(HttpStatus.OK)
   @UseGuards(ApiKeyGuard, ScopesGuard)

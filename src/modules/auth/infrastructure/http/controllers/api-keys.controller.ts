@@ -32,7 +32,12 @@ export class ApiKeysController {
 
   @Post()
   create(@Body() dto: CriarApiKeyDto, @Request() req: { user: JwtPayload }) {
-    return this.gerarApiKey.execute(dto.name, req.user.sub, dto.scopes ?? []);
+    return this.gerarApiKey.execute(
+      dto.name,
+      req.user.sub,
+      dto.scopes ?? [],
+      dto.expiresAt ? new Date(dto.expiresAt) : null,
+    );
   }
 
   @Get()

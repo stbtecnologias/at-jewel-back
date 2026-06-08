@@ -11,6 +11,7 @@ export interface GerarApiKeyResult {
   keyPrefix: string;
   scopes: ApiKeyScope[];
   createdAt: Date;
+  expiresAt: Date | null;
 }
 
 @Injectable()
@@ -24,6 +25,8 @@ export class GerarApiKeyUseCase {
     name: string,
     createdById: string,
     scopes: ApiKeyScope[] = [],
+    // M-002: expiracao opcional. null/ausente = nao expira.
+    expiresAt: Date | null = null,
   ): Promise<GerarApiKeyResult> {
     const rawKey = `sk_live_${randomBytes(32).toString('hex')}`;
     const keyPrefix = rawKey.substring(0, 12);
@@ -35,6 +38,7 @@ export class GerarApiKeyUseCase {
       keyHash,
       createdById,
       permissions: { scopes },
+      expiresAt,
     });
 
     return {
@@ -44,6 +48,7 @@ export class GerarApiKeyUseCase {
       keyPrefix,
       scopes,
       createdAt: apiKey.createdAt,
+      expiresAt: apiKey.expiresAt,
     };
   }
 }
