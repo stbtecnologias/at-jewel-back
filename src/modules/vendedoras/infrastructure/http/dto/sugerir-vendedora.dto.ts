@@ -1,4 +1,6 @@
 import {
+  ArrayMaxSize,
+  IsArray,
   IsInt,
   IsNumber,
   IsOptional,
@@ -52,4 +54,19 @@ export class SugerirVendedoraDto {
   @Min(1)
   @Max(LIMIT_MAXIMO)
   limit?: number;
+
+  /**
+   * Lista de codigoErp de vendedoras a NAO sugerir. Usada na re-sugestao:
+   * quando a proprietaria recusa uma sugestao, o n8n reenvia a requisicao
+   * acrescentando o codigoErp recusado aqui, para nao receber a mesma
+   * vendedora de novo. Comparacao exata (case-sensitive como os codigos do
+   * ERP). Limite agressivo de tamanho de lista e de cada item.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @MaxLength(50, { each: true })
+  @SanitizeText()
+  excluir?: string[];
 }

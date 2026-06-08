@@ -55,6 +55,8 @@ export interface SugerirVendedorasInput {
   especialidade?: string | null;
   ticketEstimado?: number | null;
   limit?: number;
+  // codigoErp de vendedoras a NAO sugerir (re-sugestao apos recusa).
+  excluir?: string[] | null;
 }
 
 export interface VendedoraSugerida {
@@ -81,10 +83,15 @@ export class SugerirVendedorasUseCase {
   ) {}
 
   async execute(input: SugerirVendedorasInput): Promise<VendedoraSugerida[]> {
-    const candidatas = await this.listarDisponiveis.execute();
+    const disponiveis = await this.listarDisponiveis.execute();
 
-    // Sem ninguem disponivel: lista vazia. O n8n trata como escalonamento
-    // para NEEDS_HUMAN (decisao das proprietarias).
+    // Filtro de exclusao ANTES do ranqueamento: remove as vendedoras cujo
+    // codigoErp foi recusado pela proprietaria (re-sugestao). Comparacao
+    // exata, case-sensitive (os codigos do ERP nao sao normalizados).
+    const candidatas = this.filtrarExcluidas(disponiveis, input.excluir ?? null);
+
+    // Sem ninguem disponivel (ou todas excluidas): lista vazia. O n8n trata
+    // como escalonamento para NEEDS_HUMAN (decisao das proprietarias).
     if (candidatas.length === 0) {
       return [];
     }
@@ -265,6 +272,33 @@ export class SugerirVendedorasUseCase {
       mapa.set(m.vendedoraId, m);
     }
     return mapa;
+  }
+
+  /**
+   * Remove as candidatas cujo codigoErp consta na lista de exclusao.
+   * Comparacao exata e case-sensitive: os codigos do ERP nao sao
+   * normalizados em nenhuma parte do modulo. Itens vazios/nulos na lista
+   * sao ignorados. Lista ausente/vazia nao filtra nada.
+   *
+   * Vendedora sem codigoErp (null) nunca e excluida por este filtro: a
+   * exclusao opera estritamente por codigo informado.
+   */
+  private filtrarExcluidas(
+    candidatas: Vendedora[],
+    excluir: string[] | null,
+  ): Vendedora[] {
+    if (!Array.isArray(excluir) || excluir.length === 0) {
+      return candidatas;
+    }
+    const excluidos = new Set(
+      excluir.filter((c): c is string => typeof c === 'string' && c.length > 0),
+    );
+    if (excluidos.size === 0) {
+      return candidatas;
+    }
+    return candidatas.filter(
+      (c) => !(c.codigoErp != null && excluidos.has(c.codigoErp)),
+    );
   }
 
   private normalizarLimit(limit?: number): number {

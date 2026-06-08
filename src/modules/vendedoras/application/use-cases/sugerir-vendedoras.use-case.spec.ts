@@ -189,6 +189,53 @@ describe('SugerirVendedorasUseCase', () => {
     expect(explicito).toHaveLength(2);
   });
 
+  it('exclui a vendedora cujo codigoErp consta em "excluir" (re-sugestao)', async () => {
+    const recusada = vendedora({ id: 'v-1', codigoErp: 'E1', nome: 'Ana' });
+    const alternativa = vendedora({ id: 'v-2', codigoErp: 'E2', nome: 'Bia' });
+    listarDisponiveis.execute.mockResolvedValue([recusada, alternativa]);
+
+    const resultado = await useCase.execute({ excluir: ['E1'] });
+
+    expect(resultado.map((r) => r.codigoErp)).toEqual(['E2']);
+    expect(resultado.some((r) => r.codigoErp === 'E1')).toBe(false);
+  });
+
+  it('"excluir" ausente ou vazio nao altera o resultado', async () => {
+    const a = vendedora({ id: 'v-1', codigoErp: 'E1', nome: 'Ana' });
+    const b = vendedora({ id: 'v-2', codigoErp: 'E2', nome: 'Bia' });
+    listarDisponiveis.execute.mockResolvedValue([a, b]);
+
+    const semCampo = await useCase.execute({});
+    const listaVazia = await useCase.execute({ excluir: [] });
+
+    const codigos = ['E1', 'E2'];
+    expect(semCampo.map((r) => r.codigoErp).sort()).toEqual(codigos);
+    expect(listaVazia.map((r) => r.codigoErp).sort()).toEqual(codigos);
+  });
+
+  it('exclusao e case-sensitive: codigo com caixa diferente nao filtra', async () => {
+    const a = vendedora({ id: 'v-1', codigoErp: 'E1', nome: 'Ana' });
+    listarDisponiveis.execute.mockResolvedValue([a]);
+
+    const resultado = await useCase.execute({ excluir: ['e1'] });
+
+    // 'e1' != 'E1' (codigos do ERP nao sao normalizados): segue disponivel.
+    expect(resultado.map((r) => r.codigoErp)).toEqual(['E1']);
+  });
+
+  it('retorna lista vazia quando todas as disponiveis sao excluidas', async () => {
+    const a = vendedora({ id: 'v-1', codigoErp: 'E1', nome: 'Ana' });
+    const b = vendedora({ id: 'v-2', codigoErp: 'E2', nome: 'Bia' });
+    listarDisponiveis.execute.mockResolvedValue([a, b]);
+
+    const resultado = await useCase.execute({ excluir: ['E1', 'E2'] });
+
+    expect(resultado).toEqual([]);
+    // Sem candidatas pos-filtro: nao consulta relacionamento nem metricas.
+    expect(vendaRepo.listarVendedoraIdsPorCliente).not.toHaveBeenCalled();
+    expect(metricasRepo.listar).not.toHaveBeenCalled();
+  });
+
   it('nao expoe metricas cruas nem PII de cliente no retorno', async () => {
     const v = vendedora({ id: 'v-1', codigoErp: 'E1', nome: 'Ana' });
     listarDisponiveis.execute.mockResolvedValue([v]);

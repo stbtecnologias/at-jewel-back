@@ -100,6 +100,7 @@ export class VendedorasController {
       especialidade: dto.especialidade ?? null,
       ticketEstimado: dto.ticketEstimado ?? null,
       limit: dto.limit,
+      excluir: dto.excluir ?? null,
     });
   }
 
