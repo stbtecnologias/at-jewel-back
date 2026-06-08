@@ -71,6 +71,19 @@ export const MOTIVACOES_COMPRA: readonly MotivacaoCompra[] = [
   'investimento',
 ] as const;
 
+// Estados NAO-terminais monitorados para SLA pela Sofia (agente gerencial).
+// Cada estado tem um SLA proprio que vive como config no n8n, NAO na API:
+//   - READY_FOR_ROUTING       => SLA de repasse (aguardando roteamento)
+//   - WAITING_OWNER_APPROVAL  => SLA de aprovacao (aguardando proprietaria)
+//   - IN_HUMAN_SERVICE        => SLA de primeiro contato humano
+// TRIAGE_IN_PROGRESS (conversa ainda com a Anastasia) e os estados terminais
+// (NEEDS_HUMAN) NAO entram: nao ha SLA de relogio rodando sobre eles aqui.
+export const ESTADOS_MONITORADOS_SLA: readonly EstadoConversaAgente[] = [
+  'READY_FOR_ROUTING',
+  'WAITING_OWNER_APPROVAL',
+  'IN_HUMAN_SERVICE',
+] as const;
+
 // Maquina de estados da conversa da Anastasia.
 // Transicoes documentadas em S3 - TABELA CLIENTES.MD secao 13.
 export const TRANSICOES_VALIDAS: Readonly<

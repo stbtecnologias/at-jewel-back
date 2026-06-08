@@ -93,6 +93,33 @@ export class ClientePerfil {
     return new ClientePerfil(props);
   }
 
+  /**
+   * View para monitoramento de SLA pela Sofia (agente gerencial via n8n).
+   * Contem APENAS metadados de estado de atendimento — ZERO PII
+   * (sem whatsapp/nome/telefone/email/notas). A API entrega so o estado e o
+   * timestamp da ultima transicao; o calculo do tempo decorrido e a politica
+   * de SLA (horario comercial etc.) vivem no n8n, nao aqui.
+   */
+  toMonitoramentoSla(): {
+    clienteId: string;
+    estadoConversa: EstadoConversaAgente;
+    estadoAtualizadoEm: string | null;
+    urgencia: UrgenciaCompra | null;
+    vendedoraSugeridaCodigo: string | null;
+    vendedoraAprovadaCodigo: string | null;
+  } {
+    return {
+      clienteId: this.clienteId,
+      estadoConversa: this.estadoConversa,
+      estadoAtualizadoEm: this.estadoAtualizadoEm
+        ? this.estadoAtualizadoEm.toISOString()
+        : null,
+      urgencia: this.urgencia,
+      vendedoraSugeridaCodigo: this.vendedoraSugeridaCodigo,
+      vendedoraAprovadaCodigo: this.vendedoraAprovadaCodigo,
+    };
+  }
+
   toPublic(): Record<string, unknown> {
     return {
       clienteId: this.clienteId,

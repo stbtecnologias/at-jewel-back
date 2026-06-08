@@ -25,11 +25,13 @@ import { BuscarClientePorWhatsappUseCase } from '../../../application/use-cases/
 import { BuscarHistoricoClienteUseCase } from '../../../application/use-cases/buscar-historico-cliente.use-case';
 import { CriarClienteUseCase } from '../../../application/use-cases/criar-cliente.use-case';
 import { ListarClientesUseCase } from '../../../application/use-cases/listar-clientes.use-case';
+import { ListarClientesMonitoramentoSlaUseCase } from '../../../application/use-cases/listar-clientes-monitoramento-sla.use-case';
 import { AtualizarPerfilClienteDto } from '../dto/atualizar-perfil-cliente.dto';
 import { CriarClienteDto } from '../dto/criar-cliente.dto';
 import { FiltroClienteDto } from '../dto/filtro-cliente.dto';
 import { HistoricoClienteQueryDto } from '../dto/historico-cliente.dto';
 import { LookupClienteDto } from '../dto/lookup-cliente.dto';
+import { MonitoramentoSlaQueryDto } from '../dto/monitoramento-sla.dto';
 
 // Estrategia de auth por endpoint:
 //  - Endpoints de operacao do agente (lookup, criar, atualizar perfil) =>
@@ -45,6 +47,7 @@ export class ClientesController {
     private readonly listar: ListarClientesUseCase,
     private readonly atualizarPerfil: AtualizarPerfilClienteUseCase,
     private readonly buscarHistorico: BuscarHistoricoClienteUseCase,
+    private readonly monitoramentoSla: ListarClientesMonitoramentoSlaUseCase,
   ) {}
 
   @Get()
@@ -73,6 +76,26 @@ export class ClientesController {
     // View REDUZIDA: esta resposta vai para o contexto do LLM externo via
     // n8n. NAO usar toPublic() aqui (vazaria PII/financeiro/notas internas).
     return cliente.toAgenteContexto();
+  }
+
+  // Monitoramento de SLA da Sofia (agente gerencial via n8n): lista clientes
+  // nos estados de atendimento monitorados, ordenados do mais antigo para o
+  // mais recente. Retorno ZERO-PII (so estado + timestamp + codigos de
+  // vendedora). A API NAO calcula SLA: a politica e o horario comercial vivem
+  // no n8n, que calcula o tempo decorrido a partir de estadoAtualizadoEm.
+  // Mesmo scope de leitura do agente (clientes:read). Throttle consistente
+  // com os demais endpoints do agente (20 req/min/IP) — endpoint de polling,
+  // mitigacao parcial contra abuso caso a API key vaze; a defesa real e o
+  // scope minimo e a expiracao da chave.
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Get('monitoramento-sla')
+  @UseGuards(ApiKeyGuard, ScopesGuard)
+  @RequireScopes('clientes:read')
+  async listarMonitoramentoSla(@Query() query: MonitoramentoSlaQueryDto) {
+    return this.monitoramentoSla.execute({
+      estado: query.estado,
+      limit: query.limit ?? 200,
+    });
   }
 
   @Get(':id')

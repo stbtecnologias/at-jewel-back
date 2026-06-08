@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { ClientePerfil } from '../../../../domain/entities/cliente-perfil.entity';
+import { EstadoConversaAgente } from '../../../../domain/entities/enums';
 import { IClientePerfilRepository } from '../../../../domain/ports/repositories/cliente-perfil-repository.port';
 import { ClientePerfilOrmEntity } from '../entities/cliente-perfil.orm-entity';
 
@@ -20,6 +21,30 @@ export class ClientePerfilRepository implements IClientePerfilRepository {
   async buscarPorWhatsappHash(hash: string): Promise<ClientePerfil | null> {
     const row = await this.repo.findOne({ where: { whatsappHash: hash } });
     return row ? this.toDomain(row) : null;
+  }
+
+  async listarPorEstados(
+    estados: EstadoConversaAgente[],
+    limit: number,
+  ): Promise<ClientePerfil[]> {
+    // Filtro por estado + ordenacao por estado_atualizado_em ASC. Suportado
+    // pelo indice composto idx_perfil_estado_sla (estado_conversa,
+    // estado_atualizado_em) — ver migracao 12. Seleciona apenas as colunas
+    // necessarias para a view de SLA (sem tocar campos cifrados/PII).
+    const rows = await this.repo.find({
+      select: {
+        clienteId: true,
+        estadoConversa: true,
+        estadoAtualizadoEm: true,
+        urgencia: true,
+        vendedoraSugeridaCodigo: true,
+        vendedoraAprovadaCodigo: true,
+      },
+      where: { estadoConversa: In(estados) },
+      order: { estadoAtualizadoEm: 'ASC' },
+      take: limit,
+    });
+    return rows.map((row) => this.toDomain(row));
   }
 
   async atualizar(perfil: ClientePerfil): Promise<ClientePerfil> {
