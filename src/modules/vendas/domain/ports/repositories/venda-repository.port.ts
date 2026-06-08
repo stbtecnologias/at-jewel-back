@@ -15,6 +15,53 @@ export interface FiltroVenda {
   offset?: number;
 }
 
+/**
+ * Resumo agregado de vendas. Calculado via SQL (sem carregar linhas na
+ * memoria). Contem apenas agregados — nenhum dado de PII trafega aqui.
+ */
+export interface ResumoVendas {
+  /** Total de vendas concluidas no recorte (base de receita/ticket). */
+  totalVendas: number;
+  /** Soma de valor_total das vendas concluidas. */
+  receitaTotal: number;
+  /** receitaTotal / totalVendas (0 quando nao ha vendas concluidas). */
+  ticketMedio: number;
+  /** Soma de quantidade dos itens das vendas concluidas. */
+  totalItens: number;
+  /** Contagem de vendas por status (todas, independente de receita). */
+  porStatus: {
+    concluida: number;
+    cancelada: number;
+    pendente: number;
+  };
+}
+
+/**
+ * Item resumido do historico de compras de um cliente. Apenas dados de
+ * venda — nenhuma PII do cliente. `qtdItens` e a contagem de linhas de item.
+ */
+export interface ItemHistoricoCliente {
+  id: string;
+  dataVenda: Date;
+  valorTotal: number;
+  status: StatusVenda;
+  vendedoraId: string | null;
+  qtdItens: number;
+}
+
+/** Resumo do historico de compras de um cliente (apenas vendas concluidas). */
+export interface ResumoHistoricoCliente {
+  totalCompras: number;
+  valorTotal: number;
+  ticketMedio: number;
+  ultimaCompraEm: Date | null;
+}
+
+export interface HistoricoCliente {
+  resumo: ResumoHistoricoCliente;
+  vendas: ItemHistoricoCliente[];
+}
+
 export interface IVendaRepository {
   /**
    * Cria venda + itens + pagamentos em uma unica transacao. O agregado
@@ -55,4 +102,28 @@ export interface IVendaRepository {
    * Vendas canceladas/pendentes ou inativas NAO contam como relacionamento.
    */
   listarVendedoraIdsPorCliente(clienteId: string): Promise<string[]>;
+
+  /**
+   * Big-numbers de vendas para o dashboard. Calcula tudo via SQL agregado
+   * parametrizado (sem carregar as vendas na memoria). Receita, ticket medio
+   * e total de itens consideram apenas vendas CONCLUIDAS e ativas; `porStatus`
+   * conta todas as vendas ativas do recorte por status.
+   *
+   * Filtros opcionais: periodo (dataDe/dataAte), vendedora e status. Quando
+   * `status` e informado, o recorte inteiro (inclusive os agregados de
+   * receita) e limitado aquele status.
+   */
+  resumoAgregado(filtros: FiltroVenda): Promise<ResumoVendas>;
+
+  /**
+   * Historico de compras de um cliente para o dashboard. Retorna a lista de
+   * vendas do cliente (todos os status) ja com a contagem de itens por venda
+   * (sem N+1) e um resumo agregado calculado apenas sobre vendas CONCLUIDAS.
+   * Ordena por data_venda desc. Paginacao opcional afeta apenas a lista; o
+   * resumo cobre todo o historico concluido do cliente.
+   */
+  listarHistoricoPorCliente(
+    clienteId: string,
+    opts?: { limit?: number; offset?: number },
+  ): Promise<HistoricoCliente>;
 }

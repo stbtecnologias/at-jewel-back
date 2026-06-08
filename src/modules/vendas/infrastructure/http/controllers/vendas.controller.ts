@@ -19,6 +19,8 @@ import { ScopesGuard } from '../../../../auth/infrastructure/http/guards/scopes.
 import { BuscarVendaUseCase } from '../../../application/use-cases/buscar-venda.use-case';
 import { ListarVendasUseCase } from '../../../application/use-cases/listar-vendas.use-case';
 import { RegistrarVendaUseCase } from '../../../application/use-cases/registrar-venda.use-case';
+import { ResumoVendasUseCase } from '../../../application/use-cases/resumo-vendas.use-case';
+import { FiltroResumoVendaDto } from '../dto/filtro-resumo-venda.dto';
 import { FiltroVendaDto } from '../dto/filtro-venda.dto';
 import { RegistrarVendaDto } from '../dto/registrar-venda.dto';
 
@@ -34,6 +36,7 @@ export class VendasController {
     private readonly registrar: RegistrarVendaUseCase,
     private readonly listar: ListarVendasUseCase,
     private readonly buscar: BuscarVendaUseCase,
+    private readonly resumo: ResumoVendasUseCase,
   ) {}
 
   @Post()
@@ -87,6 +90,20 @@ export class VendasController {
       offset: filtros.offset,
     });
     return vendas.map((v) => v.toResumo());
+  }
+
+  // Rota ESTATICA declarada antes de GET /:id para nao colidir com o
+  // ParseUUIDPipe (que rejeitaria 'resumo' como UUID invalido).
+  @Get('resumo')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'GERENTE')
+  async resumoVendas(@Query() filtros: FiltroResumoVendaDto) {
+    return this.resumo.execute({
+      dataDe: filtros.dataDe ? new Date(filtros.dataDe) : undefined,
+      dataAte: filtros.dataAte ? new Date(filtros.dataAte) : undefined,
+      vendedoraId: filtros.vendedoraId,
+      status: filtros.status,
+    });
   }
 
   @Get(':id')

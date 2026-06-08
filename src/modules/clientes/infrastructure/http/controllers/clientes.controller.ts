@@ -22,11 +22,13 @@ import { ScopesGuard } from '../../../../auth/infrastructure/http/guards/scopes.
 import { AtualizarPerfilClienteUseCase } from '../../../application/use-cases/atualizar-perfil-cliente.use-case';
 import { BuscarClienteUseCase } from '../../../application/use-cases/buscar-cliente.use-case';
 import { BuscarClientePorWhatsappUseCase } from '../../../application/use-cases/buscar-cliente-por-whatsapp.use-case';
+import { BuscarHistoricoClienteUseCase } from '../../../application/use-cases/buscar-historico-cliente.use-case';
 import { CriarClienteUseCase } from '../../../application/use-cases/criar-cliente.use-case';
 import { ListarClientesUseCase } from '../../../application/use-cases/listar-clientes.use-case';
 import { AtualizarPerfilClienteDto } from '../dto/atualizar-perfil-cliente.dto';
 import { CriarClienteDto } from '../dto/criar-cliente.dto';
 import { FiltroClienteDto } from '../dto/filtro-cliente.dto';
+import { HistoricoClienteQueryDto } from '../dto/historico-cliente.dto';
 import { LookupClienteDto } from '../dto/lookup-cliente.dto';
 
 // Estrategia de auth por endpoint:
@@ -42,6 +44,7 @@ export class ClientesController {
     private readonly buscarPorWhatsapp: BuscarClientePorWhatsappUseCase,
     private readonly listar: ListarClientesUseCase,
     private readonly atualizarPerfil: AtualizarPerfilClienteUseCase,
+    private readonly buscarHistorico: BuscarHistoricoClienteUseCase,
   ) {}
 
   @Get()
@@ -78,6 +81,22 @@ export class ClientesController {
   async buscarPorId(@Param('id', ParseUUIDPipe) id: string) {
     const cliente = await this.buscar.execute(id);
     return cliente.toPublic();
+  }
+
+  // Historico de compras do cliente para o dashboard. Apenas dados de venda
+  // (sem PII; nome do cliente nao se repete aqui). Leitura administrativa:
+  // JWT + ADMIN/GERENTE. VENDEDORA nao acessa o historico financeiro pleno.
+  @Get(':id/historico')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'GERENTE')
+  async historico(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: HistoricoClienteQueryDto,
+  ) {
+    return this.buscarHistorico.execute(id, {
+      limit: query.limit,
+      offset: query.offset,
+    });
   }
 
   @Post()
