@@ -229,4 +229,49 @@ describe('AtualizarPerfilClienteUseCase', () => {
       expect(perfilSalvo.urgencia).toBeNull();
     });
   });
+
+  describe('primeiroContatoEm (parada do relogio de SLA)', () => {
+    it('grava primeiroContatoEm quando informado', async () => {
+      const perfilAtual = makePerfil('IN_HUMAN_SERVICE');
+      perfilRepo.buscarPorClienteId.mockResolvedValue(perfilAtual);
+      perfilRepo.atualizar.mockResolvedValue(perfilAtual);
+      clienteRepo.buscarPorId.mockResolvedValue(makeClienteRetorno(perfilAtual));
+
+      const contato = new Date('2026-01-02T10:00:00Z');
+      await useCase.execute('uuid-cliente', { primeiroContatoEm: contato });
+
+      const perfilSalvo = perfilRepo.atualizar.mock.calls[0][0];
+      expect(perfilSalvo.primeiroContatoEm).toEqual(contato);
+    });
+
+    it('limpa primeiroContatoEm quando recebe null', async () => {
+      const perfilAtual = makePerfil('IN_HUMAN_SERVICE', {
+        primeiroContatoEm: new Date('2026-01-02T10:00:00Z'),
+      } as Partial<ClientePerfil>);
+      perfilRepo.buscarPorClienteId.mockResolvedValue(perfilAtual);
+      perfilRepo.atualizar.mockResolvedValue(perfilAtual);
+      clienteRepo.buscarPorId.mockResolvedValue(makeClienteRetorno(perfilAtual));
+
+      await useCase.execute('uuid-cliente', { primeiroContatoEm: null });
+
+      const perfilSalvo = perfilRepo.atualizar.mock.calls[0][0];
+      expect(perfilSalvo.primeiroContatoEm).toBeNull();
+    });
+
+    it('preserva primeiroContatoEm quando nao informado (undefined)', async () => {
+      const original = new Date('2026-01-02T10:00:00Z');
+      const perfilAtual = makePerfil('IN_HUMAN_SERVICE', {
+        primeiroContatoEm: original,
+      } as Partial<ClientePerfil>);
+      perfilRepo.buscarPorClienteId.mockResolvedValue(perfilAtual);
+      perfilRepo.atualizar.mockResolvedValue(perfilAtual);
+      clienteRepo.buscarPorId.mockResolvedValue(makeClienteRetorno(perfilAtual));
+
+      // Atualiza outro campo, nao mexe no primeiroContatoEm.
+      await useCase.execute('uuid-cliente', { urgencia: 'imediata' });
+
+      const perfilSalvo = perfilRepo.atualizar.mock.calls[0][0];
+      expect(perfilSalvo.primeiroContatoEm).toEqual(original);
+    });
+  });
 });

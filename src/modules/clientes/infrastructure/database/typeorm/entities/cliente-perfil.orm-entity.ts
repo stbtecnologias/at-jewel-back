@@ -134,6 +134,11 @@ export class ClientePerfilOrmEntity {
   })
   motivacaoCompra: MotivacaoCompra | null;
 
+  // Marca o primeiro contato da vendedora apos o handoff. Para o cronometro
+  // do SLA de primeiro contato. NULL = ainda nao contatado. Nao e PII.
+  @Column({ name: 'primeiro_contato_em', type: 'timestamptz', nullable: true })
+  primeiroContatoEm: Date | null;
+
   @CreateDateColumn({ name: 'criado_em', type: 'timestamptz' })
   criadoEm: Date;
 

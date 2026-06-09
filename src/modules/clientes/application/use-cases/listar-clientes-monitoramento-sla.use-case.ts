@@ -20,6 +20,8 @@ export interface MonitoramentoSlaItem {
   urgencia: string | null;
   vendedoraSugeridaCodigo: string | null;
   vendedoraAprovadaCodigo: string | null;
+  // Timestamp do primeiro contato (ISO) ou null se o relogio ainda roda.
+  primeiroContatoEm: string | null;
 }
 
 /**
@@ -29,7 +31,12 @@ export interface MonitoramentoSlaItem {
  *
  * A API NAO calcula SLA nem "minutos no estado": a politica de SLA e o
  * horario comercial vivem no n8n. Aqui so entregamos o estado + o timestamp
- * da ultima transicao. O retorno e ZERO-PII (so metadados de estado).
+ * da ultima transicao + o timestamp do primeiro contato (para a Sofia saber
+ * se o relogio ja parou). O retorno e ZERO-PII (so metadados de estado).
+ *
+ * O repositorio exclui da listagem as linhas em IN_HUMAN_SERVICE que ja tem
+ * primeiro_contato_em preenchido (relogio parado, nao precisam mais ser
+ * monitoradas). Os demais estados nao sao afetados por esse filtro.
  */
 @Injectable()
 export class ListarClientesMonitoramentoSlaUseCase {

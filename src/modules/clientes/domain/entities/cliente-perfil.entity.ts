@@ -28,6 +28,7 @@ export interface ClientePerfilProps {
   tags?: string[];
   scorePerfil?: number | null;
   motivacaoCompra?: MotivacaoCompra | null;
+  primeiroContatoEm?: Date | null;
   criadoEm?: Date;
   atualizadoEm?: Date;
 }
@@ -61,6 +62,10 @@ export class ClientePerfil {
   readonly scorePerfil: number | null;
   readonly motivacaoCompra: MotivacaoCompra | null;
 
+  // Marca quando a vendedora fez o primeiro contato apos o handoff. Para o
+  // cronometro do SLA de primeiro contato. null = ainda nao contatado.
+  readonly primeiroContatoEm: Date | null;
+
   readonly criadoEm: Date | undefined;
   readonly atualizadoEm: Date | undefined;
 
@@ -85,6 +90,7 @@ export class ClientePerfil {
     this.tags = props.tags ?? [];
     this.scorePerfil = props.scorePerfil ?? null;
     this.motivacaoCompra = props.motivacaoCompra ?? null;
+    this.primeiroContatoEm = props.primeiroContatoEm ?? null;
     this.criadoEm = props.criadoEm;
     this.atualizadoEm = props.atualizadoEm;
   }
@@ -107,6 +113,9 @@ export class ClientePerfil {
     urgencia: UrgenciaCompra | null;
     vendedoraSugeridaCodigo: string | null;
     vendedoraAprovadaCodigo: string | null;
+    // Timestamp do primeiro contato da vendedora apos o handoff (para o SLA).
+    // null = relogio ainda rodando. Permite a Sofia saber se deve alertar.
+    primeiroContatoEm: string | null;
   } {
     return {
       clienteId: this.clienteId,
@@ -117,6 +126,9 @@ export class ClientePerfil {
       urgencia: this.urgencia,
       vendedoraSugeridaCodigo: this.vendedoraSugeridaCodigo,
       vendedoraAprovadaCodigo: this.vendedoraAprovadaCodigo,
+      primeiroContatoEm: this.primeiroContatoEm
+        ? this.primeiroContatoEm.toISOString()
+        : null,
     };
   }
 
@@ -141,6 +153,7 @@ export class ClientePerfil {
       tags: this.tags,
       scorePerfil: this.scorePerfil,
       motivacaoCompra: this.motivacaoCompra,
+      primeiroContatoEm: this.primeiroContatoEm,
       criadoEm: this.criadoEm,
       atualizadoEm: this.atualizadoEm,
     };

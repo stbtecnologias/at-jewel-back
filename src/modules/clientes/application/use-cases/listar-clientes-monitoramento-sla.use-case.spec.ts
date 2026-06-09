@@ -20,6 +20,7 @@ function makePerfil(
   clienteId: string,
   estado: EstadoConversaAgente,
   estadoAtualizadoEm: Date,
+  primeiroContatoEm: Date | null = null,
 ): ClientePerfil {
   return ClientePerfil.create({
     clienteId,
@@ -34,6 +35,7 @@ function makePerfil(
     vendedoraAprovadaCodigo: null,
     intencaoCompra: 'anel de noivado',
     notasInternas: 'nota sensivel',
+    primeiroContatoEm,
   });
 }
 
@@ -120,6 +122,7 @@ describe('ListarClientesMonitoramentoSlaUseCase', () => {
         'urgencia',
         'vendedoraSugeridaCodigo',
         'vendedoraAprovadaCodigo',
+        'primeiroContatoEm',
       ].sort(),
     );
 
@@ -158,5 +161,64 @@ describe('ListarClientesMonitoramentoSlaUseCase', () => {
     const [item] = await useCase.execute({ limit: 200 });
 
     expect(item.estadoAtualizadoEm).toBeNull();
+  });
+
+  describe('primeiroContatoEm (parada do relogio de SLA)', () => {
+    it('expoe primeiroContatoEm como ISO quando preenchido', async () => {
+      const perfil = makePerfil(
+        'c-contatado',
+        'IN_HUMAN_SERVICE',
+        new Date('2026-01-01T08:00:00Z'),
+        new Date('2026-01-01T09:30:00Z'),
+      );
+      repo.listarPorEstados.mockResolvedValue([perfil]);
+
+      const [item] = await useCase.execute({ limit: 200 });
+
+      expect(item.primeiroContatoEm).toBe('2026-01-01T09:30:00.000Z');
+    });
+
+    it('primeiroContatoEm e null quando o relogio ainda roda', async () => {
+      const perfil = makePerfil(
+        'c-aguardando',
+        'IN_HUMAN_SERVICE',
+        new Date('2026-01-01T08:00:00Z'),
+        null,
+      );
+      repo.listarPorEstados.mockResolvedValue([perfil]);
+
+      const [item] = await useCase.execute({ limit: 200 });
+
+      expect(item.primeiroContatoEm).toBeNull();
+    });
+
+    // A exclusao das linhas IN_HUMAN_SERVICE ja contatadas e responsabilidade
+    // da query do repositorio (filtro SQL NOT (...)). O use case apenas repassa
+    // o que o repositorio devolve, na ordem em que veio. Aqui garantimos que,
+    // dado o conjunto ja filtrado pelo repo, a Sofia ve os nao-contatados e o
+    // campo de parada do relogio em cada item.
+    it('preserva os nao-contatados e o campo de parada vindos do repositorio', async () => {
+      const semContato = makePerfil(
+        'c-sem-contato',
+        'IN_HUMAN_SERVICE',
+        new Date('2026-01-01T08:00:00Z'),
+        null,
+      );
+      const routing = makePerfil(
+        'c-routing',
+        'READY_FOR_ROUTING',
+        new Date('2026-01-01T07:00:00Z'),
+        null,
+      );
+      repo.listarPorEstados.mockResolvedValue([routing, semContato]);
+
+      const resultado = await useCase.execute({ limit: 200 });
+
+      expect(resultado.map((r) => r.clienteId)).toEqual([
+        'c-routing',
+        'c-sem-contato',
+      ]);
+      expect(resultado.every((r) => r.primeiroContatoEm === null)).toBe(true);
+    });
   });
 });

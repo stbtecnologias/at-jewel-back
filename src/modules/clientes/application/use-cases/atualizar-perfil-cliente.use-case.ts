@@ -37,6 +37,7 @@ export interface AtualizarPerfilInput {
   tags?: string[];
   scorePerfil?: number | null;
   motivacaoCompra?: MotivacaoCompra | null;
+  primeiroContatoEm?: Date | null;
 }
 
 @Injectable()
@@ -130,6 +131,10 @@ export class AtualizarPerfilClienteUseCase {
       scorePerfil:
         input.scorePerfil !== undefined ? input.scorePerfil : perfilAtual.scorePerfil,
       motivacaoCompra: motivacaoNova,
+      primeiroContatoEm:
+        input.primeiroContatoEm !== undefined
+          ? input.primeiroContatoEm
+          : perfilAtual.primeiroContatoEm,
     });
 
     await this.perfilRepo.atualizar(perfilAtualizado);

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { ClientePerfil } from '../../../../domain/entities/cliente-perfil.entity';
 import { EstadoConversaAgente } from '../../../../domain/entities/enums';
 import { IClientePerfilRepository } from '../../../../domain/ports/repositories/cliente-perfil-repository.port';
@@ -31,19 +31,29 @@ export class ClientePerfilRepository implements IClientePerfilRepository {
     // pelo indice composto idx_perfil_estado_sla (estado_conversa,
     // estado_atualizado_em) — ver migracao 12. Seleciona apenas as colunas
     // necessarias para a view de SLA (sem tocar campos cifrados/PII).
-    const rows = await this.repo.find({
-      select: {
-        clienteId: true,
-        estadoConversa: true,
-        estadoAtualizadoEm: true,
-        urgencia: true,
-        vendedoraSugeridaCodigo: true,
-        vendedoraAprovadaCodigo: true,
-      },
-      where: { estadoConversa: In(estados) },
-      order: { estadoAtualizadoEm: 'ASC' },
-      take: limit,
-    });
+    //
+    // Exclusao do relogio parado: linhas em IN_HUMAN_SERVICE que JA tem
+    // primeiro_contato_em preenchido nao precisam mais de monitoramento — a
+    // vendedora ja fez o primeiro contato e o SLA encerrou. Os demais estados
+    // (READY_FOR_ROUTING, WAITING_OWNER_APPROVAL) nao sao afetados.
+    const rows = await this.repo
+      .createQueryBuilder('perfil')
+      .select([
+        'perfil.clienteId',
+        'perfil.estadoConversa',
+        'perfil.estadoAtualizadoEm',
+        'perfil.urgencia',
+        'perfil.vendedoraSugeridaCodigo',
+        'perfil.vendedoraAprovadaCodigo',
+        'perfil.primeiroContatoEm',
+      ])
+      .where('perfil.estadoConversa IN (:...estados)', { estados })
+      .andWhere(
+        "NOT (perfil.estadoConversa = 'IN_HUMAN_SERVICE' AND perfil.primeiroContatoEm IS NOT NULL)",
+      )
+      .orderBy('perfil.estadoAtualizadoEm', 'ASC')
+      .take(limit)
+      .getMany();
     return rows.map((row) => this.toDomain(row));
   }
 
@@ -78,6 +88,7 @@ export class ClientePerfilRepository implements IClientePerfilRepository {
       tags: p.tags ?? [],
       scorePerfil: p.scorePerfil,
       motivacaoCompra: p.motivacaoCompra,
+      primeiroContatoEm: p.primeiroContatoEm,
     };
   }
 
@@ -103,6 +114,7 @@ export class ClientePerfilRepository implements IClientePerfilRepository {
       tags: p.tags ?? [],
       scorePerfil: p.scorePerfil,
       motivacaoCompra: p.motivacaoCompra,
+      primeiroContatoEm: p.primeiroContatoEm,
       criadoEm: p.criadoEm,
       atualizadoEm: p.atualizadoEm,
     });

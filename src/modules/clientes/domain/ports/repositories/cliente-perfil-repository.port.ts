@@ -11,6 +11,10 @@ export interface IClientePerfilRepository {
    * estado_atualizado_em ASC (mais antigo primeiro). Usado pela Sofia para
    * monitoramento de SLA. `limit` limita o tamanho do retorno.
    *
+   * Exclui da listagem as linhas em IN_HUMAN_SERVICE que ja tem
+   * primeiro_contato_em preenchido (SLA de primeiro contato encerrado, nao
+   * precisam mais ser monitoradas). Os demais estados nao sao afetados.
+   *
    * Query suportada pelo indice composto idx_perfil_estado_sla
    * (estado_conversa, estado_atualizado_em) — ver migracao 12.
    */

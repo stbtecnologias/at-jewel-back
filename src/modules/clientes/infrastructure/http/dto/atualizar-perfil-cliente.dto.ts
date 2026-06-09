@@ -109,4 +109,11 @@ export class AtualizarPerfilClienteDto {
   @IsOptional()
   @IsIn([...MOTIVACOES_COMPRA, null] as unknown[])
   motivacaoCompra?: MotivacaoCompra | null;
+
+  // Timestamp do primeiro contato da vendedora apos o handoff. Para o
+  // cronometro do SLA de primeiro contato. null limpa o marcador (volta a
+  // monitorar); ausente nao altera. Nao e PII (so um timestamp operacional).
+  @IsOptional()
+  @IsDateString()
+  primeiroContatoEm?: string | null;
 }

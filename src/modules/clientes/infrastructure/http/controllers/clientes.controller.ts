@@ -168,6 +168,11 @@ export class ClientesController {
       tags: dto.tags,
       scorePerfil: dto.scorePerfil,
       motivacaoCompra: dto.motivacaoCompra,
+      primeiroContatoEm: dto.primeiroContatoEm
+        ? new Date(dto.primeiroContatoEm)
+        : dto.primeiroContatoEm === null
+          ? null
+          : undefined,
     });
     return cliente.toPublic();
   }
