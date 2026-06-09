@@ -25,9 +25,10 @@ import { FiltroVendaDto } from '../dto/filtro-venda.dto';
 import { RegistrarVendaDto } from '../dto/registrar-venda.dto';
 
 // Estrategia de auth por endpoint:
-//  - Escrita (POST) => API Key + scope 'vendas:write'. Sera chamado
-//    pela futura sync do ERP (n8n). TODO: rota dedicada /erp/vendas.
-//  - Leitura administrativa (GET, GET /:id) => JWT + role ADMIN/GERENTE.
+//  - Escrita (POST) => API Key + scope 'vendas:write'. Ingestao manual/generica.
+//    A sync do ERP Safira usa a rota dedicada POST /erp/vendas (ErpController,
+//    SafiraAuthGuard), que reaproveita a validacao de invariantes do dominio.
+//  - Leitura administrativa (GET, GET /:id, GET /resumo) => JWT + role ADMIN/GERENTE.
 //    Faturamento e dado gerencial; pelo principio de menor exposicao,
 //    VENDEDORA NAO recebe acesso a carteira inteira de vendas aqui.
 @Controller('vendas')
