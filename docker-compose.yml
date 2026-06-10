@@ -26,6 +26,10 @@ services:
       context: .
       dockerfile: Dockerfile.dev
     container_name: atjewel_api
+    # Carrega o .env no container (JWT_SECRET, ENCRYPTION_KEY, HASH_SECRET,
+    # CORS_ORIGINS etc.). O bloco environment abaixo sobrescreve/define o resto.
+    env_file:
+      - .env
     environment:
       NODE_ENV: development
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
