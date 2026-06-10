@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { LoggerModule } from 'nestjs-pino';
 import { AuthModule } from './modules/auth/auth.module';
@@ -23,6 +23,7 @@ import { VendaOrmEntity } from './modules/vendas/infrastructure/database/typeorm
 import { ItemVendaOrmEntity } from './modules/vendas/infrastructure/database/typeorm/entities/item-venda.orm-entity';
 import { PagamentoVendaOrmEntity } from './modules/vendas/infrastructure/database/typeorm/entities/pagamento-venda.orm-entity';
 import { GlobalExceptionFilter } from './shared/http/filters/global-exception.filter';
+import { ProxyAwareThrottlerGuard } from './shared/http/guards/proxy-aware-throttler.guard';
 import { buildLoggerOptions } from './shared/logger/logger.module-options';
 import { HealthController } from './health.controller';
 
@@ -79,8 +80,10 @@ import { HealthController } from './health.controller';
   providers: [
     // Filtro global de excecoes — shape consistente, sem vazar stack em prod.
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },
-    // Aplica o ThrottlerGuard a todas as rotas globalmente.
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // Aplica o ThrottlerGuard (ciente de proxy) a todas as rotas globalmente.
+    // Le o IP real do cliente dos headers (cf-connecting-ip / x-forwarded-for),
+    // senao todos os limites valeriam por-IP-do-front (um so para todos).
+    { provide: APP_GUARD, useClass: ProxyAwareThrottlerGuard },
   ],
 })
 export class AppModule {}
