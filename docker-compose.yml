@@ -36,6 +36,9 @@ services:
       SAFIRA_API_KEY: ${SAFIRA_API_KEY}
       PORT: 3000
       TZ: America/Sao_Paulo
+    ports:
+      # Sem nginx: o navegador chama a API direto em http://localhost:3000.
+      - '3000:3000'
     volumes:
       - .:/app
       - /app/node_modules
