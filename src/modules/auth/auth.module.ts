@@ -20,6 +20,7 @@ import { ApiKeysController } from './infrastructure/http/controllers/api-keys.co
 import { JwtStrategy } from './infrastructure/http/strategies/jwt.strategy';
 import { ApiKeyGuard } from './infrastructure/http/guards/api-key.guard';
 import { JwtAuthGuard } from './infrastructure/http/guards/jwt-auth.guard';
+import { JwtOrApiKeyGuard } from './infrastructure/http/guards/jwt-or-api-key.guard';
 import { RolesGuard } from './infrastructure/http/guards/roles.guard';
 import { ScopesGuard } from './infrastructure/http/guards/scopes.guard';
 
@@ -47,11 +48,19 @@ import { ScopesGuard } from './infrastructure/http/guards/scopes.guard';
     JwtStrategy,
     ApiKeyGuard,
     JwtAuthGuard,
+    JwtOrApiKeyGuard,
     RolesGuard,
     ScopesGuard,
     { provide: ADMIN_USER_REPOSITORY, useClass: AdminUserRepository },
     { provide: API_KEY_REPOSITORY, useClass: ApiKeyRepository },
   ],
-  exports: [ApiKeyGuard, JwtAuthGuard, RolesGuard, ScopesGuard, ValidarApiKeyUseCase],
+  exports: [
+    ApiKeyGuard,
+    JwtAuthGuard,
+    JwtOrApiKeyGuard,
+    RolesGuard,
+    ScopesGuard,
+    ValidarApiKeyUseCase,
+  ],
 })
 export class AuthModule {}

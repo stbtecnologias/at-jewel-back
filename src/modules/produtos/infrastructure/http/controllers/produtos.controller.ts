@@ -13,8 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { RequireScopes } from '../../../../auth/infrastructure/http/decorators/scopes.decorator';
-import { ApiKeyGuard } from '../../../../auth/infrastructure/http/guards/api-key.guard';
-import { ScopesGuard } from '../../../../auth/infrastructure/http/guards/scopes.guard';
+import { JwtOrApiKeyGuard } from '../../../../auth/infrastructure/http/guards/jwt-or-api-key.guard';
 import { AtualizarProdutoUseCase } from '../../../application/use-cases/atualizar-produto.use-case';
 import { BuscarProdutoUseCase } from '../../../application/use-cases/buscar-produto.use-case';
 import {
@@ -41,14 +40,14 @@ export class ProdutosController {
   ) {}
 
   @Get()
-  @UseGuards(ApiKeyGuard, ScopesGuard)
+  @UseGuards(JwtOrApiKeyGuard)
   @RequireScopes('produtos:read')
   async listar(@Query() filtros: FiltroProdutoDto) {
     return this.listarProdutos.execute(filtros);
   }
 
   @Get(':id')
-  @UseGuards(ApiKeyGuard, ScopesGuard)
+  @UseGuards(JwtOrApiKeyGuard)
   @RequireScopes('produtos:read')
   async buscar(@Param('id', ParseUUIDPipe) id: string) {
     return this.buscarProduto.execute(id);
@@ -56,7 +55,7 @@ export class ProdutosController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @UseGuards(ApiKeyGuard, ScopesGuard)
+  @UseGuards(JwtOrApiKeyGuard)
   @RequireScopes('produtos:write')
   async criar(@Body() dto: CriarProdutoDto) {
     return this.criarProduto.execute(dtoParaInput(dto));
@@ -65,7 +64,7 @@ export class ProdutosController {
   // Cadastro em LOTE (ate 200 itens), all-or-nothing numa transacao.
   @Post('lote')
   @HttpCode(HttpStatus.CREATED)
-  @UseGuards(ApiKeyGuard, ScopesGuard)
+  @UseGuards(JwtOrApiKeyGuard)
   @RequireScopes('produtos:write')
   async criarLote(@Body() dto: CriarProdutosLoteDto) {
     const produtos = await this.criarProdutosLote.execute(
@@ -75,7 +74,7 @@ export class ProdutosController {
   }
 
   @Patch(':id')
-  @UseGuards(ApiKeyGuard, ScopesGuard)
+  @UseGuards(JwtOrApiKeyGuard)
   @RequireScopes('produtos:write')
   async atualizar(
     @Param('id', ParseUUIDPipe) id: string,
@@ -105,7 +104,7 @@ export class ProdutosController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @UseGuards(ApiKeyGuard, ScopesGuard)
+  @UseGuards(JwtOrApiKeyGuard)
   @RequireScopes('produtos:write')
   async remover(@Param('id', ParseUUIDPipe) id: string) {
     await this.removerProduto.execute(id);
