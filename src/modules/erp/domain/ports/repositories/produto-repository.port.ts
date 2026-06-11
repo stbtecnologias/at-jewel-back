@@ -12,5 +12,7 @@ export interface IProdutoRepository {
   findAll(filtros: FiltroProduto): Promise<Produto[]>;
   findById(id: string): Promise<Produto | null>;
   save(produto: Produto): Promise<Produto>;
+  // Persiste varios produtos numa unica transacao (all-or-nothing).
+  saveMany(produtos: Produto[]): Promise<Produto[]>;
   remover(id: string): Promise<void>;
 }

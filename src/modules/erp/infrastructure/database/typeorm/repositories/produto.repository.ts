@@ -56,6 +56,19 @@ export class ProdutoRepository implements IProdutoRepository {
     return this.toDomain(saved);
   }
 
+  async saveMany(produtos: Produto[]): Promise<Produto[]> {
+    const entities = produtos.map((p) =>
+      this.repo.create({
+        ...this.toOrm(p),
+        ...(p.id ? { id: p.id } : {}),
+      }),
+    );
+    // repo.save com array roda numa transacao (all-or-nothing): se um item
+    // viola constraint (ex.: codigoErp duplicado), o lote inteiro reverte.
+    const saved = await this.repo.save(entities);
+    return saved.map((e) => this.toDomain(e));
+  }
+
   async remover(id: string): Promise<void> {
     await this.repo.delete(id);
   }

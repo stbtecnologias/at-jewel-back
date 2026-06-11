@@ -4,6 +4,7 @@ import { AuthModule } from '../auth/auth.module';
 import { AtualizarProdutoUseCase } from './application/use-cases/atualizar-produto.use-case';
 import { BuscarProdutoUseCase } from './application/use-cases/buscar-produto.use-case';
 import { CriarProdutoUseCase } from './application/use-cases/criar-produto.use-case';
+import { CriarProdutosLoteUseCase } from './application/use-cases/criar-produtos-lote.use-case';
 import { ListarProdutosUseCase } from './application/use-cases/listar-produtos.use-case';
 import { RemoverProdutoUseCase } from './application/use-cases/remover-produto.use-case';
 import { PRODUTO_REPOSITORY } from '../erp/domain/ports/injection-tokens';
@@ -18,6 +19,7 @@ import { ProdutosController } from './infrastructure/http/controllers/produtos.c
     ListarProdutosUseCase,
     BuscarProdutoUseCase,
     CriarProdutoUseCase,
+    CriarProdutosLoteUseCase,
     AtualizarProdutoUseCase,
     RemoverProdutoUseCase,
     { provide: PRODUTO_REPOSITORY, useClass: ProdutoRepository },
