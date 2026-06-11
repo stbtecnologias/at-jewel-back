@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Request } from 'express';
+import { ApiKey } from '../../../domain/entities/api-key.entity';
 import { ValidarApiKeyUseCase } from '../../../application/use-cases/validar-api-key.use-case';
 
 @Injectable()
@@ -30,6 +31,11 @@ export class ApiKeyGuard implements CanActivate {
     if (apiKey.isExpired()) {
       throw new UnauthorizedException('API Key expirada');
     }
+
+    // Popula a request para o ScopesGuard (que roda em seguida) conseguir
+    // ler permissions.scopes. Sem isto, toda rota com @RequireScopes que usa
+    // ApiKeyGuard retornava 403 ("API Key nao validada para esta rota").
+    (request as Request & { apiKey?: ApiKey }).apiKey = apiKey;
 
     return true;
   }

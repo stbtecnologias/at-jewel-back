@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuthModule } from '../auth/auth.module';
 import { AtualizarProdutoUseCase } from './application/use-cases/atualizar-produto.use-case';
 import { BuscarProdutoUseCase } from './application/use-cases/buscar-produto.use-case';
 import { CriarProdutoUseCase } from './application/use-cases/criar-produto.use-case';
@@ -11,7 +12,7 @@ import { ProdutoRepository } from '../erp/infrastructure/database/typeorm/reposi
 import { ProdutosController } from './infrastructure/http/controllers/produtos.controller';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([ProdutoOrmEntity])],
+  imports: [TypeOrmModule.forFeature([ProdutoOrmEntity]), AuthModule],
   controllers: [ProdutosController],
   providers: [
     ListarProdutosUseCase,

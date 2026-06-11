@@ -10,7 +10,11 @@ import {
   Patch,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
+import { RequireScopes } from '../../../../auth/infrastructure/http/decorators/scopes.decorator';
+import { ApiKeyGuard } from '../../../../auth/infrastructure/http/guards/api-key.guard';
+import { ScopesGuard } from '../../../../auth/infrastructure/http/guards/scopes.guard';
 import { AtualizarProdutoUseCase } from '../../../application/use-cases/atualizar-produto.use-case';
 import { BuscarProdutoUseCase } from '../../../application/use-cases/buscar-produto.use-case';
 import { CriarProdutoUseCase } from '../../../application/use-cases/criar-produto.use-case';
@@ -42,6 +46,8 @@ export class ProdutosController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @UseGuards(ApiKeyGuard, ScopesGuard)
+  @RequireScopes('produtos:write')
   async criar(@Body() dto: CriarProdutoDto) {
     return this.criarProduto.execute({
       codigoErp: dto.codigo_erp,
@@ -66,6 +72,8 @@ export class ProdutosController {
   }
 
   @Patch(':id')
+  @UseGuards(ApiKeyGuard, ScopesGuard)
+  @RequireScopes('produtos:write')
   async atualizar(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AtualizarProdutoDto,
@@ -94,6 +102,8 @@ export class ProdutosController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(ApiKeyGuard, ScopesGuard)
+  @RequireScopes('produtos:write')
   async remover(@Param('id', ParseUUIDPipe) id: string) {
     await this.removerProduto.execute(id);
   }
