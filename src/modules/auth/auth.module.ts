@@ -55,6 +55,9 @@ import { ScopesGuard } from './infrastructure/http/guards/scopes.guard';
     { provide: API_KEY_REPOSITORY, useClass: ApiKeyRepository },
   ],
   exports: [
+    // JwtModule exportado para o JwtOrApiKeyGuard resolver o JwtService quando
+    // instanciado no contexto de outro modulo (ex.: ProdutosModule).
+    JwtModule,
     ApiKeyGuard,
     JwtAuthGuard,
     JwtOrApiKeyGuard,
