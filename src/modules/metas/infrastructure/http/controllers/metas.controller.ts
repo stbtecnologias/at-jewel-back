@@ -19,6 +19,7 @@ import { AtualizarMetaUseCase } from '../../../application/use-cases/atualizar-m
 import { BuscarMetaUseCase } from '../../../application/use-cases/buscar-meta.use-case';
 import { CriarMetaUseCase } from '../../../application/use-cases/criar-meta.use-case';
 import { ListarMetasUseCase } from '../../../application/use-cases/listar-metas.use-case';
+import { ProgressoMetaUseCase } from '../../../application/use-cases/progresso-meta.use-case';
 import { RemoverMetaUseCase } from '../../../application/use-cases/remover-meta.use-case';
 import type { TipoMeta } from '../../../domain/entities/enums';
 import { AtualizarMetaDto } from '../dto/atualizar-meta.dto';
@@ -35,6 +36,7 @@ export class MetasController {
     private readonly criarMeta: CriarMetaUseCase,
     private readonly atualizarMeta: AtualizarMetaUseCase,
     private readonly removerMeta: RemoverMetaUseCase,
+    private readonly progressoMeta: ProgressoMetaUseCase,
   ) {}
 
   @Get()
@@ -48,6 +50,13 @@ export class MetasController {
   @Get(':id')
   async buscar(@Param('id', ParseUUIDPipe) id: string) {
     return this.buscarMeta.execute(id);
+  }
+
+  // Progresso da meta (realizado vs alvo) calculado sobre as vendas concluidas
+  // na janela criado_em -> prazo.
+  @Get(':id/progresso')
+  async progresso(@Param('id', ParseUUIDPipe) id: string) {
+    return this.progressoMeta.execute(id);
   }
 
   @Post()
