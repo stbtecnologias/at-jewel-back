@@ -10,6 +10,8 @@ import { ApiKeyOrmEntity } from './modules/auth/infrastructure/database/typeorm/
 import { AgenteEventosModule } from './modules/agente-eventos/agente-eventos.module';
 import { MetasModule } from './modules/metas/metas.module';
 import { MetaOrmEntity } from './modules/metas/infrastructure/database/typeorm/entities/meta.orm-entity';
+import { DefeitosModule } from './modules/defeitos/defeitos.module';
+import { DefeitoOrmEntity } from './modules/defeitos/infrastructure/database/typeorm/entities/defeito.orm-entity';
 import { AgenteEventoOrmEntity } from './modules/agente-eventos/infrastructure/database/typeorm/entities/agente-evento.orm-entity';
 import { ClientesModule } from './modules/clientes/clientes.module';
 import { ClienteOrmEntity } from './modules/clientes/infrastructure/database/typeorm/entities/cliente.orm-entity';
@@ -66,6 +68,7 @@ import { HealthController } from './health.controller';
           PagamentoVendaOrmEntity,
           AgenteEventoOrmEntity,
           MetaOrmEntity,
+          DefeitoOrmEntity,
         ],
         synchronize: false,
         logging: config.get('NODE_ENV') !== 'production',
@@ -79,6 +82,7 @@ import { HealthController } from './health.controller';
     VendasModule,
     AgenteEventosModule,
     MetasModule,
+    DefeitosModule,
   ],
   controllers: [HealthController],
   providers: [
