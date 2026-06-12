@@ -13,6 +13,8 @@ import { MetaOrmEntity } from './modules/metas/infrastructure/database/typeorm/e
 import { DefeitosModule } from './modules/defeitos/defeitos.module';
 import { DefeitoOrmEntity } from './modules/defeitos/infrastructure/database/typeorm/entities/defeito.orm-entity';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { AgentesModule } from './modules/agentes/agentes.module';
+import { ConversaOrmEntity } from './modules/agentes/infrastructure/database/typeorm/entities/conversa.orm-entity';
 import { AgenteEventoOrmEntity } from './modules/agente-eventos/infrastructure/database/typeorm/entities/agente-evento.orm-entity';
 import { ClientesModule } from './modules/clientes/clientes.module';
 import { ClienteOrmEntity } from './modules/clientes/infrastructure/database/typeorm/entities/cliente.orm-entity';
@@ -70,6 +72,7 @@ import { HealthController } from './health.controller';
           AgenteEventoOrmEntity,
           MetaOrmEntity,
           DefeitoOrmEntity,
+          ConversaOrmEntity,
         ],
         synchronize: false,
         logging: config.get('NODE_ENV') !== 'production',
@@ -85,6 +88,7 @@ import { HealthController } from './health.controller';
     MetasModule,
     DefeitosModule,
     AnalyticsModule,
+    AgentesModule,
   ],
   controllers: [HealthController],
   providers: [
