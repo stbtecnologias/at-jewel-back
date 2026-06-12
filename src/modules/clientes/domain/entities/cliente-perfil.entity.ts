@@ -3,6 +3,7 @@ import {
   MotivacaoCompra,
   NivelConhecimento,
   OrigemContato,
+  Sexo,
   TipoCompra,
   UrgenciaCompra,
 } from './enums';
@@ -29,6 +30,8 @@ export interface ClientePerfilProps {
   scorePerfil?: number | null;
   motivacaoCompra?: MotivacaoCompra | null;
   primeiroContatoEm?: Date | null;
+  sexo?: Sexo | null;
+  faixaEtaria?: string | null;
   criadoEm?: Date;
   atualizadoEm?: Date;
 }
@@ -66,6 +69,10 @@ export class ClientePerfil {
   // cronometro do SLA de primeiro contato. null = ainda nao contatado.
   readonly primeiroContatoEm: Date | null;
 
+  // Demografia (para analise agregada). Baixa sensibilidade.
+  readonly sexo: Sexo | null;
+  readonly faixaEtaria: string | null;
+
   readonly criadoEm: Date | undefined;
   readonly atualizadoEm: Date | undefined;
 
@@ -91,6 +98,8 @@ export class ClientePerfil {
     this.scorePerfil = props.scorePerfil ?? null;
     this.motivacaoCompra = props.motivacaoCompra ?? null;
     this.primeiroContatoEm = props.primeiroContatoEm ?? null;
+    this.sexo = props.sexo ?? null;
+    this.faixaEtaria = props.faixaEtaria ?? null;
     this.criadoEm = props.criadoEm;
     this.atualizadoEm = props.atualizadoEm;
   }
@@ -154,6 +163,8 @@ export class ClientePerfil {
       scorePerfil: this.scorePerfil,
       motivacaoCompra: this.motivacaoCompra,
       primeiroContatoEm: this.primeiroContatoEm,
+      sexo: this.sexo,
+      faixaEtaria: this.faixaEtaria,
       criadoEm: this.criadoEm,
       atualizadoEm: this.atualizadoEm,
     };

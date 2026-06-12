@@ -89,6 +89,8 @@ export class ClientePerfilRepository implements IClientePerfilRepository {
       scorePerfil: p.scorePerfil,
       motivacaoCompra: p.motivacaoCompra,
       primeiroContatoEm: p.primeiroContatoEm,
+      sexo: p.sexo,
+      faixaEtaria: p.faixaEtaria,
     };
   }
 
@@ -115,6 +117,8 @@ export class ClientePerfilRepository implements IClientePerfilRepository {
       scorePerfil: p.scorePerfil,
       motivacaoCompra: p.motivacaoCompra,
       primeiroContatoEm: p.primeiroContatoEm,
+      sexo: p.sexo,
+      faixaEtaria: p.faixaEtaria,
       criadoEm: p.criadoEm,
       atualizadoEm: p.atualizadoEm,
     });

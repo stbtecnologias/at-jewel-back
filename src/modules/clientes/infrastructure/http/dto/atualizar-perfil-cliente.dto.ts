@@ -21,6 +21,7 @@ import {
   ESTADOS_CONVERSA,
   MOTIVACOES_COMPRA,
   NIVEIS_CONHECIMENTO,
+  SEXOS,
   TIPOS_COMPRA,
   URGENCIAS,
 } from '../../../domain/entities/enums';
@@ -28,6 +29,7 @@ import type {
   EstadoConversaAgente,
   MotivacaoCompra,
   NivelConhecimento,
+  Sexo,
   TipoCompra,
   UrgenciaCompra,
 } from '../../../domain/entities/enums';
@@ -116,4 +118,14 @@ export class AtualizarPerfilClienteDto {
   @IsOptional()
   @IsDateString()
   primeiroContatoEm?: string | null;
+
+  @IsOptional()
+  @IsIn([...SEXOS, null] as unknown[])
+  sexo?: Sexo | null;
+
+  // Faixa etaria livre (ex.: "25-34"). Limite curto para uso em agregacoes.
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  faixaEtaria?: string | null;
 }

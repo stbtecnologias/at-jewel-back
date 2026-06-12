@@ -133,5 +133,9 @@ function dtoParaInput(dto: CriarProdutoDto): CriarProdutoInput {
     valorVenda: dto.valor_venda,
     observacao: dto.observacao,
     fotoUrl: dto.foto_url,
+    estoqueAtual: dto.estoque_atual,
+    dataEntradaEstoque: dto.data_entrada_estoque
+      ? new Date(dto.data_entrada_estoque)
+      : null,
   };
 }

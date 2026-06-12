@@ -16,6 +16,7 @@ import type {
   MotivacaoCompra,
   NivelConhecimento,
   OrigemContato,
+  Sexo,
   TipoCompra,
   UrgenciaCompra,
 } from '../../../../domain/entities/enums';
@@ -138,6 +139,18 @@ export class ClientePerfilOrmEntity {
   // do SLA de primeiro contato. NULL = ainda nao contatado. Nao e PII.
   @Column({ name: 'primeiro_contato_em', type: 'timestamptz', nullable: true })
   primeiroContatoEm: Date | null;
+
+  // Demografia para analise agregada — baixa sensibilidade, nao cifrada.
+  @Column({
+    type: 'enum',
+    enum: ['M', 'F', 'OUTRO', 'NAO_INFORMADO'],
+    enumName: 'sexo_cliente',
+    nullable: true,
+  })
+  sexo: Sexo | null;
+
+  @Column({ name: 'faixa_etaria', type: 'varchar', length: 20, nullable: true })
+  faixaEtaria: string | null;
 
   @CreateDateColumn({ name: 'criado_em', type: 'timestamptz' })
   criadoEm: Date;

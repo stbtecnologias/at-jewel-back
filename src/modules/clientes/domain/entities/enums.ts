@@ -30,6 +30,9 @@ export type EstadoConversaAgente =
 
 export type MotivacaoCompra = 'uso_proprio' | 'presente' | 'status' | 'investimento';
 
+// Demografia (origem: backend paralelo atp). Usada na analise demografica.
+export type Sexo = 'M' | 'F' | 'OUTRO' | 'NAO_INFORMADO';
+
 // Listas iteraveis (uteis em validadores e DTOs)
 export const TIPOS_PESSOA: readonly TipoPessoa[] = ['fisica', 'juridica'] as const;
 export const TABELAS_PRECO: readonly TabelaPreco[] = [
@@ -70,6 +73,7 @@ export const MOTIVACOES_COMPRA: readonly MotivacaoCompra[] = [
   'status',
   'investimento',
 ] as const;
+export const SEXOS: readonly Sexo[] = ['M', 'F', 'OUTRO', 'NAO_INFORMADO'] as const;
 
 // Estados NAO-terminais monitorados para SLA pela Sofia (agente gerencial).
 // Cada estado tem um SLA proprio que vive como config no n8n, NAO na API:

@@ -94,6 +94,8 @@ export class ProdutoRepository implements IProdutoRepository {
       observacao: p.observacao,
       fotoUrl: p.fotoUrl,
       ativo: p.ativo,
+      estoqueAtual: p.estoqueAtual ?? 0,
+      dataEntradaEstoque: p.dataEntradaEstoque,
     };
   }
 
@@ -119,6 +121,8 @@ export class ProdutoRepository implements IProdutoRepository {
       observacao: o.observacao,
       fotoUrl: o.fotoUrl,
       ativo: o.ativo,
+      estoqueAtual: o.estoqueAtual ?? 0,
+      dataEntradaEstoque: o.dataEntradaEstoque,
       criadoEm: o.criadoEm,
       atualizadoEm: o.atualizadoEm,
     });

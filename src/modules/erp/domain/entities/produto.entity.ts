@@ -19,6 +19,8 @@ export interface ProdutoProps {
   observacao?: string | null;
   fotoUrl?: string | null;
   ativo: boolean;
+  estoqueAtual?: number | null;
+  dataEntradaEstoque?: Date | null;
   criadoEm?: Date;
   atualizadoEm?: Date;
 }
@@ -44,6 +46,8 @@ export class Produto {
   readonly observacao: string | null;
   readonly fotoUrl: string | null;
   readonly ativo: boolean;
+  readonly estoqueAtual: number;
+  readonly dataEntradaEstoque: Date | null;
   readonly criadoEm: Date | undefined;
   readonly atualizadoEm: Date | undefined;
 
@@ -68,6 +72,8 @@ export class Produto {
     this.observacao = props.observacao ?? null;
     this.fotoUrl = props.fotoUrl ?? null;
     this.ativo = props.ativo;
+    this.estoqueAtual = props.estoqueAtual ?? 0;
+    this.dataEntradaEstoque = props.dataEntradaEstoque ?? null;
     this.criadoEm = props.criadoEm;
     this.atualizadoEm = props.atualizadoEm;
   }

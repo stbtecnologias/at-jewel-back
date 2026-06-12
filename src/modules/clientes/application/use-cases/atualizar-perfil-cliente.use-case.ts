@@ -10,6 +10,7 @@ import {
   EstadoConversaAgente,
   MotivacaoCompra,
   NivelConhecimento,
+  Sexo,
   TipoCompra,
   UrgenciaCompra,
   transicaoEhValida,
@@ -38,6 +39,8 @@ export interface AtualizarPerfilInput {
   scorePerfil?: number | null;
   motivacaoCompra?: MotivacaoCompra | null;
   primeiroContatoEm?: Date | null;
+  sexo?: Sexo | null;
+  faixaEtaria?: string | null;
 }
 
 @Injectable()
@@ -135,6 +138,9 @@ export class AtualizarPerfilClienteUseCase {
         input.primeiroContatoEm !== undefined
           ? input.primeiroContatoEm
           : perfilAtual.primeiroContatoEm,
+      sexo: input.sexo !== undefined ? input.sexo : perfilAtual.sexo,
+      faixaEtaria:
+        input.faixaEtaria !== undefined ? input.faixaEtaria : perfilAtual.faixaEtaria,
     });
 
     await this.perfilRepo.atualizar(perfilAtualizado);

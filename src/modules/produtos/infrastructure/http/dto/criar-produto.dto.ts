@@ -1,4 +1,6 @@
 import {
+  IsInt,
+  IsISO8601,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -81,4 +83,13 @@ export class CriarProdutoDto {
   @IsOptional()
   @IsString()
   foto_url?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  estoque_atual?: number;
+
+  @IsOptional()
+  @IsISO8601()
+  data_entrada_estoque?: string;
 }

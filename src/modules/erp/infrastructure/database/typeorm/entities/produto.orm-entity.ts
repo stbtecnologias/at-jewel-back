@@ -68,6 +68,14 @@ export class ProdutoOrmEntity {
   @Column({ name: 'ativo', type: 'boolean', default: true })
   ativo: boolean;
 
+  // Snapshot de estoque (fonte da verdade no ERP). Usado pelos KPIs de
+  // inventario/giro sem precisar consultar o Safira.
+  @Column({ name: 'estoque_atual', type: 'int', default: 0 })
+  estoqueAtual: number;
+
+  @Column({ name: 'data_entrada_estoque', type: 'timestamptz', nullable: true })
+  dataEntradaEstoque: Date | null;
+
   @CreateDateColumn({ name: 'criado_em', type: 'timestamptz' })
   criadoEm: Date;
 
