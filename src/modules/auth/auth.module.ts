@@ -6,6 +6,9 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { LoginAdminUseCase } from './application/use-cases/login-admin.use-case';
 import { RefreshTokenUseCase } from './application/use-cases/refresh-token.use-case';
+import { BuscarPerfilUseCase } from './application/use-cases/buscar-perfil.use-case';
+import { AtualizarNomeUseCase } from './application/use-cases/atualizar-nome.use-case';
+import { AlterarSenhaUseCase } from './application/use-cases/alterar-senha.use-case';
 import { GerarApiKeyUseCase } from './application/use-cases/gerar-api-key.use-case';
 import { RevogarApiKeyUseCase } from './application/use-cases/revogar-api-key.use-case';
 import { ListarApiKeysUseCase } from './application/use-cases/listar-api-keys.use-case';
@@ -41,6 +44,9 @@ import { ScopesGuard } from './infrastructure/http/guards/scopes.guard';
   providers: [
     LoginAdminUseCase,
     RefreshTokenUseCase,
+    BuscarPerfilUseCase,
+    AtualizarNomeUseCase,
+    AlterarSenhaUseCase,
     GerarApiKeyUseCase,
     RevogarApiKeyUseCase,
     ListarApiKeysUseCase,

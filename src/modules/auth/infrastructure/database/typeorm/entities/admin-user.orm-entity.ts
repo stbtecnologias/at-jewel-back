@@ -9,6 +9,9 @@ export class AdminUserOrmEntity {
   @Column({ type: 'varchar', length: 255, unique: true })
   email: string;
 
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  nome: string | null;
+
   @Column({ name: 'password_hash', type: 'varchar', length: 255 })
   passwordHash: string;
 

@@ -39,6 +39,14 @@ export class AdminUserRepository implements IAdminUserRepository {
     });
   }
 
+  async atualizarNome(id: string, nome: string): Promise<void> {
+    await this.repo.update(id, { nome });
+  }
+
+  async atualizarSenha(id: string, passwordHash: string): Promise<void> {
+    await this.repo.update(id, { passwordHash });
+  }
+
   private toDomain(row: AdminUserOrmEntity): AdminUser {
     return new AdminUser(
       row.id,
@@ -48,6 +56,7 @@ export class AdminUserRepository implements IAdminUserRepository {
       row.refreshTokenExpiresAt,
       row.createdAt,
       row.role,
+      row.nome,
     );
   }
 }

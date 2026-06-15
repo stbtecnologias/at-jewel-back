@@ -11,5 +11,6 @@ export class AdminUser {
     public refreshTokenExpiresAt: Date | null,
     public readonly createdAt: Date,
     public readonly role: AdminRole = 'ADMIN',
+    public readonly nome: string | null = null,
   ) {}
 }

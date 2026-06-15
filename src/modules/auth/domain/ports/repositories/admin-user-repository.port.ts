@@ -13,4 +13,6 @@ export interface IAdminUserRepository {
     hash: string | null,
     expiresAt: Date | null,
   ): Promise<void>;
+  atualizarNome(id: string, nome: string): Promise<void>;
+  atualizarSenha(id: string, passwordHash: string): Promise<void>;
 }

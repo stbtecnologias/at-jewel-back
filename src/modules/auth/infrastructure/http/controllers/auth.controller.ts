@@ -1,15 +1,35 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Patch,
+  Post,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import { AlterarSenhaUseCase } from '../../../application/use-cases/alterar-senha.use-case';
+import { AtualizarNomeUseCase } from '../../../application/use-cases/atualizar-nome.use-case';
+import { BuscarPerfilUseCase } from '../../../application/use-cases/buscar-perfil.use-case';
 import { LoginAdminUseCase } from '../../../application/use-cases/login-admin.use-case';
 import { RefreshTokenUseCase } from '../../../application/use-cases/refresh-token.use-case';
+import { AlterarSenhaDto } from '../dto/alterar-senha.dto';
+import { AtualizarNomeDto } from '../dto/atualizar-nome.dto';
 import { LoginDto } from '../dto/login.dto';
 import { RefreshTokenDto } from '../dto/refresh-token.dto';
+import { JwtAuthGuard } from '../guards/jwt-auth.guard';
+import { JwtPayload } from '../strategies/jwt.strategy';
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly loginAdmin: LoginAdminUseCase,
     private readonly refreshToken: RefreshTokenUseCase,
+    private readonly buscarPerfil: BuscarPerfilUseCase,
+    private readonly atualizarNome: AtualizarNomeUseCase,
+    private readonly alterarSenha: AlterarSenhaUseCase,
   ) {}
 
   // Throttle agressivo: 5 tentativas por 15 minutos por IP.
@@ -30,5 +50,26 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   refresh(@Body() dto: RefreshTokenDto) {
     return this.refreshToken.execute(dto.refreshToken);
+  }
+
+  // --- Perfil do usuario autenticado (tela de configuracoes) ---
+
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  me(@Request() req: { user: JwtPayload }) {
+    return this.buscarPerfil.execute(req.user.sub);
+  }
+
+  @Patch('me')
+  @UseGuards(JwtAuthGuard)
+  atualizar(@Request() req: { user: JwtPayload }, @Body() dto: AtualizarNomeDto) {
+    return this.atualizarNome.execute(req.user.sub, dto.nome);
+  }
+
+  @Post('senha')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(JwtAuthGuard)
+  async senha(@Request() req: { user: JwtPayload }, @Body() dto: AlterarSenhaDto) {
+    await this.alterarSenha.execute(req.user.sub, dto.senha_atual, dto.nova_senha);
   }
 }
