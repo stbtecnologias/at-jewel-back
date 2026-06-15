@@ -6,6 +6,28 @@ export interface FiltroProduto {
   ativo?: boolean;
 }
 
+// Valores distintos para preencher filtros na UI.
+export interface FacetasProduto {
+  fornecedores: string[];
+  categorias: string[];
+  familias: string[];
+}
+
+export interface ProdutoAlerta {
+  id: string;
+  nome: string;
+  categoria: string;
+  familia: string;
+  fornecedor: string | null;
+  estoqueAtual: number;
+  diasEmEstoque: number | null;
+}
+
+export interface AlertasEstoque {
+  estoqueBaixo: ProdutoAlerta[];
+  giroLento: ProdutoAlerta[];
+}
+
 export interface IProdutoRepository {
   upsertByCodigoErp(produto: Produto): Promise<Produto>;
   findByCodigoErp(codigoErp: string): Promise<Produto | null>;
@@ -15,4 +37,6 @@ export interface IProdutoRepository {
   // Persiste varios produtos numa unica transacao (all-or-nothing).
   saveMany(produtos: Produto[]): Promise<Produto[]>;
   remover(id: string): Promise<void>;
+  facetas(): Promise<FacetasProduto>;
+  alertasEstoque(limiteBaixo: number, diasGiroLento: number): Promise<AlertasEstoque>;
 }

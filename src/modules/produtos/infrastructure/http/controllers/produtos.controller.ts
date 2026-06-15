@@ -14,8 +14,10 @@ import {
 } from '@nestjs/common';
 import { RequireScopes } from '../../../../auth/infrastructure/http/decorators/scopes.decorator';
 import { JwtOrApiKeyGuard } from '../../../../auth/infrastructure/http/guards/jwt-or-api-key.guard';
+import { AlertasEstoqueUseCase } from '../../../application/use-cases/alertas-estoque.use-case';
 import { AtualizarProdutoUseCase } from '../../../application/use-cases/atualizar-produto.use-case';
 import { BuscarProdutoUseCase } from '../../../application/use-cases/buscar-produto.use-case';
+import { FacetasProdutosUseCase } from '../../../application/use-cases/facetas-produtos.use-case';
 import {
   CriarProdutoInput,
   CriarProdutoUseCase,
@@ -37,6 +39,8 @@ export class ProdutosController {
     private readonly criarProdutosLote: CriarProdutosLoteUseCase,
     private readonly atualizarProduto: AtualizarProdutoUseCase,
     private readonly removerProduto: RemoverProdutoUseCase,
+    private readonly facetasProdutos: FacetasProdutosUseCase,
+    private readonly alertasEstoque: AlertasEstoqueUseCase,
   ) {}
 
   @Get()
@@ -44,6 +48,28 @@ export class ProdutosController {
   @RequireScopes('produtos:read')
   async listar(@Query() filtros: FiltroProdutoDto) {
     return this.listarProdutos.execute(filtros);
+  }
+
+  // Valores distintos para filtros (declarado antes de :id para nao colidir).
+  @Get('facetas')
+  @UseGuards(JwtOrApiKeyGuard)
+  @RequireScopes('produtos:read')
+  async facetas() {
+    return this.facetasProdutos.execute();
+  }
+
+  // Alertas de estoque baixo + giro lento.
+  @Get('alertas-estoque')
+  @UseGuards(JwtOrApiKeyGuard)
+  @RequireScopes('produtos:read')
+  async alertas(
+    @Query('limite') limite?: string,
+    @Query('dias') dias?: string,
+  ) {
+    return this.alertasEstoque.execute(
+      limite ? Number(limite) : undefined,
+      dias ? Number(dias) : undefined,
+    );
   }
 
   @Get(':id')

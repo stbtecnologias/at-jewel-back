@@ -3,10 +3,15 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, Repository } from 'typeorm';
 import { Produto } from '../../../../domain/entities/produto.entity';
 import {
+  AlertasEstoque,
+  FacetasProduto,
   FiltroProduto,
   IProdutoRepository,
+  ProdutoAlerta,
 } from '../../../../domain/ports/repositories/produto-repository.port';
 import { ProdutoOrmEntity } from '../entities/produto.orm-entity';
+
+const NOME_PRODUTO = `COALESCE(NULLIF(descricao_etiqueta, ''), codigo_erp, categoria || ' ' || familia, LEFT(id::text, 8))`;
 
 @Injectable()
 export class ProdutoRepository implements IProdutoRepository {
@@ -71,6 +76,60 @@ export class ProdutoRepository implements IProdutoRepository {
 
   async remover(id: string): Promise<void> {
     await this.repo.delete(id);
+  }
+
+  async facetas(): Promise<FacetasProduto> {
+    const [fornecedores, categorias, familias] = await Promise.all([
+      this.repo.manager.query<{ v: string }[]>(
+        `SELECT DISTINCT referencia_fornecedor AS v FROM produtos
+         WHERE referencia_fornecedor IS NOT NULL AND referencia_fornecedor <> '' ORDER BY 1`,
+      ),
+      this.repo.manager.query<{ v: string }[]>(
+        `SELECT DISTINCT categoria AS v FROM produtos WHERE categoria <> '' ORDER BY 1`,
+      ),
+      this.repo.manager.query<{ v: string }[]>(
+        `SELECT DISTINCT familia AS v FROM produtos WHERE familia <> '' ORDER BY 1`,
+      ),
+    ]);
+    return {
+      fornecedores: fornecedores.map((r) => r.v),
+      categorias: categorias.map((r) => r.v),
+      familias: familias.map((r) => r.v),
+    };
+  }
+
+  async alertasEstoque(limiteBaixo: number, diasGiroLento: number): Promise<AlertasEstoque> {
+    const [estoqueBaixo, giroLento] = await Promise.all([
+      this.repo.manager.query<ProdutoAlerta[]>(
+        `
+        SELECT id, ${NOME_PRODUTO} AS nome, categoria, familia,
+               NULLIF(referencia_fornecedor, '') AS fornecedor,
+               estoque_atual AS "estoqueAtual",
+               NULL::int AS "diasEmEstoque"
+        FROM produtos
+        WHERE ativo = true AND estoque_atual <= $1
+        ORDER BY estoque_atual ASC
+        LIMIT 50
+        `,
+        [limiteBaixo],
+      ),
+      this.repo.manager.query<ProdutoAlerta[]>(
+        `
+        SELECT id, ${NOME_PRODUTO} AS nome, categoria, familia,
+               NULLIF(referencia_fornecedor, '') AS fornecedor,
+               estoque_atual AS "estoqueAtual",
+               EXTRACT(DAY FROM (now() - data_entrada_estoque))::int AS "diasEmEstoque"
+        FROM produtos
+        WHERE ativo = true AND estoque_atual > 0
+          AND data_entrada_estoque IS NOT NULL
+          AND data_entrada_estoque <= now() - ($1::int * interval '1 day')
+        ORDER BY data_entrada_estoque ASC
+        LIMIT 50
+        `,
+        [diasGiroLento],
+      ),
+    ]);
+    return { estoqueBaixo, giroLento };
   }
 
   private toOrm(p: Produto): Partial<ProdutoOrmEntity> {
