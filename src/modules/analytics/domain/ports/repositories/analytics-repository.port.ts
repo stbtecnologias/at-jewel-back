@@ -66,8 +66,23 @@ export interface LinhaVendaCsv {
   formasPagamento: string;
 }
 
+export interface ComportamentoData {
+  nome: string;
+  de: string; // ISO date
+  ate: string; // ISO date
+  totalCompras: number;
+  valorTotal: number;
+}
+
+export interface JanelaData {
+  nome: string;
+  de: Date;
+  ate: Date;
+}
+
 export interface IAnalyticsRepository {
   receitaMensal(meses: number): Promise<ReceitaMensal>;
+  comportamentoDatas(janelas: JanelaData[]): Promise<ComportamentoData[]>;
   topProdutos(limit: number): Promise<TopProduto[]>;
   giroEstoquePorFornecedor(): Promise<GiroFornecedor[]>;
   distribuicaoPagamento(): Promise<DistribuicaoPagamento[]>;

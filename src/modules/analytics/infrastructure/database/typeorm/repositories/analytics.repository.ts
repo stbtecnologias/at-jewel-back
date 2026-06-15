@@ -2,12 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import type {
+  ComportamentoData,
   Demografia,
   DistribuicaoOrigem,
   DistribuicaoPagamento,
   EstatisticasInventario,
   GiroFornecedor,
   IAnalyticsRepository,
+  JanelaData,
   LinhaVendaCsv,
   ReceitaMensal,
   ReceitaMensalItem,
@@ -60,6 +62,33 @@ export class AnalyticsRepository implements IAnalyticsRepository {
     );
 
     return { meses: linhas, meta: metaRows[0]?.meta ?? 0 };
+  }
+
+  async comportamentoDatas(janelas: JanelaData[]): Promise<ComportamentoData[]> {
+    // Uma agregacao por janela (poucas datas — custo baixo). Conta vendas
+    // concluidas no periodo que antecede cada data comemorativa.
+    return Promise.all(
+      janelas.map(async (j) => {
+        const rows = await this.ds.query<
+          { totalCompras: number; valorTotal: number }[]
+        >(
+          `
+          SELECT COUNT(*)::int AS "totalCompras",
+                 COALESCE(SUM(valor_total), 0)::float AS "valorTotal"
+          FROM vendas
+          WHERE status = 'concluida' AND data_venda BETWEEN $1 AND $2
+          `,
+          [j.de, j.ate],
+        );
+        return {
+          nome: j.nome,
+          de: j.de.toISOString().slice(0, 10),
+          ate: j.ate.toISOString().slice(0, 10),
+          totalCompras: rows[0]?.totalCompras ?? 0,
+          valorTotal: rows[0]?.valorTotal ?? 0,
+        };
+      }),
+    );
   }
 
   async topProdutos(limit: number): Promise<TopProduto[]> {

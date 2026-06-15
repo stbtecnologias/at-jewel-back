@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { ComportamentoDatasUseCase } from './application/use-cases/comportamento-datas.use-case';
 import { DemografiaUseCase } from './application/use-cases/demografia.use-case';
 import { DistribuicaoOrigemUseCase } from './application/use-cases/distribuicao-origem.use-case';
 import { DistribuicaoPagamentoUseCase } from './application/use-cases/distribuicao-pagamento.use-case';
@@ -23,6 +24,7 @@ import { AnalyticsController } from './infrastructure/http/controllers/analytics
     EstatisticasInventarioUseCase,
     DistribuicaoOrigemUseCase,
     DemografiaUseCase,
+    ComportamentoDatasUseCase,
     ExportarVendasCsvUseCase,
     { provide: ANALYTICS_REPOSITORY, useClass: AnalyticsRepository },
   ],

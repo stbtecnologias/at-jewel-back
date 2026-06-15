@@ -2,6 +2,7 @@ import { Controller, Get, Header, Query, UseGuards } from '@nestjs/common';
 import { Roles } from '../../../../auth/infrastructure/http/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../../../auth/infrastructure/http/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../../auth/infrastructure/http/guards/roles.guard';
+import { ComportamentoDatasUseCase } from '../../../application/use-cases/comportamento-datas.use-case';
 import { DemografiaUseCase } from '../../../application/use-cases/demografia.use-case';
 import { DistribuicaoOrigemUseCase } from '../../../application/use-cases/distribuicao-origem.use-case';
 import { DistribuicaoPagamentoUseCase } from '../../../application/use-cases/distribuicao-pagamento.use-case';
@@ -25,6 +26,7 @@ export class AnalyticsController {
     private readonly estatisticasInventario: EstatisticasInventarioUseCase,
     private readonly distribuicaoOrigem: DistribuicaoOrigemUseCase,
     private readonly demografia: DemografiaUseCase,
+    private readonly comportamentoDatas: ComportamentoDatasUseCase,
     private readonly exportarVendasCsv: ExportarVendasCsvUseCase,
   ) {}
 
@@ -61,6 +63,14 @@ export class AnalyticsController {
   @Get('demografia')
   async demo() {
     return this.demografia.execute();
+  }
+
+  // Comportamento de compra em torno de datas comemorativas (janela de 15 dias).
+  @Get('datas-comemorativas')
+  async datas(@Query('ano') ano?: string) {
+    const anoNum = Number(ano);
+    const alvo = Number.isInteger(anoNum) && anoNum > 2000 ? anoNum : new Date().getFullYear();
+    return this.comportamentoDatas.execute(alvo);
   }
 
   @Get('vendas.csv')
