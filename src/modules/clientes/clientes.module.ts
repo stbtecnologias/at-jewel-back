@@ -7,6 +7,7 @@ import { BuscarClienteUseCase } from './application/use-cases/buscar-cliente.use
 import { BuscarClientePorWhatsappUseCase } from './application/use-cases/buscar-cliente-por-whatsapp.use-case';
 import { BuscarHistoricoClienteUseCase } from './application/use-cases/buscar-historico-cliente.use-case';
 import { CriarClienteUseCase } from './application/use-cases/criar-cliente.use-case';
+import { DistribuicaoTiersUseCase } from './application/use-cases/distribuicao-tiers.use-case';
 import { ListarClientesUseCase } from './application/use-cases/listar-clientes.use-case';
 import { ListarClientesMonitoramentoSlaUseCase } from './application/use-cases/listar-clientes-monitoramento-sla.use-case';
 import {
@@ -35,6 +36,7 @@ import { ClientesController } from './infrastructure/http/controllers/clientes.c
     AtualizarPerfilClienteUseCase,
     BuscarHistoricoClienteUseCase,
     ListarClientesMonitoramentoSlaUseCase,
+    DistribuicaoTiersUseCase,
     { provide: CLIENTE_REPOSITORY, useClass: ClienteRepository },
     { provide: CLIENTE_PERFIL_REPOSITORY, useClass: ClientePerfilRepository },
   ],

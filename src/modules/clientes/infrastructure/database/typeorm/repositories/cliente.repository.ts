@@ -6,6 +6,7 @@ import { ClientePerfil } from '../../../../domain/entities/cliente-perfil.entity
 import {
   FiltroCliente,
   IClienteRepository,
+  TierCliente,
 } from '../../../../domain/ports/repositories/cliente-repository.port';
 import { ClienteOrmEntity } from '../entities/cliente.orm-entity';
 import { ClientePerfilOrmEntity } from '../entities/cliente-perfil.orm-entity';
@@ -18,6 +19,37 @@ export class ClienteRepository implements IClienteRepository {
     @InjectDataSource()
     private readonly dataSource: DataSource,
   ) {}
+
+  async distribuicaoTiers(): Promise<TierCliente[]> {
+    // Faixas por nº de compras concluidas. Agregado, sem PII.
+    const rows = await this.dataSource.query<{ tier: string; ordem: number; total: number }[]>(
+      `
+      WITH compras AS (
+        SELECT c.id, COUNT(v.id) AS n
+        FROM clientes c
+        LEFT JOIN vendas v ON v.cliente_id = c.id AND v.status = 'concluida'
+        GROUP BY c.id
+      )
+      SELECT t.tier, t.ordem, COUNT(*)::int AS total
+      FROM compras
+      CROSS JOIN LATERAL (
+        SELECT CASE
+          WHEN n = 0 THEN 'Sem compras'
+          WHEN n <= 2 THEN 'Bronze'
+          WHEN n <= 5 THEN 'Prata'
+          ELSE 'Ouro' END AS tier,
+          CASE
+          WHEN n = 0 THEN 0
+          WHEN n <= 2 THEN 1
+          WHEN n <= 5 THEN 2
+          ELSE 3 END AS ordem
+      ) t
+      GROUP BY t.tier, t.ordem
+      ORDER BY t.ordem
+      `,
+    );
+    return rows.map((r) => ({ tier: r.tier, total: r.total }));
+  }
 
   async criarComPerfil(cliente: Cliente, perfil: ClientePerfil): Promise<Cliente> {
     return this.dataSource.transaction(async (manager) => {

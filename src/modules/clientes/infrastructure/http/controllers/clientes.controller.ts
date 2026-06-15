@@ -24,6 +24,7 @@ import { BuscarClienteUseCase } from '../../../application/use-cases/buscar-clie
 import { BuscarClientePorWhatsappUseCase } from '../../../application/use-cases/buscar-cliente-por-whatsapp.use-case';
 import { BuscarHistoricoClienteUseCase } from '../../../application/use-cases/buscar-historico-cliente.use-case';
 import { CriarClienteUseCase } from '../../../application/use-cases/criar-cliente.use-case';
+import { DistribuicaoTiersUseCase } from '../../../application/use-cases/distribuicao-tiers.use-case';
 import { ListarClientesUseCase } from '../../../application/use-cases/listar-clientes.use-case';
 import { ListarClientesMonitoramentoSlaUseCase } from '../../../application/use-cases/listar-clientes-monitoramento-sla.use-case';
 import { AtualizarPerfilClienteDto } from '../dto/atualizar-perfil-cliente.dto';
@@ -48,7 +49,16 @@ export class ClientesController {
     private readonly atualizarPerfil: AtualizarPerfilClienteUseCase,
     private readonly buscarHistorico: BuscarHistoricoClienteUseCase,
     private readonly monitoramentoSla: ListarClientesMonitoramentoSlaUseCase,
+    private readonly distribuicaoTiers: DistribuicaoTiersUseCase,
   ) {}
+
+  // Distribuicao por faixa de fidelidade (agregado, sem PII). Antes de :id.
+  @Get('tiers')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'GERENTE')
+  async tiers() {
+    return this.distribuicaoTiers.execute();
+  }
 
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)

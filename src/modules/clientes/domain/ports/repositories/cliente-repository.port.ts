@@ -9,7 +9,15 @@ export interface FiltroCliente {
   vendedoraCodigoErp?: string;
 }
 
+export interface TierCliente {
+  tier: string;
+  total: number;
+}
+
 export interface IClienteRepository {
+  // Distribuicao de clientes por faixa de fidelidade (nº de compras concluidas).
+  distribuicaoTiers(): Promise<TierCliente[]>;
+
   /**
    * Cria cliente novo + perfil inicial em uma unica transacao.
    * Usado quando a Anastasia recebe um WhatsApp de numero desconhecido.
