@@ -14,10 +14,12 @@ import { AlterarSenhaUseCase } from '../../../application/use-cases/alterar-senh
 import { AtualizarNomeUseCase } from '../../../application/use-cases/atualizar-nome.use-case';
 import { BuscarPerfilUseCase } from '../../../application/use-cases/buscar-perfil.use-case';
 import { LoginAdminUseCase } from '../../../application/use-cases/login-admin.use-case';
+import { LoginGoogleUseCase } from '../../../application/use-cases/login-google.use-case';
 import { RefreshTokenUseCase } from '../../../application/use-cases/refresh-token.use-case';
 import { AlterarSenhaDto } from '../dto/alterar-senha.dto';
 import { AtualizarNomeDto } from '../dto/atualizar-nome.dto';
 import { LoginDto } from '../dto/login.dto';
+import { LoginGoogleDto } from '../dto/login-google.dto';
 import { RefreshTokenDto } from '../dto/refresh-token.dto';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { JwtPayload } from '../strategies/jwt.strategy';
@@ -26,6 +28,7 @@ import { JwtPayload } from '../strategies/jwt.strategy';
 export class AuthController {
   constructor(
     private readonly loginAdmin: LoginAdminUseCase,
+    private readonly loginGoogle: LoginGoogleUseCase,
     private readonly refreshToken: RefreshTokenUseCase,
     private readonly buscarPerfil: BuscarPerfilUseCase,
     private readonly atualizarNome: AtualizarNomeUseCase,
@@ -41,6 +44,15 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   login(@Body() dto: LoginDto) {
     return this.loginAdmin.execute(dto.email, dto.password);
+  }
+
+  // Login via Google (OIDC): o front envia o ID token; o back valida com a
+  // Google e emite o NOSSO JWT. So contas ja cadastradas como admin entram.
+  @Throttle({ default: { limit: 10, ttl: 900_000 } })
+  @Post('google')
+  @HttpCode(HttpStatus.OK)
+  google(@Body() dto: LoginGoogleDto) {
+    return this.loginGoogle.execute(dto.idToken);
   }
 
   // Refresh tambem rate-limited mas com folga maior — usuario

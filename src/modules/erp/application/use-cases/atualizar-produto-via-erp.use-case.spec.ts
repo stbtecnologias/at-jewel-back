@@ -13,10 +13,10 @@ const mockProduto = Produto.create({
   ativo: true,
 });
 
-const produtoRepo: jest.Mocked<IProdutoRepository> = {
+const produtoRepo = {
   upsertByCodigoErp: jest.fn().mockResolvedValue(mockProduto),
   findByCodigoErp: jest.fn(),
-};
+} as unknown as jest.Mocked<IProdutoRepository>;
 
 const eventoRepo: jest.Mocked<IErpEventoRepository> = {
   jaProcessado: jest.fn(),

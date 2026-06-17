@@ -5,6 +5,7 @@ import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { LoginAdminUseCase } from './application/use-cases/login-admin.use-case';
+import { LoginGoogleUseCase } from './application/use-cases/login-google.use-case';
 import { RefreshTokenUseCase } from './application/use-cases/refresh-token.use-case';
 import { BuscarPerfilUseCase } from './application/use-cases/buscar-perfil.use-case';
 import { AtualizarNomeUseCase } from './application/use-cases/atualizar-nome.use-case';
@@ -13,7 +14,12 @@ import { GerarApiKeyUseCase } from './application/use-cases/gerar-api-key.use-ca
 import { RevogarApiKeyUseCase } from './application/use-cases/revogar-api-key.use-case';
 import { ListarApiKeysUseCase } from './application/use-cases/listar-api-keys.use-case';
 import { ValidarApiKeyUseCase } from './application/use-cases/validar-api-key.use-case';
-import { ADMIN_USER_REPOSITORY, API_KEY_REPOSITORY } from './domain/ports/injection-tokens';
+import {
+  ADMIN_USER_REPOSITORY,
+  API_KEY_REPOSITORY,
+  GOOGLE_TOKEN_VERIFIER,
+} from './domain/ports/injection-tokens';
+import { GoogleTokenVerifier } from './infrastructure/google/google-token-verifier';
 import { AdminUserOrmEntity } from './infrastructure/database/typeorm/entities/admin-user.orm-entity';
 import { ApiKeyOrmEntity } from './infrastructure/database/typeorm/entities/api-key.orm-entity';
 import { AdminUserRepository } from './infrastructure/database/typeorm/repositories/admin-user.repository';
@@ -43,6 +49,7 @@ import { ScopesGuard } from './infrastructure/http/guards/scopes.guard';
   controllers: [AuthController, ApiKeysController],
   providers: [
     LoginAdminUseCase,
+    LoginGoogleUseCase,
     RefreshTokenUseCase,
     BuscarPerfilUseCase,
     AtualizarNomeUseCase,
@@ -59,6 +66,7 @@ import { ScopesGuard } from './infrastructure/http/guards/scopes.guard';
     ScopesGuard,
     { provide: ADMIN_USER_REPOSITORY, useClass: AdminUserRepository },
     { provide: API_KEY_REPOSITORY, useClass: ApiKeyRepository },
+    { provide: GOOGLE_TOKEN_VERIFIER, useClass: GoogleTokenVerifier },
   ],
   exports: [
     // JwtModule exportado para o JwtOrApiKeyGuard resolver o JwtService quando
