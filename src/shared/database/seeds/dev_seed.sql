@@ -34,10 +34,12 @@ INSERT INTO vendedoras (codigo_erp, nome, tipo, status_disponibilidade, especial
   ('SEED-VD03', 'Beatriz Nogueira',   'LOCAL',   'OCUPADA',    ARRAY['pulseiras','prata']),
   ('SEED-VD04', 'Patricia Vasquez',   'EXTERNA', 'DISPONIVEL', ARRAY['alta_joalheria','diamantes']),
   ('SEED-VD05', 'Larissa Coutinho',   'LOCAL',   'DISPONIVEL', ARRAY['presentes','folheados']),
-  ('SEED-VD06', 'Renata Siqueira',    'EXTERNA', 'FERIAS',    ARRAY['investimento','ouro']);
+  ('SEED-VD06', 'Renata Siqueira',    'EXTERNA', 'FERIAS',    ARRAY['investimento','ouro']),
+  ('SEED-VD07', 'Juliana Prado',      'LOCAL',   'DISPONIVEL', ARRAY['aneis','prata']),
+  ('SEED-VD08', 'Carolina Mattos',    'EXTERNA', 'OCUPADA',   ARRAY['colares','diamantes']);
 
 -- ---------------------------------------------------------------------
--- PRODUTOS (45) — variados; alguns com estoque baixo e/ou giro lento
+-- PRODUTOS (120) — variados; alguns com estoque baixo e/ou giro lento
 -- ---------------------------------------------------------------------
 INSERT INTO produtos
   (codigo_erp, categoria, familia, colecao, cor, tipo_pedra, descricao_etiqueta,
@@ -59,15 +61,15 @@ SELECT
   round((200 + random() * 4200)::numeric, 2),
   round((40 + random() * 60)::numeric, 2),
   round((300 + random() * 7700)::numeric, 2),
-  -- estoque: produtos 1..5 ficam baixos (0..2) p/ alertas; restante 3..25
-  CASE WHEN g <= 5 THEN (g - 1) % 3 ELSE 3 + floor(random() * 23)::int END,
+  -- estoque: produtos 1..14 ficam baixos (0..2) p/ alertas; restante 3..25
+  CASE WHEN g <= 14 THEN (g - 1) % 3 ELSE 3 + floor(random() * 23)::int END,
   -- data de entrada: maioria antiga (giro), alguns recentes
   CASE WHEN g % 7 = 0
        THEN now() - (random() * 50 || ' days')::interval          -- recente
        ELSE now() - ((120 + random() * 360) || ' days')::interval  -- antigo (>90d)
   END,
   true
-FROM generate_series(1, 45) AS g;
+FROM generate_series(1, 120) AS g;
 
 -- ---------------------------------------------------------------------
 -- CLIENTES (60) — nome em texto puro; PII criptografada fica NULL
@@ -84,7 +86,7 @@ SELECT
   CASE WHEN g % 12 = 0 THEN 'juridica'::tipo_pessoa ELSE 'fisica'::tipo_pessoa END,
   (ARRAY['varejo','varejo','varejo','atacado','especial','funcionario'])[1 + (g % 6)]::tabela_preco,
   true
-FROM generate_series(1, 60) AS g;
+FROM generate_series(1, 200) AS g;
 
 -- ---------------------------------------------------------------------
 -- PERFIS DE CLIENTE — sexo, faixa etaria, origem (alimentam demografia/origem)
@@ -106,8 +108,8 @@ DO $$
 DECLARE
   ym        text[] := ARRAY['2025-05','2025-06','2025-07','2025-08','2025-09','2025-10',
                             '2025-11','2025-12','2026-01','2026-02','2026-03','2026-04','2026-05','2026-06'];
-  wt        int[]  := ARRAY[ 32,       30,       18,       18,       18,       18,
-                             20,       42,       16,       24,       18,       22,       34,       15 ];
+  wt        int[]  := ARRAY[ 120,      115,      70,       70,       72,       70,
+                             80,       165,      64,       95,       70,       88,       130,      60 ];
   v_seq     int := 0;
   midx      int;
   n_mes     int;
@@ -134,8 +136,8 @@ DECLARE
 BEGIN
   FOR midx IN 1 .. array_length(ym, 1) LOOP
     n_mes := wt[midx];
-    -- mes corrente (2026-06): limita ao dia 14 (hoje=15)
-    dia_max := CASE WHEN ym[midx] = '2026-06' THEN 14 ELSE 27 END;
+    -- mes corrente (2026-06): limita aos dias ja decorridos
+    dia_max := CASE WHEN ym[midx] = '2026-06' THEN 16 ELSE 27 END;
 
     FOR i IN 1 .. n_mes LOOP
       v_seq := v_seq + 1;
@@ -248,7 +250,7 @@ SELECT
   CASE WHEN g % 2 = 0
        THEN (ARRAY['Trocado por novo','Reembolso integral','Reparo realizado em assistencia','Ajuste de tamanho refeito'])[1 + (g % 4)]
        ELSE NULL END
-FROM generate_series(1, 14) AS g
+FROM generate_series(1, 40) AS g
 CROSS JOIN LATERAL (SELECT id FROM produtos ORDER BY random() LIMIT 1) pr;
 
 COMMIT;
