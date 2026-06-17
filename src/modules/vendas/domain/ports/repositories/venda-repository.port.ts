@@ -1,5 +1,5 @@
 import { Venda } from '../../entities/venda.entity';
-import { StatusVenda } from '../../entities/enums';
+import { StatusVenda, FormaPagamento } from '../../entities/enums';
 
 export interface FiltroVenda {
   /** data_venda >= este valor (inclusivo). */
@@ -9,10 +9,42 @@ export interface FiltroVenda {
   clienteId?: string;
   vendedoraId?: string;
   status?: StatusVenda;
+  /** Considera apenas vendas que tenham ao menos um pagamento nesta forma. */
+  formaPagamento?: FormaPagamento;
   /** Paginacao: itens por pagina. */
   limit?: number;
   /** Paginacao: deslocamento. */
   offset?: number;
+}
+
+/**
+ * Read-model achatado para a listagem administrativa de vendas (tabela do
+ * dashboard). Diferente de `Venda.toResumo()`, ja vem enriquecido em SQL com
+ * o nome da vendedora, o produto de maior valor da venda, a contagem de itens
+ * e as formas de pagamento distintas — sem carregar o agregado na memoria nem
+ * incorrer em N+1. Nenhuma PII do cliente trafega (apenas a FK clienteId).
+ */
+export interface VendaResumo {
+  id: string;
+  codigoErp: string | null;
+  clienteId: string | null;
+  vendedoraId: string | null;
+  vendedoraNome: string | null;
+  dataVenda: Date;
+  dataContato: Date | null;
+  valorBruto: number;
+  valorDesconto: number;
+  valorTotal: number;
+  status: StatusVenda;
+  ativo: boolean;
+  /** Nome do item de maior valor_total_item da venda (ou null se sem itens). */
+  produtoPrincipal: string | null;
+  /** Quantidade de linhas de item da venda. */
+  qtdItens: number;
+  /** Formas de pagamento DISTINTAS usadas na venda. */
+  formasPagamento: FormaPagamento[];
+  criadoEm: Date;
+  atualizadoEm: Date;
 }
 
 /**
@@ -88,10 +120,11 @@ export interface IVendaRepository {
   buscarPorCodigoErp(codigoErp: string): Promise<Venda | null>;
 
   /**
-   * Lista vendas (sem agregado) com filtros e paginacao. Ordena por
-   * data_venda desc (mais recentes primeiro).
+   * Lista vendas para a tabela administrativa, ja enriquecidas (read-model
+   * VendaResumo) com nome da vendedora, produto principal, contagem de itens
+   * e formas de pagamento. Filtros e paginacao; ordena por data_venda desc.
    */
-  listar(filtros: FiltroVenda): Promise<Venda[]>;
+  listar(filtros: FiltroVenda): Promise<VendaResumo[]>;
 
   /**
    * Retorna os IDs (UUID) DISTINTOS de vendedoras que tiveram ao menos uma

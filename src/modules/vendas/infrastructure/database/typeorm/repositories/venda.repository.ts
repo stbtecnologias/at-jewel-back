@@ -10,8 +10,9 @@ import {
   IVendaRepository,
   ItemHistoricoCliente,
   ResumoVendas,
+  VendaResumo,
 } from '../../../../domain/ports/repositories/venda-repository.port';
-import type { StatusVenda } from '../../../../domain/entities/enums';
+import type { FormaPagamento, StatusVenda } from '../../../../domain/entities/enums';
 import { ItemVendaOrmEntity } from '../entities/item-venda.orm-entity';
 import { PagamentoVendaOrmEntity } from '../entities/pagamento-venda.orm-entity';
 import { VendaOrmEntity } from '../entities/venda.orm-entity';
@@ -116,32 +117,139 @@ export class VendaRepository implements IVendaRepository {
     return row ? this.toDomain(row) : null;
   }
 
-  async listar(filtros: FiltroVenda): Promise<Venda[]> {
-    const qb = this.repo.createQueryBuilder('v');
+  async listar(filtros: FiltroVenda): Promise<VendaResumo[]> {
+    // Read-model achatado montado inteiramente em SQL. Os subSELECTs laterais
+    // resolvem produto principal (item de maior valor), contagem de itens e
+    // formas de pagamento distintas sem N+1. Parametros sao posicionais ($n)
+    // para evitar qualquer injecao. O nome do produto reusa a mesma cascata de
+    // COALESCE do analytics (descricao_etiqueta -> codigo_erp -> categoria+familia).
+    const conds: string[] = [];
+    const params: unknown[] = [];
 
     if (filtros.dataDe !== undefined) {
-      qb.andWhere('v.data_venda >= :dataDe', { dataDe: filtros.dataDe });
+      params.push(filtros.dataDe);
+      conds.push(`v.data_venda >= $${params.length}`);
     }
     if (filtros.dataAte !== undefined) {
-      qb.andWhere('v.data_venda <= :dataAte', { dataAte: filtros.dataAte });
+      params.push(filtros.dataAte);
+      conds.push(`v.data_venda <= $${params.length}`);
     }
     if (filtros.clienteId !== undefined) {
-      qb.andWhere('v.cliente_id = :clienteId', { clienteId: filtros.clienteId });
+      params.push(filtros.clienteId);
+      conds.push(`v.cliente_id = $${params.length}`);
     }
     if (filtros.vendedoraId !== undefined) {
-      qb.andWhere('v.vendedora_id = :vendedoraId', { vendedoraId: filtros.vendedoraId });
+      params.push(filtros.vendedoraId);
+      conds.push(`v.vendedora_id = $${params.length}`);
     }
     if (filtros.status !== undefined) {
-      qb.andWhere('v.status = :status', { status: filtros.status });
+      params.push(filtros.status);
+      conds.push(`v.status = $${params.length}`);
     }
+    if (filtros.formaPagamento !== undefined) {
+      params.push(filtros.formaPagamento);
+      conds.push(
+        `EXISTS (SELECT 1 FROM pagamentos_venda pvf WHERE pvf.venda_id = v.id AND pvf.forma_pagamento = $${params.length})`,
+      );
+    }
+
+    const where = conds.length > 0 ? `WHERE ${conds.join(' AND ')}` : '';
 
     const limit = Math.min(filtros.limit ?? LIMIT_PADRAO, LIMIT_MAXIMO);
     const offset = filtros.offset ?? 0;
+    params.push(limit);
+    const limitIdx = params.length;
+    params.push(offset);
+    const offsetIdx = params.length;
 
-    qb.orderBy('v.data_venda', 'DESC').take(limit).skip(offset);
+    const rows = await this.dataSource.query<
+      {
+        id: string;
+        codigo_erp: string | null;
+        cliente_id: string | null;
+        vendedora_id: string | null;
+        vendedora_nome: string | null;
+        data_venda: Date;
+        data_contato: Date | null;
+        valor_bruto: string;
+        valor_desconto: string;
+        valor_total: string;
+        status: StatusVenda;
+        ativo: boolean;
+        produto_principal: string | null;
+        qtd_itens: number;
+        formas_pagamento: FormaPagamento[] | null;
+        criado_em: Date;
+        atualizado_em: Date;
+      }[]
+    >(
+      `
+      SELECT
+        v.id,
+        v.codigo_erp,
+        v.cliente_id,
+        v.vendedora_id,
+        vd.nome AS vendedora_nome,
+        v.data_venda,
+        v.data_contato,
+        v.valor_bruto,
+        v.valor_desconto,
+        v.valor_total,
+        v.status,
+        v.ativo,
+        prin.nome AS produto_principal,
+        COALESCE(qi.qtd, 0) AS qtd_itens,
+        fp.formas AS formas_pagamento,
+        v.criado_em,
+        v.atualizado_em
+      FROM vendas v
+      LEFT JOIN vendedoras vd ON vd.id = v.vendedora_id
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(
+                 NULLIF(p.descricao_etiqueta, ''),
+                 p.codigo_erp,
+                 p.categoria || ' ' || p.familia,
+                 LEFT(iv.produto_id::text, 8)
+               ) AS nome
+        FROM itens_venda iv
+        LEFT JOIN produtos p ON p.id = iv.produto_id
+        WHERE iv.venda_id = v.id
+        ORDER BY iv.valor_total_item DESC
+        LIMIT 1
+      ) prin ON true
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS qtd FROM itens_venda iv WHERE iv.venda_id = v.id
+      ) qi ON true
+      LEFT JOIN LATERAL (
+        SELECT array_agg(DISTINCT pv.forma_pagamento::text ORDER BY pv.forma_pagamento::text) AS formas
+        FROM pagamentos_venda pv WHERE pv.venda_id = v.id
+      ) fp ON true
+      ${where}
+      ORDER BY v.data_venda DESC
+      LIMIT $${limitIdx} OFFSET $${offsetIdx}
+      `,
+      params,
+    );
 
-    const rows = await qb.getMany();
-    return rows.map((r) => this.toDomain(r));
+    return rows.map((r) => ({
+      id: r.id,
+      codigoErp: r.codigo_erp,
+      clienteId: r.cliente_id,
+      vendedoraId: r.vendedora_id,
+      vendedoraNome: r.vendedora_nome,
+      dataVenda: r.data_venda,
+      dataContato: r.data_contato,
+      valorBruto: Number(r.valor_bruto),
+      valorDesconto: Number(r.valor_desconto),
+      valorTotal: Number(r.valor_total),
+      status: r.status,
+      ativo: r.ativo,
+      produtoPrincipal: r.produto_principal,
+      qtdItens: Number(r.qtd_itens),
+      formasPagamento: (r.formas_pagamento ?? []) as FormaPagamento[],
+      criadoEm: r.criado_em,
+      atualizadoEm: r.atualizado_em,
+    }));
   }
 
   async listarVendedoraIdsPorCliente(clienteId: string): Promise<string[]> {

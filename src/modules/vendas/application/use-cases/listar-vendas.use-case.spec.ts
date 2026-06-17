@@ -1,5 +1,7 @@
-import { Venda } from '../../domain/entities/venda.entity';
-import { IVendaRepository } from '../../domain/ports/repositories/venda-repository.port';
+import {
+  IVendaRepository,
+  VendaResumo,
+} from '../../domain/ports/repositories/venda-repository.port';
 import { ListarVendasUseCase } from './listar-vendas.use-case';
 
 function makeRepoMock(): jest.Mocked<IVendaRepository> {
@@ -21,13 +23,26 @@ describe('ListarVendasUseCase', () => {
   });
 
   it('repassa filtros direto para o repository', async () => {
-    const vendas = [
-      Venda.create({
+    const vendas: VendaResumo[] = [
+      {
         id: 'v1',
+        codigoErp: null,
+        clienteId: null,
+        vendedoraId: 'vend1',
+        vendedoraNome: 'Ana',
         dataVenda: new Date('2026-05-01'),
+        dataContato: null,
         valorBruto: 100,
+        valorDesconto: 0,
         valorTotal: 100,
-      }),
+        status: 'concluida',
+        ativo: true,
+        produtoPrincipal: 'Colar',
+        qtdItens: 1,
+        formasPagamento: ['pix'],
+        criadoEm: new Date('2026-05-01'),
+        atualizadoEm: new Date('2026-05-01'),
+      },
     ];
     repo.listar.mockResolvedValue(vendas);
 
