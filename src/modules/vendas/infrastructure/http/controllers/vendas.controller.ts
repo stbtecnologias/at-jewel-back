@@ -81,16 +81,18 @@ export class VendasController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN', 'GERENTE')
   async listarVendas(@Query() filtros: FiltroVendaDto) {
-    const vendas = await this.listar.execute({
+    // O use-case ja devolve o read-model enriquecido (VendaResumo); a
+    // serializacao para JSON e direta.
+    return this.listar.execute({
       dataDe: filtros.dataDe ? new Date(filtros.dataDe) : undefined,
       dataAte: filtros.dataAte ? new Date(filtros.dataAte) : undefined,
       clienteId: filtros.clienteId,
       vendedoraId: filtros.vendedoraId,
       status: filtros.status,
+      formaPagamento: filtros.formaPagamento,
       limit: filtros.limit,
       offset: filtros.offset,
     });
-    return vendas.map((v) => v.toResumo());
   }
 
   // Rota ESTATICA declarada antes de GET /:id para nao colidir com o

@@ -8,8 +8,8 @@ import {
   Max,
   Min,
 } from 'class-validator';
-import { STATUS_VENDA } from '../../../domain/entities/enums';
-import type { StatusVenda } from '../../../domain/entities/enums';
+import { FORMAS_PAGAMENTO, STATUS_VENDA } from '../../../domain/entities/enums';
+import type { FormaPagamento, StatusVenda } from '../../../domain/entities/enums';
 
 export class FiltroVendaDto {
   // data_venda >= dataDe. ISO 8601.
@@ -33,6 +33,10 @@ export class FiltroVendaDto {
   @IsOptional()
   @IsIn([...STATUS_VENDA])
   status?: StatusVenda;
+
+  @IsOptional()
+  @IsIn([...FORMAS_PAGAMENTO])
+  formaPagamento?: FormaPagamento;
 
   @IsOptional()
   @Type(() => Number)
