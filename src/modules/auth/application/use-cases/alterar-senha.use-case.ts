@@ -21,6 +21,11 @@ export class AlterarSenhaUseCase {
     const admin = await this.repo.findById(id);
     if (!admin) throw new NotFoundException('Usuario nao encontrado');
 
+    // Conta "so Google" nao tem senha para conferir nesse fluxo.
+    if (!admin.passwordHash) {
+      throw new UnauthorizedException('Esta conta acessa via Google e não possui senha');
+    }
+
     const confere = await bcrypt.compare(senhaAtual, admin.passwordHash);
     if (!confere) throw new UnauthorizedException('Senha atual incorreta');
 

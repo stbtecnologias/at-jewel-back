@@ -10,6 +10,9 @@ import { RefreshTokenUseCase } from './application/use-cases/refresh-token.use-c
 import { BuscarPerfilUseCase } from './application/use-cases/buscar-perfil.use-case';
 import { AtualizarNomeUseCase } from './application/use-cases/atualizar-nome.use-case';
 import { AlterarSenhaUseCase } from './application/use-cases/alterar-senha.use-case';
+import { CriarUsuarioUseCase } from './application/use-cases/criar-usuario.use-case';
+import { ListarUsuariosUseCase } from './application/use-cases/listar-usuarios.use-case';
+import { RemoverUsuarioUseCase } from './application/use-cases/remover-usuario.use-case';
 import { GerarApiKeyUseCase } from './application/use-cases/gerar-api-key.use-case';
 import { RevogarApiKeyUseCase } from './application/use-cases/revogar-api-key.use-case';
 import { ListarApiKeysUseCase } from './application/use-cases/listar-api-keys.use-case';
@@ -26,6 +29,7 @@ import { AdminUserRepository } from './infrastructure/database/typeorm/repositor
 import { ApiKeyRepository } from './infrastructure/database/typeorm/repositories/api-key.repository';
 import { AuthController } from './infrastructure/http/controllers/auth.controller';
 import { ApiKeysController } from './infrastructure/http/controllers/api-keys.controller';
+import { UsuariosController } from './infrastructure/http/controllers/usuarios.controller';
 import { JwtStrategy } from './infrastructure/http/strategies/jwt.strategy';
 import { ApiKeyGuard } from './infrastructure/http/guards/api-key.guard';
 import { JwtAuthGuard } from './infrastructure/http/guards/jwt-auth.guard';
@@ -46,11 +50,14 @@ import { ScopesGuard } from './infrastructure/http/guards/scopes.guard';
     }),
     CacheModule.register({ ttl: 5 * 60 * 1000 }),
   ],
-  controllers: [AuthController, ApiKeysController],
+  controllers: [AuthController, ApiKeysController, UsuariosController],
   providers: [
     LoginAdminUseCase,
     LoginGoogleUseCase,
     RefreshTokenUseCase,
+    CriarUsuarioUseCase,
+    ListarUsuariosUseCase,
+    RemoverUsuarioUseCase,
     BuscarPerfilUseCase,
     AtualizarNomeUseCase,
     AlterarSenhaUseCase,

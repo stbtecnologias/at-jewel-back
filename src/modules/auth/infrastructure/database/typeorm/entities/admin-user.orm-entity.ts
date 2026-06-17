@@ -12,8 +12,8 @@ export class AdminUserOrmEntity {
   @Column({ type: 'varchar', length: 255, nullable: true })
   nome: string | null;
 
-  @Column({ name: 'password_hash', type: 'varchar', length: 255 })
-  passwordHash: string;
+  @Column({ name: 'password_hash', type: 'varchar', length: 255, nullable: true })
+  passwordHash: string | null;
 
   @Column({ name: 'refresh_token_hash', type: 'varchar', length: 64, nullable: true })
   refreshTokenHash: string | null;

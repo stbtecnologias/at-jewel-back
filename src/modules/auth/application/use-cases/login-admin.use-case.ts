@@ -25,6 +25,11 @@ export class LoginAdminUseCase {
     const admin = await this.adminUserRepo.findByEmail(email);
     if (!admin) throw new UnauthorizedException('Credenciais inválidas');
 
+    // Usuario "so Google" (sem senha definida) nao pode logar por senha.
+    if (!admin.passwordHash) {
+      throw new UnauthorizedException('Use o login com Google para esta conta');
+    }
+
     const passwordMatch = await bcrypt.compare(password, admin.passwordHash);
     if (!passwordMatch) throw new UnauthorizedException('Credenciais inválidas');
 

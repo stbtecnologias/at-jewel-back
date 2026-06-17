@@ -2,7 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AdminUser } from '../../../../domain/entities/admin-user.entity';
-import { IAdminUserRepository } from '../../../../domain/ports/repositories/admin-user-repository.port';
+import {
+  CriarUsuarioInput,
+  IAdminUserRepository,
+} from '../../../../domain/ports/repositories/admin-user-repository.port';
 import { AdminUserOrmEntity } from '../entities/admin-user.orm-entity';
 
 @Injectable()
@@ -26,6 +29,26 @@ export class AdminUserRepository implements IAdminUserRepository {
     const row = this.repo.create({ email, passwordHash });
     const saved = await this.repo.save(row);
     return this.toDomain(saved);
+  }
+
+  async listarTodos(): Promise<AdminUser[]> {
+    const rows = await this.repo.find({ order: { createdAt: 'ASC' } });
+    return rows.map((r) => this.toDomain(r));
+  }
+
+  async criarUsuario(input: CriarUsuarioInput): Promise<AdminUser> {
+    const row = this.repo.create({
+      email: input.email,
+      nome: input.nome,
+      role: input.role,
+      passwordHash: input.passwordHash,
+    });
+    const saved = await this.repo.save(row);
+    return this.toDomain(saved);
+  }
+
+  async remover(id: string): Promise<void> {
+    await this.repo.delete(id);
   }
 
   async updateRefreshToken(
