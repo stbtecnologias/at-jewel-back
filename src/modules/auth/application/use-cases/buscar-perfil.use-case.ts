@@ -8,6 +8,8 @@ export interface PerfilAdmin {
   email: string;
   nome: string | null;
   role: AdminRole;
+  /** true se a conta tem senha local; false = acessa apenas via Google. */
+  temSenha: boolean;
 }
 
 @Injectable()
@@ -20,6 +22,12 @@ export class BuscarPerfilUseCase {
   async execute(id: string): Promise<PerfilAdmin> {
     const admin = await this.repo.findById(id);
     if (!admin) throw new NotFoundException('Usuario nao encontrado');
-    return { id: admin.id, email: admin.email, nome: admin.nome, role: admin.role };
+    return {
+      id: admin.id,
+      email: admin.email,
+      nome: admin.nome,
+      role: admin.role,
+      temSenha: !!admin.passwordHash,
+    };
   }
 }
