@@ -14,6 +14,7 @@ import { DefeitosModule } from './modules/defeitos/defeitos.module';
 import { DefeitoOrmEntity } from './modules/defeitos/infrastructure/database/typeorm/entities/defeito.orm-entity';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AgentesModule } from './modules/agentes/agentes.module';
+import { AtendimentoModule } from './modules/atendimento/atendimento.module';
 import { ConversaOrmEntity } from './modules/agentes/infrastructure/database/typeorm/entities/conversa.orm-entity';
 import { AgenteEventoOrmEntity } from './modules/agente-eventos/infrastructure/database/typeorm/entities/agente-evento.orm-entity';
 import { ClientesModule } from './modules/clientes/clientes.module';
@@ -89,6 +90,7 @@ import { HealthController } from './health.controller';
     DefeitosModule,
     AnalyticsModule,
     AgentesModule,
+    AtendimentoModule,
   ],
   controllers: [HealthController],
   providers: [
