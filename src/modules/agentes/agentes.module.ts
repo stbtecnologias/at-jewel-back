@@ -32,5 +32,8 @@ import { AgentesController } from './infrastructure/http/controllers/agentes.con
     { provide: CONVERSA_REPOSITORY, useClass: ConversaRepository },
     { provide: AGENTES_DATA_REPOSITORY, useClass: AgentesDataRepository },
   ],
+  // Exporta o LLM_CLIENT para o modulo de atendimento (WhatsApp) reusar o
+  // mesmo cliente Anthropic sem reinstanciar.
+  exports: [LLM_CLIENT],
 })
 export class AgentesModule {}
