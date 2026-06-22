@@ -3,8 +3,10 @@ import { AgentesModule } from '../agentes/agentes.module';
 import { ProcessarMensagemWhatsappUseCase } from './application/use-cases/processar-mensagem-whatsapp.use-case';
 import { WHATSAPP_GATEWAY } from './domain/ports/injection-tokens';
 import { WhatsappWebhookController } from './infrastructure/http/controllers/whatsapp-webhook.controller';
+import { WhatsappAdminController } from './infrastructure/http/controllers/whatsapp-admin.controller';
 import { WahaAuthGuard } from './infrastructure/http/guards/waha-auth.guard';
 import { WahaGateway } from './infrastructure/whatsapp/waha.gateway';
+import { WahaAdminClient } from './infrastructure/whatsapp/waha-admin.client';
 
 /**
  * Modulo de atendimento por WhatsApp (Anastasia). Orquestracao no backend
@@ -13,10 +15,11 @@ import { WahaGateway } from './infrastructure/whatsapp/waha.gateway';
  */
 @Module({
   imports: [AgentesModule],
-  controllers: [WhatsappWebhookController],
+  controllers: [WhatsappWebhookController, WhatsappAdminController],
   providers: [
     ProcessarMensagemWhatsappUseCase,
     WahaAuthGuard,
+    WahaAdminClient,
     { provide: WHATSAPP_GATEWAY, useClass: WahaGateway },
   ],
 })
