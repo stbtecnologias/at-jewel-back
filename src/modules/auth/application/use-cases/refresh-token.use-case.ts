@@ -3,13 +3,12 @@ import { JwtService } from '@nestjs/jwt';
 import { createHash, randomBytes } from 'crypto';
 import { ADMIN_USER_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { IAdminUserRepository } from '../../domain/ports/repositories/admin-user-repository.port';
+import { computeRefreshTokenExpiry } from '../refresh-token-expiry';
 
 export interface RefreshResult {
   accessToken: string;
   refreshToken: string; // rotacionado — novo a cada uso
 }
-
-const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class RefreshTokenUseCase {
@@ -51,7 +50,9 @@ export class RefreshTokenUseCase {
     // o que automaticamente invalida o token antigo se vier de outro caller.
     const newRawRefreshToken = `${admin.id}.${randomBytes(32).toString('hex')}`;
     const newHash = createHash('sha256').update(newRawRefreshToken).digest('hex');
-    const newExpiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
+    // Deslize da janela de inatividade: fim do dia (BR) de hoje+3. Idempotente
+    // dentro do mesmo dia, entao na pratica estende so no 1o acesso do dia (E8).
+    const newExpiresAt = computeRefreshTokenExpiry();
 
     await this.adminUserRepo.updateRefreshToken(admin.id, newHash, newExpiresAt);
 

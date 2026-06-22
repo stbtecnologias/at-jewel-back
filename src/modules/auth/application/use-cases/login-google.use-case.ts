@@ -8,9 +8,7 @@ import {
 import type { IAdminUserRepository } from '../../domain/ports/repositories/admin-user-repository.port';
 import type { IGoogleTokenVerifier } from '../../domain/ports/google-token-verifier.port';
 import type { LoginResult } from './login-admin.use-case';
-
-// Mesma TTL do login por senha (7 dias).
-const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+import { computeRefreshTokenExpiry } from '../refresh-token-expiry';
 
 @Injectable()
 export class LoginGoogleUseCase {
@@ -43,7 +41,8 @@ export class LoginGoogleUseCase {
 
     const rawRefreshToken = `${admin.id}.${randomBytes(32).toString('hex')}`;
     const refreshTokenHash = createHash('sha256').update(rawRefreshToken).digest('hex');
-    const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
+    // Janela de inatividade: fim do dia (BR) de hoje+3 dias de calendario (E8).
+    const expiresAt = computeRefreshTokenExpiry();
 
     await this.adminUserRepo.updateRefreshToken(admin.id, refreshTokenHash, expiresAt);
 

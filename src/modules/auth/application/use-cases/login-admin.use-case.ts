@@ -4,14 +4,12 @@ import * as bcrypt from 'bcrypt';
 import { createHash, randomBytes } from 'crypto';
 import { ADMIN_USER_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { IAdminUserRepository } from '../../domain/ports/repositories/admin-user-repository.port';
+import { computeRefreshTokenExpiry } from '../refresh-token-expiry';
 
 export interface LoginResult {
   accessToken: string;
   refreshToken: string;
 }
-
-// Refresh token TTL: 7 dias. Apos isso o usuario precisa logar de novo.
-const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class LoginAdminUseCase {
@@ -42,7 +40,8 @@ export class LoginAdminUseCase {
     // no refresh sem precisar de coluna adicional.
     const rawRefreshToken = `${admin.id}.${randomBytes(32).toString('hex')}`;
     const refreshTokenHash = createHash('sha256').update(rawRefreshToken).digest('hex');
-    const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
+    // Janela de inatividade: fim do dia (BR) de hoje+3 dias de calendario (E8).
+    const expiresAt = computeRefreshTokenExpiry();
 
     await this.adminUserRepo.updateRefreshToken(admin.id, refreshTokenHash, expiresAt);
 
