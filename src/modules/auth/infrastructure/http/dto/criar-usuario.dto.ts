@@ -1,5 +1,4 @@
-import { IsEmail, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
-import { ADMIN_ROLES } from '../../../domain/entities/admin-user.entity';
+import { IsEmail, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import type { AdminRole } from '../../../domain/entities/admin-user.entity';
 import { SanitizeText } from '../../../../../shared/http/sanitize/sanitize-text.transform';
 
@@ -14,7 +13,9 @@ export class CriarUsuarioDto {
   @SanitizeText()
   nome?: string;
 
-  @IsIn(ADMIN_ROLES as readonly string[])
+  // Papel dinamico — a existencia e validada no use case contra a tabela roles.
+  @IsString()
+  @MaxLength(40)
   role: AdminRole;
 
   // Senha inicial opcional. Em branco = usuario entra somente via Google.

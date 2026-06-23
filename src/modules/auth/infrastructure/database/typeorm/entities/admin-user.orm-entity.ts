@@ -24,6 +24,7 @@ export class AdminUserOrmEntity {
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 
-  @Column({ type: 'enum', enum: ['ADMIN', 'GERENTE', 'VENDEDORA'], default: 'ADMIN' })
+  // Papel dinamico (migration 21): varchar referenciando roles.chave.
+  @Column({ type: 'varchar', length: 40, default: 'ADMIN' })
   role: AdminRole;
 }

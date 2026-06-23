@@ -18,29 +18,45 @@ import { GerarApiKeyUseCase } from './application/use-cases/gerar-api-key.use-ca
 import { RevogarApiKeyUseCase } from './application/use-cases/revogar-api-key.use-case';
 import { ListarApiKeysUseCase } from './application/use-cases/listar-api-keys.use-case';
 import { ValidarApiKeyUseCase } from './application/use-cases/validar-api-key.use-case';
+import { ListarRolesUseCase } from './application/use-cases/listar-roles.use-case';
+import { CriarRoleUseCase } from './application/use-cases/criar-role.use-case';
+import { AtualizarRoleUseCase } from './application/use-cases/atualizar-role.use-case';
+import { RemoverRoleUseCase } from './application/use-cases/remover-role.use-case';
+import { PermissionsService } from './application/permissions.service';
 import {
   ADMIN_USER_REPOSITORY,
   API_KEY_REPOSITORY,
   GOOGLE_TOKEN_VERIFIER,
+  ROLE_REPOSITORY,
 } from './domain/ports/injection-tokens';
 import { GoogleTokenVerifier } from './infrastructure/google/google-token-verifier';
 import { AdminUserOrmEntity } from './infrastructure/database/typeorm/entities/admin-user.orm-entity';
 import { ApiKeyOrmEntity } from './infrastructure/database/typeorm/entities/api-key.orm-entity';
+import { RoleOrmEntity } from './infrastructure/database/typeorm/entities/role.orm-entity';
+import { RolePermissionOrmEntity } from './infrastructure/database/typeorm/entities/role-permission.orm-entity';
 import { AdminUserRepository } from './infrastructure/database/typeorm/repositories/admin-user.repository';
 import { ApiKeyRepository } from './infrastructure/database/typeorm/repositories/api-key.repository';
+import { RoleRepository } from './infrastructure/database/typeorm/repositories/role.repository';
 import { AuthController } from './infrastructure/http/controllers/auth.controller';
 import { ApiKeysController } from './infrastructure/http/controllers/api-keys.controller';
 import { UsuariosController } from './infrastructure/http/controllers/usuarios.controller';
+import { RolesController } from './infrastructure/http/controllers/roles.controller';
 import { JwtStrategy } from './infrastructure/http/strategies/jwt.strategy';
 import { ApiKeyGuard } from './infrastructure/http/guards/api-key.guard';
 import { JwtAuthGuard } from './infrastructure/http/guards/jwt-auth.guard';
 import { JwtOrApiKeyGuard } from './infrastructure/http/guards/jwt-or-api-key.guard';
 import { RolesGuard } from './infrastructure/http/guards/roles.guard';
+import { PermissionsGuard } from './infrastructure/http/guards/permissions.guard';
 import { ScopesGuard } from './infrastructure/http/guards/scopes.guard';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([AdminUserOrmEntity, ApiKeyOrmEntity]),
+    TypeOrmModule.forFeature([
+      AdminUserOrmEntity,
+      ApiKeyOrmEntity,
+      RoleOrmEntity,
+      RolePermissionOrmEntity,
+    ]),
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -59,7 +75,7 @@ import { ScopesGuard } from './infrastructure/http/guards/scopes.guard';
     }),
     CacheModule.register({ ttl: 5 * 60 * 1000 }),
   ],
-  controllers: [AuthController, ApiKeysController, UsuariosController],
+  controllers: [AuthController, ApiKeysController, UsuariosController, RolesController],
   providers: [
     LoginAdminUseCase,
     LoginGoogleUseCase,
@@ -74,14 +90,21 @@ import { ScopesGuard } from './infrastructure/http/guards/scopes.guard';
     RevogarApiKeyUseCase,
     ListarApiKeysUseCase,
     ValidarApiKeyUseCase,
+    ListarRolesUseCase,
+    CriarRoleUseCase,
+    AtualizarRoleUseCase,
+    RemoverRoleUseCase,
+    PermissionsService,
     JwtStrategy,
     ApiKeyGuard,
     JwtAuthGuard,
     JwtOrApiKeyGuard,
     RolesGuard,
+    PermissionsGuard,
     ScopesGuard,
     { provide: ADMIN_USER_REPOSITORY, useClass: AdminUserRepository },
     { provide: API_KEY_REPOSITORY, useClass: ApiKeyRepository },
+    { provide: ROLE_REPOSITORY, useClass: RoleRepository },
     { provide: GOOGLE_TOKEN_VERIFIER, useClass: GoogleTokenVerifier },
   ],
   exports: [
@@ -92,7 +115,9 @@ import { ScopesGuard } from './infrastructure/http/guards/scopes.guard';
     JwtAuthGuard,
     JwtOrApiKeyGuard,
     RolesGuard,
+    PermissionsGuard,
     ScopesGuard,
+    PermissionsService,
     ValidarApiKeyUseCase,
   ],
 })

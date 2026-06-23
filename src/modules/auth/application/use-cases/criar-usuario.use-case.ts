@@ -1,7 +1,16 @@
-import { ConflictException, Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+} from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
-import { ADMIN_USER_REPOSITORY } from '../../domain/ports/injection-tokens';
+import {
+  ADMIN_USER_REPOSITORY,
+  ROLE_REPOSITORY,
+} from '../../domain/ports/injection-tokens';
 import type { IAdminUserRepository } from '../../domain/ports/repositories/admin-user-repository.port';
+import type { IRoleRepository } from '../../domain/ports/repositories/role-repository.port';
 import { AdminRole } from '../../domain/entities/admin-user.entity';
 import { toUsuarioPublico, UsuarioPublico } from './usuario-publico';
 
@@ -18,10 +27,17 @@ export class CriarUsuarioUseCase {
   constructor(
     @Inject(ADMIN_USER_REPOSITORY)
     private readonly repo: IAdminUserRepository,
+    @Inject(ROLE_REPOSITORY)
+    private readonly roles: IRoleRepository,
   ) {}
 
   async execute(cmd: CriarUsuarioCmd): Promise<UsuarioPublico> {
     const email = cmd.email.toLowerCase().trim();
+
+    const papel = await this.roles.buscar(cmd.role);
+    if (!papel) {
+      throw new BadRequestException(`Papel desconhecido: ${cmd.role}`);
+    }
 
     const existente = await this.repo.findByEmail(email);
     if (existente) {
