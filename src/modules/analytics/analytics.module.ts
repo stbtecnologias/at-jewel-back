@@ -8,6 +8,7 @@ import { EstatisticasInventarioUseCase } from './application/use-cases/estatisti
 import { ExportarVendasCsvUseCase } from './application/use-cases/exportar-vendas-csv.use-case';
 import { GiroEstoqueUseCase } from './application/use-cases/giro-estoque.use-case';
 import { ReceitaMensalUseCase } from './application/use-cases/receita-mensal.use-case';
+import { ResumoPeriodoUseCase } from './application/use-cases/resumo-periodo.use-case';
 import { TopProdutosUseCase } from './application/use-cases/top-produtos.use-case';
 import { ANALYTICS_REPOSITORY } from './domain/ports/injection-tokens';
 import { AnalyticsRepository } from './infrastructure/database/typeorm/repositories/analytics.repository';
@@ -26,6 +27,7 @@ import { AnalyticsController } from './infrastructure/http/controllers/analytics
     DemografiaUseCase,
     ComportamentoDatasUseCase,
     ExportarVendasCsvUseCase,
+    ResumoPeriodoUseCase,
     { provide: ANALYTICS_REPOSITORY, useClass: AnalyticsRepository },
   ],
 })

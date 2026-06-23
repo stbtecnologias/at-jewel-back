@@ -1,19 +1,19 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ANALYTICS_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type {
-  GiroFornecedor,
   IAnalyticsRepository,
   Periodo,
+  ResumoPeriodo,
 } from '../../domain/ports/repositories/analytics-repository.port';
 
 @Injectable()
-export class GiroEstoqueUseCase {
+export class ResumoPeriodoUseCase {
   constructor(
     @Inject(ANALYTICS_REPOSITORY)
     private readonly repo: IAnalyticsRepository,
   ) {}
 
-  async execute(periodo?: Periodo): Promise<GiroFornecedor[]> {
-    return this.repo.giroEstoquePorFornecedor(periodo);
+  execute(periodo?: Periodo): Promise<ResumoPeriodo> {
+    return this.repo.resumoPeriodo(periodo);
   }
 }

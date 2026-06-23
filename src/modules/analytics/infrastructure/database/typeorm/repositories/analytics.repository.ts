@@ -11,8 +11,10 @@ import type {
   IAnalyticsRepository,
   JanelaData,
   LinhaVendaCsv,
+  Periodo,
   ReceitaMensal,
   ReceitaMensalItem,
+  ResumoPeriodo,
   TopProduto,
 } from '../../../../domain/ports/repositories/analytics-repository.port';
 
@@ -91,7 +93,20 @@ export class AnalyticsRepository implements IAnalyticsRepository {
     );
   }
 
-  async topProdutos(limit: number): Promise<TopProduto[]> {
+  // Monta o trecho de filtro por periodo (data_venda BETWEEN), acrescentando os
+  // parametros ao array e retornando o SQL com os placeholders corretos.
+  private filtroPeriodo(periodo: Periodo | undefined, params: unknown[]): string {
+    if (periodo?.dataInicio && periodo?.dataFim) {
+      params.push(periodo.dataInicio, periodo.dataFim);
+      return ` AND v.data_venda BETWEEN $${params.length - 1} AND $${params.length}`;
+    }
+    return '';
+  }
+
+  async topProdutos(limit: number, periodo?: Periodo): Promise<TopProduto[]> {
+    const params: unknown[] = [];
+    const filtro = this.filtroPeriodo(periodo, params);
+    params.push(limit);
     return this.ds.query<TopProduto[]>(
       `
       SELECT i.produto_id AS "produtoId",
@@ -105,46 +120,74 @@ export class AnalyticsRepository implements IAnalyticsRepository {
              COALESCE(SUM(i.valor_total_item), 0)::float AS receita,
              COALESCE(SUM(i.quantidade), 0)::float AS quantidade
       FROM itens_venda i
-      JOIN vendas v ON v.id = i.venda_id AND v.status = 'concluida'
+      JOIN vendas v ON v.id = i.venda_id AND v.status = 'concluida'${filtro}
       LEFT JOIN produtos p ON p.id = i.produto_id
       WHERE i.produto_id IS NOT NULL
       GROUP BY i.produto_id, p.descricao_etiqueta, p.codigo_erp, p.categoria, p.familia
       ORDER BY "totalVendas" DESC, receita DESC
-      LIMIT $1
+      LIMIT $${params.length}
       `,
-      [limit],
+      params,
     );
   }
 
-  async giroEstoquePorFornecedor(): Promise<GiroFornecedor[]> {
+  async giroEstoquePorFornecedor(periodo?: Periodo): Promise<GiroFornecedor[]> {
+    const params: unknown[] = [];
+    const filtro = this.filtroPeriodo(periodo, params);
     return this.ds.query<GiroFornecedor[]>(
       `
       SELECT COALESCE(NULLIF(p.referencia_fornecedor, ''), 'Nao informado') AS fornecedor,
              ROUND(AVG(EXTRACT(EPOCH FROM (v.data_venda - p.data_entrada_estoque)) / 86400))::int AS "tempoMedioEstoque",
              COUNT(*)::int AS "totalVendas"
       FROM itens_venda i
-      JOIN vendas v ON v.id = i.venda_id AND v.status = 'concluida'
+      JOIN vendas v ON v.id = i.venda_id AND v.status = 'concluida'${filtro}
       JOIN produtos p ON p.id = i.produto_id
       WHERE p.data_entrada_estoque IS NOT NULL
         AND v.data_venda >= p.data_entrada_estoque
       GROUP BY COALESCE(NULLIF(p.referencia_fornecedor, ''), 'Nao informado')
       ORDER BY "tempoMedioEstoque" ASC
       `,
+      params,
     );
   }
 
-  async distribuicaoPagamento(): Promise<DistribuicaoPagamento[]> {
+  async distribuicaoPagamento(periodo?: Periodo): Promise<DistribuicaoPagamento[]> {
+    const params: unknown[] = [];
+    const filtro = this.filtroPeriodo(periodo, params);
     return this.ds.query<DistribuicaoPagamento[]>(
       `
       SELECT pg.forma_pagamento::text AS forma,
              COUNT(*)::int AS total,
              COALESCE(SUM(pg.valor), 0)::float AS valor
       FROM pagamentos_venda pg
-      JOIN vendas v ON v.id = pg.venda_id AND v.status = 'concluida'
+      JOIN vendas v ON v.id = pg.venda_id AND v.status = 'concluida'${filtro}
       GROUP BY pg.forma_pagamento
       ORDER BY valor DESC
       `,
+      params,
     );
+  }
+
+  async resumoPeriodo(periodo?: Periodo): Promise<ResumoPeriodo> {
+    const params: unknown[] = [];
+    const filtro = this.filtroPeriodo(periodo, params);
+    const rows = await this.ds.query<
+      { receita: number; totalVendas: number; ticketMedio: number }[]
+    >(
+      `
+      SELECT COALESCE(SUM(v.valor_total), 0)::float AS receita,
+             COUNT(*)::int AS "totalVendas",
+             COALESCE(AVG(v.valor_total), 0)::float AS "ticketMedio"
+      FROM vendas v
+      WHERE v.status = 'concluida'${filtro}
+      `,
+      params,
+    );
+    return {
+      receita: rows[0]?.receita ?? 0,
+      totalVendas: rows[0]?.totalVendas ?? 0,
+      ticketMedio: rows[0]?.ticketMedio ?? 0,
+    };
   }
 
   async estatisticasInventario(): Promise<EstatisticasInventario> {
