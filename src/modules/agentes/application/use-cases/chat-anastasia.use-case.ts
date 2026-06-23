@@ -2,11 +2,15 @@ import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { limparEHigienizar } from '../../../../shared/http/sanitize/sanitize-text.transform';
 import type { MensagemAgente } from '../../domain/entities/conversa.entity';
-import { LLM_CLIENT } from '../../domain/ports/injection-tokens';
+import {
+  AGENTE_PROMPTS_REPOSITORY,
+  LLM_CLIENT,
+} from '../../domain/ports/injection-tokens';
 import type {
   ChatComGraficoResultado,
   ILlmClient,
 } from '../../domain/ports/llm-client.port';
+import type { IAgentePromptsRepository } from '../../domain/ports/repositories/agente-prompts-repository.port';
 import { ANASTASIA_SYSTEM } from '../personas';
 
 export interface ContextoAgente {
@@ -20,6 +24,8 @@ export class ChatAnastasiaUseCase {
     @Inject(LLM_CLIENT)
     private readonly llm: ILlmClient,
     private readonly config: ConfigService,
+    @Inject(AGENTE_PROMPTS_REPOSITORY)
+    private readonly prompts: IAgentePromptsRepository,
   ) {}
 
   async execute(
@@ -29,9 +35,10 @@ export class ChatAnastasiaUseCase {
     const model =
       this.config.get<string>('ANTHROPIC_MODEL_ANASTASIA') ?? 'claude-opus-4-8';
 
+    const base = (await this.prompts.buscar('anastasia')) ?? ANASTASIA_SYSTEM;
     const system = contexto
-      ? `${ANASTASIA_SYSTEM}\n\nContexto da aba aberta: ${contexto.aba ?? 'não informada'}.\nDados disponíveis no momento: ${JSON.stringify(contexto.dados ?? {})}`
-      : ANASTASIA_SYSTEM;
+      ? `${base}\n\nContexto da aba aberta: ${contexto.aba ?? 'não informada'}.\nDados disponíveis no momento: ${JSON.stringify(contexto.dados ?? {})}`
+      : base;
 
     return this.llm.chatComGrafico({
       model,

@@ -1,8 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { MensagemAgente } from '../../domain/entities/conversa.entity';
-import { LLM_CLIENT } from '../../domain/ports/injection-tokens';
+import {
+  AGENTE_PROMPTS_REPOSITORY,
+  LLM_CLIENT,
+} from '../../domain/ports/injection-tokens';
 import type { ChatResultado, ILlmClient } from '../../domain/ports/llm-client.port';
+import type { IAgentePromptsRepository } from '../../domain/ports/repositories/agente-prompts-repository.port';
 import { ELENA_SYSTEM } from '../personas';
 import type { ContextoAgente } from './chat-anastasia.use-case';
 import { sanitizarMensagens } from './chat-anastasia.use-case';
@@ -13,6 +17,8 @@ export class ChatElenaUseCase {
     @Inject(LLM_CLIENT)
     private readonly llm: ILlmClient,
     private readonly config: ConfigService,
+    @Inject(AGENTE_PROMPTS_REPOSITORY)
+    private readonly prompts: IAgentePromptsRepository,
   ) {}
 
   async execute(
@@ -22,9 +28,10 @@ export class ChatElenaUseCase {
     const model =
       this.config.get<string>('ANTHROPIC_MODEL_ELENA') ?? 'claude-sonnet-4-6';
 
+    const base = (await this.prompts.buscar('elena')) ?? ELENA_SYSTEM;
     const system = contexto
-      ? `${ELENA_SYSTEM}\n\nContexto atual:\n${JSON.stringify(contexto.dados ?? {})}`
-      : ELENA_SYSTEM;
+      ? `${base}\n\nContexto atual:\n${JSON.stringify(contexto.dados ?? {})}`
+      : base;
 
     return this.llm.chat({
       model,
