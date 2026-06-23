@@ -3,6 +3,7 @@ import { ANALYTICS_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type {
   DistribuicaoPagamento,
   IAnalyticsRepository,
+  Periodo,
 } from '../../domain/ports/repositories/analytics-repository.port';
 
 @Injectable()
@@ -12,7 +13,7 @@ export class DistribuicaoPagamentoUseCase {
     private readonly repo: IAnalyticsRepository,
   ) {}
 
-  async execute(): Promise<DistribuicaoPagamento[]> {
-    return this.repo.distribuicaoPagamento();
+  async execute(periodo?: Periodo): Promise<DistribuicaoPagamento[]> {
+    return this.repo.distribuicaoPagamento(periodo);
   }
 }

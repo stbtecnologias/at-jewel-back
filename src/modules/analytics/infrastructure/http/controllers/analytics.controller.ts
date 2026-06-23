@@ -10,7 +10,21 @@ import { EstatisticasInventarioUseCase } from '../../../application/use-cases/es
 import { ExportarVendasCsvUseCase } from '../../../application/use-cases/exportar-vendas-csv.use-case';
 import { GiroEstoqueUseCase } from '../../../application/use-cases/giro-estoque.use-case';
 import { ReceitaMensalUseCase } from '../../../application/use-cases/receita-mensal.use-case';
+import { ResumoPeriodoUseCase } from '../../../application/use-cases/resumo-periodo.use-case';
 import { TopProdutosUseCase } from '../../../application/use-cases/top-produtos.use-case';
+import type { Periodo } from '../../../domain/ports/repositories/analytics-repository.port';
+
+// Converte query strings (ISO) em um recorte de periodo; ambas as datas sao
+// necessarias para o filtro valer.
+function parsePeriodo(de?: string, ate?: string): Periodo | undefined {
+  if (!de || !ate) return undefined;
+  const dataInicio = new Date(de);
+  const dataFim = new Date(ate);
+  if (Number.isNaN(dataInicio.getTime()) || Number.isNaN(dataFim.getTime())) {
+    return undefined;
+  }
+  return { dataInicio, dataFim };
+}
 
 // Dashboards e KPIs gerenciais — restrito a staff (ADMIN/GERENTE) via JWT.
 // Somente leitura/agregacao.
@@ -28,7 +42,17 @@ export class AnalyticsController {
     private readonly demografia: DemografiaUseCase,
     private readonly comportamentoDatas: ComportamentoDatasUseCase,
     private readonly exportarVendasCsv: ExportarVendasCsvUseCase,
+    private readonly resumoPeriodo: ResumoPeriodoUseCase,
   ) {}
+
+  // Resumo (receita/vendas/ticket) do recorte temporal selecionado (RF-ANL-01).
+  @Get('resumo')
+  async resumo(
+    @Query('data_inicio') dataInicio?: string,
+    @Query('data_fim') dataFim?: string,
+  ) {
+    return this.resumoPeriodo.execute(parsePeriodo(dataInicio, dataFim));
+  }
 
   @Get('receita-mensal')
   async receita(@Query('meses') meses?: string) {
@@ -36,18 +60,31 @@ export class AnalyticsController {
   }
 
   @Get('top-produtos')
-  async top(@Query('limit') limit?: string) {
-    return this.topProdutos.execute(limit ? Number(limit) : undefined);
+  async top(
+    @Query('limit') limit?: string,
+    @Query('data_inicio') dataInicio?: string,
+    @Query('data_fim') dataFim?: string,
+  ) {
+    return this.topProdutos.execute(
+      limit ? Number(limit) : undefined,
+      parsePeriodo(dataInicio, dataFim),
+    );
   }
 
   @Get('giro-estoque')
-  async giro() {
-    return this.giroEstoque.execute();
+  async giro(
+    @Query('data_inicio') dataInicio?: string,
+    @Query('data_fim') dataFim?: string,
+  ) {
+    return this.giroEstoque.execute(parsePeriodo(dataInicio, dataFim));
   }
 
   @Get('distribuicao-pagamento')
-  async pagamento() {
-    return this.distribuicaoPagamento.execute();
+  async pagamento(
+    @Query('data_inicio') dataInicio?: string,
+    @Query('data_fim') dataFim?: string,
+  ) {
+    return this.distribuicaoPagamento.execute(parsePeriodo(dataInicio, dataFim));
   }
 
   @Get('inventario')

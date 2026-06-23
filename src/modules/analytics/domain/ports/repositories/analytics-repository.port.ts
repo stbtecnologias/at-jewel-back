@@ -89,12 +89,25 @@ export interface JanelaData {
   ate: Date;
 }
 
+/** Recorte temporal aplicado as analises baseadas em vendas (RF-ANL-01). */
+export interface Periodo {
+  dataInicio?: Date;
+  dataFim?: Date;
+}
+
+export interface ResumoPeriodo {
+  receita: number;
+  totalVendas: number;
+  ticketMedio: number;
+}
+
 export interface IAnalyticsRepository {
   receitaMensal(meses: number): Promise<ReceitaMensal>;
   comportamentoDatas(janelas: JanelaData[]): Promise<ComportamentoData[]>;
-  topProdutos(limit: number): Promise<TopProduto[]>;
-  giroEstoquePorFornecedor(): Promise<GiroFornecedor[]>;
-  distribuicaoPagamento(): Promise<DistribuicaoPagamento[]>;
+  topProdutos(limit: number, periodo?: Periodo): Promise<TopProduto[]>;
+  giroEstoquePorFornecedor(periodo?: Periodo): Promise<GiroFornecedor[]>;
+  distribuicaoPagamento(periodo?: Periodo): Promise<DistribuicaoPagamento[]>;
+  resumoPeriodo(periodo?: Periodo): Promise<ResumoPeriodo>;
   estatisticasInventario(): Promise<EstatisticasInventario>;
   distribuicaoOrigem(): Promise<DistribuicaoOrigem[]>;
   demografia(): Promise<Demografia>;
