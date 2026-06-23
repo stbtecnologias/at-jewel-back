@@ -3,6 +3,7 @@ import * as bcrypt from 'bcrypt';
 import { CriarUsuarioUseCase } from './criar-usuario.use-case';
 import { AdminUser } from '../../domain/entities/admin-user.entity';
 import type { IAdminUserRepository } from '../../domain/ports/repositories/admin-user-repository.port';
+import type { IRoleRepository } from '../../domain/ports/repositories/role-repository.port';
 
 function makeRepo(overrides?: Partial<IAdminUserRepository>): IAdminUserRepository {
   return {
@@ -21,10 +22,29 @@ function makeRepo(overrides?: Partial<IAdminUserRepository>): IAdminUserReposito
   } as IAdminUserRepository;
 }
 
+// Papel sempre existente nos testes (validacao dinamica de role).
+function makeRoles(): IRoleRepository {
+  return {
+    listar: jest.fn(),
+    buscar: jest.fn(async (chave: string) => ({
+      chave,
+      nome: chave,
+      descricao: null,
+      isSystem: true,
+      permissoes: [],
+    })),
+    criar: jest.fn(),
+    definirPermissoes: jest.fn(),
+    atualizarMeta: jest.fn(),
+    remover: jest.fn(),
+    contarUsuarios: jest.fn(),
+  } as IRoleRepository;
+}
+
 describe('CriarUsuarioUseCase', () => {
   it('cria usuario so-Google (sem senha) — temSenha=false, email normalizado', async () => {
     const repo = makeRepo();
-    const uc = new CriarUsuarioUseCase(repo);
+    const uc = new CriarUsuarioUseCase(repo, makeRoles());
     const out = await uc.execute({ email: '  Nova@Atjewel.COM ', role: 'GERENTE' });
     expect(repo.criarUsuario).toHaveBeenCalledWith(
       expect.objectContaining({ email: 'nova@atjewel.com', role: 'GERENTE', passwordHash: null }),
@@ -35,7 +55,7 @@ describe('CriarUsuarioUseCase', () => {
 
   it('cria usuario com senha — hash bcrypt + temSenha=true', async () => {
     const repo = makeRepo();
-    const uc = new CriarUsuarioUseCase(repo);
+    const uc = new CriarUsuarioUseCase(repo, makeRoles());
     const out = await uc.execute({ email: 'a@b.com', role: 'VENDEDORA', senha: 'segredo123' });
     const arg = (repo.criarUsuario as jest.Mock).mock.calls[0][0];
     expect(arg.passwordHash).toEqual(expect.any(String));
@@ -49,7 +69,7 @@ describe('CriarUsuarioUseCase', () => {
         new AdminUser('x', 'a@b.com', 'h', null, null, new Date(), 'ADMIN', null),
       ),
     });
-    const uc = new CriarUsuarioUseCase(repo);
+    const uc = new CriarUsuarioUseCase(repo, makeRoles());
     await expect(uc.execute({ email: 'a@b.com', role: 'ADMIN' })).rejects.toBeInstanceOf(
       ConflictException,
     );

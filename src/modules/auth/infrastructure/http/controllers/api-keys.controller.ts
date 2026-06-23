@@ -13,16 +13,17 @@ import {
 import { GerarApiKeyUseCase } from '../../../application/use-cases/gerar-api-key.use-case';
 import { ListarApiKeysUseCase } from '../../../application/use-cases/listar-api-keys.use-case';
 import { RevogarApiKeyUseCase } from '../../../application/use-cases/revogar-api-key.use-case';
-import { Roles } from '../decorators/roles.decorator';
+import { Permissions } from '../decorators/permissions.decorator';
 import { CriarApiKeyDto } from '../dto/criar-api-key.dto';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
-import { RolesGuard } from '../guards/roles.guard';
+import { PermissionsGuard } from '../guards/permissions.guard';
 import { JwtPayload } from '../strategies/jwt.strategy';
 
-// Gestao de API keys e operacao administrativa — restrita a ADMIN.
+// Gestao de API keys e operacao administrativa — restrita a quem tem
+// api_keys:manage (SUPERADMIN/ADMIN por padrao — RF-API-01).
 @Controller('auth/api-keys')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('ADMIN')
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+@Permissions('api_keys:manage')
 export class ApiKeysController {
   constructor(
     private readonly gerarApiKey: GerarApiKeyUseCase,

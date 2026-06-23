@@ -1,6 +1,16 @@
-export type AdminRole = 'ADMIN' | 'GERENTE' | 'VENDEDORA';
+// Papel agora e dinamico (tabela `roles`) — string livre. ADMIN_ROLES lista os
+// papeis de SISTEMA semeados na migration 21; papeis adicionais podem ser
+// criados em runtime.
+export type AdminRole = string;
 
-export const ADMIN_ROLES: readonly AdminRole[] = ['ADMIN', 'GERENTE', 'VENDEDORA'] as const;
+export const ADMIN_ROLES = [
+  'SUPERADMIN',
+  'ADMIN',
+  'GERENTE',
+  'VENDEDORA',
+  'ESTOQUISTA',
+  'MARKETING',
+] as const;
 
 export class AdminUser {
   constructor(

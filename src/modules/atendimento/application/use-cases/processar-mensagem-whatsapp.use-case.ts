@@ -1,8 +1,12 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ANASTASIA_TRIAGEM_SYSTEM } from '../../../agentes/application/personas';
-import { LLM_CLIENT } from '../../../agentes/domain/ports/injection-tokens';
+import {
+  AGENTE_PROMPTS_REPOSITORY,
+  LLM_CLIENT,
+} from '../../../agentes/domain/ports/injection-tokens';
 import type { ILlmClient } from '../../../agentes/domain/ports/llm-client.port';
+import type { IAgentePromptsRepository } from '../../../agentes/domain/ports/repositories/agente-prompts-repository.port';
 import { limparEHigienizar } from '../../../../shared/http/sanitize/sanitize-text.transform';
 import { WHATSAPP_GATEWAY } from '../../domain/ports/injection-tokens';
 import type { IWhatsappGateway } from '../../domain/ports/whatsapp-gateway.port';
@@ -38,6 +42,8 @@ export class ProcessarMensagemWhatsappUseCase {
     @Inject(WHATSAPP_GATEWAY)
     private readonly whatsapp: IWhatsappGateway,
     private readonly config: ConfigService,
+    @Inject(AGENTE_PROMPTS_REPOSITORY)
+    private readonly prompts: IAgentePromptsRepository,
   ) {}
 
   async execute(msg: MensagemRecebida): Promise<RespostaAtendimento | null> {
@@ -49,9 +55,11 @@ export class ProcessarMensagemWhatsappUseCase {
     const model =
       this.config.get<string>('ANTHROPIC_MODEL_ANASTASIA') ?? 'claude-opus-4-8';
 
+    const system =
+      (await this.prompts.buscar('anastasia_triagem')) ?? ANASTASIA_TRIAGEM_SYSTEM;
     const { texto: resposta } = await this.llm.chat({
       model,
-      system: ANASTASIA_TRIAGEM_SYSTEM,
+      system,
       maxTokens: 1024,
       mensagens: [{ role: 'user', content: texto }],
     });

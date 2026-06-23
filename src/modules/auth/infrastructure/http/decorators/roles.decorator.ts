@@ -1,5 +1,4 @@
 import { SetMetadata } from '@nestjs/common';
-import type { AdminRole } from '../../../domain/entities/admin-user.entity';
 
 export const ROLES_KEY = 'auth:roles';
 
@@ -12,4 +11,4 @@ export const ROLES_KEY = 'auth:roles';
  *
  * Quando nao usado, RolesGuard nao restringe (deixa passar).
  */
-export const Roles = (...roles: AdminRole[]) => SetMetadata(ROLES_KEY, roles);
+export const Roles = (...roles: string[]) => SetMetadata(ROLES_KEY, roles);

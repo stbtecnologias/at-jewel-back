@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import type { ILlmClient } from '../../../agentes/domain/ports/llm-client.port';
+import type { IAgentePromptsRepository } from '../../../agentes/domain/ports/repositories/agente-prompts-repository.port';
 import type { IWhatsappGateway } from '../../domain/ports/whatsapp-gateway.port';
 import { ProcessarMensagemWhatsappUseCase } from './processar-mensagem-whatsapp.use-case';
 
@@ -17,8 +18,15 @@ function make() {
     get: jest.fn().mockReturnValue('claude-opus-4-8'),
   } as unknown as ConfigService;
 
-  const useCase = new ProcessarMensagemWhatsappUseCase(llm, whatsapp, config);
-  return { useCase, llm, whatsapp };
+  // Sem override no DB -> usa a persona padrao (fallback).
+  const prompts: jest.Mocked<IAgentePromptsRepository> = {
+    buscar: jest.fn().mockResolvedValue(null),
+    buscarTodos: jest.fn(),
+    salvar: jest.fn(),
+  } as unknown as jest.Mocked<IAgentePromptsRepository>;
+
+  const useCase = new ProcessarMensagemWhatsappUseCase(llm, whatsapp, config, prompts);
+  return { useCase, llm, whatsapp, prompts };
 }
 
 describe('ProcessarMensagemWhatsappUseCase', () => {
