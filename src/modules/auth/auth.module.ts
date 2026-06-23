@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { CacheModule } from '@nestjs/cache-manager';
 import { JwtModule } from '@nestjs/jwt';
+import type { SignOptions } from 'jsonwebtoken';
 import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -49,7 +50,11 @@ import { ScopesGuard } from './infrastructure/http/guards/scopes.guard';
         // TTL do access token, configuravel por env. Default 8h (sessao de
         // trabalho confortavel num painel admin interno) — a renovacao proativa
         // no front estende enquanto ativo; o refresh token (7d) cobre o resto.
-        signOptions: { expiresIn: config.get<string>('JWT_ACCESS_TTL') ?? '8h' },
+        signOptions: {
+          // env e string em runtime; o tipo do jsonwebtoken e number|StringValue.
+          expiresIn: (config.get<string>('JWT_ACCESS_TTL') ??
+            '8h') as SignOptions['expiresIn'],
+        },
       }),
     }),
     CacheModule.register({ ttl: 5 * 60 * 1000 }),
