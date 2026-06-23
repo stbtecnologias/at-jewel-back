@@ -46,6 +46,10 @@ import { ScopesGuard } from './infrastructure/http/guards/scopes.guard';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         secret: config.getOrThrow<string>('JWT_SECRET'),
+        // TTL do access token, configuravel por env. Default 8h (sessao de
+        // trabalho confortavel num painel admin interno) — a renovacao proativa
+        // no front estende enquanto ativo; o refresh token (7d) cobre o resto.
+        signOptions: { expiresIn: config.get<string>('JWT_ACCESS_TTL') ?? '8h' },
       }),
     }),
     CacheModule.register({ ttl: 5 * 60 * 1000 }),
