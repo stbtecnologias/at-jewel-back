@@ -51,9 +51,18 @@ export interface ContagemRotulo {
   total: number;
 }
 
+export interface DemografiaCruzada {
+  faixa: string;
+  sexo: string;
+  total: number;
+}
+
 export interface Demografia {
   porSexo: ContagemRotulo[];
   porFaixaEtaria: ContagemRotulo[];
+  // Cruzamento sexo x faixa etaria (formato longo) para o grafico de colunas
+  // duplas na tela de Analytics (RF-ANL-05). Clientes mantem as visoes isoladas.
+  cruzada: DemografiaCruzada[];
 }
 
 export interface LinhaVendaCsv {

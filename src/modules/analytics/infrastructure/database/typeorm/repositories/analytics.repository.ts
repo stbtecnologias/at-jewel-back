@@ -211,7 +211,19 @@ export class AnalyticsRepository implements IAnalyticsRepository {
       ORDER BY total DESC
       `,
     );
-    return { porSexo, porFaixaEtaria };
+    const cruzada = await this.ds.query<
+      { faixa: string; sexo: string; total: number }[]
+    >(
+      `
+      SELECT COALESCE(NULLIF(faixa_etaria, ''), 'Nao informado') AS faixa,
+             COALESCE(sexo::text, 'NAO_INFORMADO') AS sexo,
+             COUNT(*)::int AS total
+      FROM clientes_perfil
+      GROUP BY faixa, sexo
+      ORDER BY faixa, sexo
+      `,
+    );
+    return { porSexo, porFaixaEtaria, cruzada };
   }
 
   async linhasVendaCsv(dataInicio?: Date, dataFim?: Date): Promise<LinhaVendaCsv[]> {
