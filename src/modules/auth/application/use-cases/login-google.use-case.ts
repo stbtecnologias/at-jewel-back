@@ -36,10 +36,12 @@ export class LoginGoogleUseCase {
       throw new UnauthorizedException('Conta não autorizada para este painel');
     }
 
-    const accessToken = this.jwtService.sign(
-      { sub: admin.id, email: admin.email, role: admin.role },
-      { expiresIn: '15m' },
-    );
+    // expiresIn vem do default do JwtModule (env JWT_ACCESS_TTL).
+    const accessToken = this.jwtService.sign({
+      sub: admin.id,
+      email: admin.email,
+      role: admin.role,
+    });
 
     const rawRefreshToken = `${admin.id}.${randomBytes(32).toString('hex')}`;
     const refreshTokenHash = createHash('sha256').update(rawRefreshToken).digest('hex');

@@ -112,10 +112,9 @@ describe('RefreshTokenUseCase', () => {
 
     // Access token novo emitido.
     expect(result.accessToken).toBe('access-jwt');
-    expect(jwt.sign).toHaveBeenCalledWith(
-      { sub: 'a', email: 'e', role: 'ADMIN' },
-      { expiresIn: '15m' },
-    );
+    // expiresIn agora vem do default do JwtModule (env JWT_ACCESS_TTL), nao mais
+    // por chamada — sign recebe apenas o payload.
+    expect(jwt.sign).toHaveBeenCalledWith({ sub: 'a', email: 'e', role: 'ADMIN' });
   });
 
   it('cada chamada de execute produz token diferente (reuse-resistant)', async () => {

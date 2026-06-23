@@ -33,10 +33,12 @@ export class LoginAdminUseCase {
     const passwordMatch = await bcrypt.compare(password, admin.passwordHash);
     if (!passwordMatch) throw new UnauthorizedException('Credenciais inválidas');
 
-    const accessToken = this.jwtService.sign(
-      { sub: admin.id, email: admin.email, role: admin.role },
-      { expiresIn: '15m' },
-    );
+    // expiresIn vem do default do JwtModule (env JWT_ACCESS_TTL).
+    const accessToken = this.jwtService.sign({
+      sub: admin.id,
+      email: admin.email,
+      role: admin.role,
+    });
 
     // Formato: {adminId}.{32 bytes hex} — permite lookup O(1) do admin
     // no refresh sem precisar de coluna adicional.
