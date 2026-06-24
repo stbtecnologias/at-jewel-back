@@ -10,7 +10,8 @@ export interface PermissaoDef {
 }
 
 export const PERMISSOES: PermissaoDef[] = [
-  { chave: 'vendas:read', label: 'Ver vendas', grupo: 'Vendas' },
+  { chave: 'vendas:read', label: 'Ver vendas (próprias, se vendedora)', grupo: 'Vendas' },
+  { chave: 'vendas:read_all', label: 'Ver vendas de todas as vendedoras (comparativo)', grupo: 'Vendas' },
   { chave: 'vendas:write', label: 'Editar vendas', grupo: 'Vendas' },
   { chave: 'produtos:read', label: 'Ver produtos', grupo: 'Produtos' },
   { chave: 'produtos:write', label: 'Editar produtos', grupo: 'Produtos' },
