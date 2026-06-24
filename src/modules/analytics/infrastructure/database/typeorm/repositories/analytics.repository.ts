@@ -68,17 +68,22 @@ export class AnalyticsRepository implements IAnalyticsRepository {
 
   async comportamentoDatas(janelas: JanelaData[]): Promise<ComportamentoData[]> {
     // Uma agregacao por janela (poucas datas — custo baixo). Conta vendas
-    // concluidas no periodo que antecede cada data comemorativa.
+    // concluidas no periodo que antecede cada data comemorativa, ja quebrando
+    // por sexo do cliente (RF-CLI-05). Os totais sao a soma das linhas por sexo.
     return Promise.all(
       janelas.map(async (j) => {
         const rows = await this.ds.query<
-          { totalCompras: number; valorTotal: number }[]
+          { sexo: string; totalCompras: number; valorTotal: number }[]
         >(
           `
-          SELECT COUNT(*)::int AS "totalCompras",
-                 COALESCE(SUM(valor_total), 0)::float AS "valorTotal"
-          FROM vendas
-          WHERE status = 'concluida' AND data_venda BETWEEN $1 AND $2
+          SELECT COALESCE(cp.sexo::text, 'NAO_INFORMADO') AS sexo,
+                 COUNT(*)::int AS "totalCompras",
+                 COALESCE(SUM(v.valor_total), 0)::float AS "valorTotal"
+          FROM vendas v
+          LEFT JOIN clientes_perfil cp ON cp.cliente_id = v.cliente_id
+          WHERE v.status = 'concluida' AND v.data_venda BETWEEN $1 AND $2
+          GROUP BY COALESCE(cp.sexo::text, 'NAO_INFORMADO')
+          ORDER BY "totalCompras" DESC
           `,
           [j.de, j.ate],
         );
@@ -86,8 +91,13 @@ export class AnalyticsRepository implements IAnalyticsRepository {
           nome: j.nome,
           de: j.de.toISOString().slice(0, 10),
           ate: j.ate.toISOString().slice(0, 10),
-          totalCompras: rows[0]?.totalCompras ?? 0,
-          valorTotal: rows[0]?.valorTotal ?? 0,
+          totalCompras: rows.reduce((s, r) => s + r.totalCompras, 0),
+          valorTotal: rows.reduce((s, r) => s + r.valorTotal, 0),
+          porSexo: rows.map((r) => ({
+            sexo: r.sexo,
+            totalCompras: r.totalCompras,
+            valorTotal: r.valorTotal,
+          })),
         };
       }),
     );
