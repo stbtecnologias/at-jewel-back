@@ -7,6 +7,8 @@ import { LoggerModule } from 'nestjs-pino';
 import { AuthModule } from './modules/auth/auth.module';
 import { AdminUserOrmEntity } from './modules/auth/infrastructure/database/typeorm/entities/admin-user.orm-entity';
 import { ApiKeyOrmEntity } from './modules/auth/infrastructure/database/typeorm/entities/api-key.orm-entity';
+import { RoleOrmEntity } from './modules/auth/infrastructure/database/typeorm/entities/role.orm-entity';
+import { RolePermissionOrmEntity } from './modules/auth/infrastructure/database/typeorm/entities/role-permission.orm-entity';
 import { AgenteEventosModule } from './modules/agente-eventos/agente-eventos.module';
 import { MetasModule } from './modules/metas/metas.module';
 import { MetaOrmEntity } from './modules/metas/infrastructure/database/typeorm/entities/meta.orm-entity';
@@ -16,6 +18,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AgentesModule } from './modules/agentes/agentes.module';
 import { AtendimentoModule } from './modules/atendimento/atendimento.module';
 import { ConversaOrmEntity } from './modules/agentes/infrastructure/database/typeorm/entities/conversa.orm-entity';
+import { AgentePromptOrmEntity } from './modules/agentes/infrastructure/database/typeorm/entities/agente-prompt.orm-entity';
 import { AgenteEventoOrmEntity } from './modules/agente-eventos/infrastructure/database/typeorm/entities/agente-evento.orm-entity';
 import { ClientesModule } from './modules/clientes/clientes.module';
 import { ClienteOrmEntity } from './modules/clientes/infrastructure/database/typeorm/entities/cliente.orm-entity';
@@ -64,6 +67,8 @@ import { HealthController } from './health.controller';
           ErpEventoOrmEntity,
           AdminUserOrmEntity,
           ApiKeyOrmEntity,
+          RoleOrmEntity,
+          RolePermissionOrmEntity,
           ClienteOrmEntity,
           ClientePerfilOrmEntity,
           VendedoraOrmEntity,
@@ -74,7 +79,13 @@ import { HealthController } from './health.controller';
           MetaOrmEntity,
           DefeitoOrmEntity,
           ConversaOrmEntity,
+          AgentePromptOrmEntity,
         ],
+        // Rede de seguranca: registra automaticamente toda entidade declarada
+        // via TypeOrmModule.forFeature(...) nos modulos, evitando o erro
+        // "No metadata for X" quando uma entidade nova nao e adicionada a lista
+        // explicita acima (foi o que aconteceu com Role/RolePermission/AgentePrompt).
+        autoLoadEntities: true,
         synchronize: false,
         logging: config.get('NODE_ENV') !== 'production',
       }),
