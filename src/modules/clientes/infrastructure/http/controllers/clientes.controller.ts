@@ -13,11 +13,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { Roles } from '../../../../auth/infrastructure/http/decorators/roles.decorator';
+import { Permissions } from '../../../../auth/infrastructure/http/decorators/permissions.decorator';
 import { RequireScopes } from '../../../../auth/infrastructure/http/decorators/scopes.decorator';
 import { ApiKeyGuard } from '../../../../auth/infrastructure/http/guards/api-key.guard';
 import { JwtAuthGuard } from '../../../../auth/infrastructure/http/guards/jwt-auth.guard';
-import { RolesGuard } from '../../../../auth/infrastructure/http/guards/roles.guard';
+import { PermissionsGuard } from '../../../../auth/infrastructure/http/guards/permissions.guard';
 import { ScopesGuard } from '../../../../auth/infrastructure/http/guards/scopes.guard';
 import { AtualizarPerfilClienteUseCase } from '../../../application/use-cases/atualizar-perfil-cliente.use-case';
 import { BuscarClienteUseCase } from '../../../application/use-cases/buscar-cliente.use-case';
@@ -54,15 +54,15 @@ export class ClientesController {
 
   // Distribuicao por faixa de fidelidade (agregado, sem PII). Antes de :id.
   @Get('tiers')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN', 'GERENTE')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('clientes:read')
   async tiers() {
     return this.distribuicaoTiers.execute();
   }
 
   @Get()
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN', 'GERENTE')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('clientes:read')
   async listarClientes(@Query() filtros: FiltroClienteDto) {
     const clientes = await this.listar.execute(filtros);
     return clientes.map((c) => c.toPublic());
@@ -109,8 +109,8 @@ export class ClientesController {
   }
 
   @Get(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN', 'GERENTE', 'VENDEDORA')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('clientes:read')
   async buscarPorId(@Param('id', ParseUUIDPipe) id: string) {
     const cliente = await this.buscar.execute(id);
     return cliente.toPublic();
@@ -118,10 +118,10 @@ export class ClientesController {
 
   // Historico de compras do cliente para o dashboard. Apenas dados de venda
   // (sem PII; nome do cliente nao se repete aqui). Leitura administrativa:
-  // JWT + ADMIN/GERENTE. VENDEDORA nao acessa o historico financeiro pleno.
+  // exige clientes:read (RF-USU-01).
   @Get(':id/historico')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN', 'GERENTE')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('clientes:read')
   async historico(
     @Param('id', ParseUUIDPipe) id: string,
     @Query() query: HistoricoClienteQueryDto,

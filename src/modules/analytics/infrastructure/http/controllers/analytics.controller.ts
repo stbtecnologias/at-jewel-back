@@ -1,7 +1,7 @@
 import { Controller, Get, Header, Query, UseGuards } from '@nestjs/common';
-import { Roles } from '../../../../auth/infrastructure/http/decorators/roles.decorator';
+import { Permissions } from '../../../../auth/infrastructure/http/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../../../auth/infrastructure/http/guards/jwt-auth.guard';
-import { RolesGuard } from '../../../../auth/infrastructure/http/guards/roles.guard';
+import { PermissionsGuard } from '../../../../auth/infrastructure/http/guards/permissions.guard';
 import { ComportamentoDatasUseCase } from '../../../application/use-cases/comportamento-datas.use-case';
 import { DemografiaUseCase } from '../../../application/use-cases/demografia.use-case';
 import { DistribuicaoOrigemUseCase } from '../../../application/use-cases/distribuicao-origem.use-case';
@@ -26,11 +26,11 @@ function parsePeriodo(de?: string, ate?: string): Periodo | undefined {
   return { dataInicio, dataFim };
 }
 
-// Dashboards e KPIs gerenciais — restrito a staff (ADMIN/GERENTE) via JWT.
-// Somente leitura/agregacao.
+// Dashboards e KPIs gerenciais — exige analytics:read (RF-USU-01). Somente
+// leitura/agregacao; todos os endpoints sao GET, dai a permissao no class-level.
 @Controller('analytics')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('ADMIN', 'GERENTE')
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+@Permissions('analytics:read')
 export class AnalyticsController {
   constructor(
     private readonly receitaMensal: ReceitaMensalUseCase,

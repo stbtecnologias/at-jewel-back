@@ -16,15 +16,15 @@ import { ListarUsuariosUseCase } from '../../../application/use-cases/listar-usu
 import { RemoverUsuarioUseCase } from '../../../application/use-cases/remover-usuario.use-case';
 import { CriarUsuarioDto } from '../dto/criar-usuario.dto';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
-import { RolesGuard } from '../guards/roles.guard';
-import { Roles } from '../decorators/roles.decorator';
+import { PermissionsGuard } from '../guards/permissions.guard';
+import { Permissions } from '../decorators/permissions.decorator';
 import { JwtPayload } from '../strategies/jwt.strategy';
 
-// Gestao de usuarios do painel — restrita a ADMIN (guard de papel no servidor,
-// independente do que o front mostra).
+// Gestao de usuarios do painel — exige usuarios:manage (RF-USU-01), validado
+// no servidor independentemente do que o front mostra.
 @Controller('usuarios')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('ADMIN')
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+@Permissions('usuarios:manage')
 export class UsuariosController {
   constructor(
     private readonly listar: ListarUsuariosUseCase,
