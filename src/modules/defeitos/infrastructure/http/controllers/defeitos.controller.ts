@@ -12,9 +12,9 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { Roles } from '../../../../auth/infrastructure/http/decorators/roles.decorator';
+import { Permissions } from '../../../../auth/infrastructure/http/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../../../auth/infrastructure/http/guards/jwt-auth.guard';
-import { RolesGuard } from '../../../../auth/infrastructure/http/guards/roles.guard';
+import { PermissionsGuard } from '../../../../auth/infrastructure/http/guards/permissions.guard';
 import { AtualizarDefeitoUseCase } from '../../../application/use-cases/atualizar-defeito.use-case';
 import { BuscarDefeitoUseCase } from '../../../application/use-cases/buscar-defeito.use-case';
 import { CriarDefeitoUseCase } from '../../../application/use-cases/criar-defeito.use-case';
@@ -25,11 +25,10 @@ import type { TipoDefeito } from '../../../domain/entities/enums';
 import { AtualizarDefeitoDto } from '../dto/atualizar-defeito.dto';
 import { CriarDefeitoDto } from '../dto/criar-defeito.dto';
 
-// Ocorrencias de produto (defeito/devolucao/reclamacao) — restrito a staff
-// (ADMIN/GERENTE) via JWT do painel.
+// Ocorrencias de produto (defeito/devolucao/reclamacao) — leitura exige
+// ocorrencias:read, escrita ocorrencias:write (RF-USU-01).
 @Controller('defeitos')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('ADMIN', 'GERENTE')
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class DefeitosController {
   constructor(
     private readonly listarDefeitos: ListarDefeitosUseCase,
@@ -41,6 +40,7 @@ export class DefeitosController {
   ) {}
 
   @Get()
+  @Permissions('ocorrencias:read')
   async listar(
     @Query('page') page = '1',
     @Query('limit') limit = '20',
@@ -60,6 +60,7 @@ export class DefeitosController {
   }
 
   @Get('kpis')
+  @Permissions('ocorrencias:read')
   async kpis(
     @Query('data_inicio') dataInicio?: string,
     @Query('data_fim') dataFim?: string,
@@ -71,12 +72,14 @@ export class DefeitosController {
   }
 
   @Get(':id')
+  @Permissions('ocorrencias:read')
   async buscar(@Param('id', ParseUUIDPipe) id: string) {
     return this.buscarDefeito.execute(id);
   }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @Permissions('ocorrencias:write')
   async criar(@Body() dto: CriarDefeitoDto) {
     return this.criarDefeito.execute({
       produtoId: dto.produto_id,
@@ -88,6 +91,7 @@ export class DefeitosController {
   }
 
   @Patch(':id')
+  @Permissions('ocorrencias:write')
   async atualizar(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AtualizarDefeitoDto,
@@ -103,6 +107,7 @@ export class DefeitosController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Permissions('ocorrencias:write')
   async remover(@Param('id', ParseUUIDPipe) id: string) {
     await this.removerDefeito.execute(id);
   }

@@ -12,9 +12,9 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { Roles } from '../../../../auth/infrastructure/http/decorators/roles.decorator';
+import { Permissions } from '../../../../auth/infrastructure/http/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../../../auth/infrastructure/http/guards/jwt-auth.guard';
-import { RolesGuard } from '../../../../auth/infrastructure/http/guards/roles.guard';
+import { PermissionsGuard } from '../../../../auth/infrastructure/http/guards/permissions.guard';
 import { AtualizarMetaUseCase } from '../../../application/use-cases/atualizar-meta.use-case';
 import { BuscarMetaUseCase } from '../../../application/use-cases/buscar-meta.use-case';
 import { CriarMetaUseCase } from '../../../application/use-cases/criar-meta.use-case';
@@ -25,10 +25,9 @@ import type { TipoMeta } from '../../../domain/entities/enums';
 import { AtualizarMetaDto } from '../dto/atualizar-meta.dto';
 import { CriarMetaDto } from '../dto/criar-meta.dto';
 
-// Gestao de metas — restrita a staff (ADMIN/GERENTE) via JWT do painel.
+// Gestao de metas — leitura exige metas:read, escrita metas:write (RF-USU-01).
 @Controller('metas')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('ADMIN', 'GERENTE')
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class MetasController {
   constructor(
     private readonly listarMetas: ListarMetasUseCase,
@@ -40,6 +39,7 @@ export class MetasController {
   ) {}
 
   @Get()
+  @Permissions('metas:read')
   async listar(
     @Query('tipo') tipo?: TipoMeta,
     @Query('referencia_id') referenciaId?: string,
@@ -48,6 +48,7 @@ export class MetasController {
   }
 
   @Get(':id')
+  @Permissions('metas:read')
   async buscar(@Param('id', ParseUUIDPipe) id: string) {
     return this.buscarMeta.execute(id);
   }
@@ -55,12 +56,14 @@ export class MetasController {
   // Progresso da meta (realizado vs alvo) calculado sobre as vendas concluidas
   // na janela criado_em -> prazo.
   @Get(':id/progresso')
+  @Permissions('metas:read')
   async progresso(@Param('id', ParseUUIDPipe) id: string) {
     return this.progressoMeta.execute(id);
   }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @Permissions('metas:write')
   async criar(@Body() dto: CriarMetaDto) {
     return this.criarMeta.execute({
       tipo: dto.tipo,
@@ -72,6 +75,7 @@ export class MetasController {
   }
 
   @Patch(':id')
+  @Permissions('metas:write')
   async atualizar(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AtualizarMetaDto,
@@ -87,6 +91,7 @@ export class MetasController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Permissions('metas:write')
   async remover(@Param('id', ParseUUIDPipe) id: string) {
     await this.removerMeta.execute(id);
   }

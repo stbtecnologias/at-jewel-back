@@ -8,11 +8,11 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { Roles } from '../../../../auth/infrastructure/http/decorators/roles.decorator';
+import { Permissions } from '../../../../auth/infrastructure/http/decorators/permissions.decorator';
 import { RequireScopes } from '../../../../auth/infrastructure/http/decorators/scopes.decorator';
 import { ApiKeyGuard } from '../../../../auth/infrastructure/http/guards/api-key.guard';
 import { JwtAuthGuard } from '../../../../auth/infrastructure/http/guards/jwt-auth.guard';
-import { RolesGuard } from '../../../../auth/infrastructure/http/guards/roles.guard';
+import { PermissionsGuard } from '../../../../auth/infrastructure/http/guards/permissions.guard';
 import { ScopesGuard } from '../../../../auth/infrastructure/http/guards/scopes.guard';
 import { ListarEventosUseCase } from '../../../application/use-cases/listar-eventos.use-case';
 import { RegistrarEventoUseCase } from '../../../application/use-cases/registrar-evento.use-case';
@@ -21,7 +21,7 @@ import { RegistrarEventoDto } from '../dto/registrar-evento.dto';
 
 // Estrategia de auth:
 //  - POST (escrita pelo n8n) => API Key com scope agente_eventos:write
-//  - GET (leitura administrativa) => JWT + role ADMIN/GERENTE
+//  - GET (leitura administrativa) => JWT + permissao analytics:read (RF-USU-01)
 @Controller('agente/eventos')
 export class AgenteEventosController {
   constructor(
@@ -46,8 +46,8 @@ export class AgenteEventosController {
   }
 
   @Get()
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN', 'GERENTE')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('analytics:read')
   async listarEventos(@Query() filtros: FiltroEventoDto) {
     const eventos = await this.listar.execute({
       agente: filtros.agente,

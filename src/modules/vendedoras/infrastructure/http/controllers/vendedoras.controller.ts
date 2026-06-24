@@ -12,10 +12,12 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import { Permissions } from '../../../../auth/infrastructure/http/decorators/permissions.decorator';
 import { Roles } from '../../../../auth/infrastructure/http/decorators/roles.decorator';
 import { RequireScopes } from '../../../../auth/infrastructure/http/decorators/scopes.decorator';
 import { ApiKeyGuard } from '../../../../auth/infrastructure/http/guards/api-key.guard';
 import { JwtAuthGuard } from '../../../../auth/infrastructure/http/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../../../../auth/infrastructure/http/guards/permissions.guard';
 import { RolesGuard } from '../../../../auth/infrastructure/http/guards/roles.guard';
 import { ScopesGuard } from '../../../../auth/infrastructure/http/guards/scopes.guard';
 import { AtualizarVendedoraUseCase } from '../../../application/use-cases/atualizar-vendedora.use-case';
@@ -63,9 +65,12 @@ export class VendedorasController {
 
   // Rotas estaticas de metricas declaradas ANTES de GET /:id para nao
   // serem capturadas pela rota de parametro.
+  // Metricas de desempenho seguem restritas a gestao por PAPEL (nao por
+  // permissao): mapear para vendedoras:read vazaria as metricas das colegas
+  // para a VENDEDORA (que tem vendedoras:read). SUPERADMIN incluido p/ a equipe STB.
   @Get('metricas')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN', 'GERENTE')
+  @Roles('SUPERADMIN', 'ADMIN', 'GERENTE')
   async listarVendedorasMetricas() {
     const lista = await this.listarMetricas.execute();
     return lista.map((m) => m.toPublic());
@@ -74,7 +79,7 @@ export class VendedorasController {
   @Post('metricas/refresh')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('SUPERADMIN', 'ADMIN')
   async refreshVendedorasMetricas() {
     return this.refreshMetricas.execute();
   }
@@ -115,16 +120,16 @@ export class VendedorasController {
   }
 
   @Get()
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN', 'GERENTE', 'VENDEDORA')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('vendedoras:read')
   async listarVendedoras(@Query() filtros: FiltroVendedoraDto) {
     const lista = await this.listar.execute(filtros);
     return lista.map((v) => v.toPublic());
   }
 
   @Get(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN', 'GERENTE', 'VENDEDORA')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('vendedoras:read')
   async buscarPorId(@Param('id', ParseUUIDPipe) id: string) {
     const v = await this.buscar.execute(id);
     return v.toPublic();
@@ -132,7 +137,7 @@ export class VendedorasController {
 
   @Get(':id/metricas')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN', 'GERENTE')
+  @Roles('SUPERADMIN', 'ADMIN', 'GERENTE')
   async buscarMetricasPorId(@Param('id', ParseUUIDPipe) id: string) {
     const m = await this.buscarMetricas.execute(id);
     return m.toPublic();
@@ -140,8 +145,8 @@ export class VendedorasController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('vendedoras:write')
   async criarVendedora(@Body() dto: CriarVendedoraDto) {
     const v = await this.criar.execute({
       codigoErp: dto.codigoErp,
@@ -156,8 +161,8 @@ export class VendedorasController {
   }
 
   @Patch(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('vendedoras:write')
   async atualizarVendedora(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AtualizarVendedoraDto,

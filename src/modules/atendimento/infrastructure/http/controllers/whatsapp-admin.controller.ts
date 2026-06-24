@@ -1,17 +1,16 @@
 import { Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../../../auth/infrastructure/http/guards/jwt-auth.guard';
-import { RolesGuard } from '../../../../auth/infrastructure/http/guards/roles.guard';
-import { Roles } from '../../../../auth/infrastructure/http/decorators/roles.decorator';
+import { PermissionsGuard } from '../../../../auth/infrastructure/http/guards/permissions.guard';
+import { Permissions } from '../../../../auth/infrastructure/http/decorators/permissions.decorator';
 import { WahaAdminClient } from '../../whatsapp/waha-admin.client';
 
 /**
  * Endpoints do painel para gerir a sessao de WhatsApp (WAHA). Fazem proxy para
- * o WAHA — o front nunca ve a API key. Restrito a ADMIN (mesmo padrao das telas
- * de API keys e usuarios).
+ * o WAHA — o front nunca ve a API key. Exige whatsapp:manage (RF-USU-01).
  */
 @Controller('whatsapp')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('ADMIN')
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+@Permissions('whatsapp:manage')
 export class WhatsappAdminController {
   constructor(private readonly waha: WahaAdminClient) {}
 

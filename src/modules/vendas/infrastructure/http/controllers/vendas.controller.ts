@@ -12,12 +12,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Permissions } from '../../../../auth/infrastructure/http/decorators/permissions.decorator';
-import { Roles } from '../../../../auth/infrastructure/http/decorators/roles.decorator';
 import { RequireScopes } from '../../../../auth/infrastructure/http/decorators/scopes.decorator';
 import { ApiKeyGuard } from '../../../../auth/infrastructure/http/guards/api-key.guard';
 import { JwtAuthGuard } from '../../../../auth/infrastructure/http/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../../../auth/infrastructure/http/guards/permissions.guard';
-import { RolesGuard } from '../../../../auth/infrastructure/http/guards/roles.guard';
 import { ScopesGuard } from '../../../../auth/infrastructure/http/guards/scopes.guard';
 import type { JwtPayload } from '../../../../auth/infrastructure/http/strategies/jwt.strategy';
 import { EscopoVendasService } from '../../../application/escopo-vendas.service';
@@ -141,8 +139,8 @@ export class VendasController {
   }
 
   @Get(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN', 'GERENTE')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('vendas:read_all')
   async buscarPorId(@Param('id', ParseUUIDPipe) id: string) {
     const venda = await this.buscar.execute(id);
     return venda.toPublic();
