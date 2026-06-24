@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AgentesModule } from '../agentes/agentes.module';
+import { AuthModule } from '../auth/auth.module';
 import { ProcessarMensagemWhatsappUseCase } from './application/use-cases/processar-mensagem-whatsapp.use-case';
 import { WHATSAPP_GATEWAY } from './domain/ports/injection-tokens';
 import { WhatsappWebhookController } from './infrastructure/http/controllers/whatsapp-webhook.controller';
@@ -14,7 +15,7 @@ import { WahaAdminClient } from './infrastructure/whatsapp/waha-admin.client';
  * (reusa o LLM_CLIENT exportado pelo AgentesModule) e envia de volta via WAHA.
  */
 @Module({
-  imports: [AgentesModule],
+  imports: [AgentesModule, AuthModule],
   controllers: [WhatsappWebhookController, WhatsappAdminController],
   providers: [
     ProcessarMensagemWhatsappUseCase,
