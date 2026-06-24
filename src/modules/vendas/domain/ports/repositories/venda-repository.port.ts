@@ -69,6 +69,19 @@ export interface ResumoVendas {
 }
 
 /**
+ * Linha do comparativo de desempenho por vendedora (RF-USU-02). Agregados de
+ * vendas CONCLUIDAS e ativas no recorte. Sem PII — apenas a FK/nome da
+ * vendedora e numeros. `vendedoraId` pode ser null (vendas sem vendedora).
+ */
+export interface ComparativoVendedora {
+  vendedoraId: string | null;
+  vendedoraNome: string | null;
+  totalVendas: number;
+  receita: number;
+  ticketMedio: number;
+}
+
+/**
  * Item resumido do historico de compras de um cliente. Apenas dados de
  * venda — nenhuma PII do cliente. `qtdItens` e a contagem de linhas de item.
  */
@@ -147,6 +160,23 @@ export interface IVendaRepository {
    * receita) e limitado aquele status.
    */
   resumoAgregado(filtros: FiltroVenda): Promise<ResumoVendas>;
+
+  /**
+   * Resolve o ID da vendedora vinculada a um usuario admin (RF-USU-02), via
+   * vendedoras.admin_user_id. Retorna null se o usuario nao for uma vendedora.
+   * Usado para isolar a carteira: quem nao tem vendas:read_all so ve as
+   * proprias vendas.
+   */
+  resolverVendedoraIdPorAdminUser(adminUserId: string): Promise<string | null>;
+
+  /**
+   * Comparativo de desempenho por vendedora (RF-USU-02) para a gestao. Agrega
+   * vendas CONCLUIDAS e ativas por vendedora no recorte (periodo opcional),
+   * ordenado por receita desc. Exposto apenas a quem tem vendas:read_all.
+   */
+  comparativoPorVendedora(
+    filtros: Pick<FiltroVenda, 'dataDe' | 'dataAte'>,
+  ): Promise<ComparativoVendedora[]>;
 
   /**
    * Historico de compras de um cliente para o dashboard. Retorna a lista de

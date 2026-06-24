@@ -5,6 +5,7 @@ import { ItemVenda } from '../../../../domain/entities/item-venda.entity';
 import { PagamentoVenda } from '../../../../domain/entities/pagamento-venda.entity';
 import { Venda } from '../../../../domain/entities/venda.entity';
 import {
+  ComparativoVendedora,
   FiltroVenda,
   HistoricoCliente,
   IVendaRepository,
@@ -265,6 +266,64 @@ export class VendaRepository implements IVendaRepository {
       .andWhere('v.vendedora_id IS NOT NULL')
       .getRawMany<{ vendedora_id: string }>();
     return rows.map((r) => r.vendedora_id);
+  }
+
+  async resolverVendedoraIdPorAdminUser(
+    adminUserId: string,
+  ): Promise<string | null> {
+    // Vinculo usuario->vendedora (RF-USU-02). Parametrizado; retorna so a FK.
+    const rows = await this.dataSource.query<{ id: string }[]>(
+      `SELECT id FROM vendedoras WHERE admin_user_id = $1 LIMIT 1`,
+      [adminUserId],
+    );
+    return rows[0]?.id ?? null;
+  }
+
+  async comparativoPorVendedora(
+    filtros: Pick<FiltroVenda, 'dataDe' | 'dataAte'>,
+  ): Promise<ComparativoVendedora[]> {
+    // Agregado por vendedora de vendas CONCLUIDAS e ativas (RF-USU-02). Sem
+    // carregar linhas; periodo opcional parametrizado. Nenhuma PII.
+    const conds: string[] = [`v.status = 'concluida'`, `v.ativo = true`];
+    const params: unknown[] = [];
+    if (filtros.dataDe !== undefined) {
+      params.push(filtros.dataDe);
+      conds.push(`v.data_venda >= $${params.length}`);
+    }
+    if (filtros.dataAte !== undefined) {
+      params.push(filtros.dataAte);
+      conds.push(`v.data_venda <= $${params.length}`);
+    }
+    const rows = await this.dataSource.query<
+      {
+        vendedoraId: string | null;
+        vendedoraNome: string | null;
+        totalVendas: number;
+        receita: number;
+        ticketMedio: number;
+      }[]
+    >(
+      `
+      SELECT v.vendedora_id AS "vendedoraId",
+             vd.nome AS "vendedoraNome",
+             COUNT(*)::int AS "totalVendas",
+             COALESCE(SUM(v.valor_total), 0)::float AS receita,
+             COALESCE(AVG(v.valor_total), 0)::float AS "ticketMedio"
+      FROM vendas v
+      LEFT JOIN vendedoras vd ON vd.id = v.vendedora_id
+      WHERE ${conds.join(' AND ')}
+      GROUP BY v.vendedora_id, vd.nome
+      ORDER BY receita DESC
+      `,
+      params,
+    );
+    return rows.map((r) => ({
+      vendedoraId: r.vendedoraId,
+      vendedoraNome: r.vendedoraNome,
+      totalVendas: r.totalVendas,
+      receita: r.receita,
+      ticketMedio: r.ticketMedio,
+    }));
   }
 
   async resumoAgregado(filtros: FiltroVenda): Promise<ResumoVendas> {
