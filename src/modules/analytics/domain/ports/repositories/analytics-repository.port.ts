@@ -75,12 +75,21 @@ export interface LinhaVendaCsv {
   formasPagamento: string;
 }
 
+// Recorte por sexo dentro de uma janela de data comemorativa (RF-CLI-05).
+export interface ComportamentoSexo {
+  sexo: string; // 'M' | 'F' | 'OUTRO' | 'NAO_INFORMADO'
+  totalCompras: number;
+  valorTotal: number;
+}
+
 export interface ComportamentoData {
   nome: string;
   de: string; // ISO date
   ate: string; // ISO date
   totalCompras: number;
   valorTotal: number;
+  // Quebra do mesmo periodo por sexo do cliente (RF-CLI-05).
+  porSexo: ComportamentoSexo[];
 }
 
 export interface JanelaData {
