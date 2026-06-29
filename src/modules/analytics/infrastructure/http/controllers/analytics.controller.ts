@@ -24,6 +24,8 @@ function parseFiltro(
   sexo?: string,
   origem?: string,
   faixa?: string,
+  idadeMin?: string,
+  idadeMax?: string,
 ): FiltroAnalitico | undefined {
   const filtro: FiltroAnalitico = {};
   if (de && ate) {
@@ -37,6 +39,14 @@ function parseFiltro(
   if (sexo) filtro.sexo = sexo;
   if (origem) filtro.origem = origem;
   if (faixa) filtro.faixaEtaria = faixa;
+  if (idadeMin) {
+    const min = Number(idadeMin);
+    if (Number.isInteger(min) && min >= 0) filtro.idadeMin = min;
+  }
+  if (idadeMax) {
+    const max = Number(idadeMax);
+    if (Number.isInteger(max) && max >= 0) filtro.idadeMax = max;
+  }
   return Object.keys(filtro).length > 0 ? filtro : undefined;
 }
 
@@ -67,9 +77,11 @@ export class AnalyticsController {
     @Query('sexo') sexo?: string,
     @Query('origem') origem?: string,
     @Query('faixa') faixa?: string,
+    @Query('idade_min') idadeMin?: string,
+    @Query('idade_max') idadeMax?: string,
   ) {
     return this.resumoPeriodo.execute(
-      parseFiltro(dataInicio, dataFim, sexo, origem, faixa),
+      parseFiltro(dataInicio, dataFim, sexo, origem, faixa, idadeMin, idadeMax),
     );
   }
 
@@ -86,10 +98,12 @@ export class AnalyticsController {
     @Query('sexo') sexo?: string,
     @Query('origem') origem?: string,
     @Query('faixa') faixa?: string,
+    @Query('idade_min') idadeMin?: string,
+    @Query('idade_max') idadeMax?: string,
   ) {
     return this.topProdutos.execute(
       limit ? Number(limit) : undefined,
-      parseFiltro(dataInicio, dataFim, sexo, origem, faixa),
+      parseFiltro(dataInicio, dataFim, sexo, origem, faixa, idadeMin, idadeMax),
     );
   }
 
@@ -100,9 +114,11 @@ export class AnalyticsController {
     @Query('sexo') sexo?: string,
     @Query('origem') origem?: string,
     @Query('faixa') faixa?: string,
+    @Query('idade_min') idadeMin?: string,
+    @Query('idade_max') idadeMax?: string,
   ) {
     return this.giroEstoque.execute(
-      parseFiltro(dataInicio, dataFim, sexo, origem, faixa),
+      parseFiltro(dataInicio, dataFim, sexo, origem, faixa, idadeMin, idadeMax),
     );
   }
 
@@ -113,9 +129,11 @@ export class AnalyticsController {
     @Query('sexo') sexo?: string,
     @Query('origem') origem?: string,
     @Query('faixa') faixa?: string,
+    @Query('idade_min') idadeMin?: string,
+    @Query('idade_max') idadeMax?: string,
   ) {
     return this.distribuicaoPagamento.execute(
-      parseFiltro(dataInicio, dataFim, sexo, origem, faixa),
+      parseFiltro(dataInicio, dataFim, sexo, origem, faixa, idadeMin, idadeMax),
     );
   }
 
@@ -131,9 +149,11 @@ export class AnalyticsController {
     @Query('sexo') sexo?: string,
     @Query('origem') origem?: string,
     @Query('faixa') faixa?: string,
+    @Query('idade_min') idadeMin?: string,
+    @Query('idade_max') idadeMax?: string,
   ) {
     return this.distribuicaoOrigem.execute(
-      parseFiltro(dataInicio, dataFim, sexo, origem, faixa),
+      parseFiltro(dataInicio, dataFim, sexo, origem, faixa, idadeMin, idadeMax),
     );
   }
 
@@ -144,9 +164,11 @@ export class AnalyticsController {
     @Query('sexo') sexo?: string,
     @Query('origem') origem?: string,
     @Query('faixa') faixa?: string,
+    @Query('idade_min') idadeMin?: string,
+    @Query('idade_max') idadeMax?: string,
   ) {
     return this.demografia.execute(
-      parseFiltro(dataInicio, dataFim, sexo, origem, faixa),
+      parseFiltro(dataInicio, dataFim, sexo, origem, faixa, idadeMin, idadeMax),
     );
   }
 
@@ -159,12 +181,14 @@ export class AnalyticsController {
     @Query('sexo') sexo?: string,
     @Query('origem') origem?: string,
     @Query('faixa') faixa?: string,
+    @Query('idade_min') idadeMin?: string,
+    @Query('idade_max') idadeMax?: string,
   ) {
     const anoNum = Number(ano);
     const alvo = Number.isInteger(anoNum) && anoNum > 2000 ? anoNum : new Date().getFullYear();
     return this.comportamentoDatas.execute(
       alvo,
-      parseFiltro(undefined, undefined, sexo, origem, faixa),
+      parseFiltro(undefined, undefined, sexo, origem, faixa, idadeMin, idadeMax),
     );
   }
 

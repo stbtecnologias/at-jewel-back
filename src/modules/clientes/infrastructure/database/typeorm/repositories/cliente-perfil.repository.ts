@@ -91,6 +91,7 @@ export class ClientePerfilRepository implements IClientePerfilRepository {
       primeiroContatoEm: p.primeiroContatoEm,
       sexo: p.sexo,
       faixaEtaria: p.faixaEtaria,
+      idade: p.idade,
     };
   }
 
@@ -119,6 +120,7 @@ export class ClientePerfilRepository implements IClientePerfilRepository {
       primeiroContatoEm: p.primeiroContatoEm,
       sexo: p.sexo,
       faixaEtaria: p.faixaEtaria,
+      idade: p.idade != null ? Number(p.idade) : null,
       criadoEm: p.criadoEm,
       atualizadoEm: p.atualizadoEm,
     });

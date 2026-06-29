@@ -41,6 +41,7 @@ export interface AtualizarPerfilInput {
   primeiroContatoEm?: Date | null;
   sexo?: Sexo | null;
   faixaEtaria?: string | null;
+  idade?: number | null;
 }
 
 @Injectable()
@@ -141,6 +142,7 @@ export class AtualizarPerfilClienteUseCase {
       sexo: input.sexo !== undefined ? input.sexo : perfilAtual.sexo,
       faixaEtaria:
         input.faixaEtaria !== undefined ? input.faixaEtaria : perfilAtual.faixaEtaria,
+      idade: input.idade !== undefined ? input.idade : perfilAtual.idade,
     });
 
     await this.perfilRepo.atualizar(perfilAtualizado);

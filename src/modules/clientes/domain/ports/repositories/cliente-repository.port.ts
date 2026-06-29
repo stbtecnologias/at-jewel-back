@@ -25,6 +25,8 @@ export interface FiltroDemografico {
   sexo?: string;
   origem?: string;
   faixaEtaria?: string;
+  idadeMin?: number;
+  idadeMax?: number;
 }
 
 export interface IClienteRepository {

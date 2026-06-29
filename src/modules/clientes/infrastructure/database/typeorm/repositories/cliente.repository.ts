@@ -28,7 +28,11 @@ export class ClienteRepository implements IClienteRepository {
     const params: unknown[] = [];
     let whereDemo = '';
     const precisaPerfil =
-      filtro?.sexo != null || filtro?.origem != null || filtro?.faixaEtaria != null;
+      filtro?.sexo != null ||
+      filtro?.origem != null ||
+      filtro?.faixaEtaria != null ||
+      filtro?.idadeMin != null ||
+      filtro?.idadeMax != null;
     if (filtro?.dataInicio && filtro?.dataFim) {
       params.push(filtro.dataInicio, filtro.dataFim);
       whereDemo += ` AND c.criado_em BETWEEN $${params.length - 1} AND $${params.length}`;
@@ -44,6 +48,14 @@ export class ClienteRepository implements IClienteRepository {
     if (filtro?.faixaEtaria != null) {
       params.push(filtro.faixaEtaria);
       whereDemo += ` AND COALESCE(NULLIF(cp.faixa_etaria, ''), 'Nao informado') = $${params.length}`;
+    }
+    if (filtro?.idadeMin != null) {
+      params.push(filtro.idadeMin);
+      whereDemo += ` AND cp.idade >= $${params.length}`;
+    }
+    if (filtro?.idadeMax != null) {
+      params.push(filtro.idadeMax);
+      whereDemo += ` AND cp.idade <= $${params.length}`;
     }
     const joinCp = precisaPerfil
       ? ' LEFT JOIN clientes_perfil cp ON cp.cliente_id = c.id'
@@ -189,6 +201,9 @@ export class ClienteRepository implements IClienteRepository {
       tags: p.tags ?? [],
       scorePerfil: p.scorePerfil,
       motivacaoCompra: p.motivacaoCompra,
+      sexo: p.sexo,
+      faixaEtaria: p.faixaEtaria,
+      idade: p.idade,
     };
   }
 
@@ -242,6 +257,9 @@ export class ClienteRepository implements IClienteRepository {
       tags: p.tags ?? [],
       scorePerfil: p.scorePerfil,
       motivacaoCompra: p.motivacaoCompra,
+      sexo: p.sexo,
+      faixaEtaria: p.faixaEtaria,
+      idade: p.idade != null ? Number(p.idade) : null,
       criadoEm: p.criadoEm,
       atualizadoEm: p.atualizadoEm,
     });

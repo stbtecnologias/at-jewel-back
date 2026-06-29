@@ -116,6 +116,8 @@ export interface FiltroAnalitico {
   sexo?: string;
   origem?: string;
   faixaEtaria?: string;
+  idadeMin?: number;
+  idadeMax?: number;
 }
 
 export interface ResumoPeriodo {

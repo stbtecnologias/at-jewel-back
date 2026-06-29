@@ -65,6 +65,8 @@ export class ClientesController {
     @Query('sexo') sexo?: string,
     @Query('origem') origem?: string,
     @Query('faixa') faixa?: string,
+    @Query('idade_min') idadeMin?: string,
+    @Query('idade_max') idadeMax?: string,
   ) {
     const filtro: FiltroDemografico = {};
     if (dataInicio && dataFim) {
@@ -78,6 +80,14 @@ export class ClientesController {
     if (sexo) filtro.sexo = sexo;
     if (origem) filtro.origem = origem;
     if (faixa) filtro.faixaEtaria = faixa;
+    if (idadeMin) {
+      const min = Number(idadeMin);
+      if (Number.isInteger(min) && min >= 0) filtro.idadeMin = min;
+    }
+    if (idadeMax) {
+      const max = Number(idadeMax);
+      if (Number.isInteger(max) && max >= 0) filtro.idadeMax = max;
+    }
     return this.distribuicaoTiers.execute(
       Object.keys(filtro).length > 0 ? filtro : undefined,
     );
@@ -206,6 +216,9 @@ export class ClientesController {
         : dto.primeiroContatoEm === null
           ? null
           : undefined,
+      sexo: dto.sexo,
+      faixaEtaria: dto.faixaEtaria,
+      idade: dto.idade,
     });
     return cliente.toPublic();
   }

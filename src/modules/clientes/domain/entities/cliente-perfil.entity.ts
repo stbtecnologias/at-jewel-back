@@ -32,6 +32,7 @@ export interface ClientePerfilProps {
   primeiroContatoEm?: Date | null;
   sexo?: Sexo | null;
   faixaEtaria?: string | null;
+  idade?: number | null;
   criadoEm?: Date;
   atualizadoEm?: Date;
 }
@@ -73,6 +74,10 @@ export class ClientePerfil {
   readonly sexo: Sexo | null;
   readonly faixaEtaria: string | null;
 
+  // Idade exata do cliente (para o filtro de min/max). Baixa sensibilidade.
+  // faixaEtaria continua sendo o balde usado nos graficos.
+  readonly idade: number | null;
+
   readonly criadoEm: Date | undefined;
   readonly atualizadoEm: Date | undefined;
 
@@ -100,6 +105,7 @@ export class ClientePerfil {
     this.primeiroContatoEm = props.primeiroContatoEm ?? null;
     this.sexo = props.sexo ?? null;
     this.faixaEtaria = props.faixaEtaria ?? null;
+    this.idade = props.idade ?? null;
     this.criadoEm = props.criadoEm;
     this.atualizadoEm = props.atualizadoEm;
   }
@@ -165,6 +171,7 @@ export class ClientePerfil {
       primeiroContatoEm: this.primeiroContatoEm,
       sexo: this.sexo,
       faixaEtaria: this.faixaEtaria,
+      idade: this.idade,
       criadoEm: this.criadoEm,
       atualizadoEm: this.atualizadoEm,
     };

@@ -128,4 +128,12 @@ export class AtualizarPerfilClienteDto {
   @IsString()
   @MaxLength(20)
   faixaEtaria?: string | null;
+
+  // Idade exata (0..120) para o filtro de min/max. Baixa sensibilidade.
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(120)
+  @Type(() => Number)
+  idade?: number | null;
 }

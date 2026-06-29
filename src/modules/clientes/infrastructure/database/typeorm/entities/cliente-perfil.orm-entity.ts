@@ -152,6 +152,10 @@ export class ClientePerfilOrmEntity {
   @Column({ name: 'faixa_etaria', type: 'varchar', length: 20, nullable: true })
   faixaEtaria: string | null;
 
+  // Idade exata (para o filtro de min/max). Baixa sensibilidade, nao cifrada.
+  @Column({ name: 'idade', type: 'smallint', nullable: true })
+  idade: number | null;
+
   @CreateDateColumn({ name: 'criado_em', type: 'timestamptz' })
   criadoEm: Date;
 

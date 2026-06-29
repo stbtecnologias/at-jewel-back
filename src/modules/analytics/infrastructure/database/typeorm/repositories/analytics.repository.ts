@@ -91,6 +91,14 @@ export class AnalyticsRepository implements IAnalyticsRepository {
           params.push(filtro.faixaEtaria);
           whereDemo += ` AND COALESCE(NULLIF(cp.faixa_etaria, ''), 'Nao informado') = $${params.length}`;
         }
+        if (filtro?.idadeMin != null) {
+          params.push(filtro.idadeMin);
+          whereDemo += ` AND cp.idade >= $${params.length}`;
+        }
+        if (filtro?.idadeMax != null) {
+          params.push(filtro.idadeMax);
+          whereDemo += ` AND cp.idade <= $${params.length}`;
+        }
         const rows = await this.ds.query<
           { sexo: string; totalCompras: number; valorTotal: number }[]
         >(
@@ -135,7 +143,11 @@ export class AnalyticsRepository implements IAnalyticsRepository {
       where += ` AND v.data_venda BETWEEN $${params.length - 1} AND $${params.length}`;
     }
     const precisaPerfil =
-      filtro?.sexo != null || filtro?.origem != null || filtro?.faixaEtaria != null;
+      filtro?.sexo != null ||
+      filtro?.origem != null ||
+      filtro?.faixaEtaria != null ||
+      filtro?.idadeMin != null ||
+      filtro?.idadeMax != null;
     // Compara contra o MESMO rotulo exibido nas distribuicoes (via COALESCE),
     // para que filtrar por "NAO_INFORMADO"/"Nao informado" case as linhas NULL.
     if (filtro?.sexo != null) {
@@ -149,6 +161,14 @@ export class AnalyticsRepository implements IAnalyticsRepository {
     if (filtro?.faixaEtaria != null) {
       params.push(filtro.faixaEtaria);
       where += ` AND COALESCE(NULLIF(cp.faixa_etaria, ''), 'Nao informado') = $${params.length}`;
+    }
+    if (filtro?.idadeMin != null) {
+      params.push(filtro.idadeMin);
+      where += ` AND cp.idade >= $${params.length}`;
+    }
+    if (filtro?.idadeMax != null) {
+      params.push(filtro.idadeMax);
+      where += ` AND cp.idade <= $${params.length}`;
     }
     const join = precisaPerfil
       ? ' LEFT JOIN clientes_perfil cp ON cp.cliente_id = v.cliente_id'
@@ -179,6 +199,14 @@ export class AnalyticsRepository implements IAnalyticsRepository {
     if (filtro?.faixaEtaria != null) {
       params.push(filtro.faixaEtaria);
       where += ` AND COALESCE(NULLIF(cp.faixa_etaria, ''), 'Nao informado') = $${params.length}`;
+    }
+    if (filtro?.idadeMin != null) {
+      params.push(filtro.idadeMin);
+      where += ` AND cp.idade >= $${params.length}`;
+    }
+    if (filtro?.idadeMax != null) {
+      params.push(filtro.idadeMax);
+      where += ` AND cp.idade <= $${params.length}`;
     }
     return where;
   }
