@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { CLIENTE_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type {
+  FiltroDemografico,
   IClienteRepository,
   TierCliente,
 } from '../../domain/ports/repositories/cliente-repository.port';
@@ -12,7 +13,7 @@ export class DistribuicaoTiersUseCase {
     private readonly repo: IClienteRepository,
   ) {}
 
-  execute(): Promise<TierCliente[]> {
-    return this.repo.distribuicaoTiers();
+  execute(filtro?: FiltroDemografico): Promise<TierCliente[]> {
+    return this.repo.distribuicaoTiers(filtro);
   }
 }

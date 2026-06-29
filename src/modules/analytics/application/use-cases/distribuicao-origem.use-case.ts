@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { ANALYTICS_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type {
   DistribuicaoOrigem,
+  FiltroAnalitico,
   IAnalyticsRepository,
 } from '../../domain/ports/repositories/analytics-repository.port';
 
@@ -12,7 +13,7 @@ export class DistribuicaoOrigemUseCase {
     private readonly repo: IAnalyticsRepository,
   ) {}
 
-  async execute(): Promise<DistribuicaoOrigem[]> {
-    return this.repo.distribuicaoOrigem();
+  async execute(filtro?: FiltroAnalitico): Promise<DistribuicaoOrigem[]> {
+    return this.repo.distribuicaoOrigem(filtro);
   }
 }

@@ -104,6 +104,20 @@ export interface Periodo {
   dataFim?: Date;
 }
 
+/**
+ * Filtro comum das telas de Analytics: periodo + recorte demografico
+ * (sexo/origem/faixa etaria). Todos opcionais; ausente = sem aquele filtro.
+ * Cobre Periodo (dataInicio/dataFim), portanto substitui Periodo nas
+ * assinaturas que aceitam recorte demografico. Os agregados continuam PII-free.
+ */
+export interface FiltroAnalitico {
+  dataInicio?: Date;
+  dataFim?: Date;
+  sexo?: string;
+  origem?: string;
+  faixaEtaria?: string;
+}
+
 export interface ResumoPeriodo {
   receita: number;
   totalVendas: number;
@@ -112,13 +126,16 @@ export interface ResumoPeriodo {
 
 export interface IAnalyticsRepository {
   receitaMensal(meses: number): Promise<ReceitaMensal>;
-  comportamentoDatas(janelas: JanelaData[]): Promise<ComportamentoData[]>;
-  topProdutos(limit: number, periodo?: Periodo): Promise<TopProduto[]>;
-  giroEstoquePorFornecedor(periodo?: Periodo): Promise<GiroFornecedor[]>;
-  distribuicaoPagamento(periodo?: Periodo): Promise<DistribuicaoPagamento[]>;
-  resumoPeriodo(periodo?: Periodo): Promise<ResumoPeriodo>;
+  comportamentoDatas(
+    janelas: JanelaData[],
+    filtro?: FiltroAnalitico,
+  ): Promise<ComportamentoData[]>;
+  topProdutos(limit: number, filtro?: FiltroAnalitico): Promise<TopProduto[]>;
+  giroEstoquePorFornecedor(filtro?: FiltroAnalitico): Promise<GiroFornecedor[]>;
+  distribuicaoPagamento(filtro?: FiltroAnalitico): Promise<DistribuicaoPagamento[]>;
+  resumoPeriodo(filtro?: FiltroAnalitico): Promise<ResumoPeriodo>;
   estatisticasInventario(): Promise<EstatisticasInventario>;
-  distribuicaoOrigem(): Promise<DistribuicaoOrigem[]>;
-  demografia(): Promise<Demografia>;
+  distribuicaoOrigem(filtro?: FiltroAnalitico): Promise<DistribuicaoOrigem[]>;
+  demografia(filtro?: FiltroAnalitico): Promise<Demografia>;
   linhasVendaCsv(dataInicio?: Date, dataFim?: Date): Promise<LinhaVendaCsv[]>;
 }

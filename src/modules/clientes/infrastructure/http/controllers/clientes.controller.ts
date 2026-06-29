@@ -33,6 +33,7 @@ import { FiltroClienteDto } from '../dto/filtro-cliente.dto';
 import { HistoricoClienteQueryDto } from '../dto/historico-cliente.dto';
 import { LookupClienteDto } from '../dto/lookup-cliente.dto';
 import { MonitoramentoSlaQueryDto } from '../dto/monitoramento-sla.dto';
+import type { FiltroDemografico } from '../../../domain/ports/repositories/cliente-repository.port';
 
 // Estrategia de auth por endpoint:
 //  - Endpoints de operacao do agente (lookup, criar, atualizar perfil) =>
@@ -53,11 +54,33 @@ export class ClientesController {
   ) {}
 
   // Distribuicao por faixa de fidelidade (agregado, sem PII). Antes de :id.
+  // Aceita o filtro comum das telas administrativas (periodo + sexo/origem/
+  // faixa). Periodo filtra por clientes criados no intervalo.
   @Get('tiers')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @Permissions('clientes:read')
-  async tiers() {
-    return this.distribuicaoTiers.execute();
+  async tiers(
+    @Query('data_inicio') dataInicio?: string,
+    @Query('data_fim') dataFim?: string,
+    @Query('sexo') sexo?: string,
+    @Query('origem') origem?: string,
+    @Query('faixa') faixa?: string,
+  ) {
+    const filtro: FiltroDemografico = {};
+    if (dataInicio && dataFim) {
+      const di = new Date(dataInicio);
+      const df = new Date(dataFim);
+      if (!Number.isNaN(di.getTime()) && !Number.isNaN(df.getTime())) {
+        filtro.dataInicio = di;
+        filtro.dataFim = df;
+      }
+    }
+    if (sexo) filtro.sexo = sexo;
+    if (origem) filtro.origem = origem;
+    if (faixa) filtro.faixaEtaria = faixa;
+    return this.distribuicaoTiers.execute(
+      Object.keys(filtro).length > 0 ? filtro : undefined,
+    );
   }
 
   @Get()

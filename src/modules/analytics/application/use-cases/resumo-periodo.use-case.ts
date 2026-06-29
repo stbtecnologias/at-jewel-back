@@ -1,8 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ANALYTICS_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type {
+  FiltroAnalitico,
   IAnalyticsRepository,
-  Periodo,
   ResumoPeriodo,
 } from '../../domain/ports/repositories/analytics-repository.port';
 
@@ -13,7 +13,7 @@ export class ResumoPeriodoUseCase {
     private readonly repo: IAnalyticsRepository,
   ) {}
 
-  execute(periodo?: Periodo): Promise<ResumoPeriodo> {
-    return this.repo.resumoPeriodo(periodo);
+  execute(filtro?: FiltroAnalitico): Promise<ResumoPeriodo> {
+    return this.repo.resumoPeriodo(filtro);
   }
 }

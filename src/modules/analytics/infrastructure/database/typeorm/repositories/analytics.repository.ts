@@ -7,11 +7,11 @@ import type {
   DistribuicaoOrigem,
   DistribuicaoPagamento,
   EstatisticasInventario,
+  FiltroAnalitico,
   GiroFornecedor,
   IAnalyticsRepository,
   JanelaData,
   LinhaVendaCsv,
-  Periodo,
   ReceitaMensal,
   ReceitaMensalItem,
   ResumoPeriodo,
@@ -66,12 +66,31 @@ export class AnalyticsRepository implements IAnalyticsRepository {
     return { meses: linhas, meta: metaRows[0]?.meta ?? 0 };
   }
 
-  async comportamentoDatas(janelas: JanelaData[]): Promise<ComportamentoData[]> {
+  async comportamentoDatas(
+    janelas: JanelaData[],
+    filtro?: FiltroAnalitico,
+  ): Promise<ComportamentoData[]> {
     // Uma agregacao por janela (poucas datas — custo baixo). Conta vendas
     // concluidas no periodo que antecede cada data comemorativa, ja quebrando
     // por sexo do cliente (RF-CLI-05). Os totais sao a soma das linhas por sexo.
+    // O periodo vem da JANELA (data_venda BETWEEN), logo o filtro de
+    // data_inicio/data_fim NAO se aplica aqui — so sexo/origem/faixa.
     return Promise.all(
       janelas.map(async (j) => {
+        const params: unknown[] = [j.de, j.ate];
+        let whereDemo = '';
+        if (filtro?.sexo != null) {
+          params.push(filtro.sexo);
+          whereDemo += ` AND COALESCE(cp.sexo::text, 'NAO_INFORMADO') = $${params.length}`;
+        }
+        if (filtro?.origem != null) {
+          params.push(filtro.origem);
+          whereDemo += ` AND COALESCE(cp.origem_contato::text, 'Nao informado') = $${params.length}`;
+        }
+        if (filtro?.faixaEtaria != null) {
+          params.push(filtro.faixaEtaria);
+          whereDemo += ` AND COALESCE(NULLIF(cp.faixa_etaria, ''), 'Nao informado') = $${params.length}`;
+        }
         const rows = await this.ds.query<
           { sexo: string; totalCompras: number; valorTotal: number }[]
         >(
@@ -81,11 +100,11 @@ export class AnalyticsRepository implements IAnalyticsRepository {
                  COALESCE(SUM(v.valor_total), 0)::float AS "valorTotal"
           FROM vendas v
           LEFT JOIN clientes_perfil cp ON cp.cliente_id = v.cliente_id
-          WHERE v.status = 'concluida' AND v.data_venda BETWEEN $1 AND $2
+          WHERE v.status = 'concluida' AND v.data_venda BETWEEN $1 AND $2${whereDemo}
           GROUP BY COALESCE(cp.sexo::text, 'NAO_INFORMADO')
           ORDER BY "totalCompras" DESC
           `,
-          [j.de, j.ate],
+          params,
         );
         return {
           nome: j.nome,
@@ -103,19 +122,70 @@ export class AnalyticsRepository implements IAnalyticsRepository {
     );
   }
 
-  // Monta o trecho de filtro por periodo (data_venda BETWEEN), acrescentando os
-  // parametros ao array e retornando o SQL com os placeholders corretos.
-  private filtroPeriodo(periodo: Periodo | undefined, params: unknown[]): string {
-    if (periodo?.dataInicio && periodo?.dataFim) {
-      params.push(periodo.dataInicio, periodo.dataFim);
-      return ` AND v.data_venda BETWEEN $${params.length - 1} AND $${params.length}`;
+  // Monta o recorte demografico sobre vendas (alias `v`). Retorna o JOIN com
+  // clientes_perfil (so quando ha filtro de sexo/origem/faixa — periodo sozinho
+  // nao precisa do join) e a clausula WHERE acumulada. Tudo parametrizado ($n).
+  private filtroVendas(
+    filtro: FiltroAnalitico | undefined,
+    params: unknown[],
+  ): { join: string; where: string } {
+    let where = '';
+    if (filtro?.dataInicio && filtro?.dataFim) {
+      params.push(filtro.dataInicio, filtro.dataFim);
+      where += ` AND v.data_venda BETWEEN $${params.length - 1} AND $${params.length}`;
     }
-    return '';
+    const precisaPerfil =
+      filtro?.sexo != null || filtro?.origem != null || filtro?.faixaEtaria != null;
+    // Compara contra o MESMO rotulo exibido nas distribuicoes (via COALESCE),
+    // para que filtrar por "NAO_INFORMADO"/"Nao informado" case as linhas NULL.
+    if (filtro?.sexo != null) {
+      params.push(filtro.sexo);
+      where += ` AND COALESCE(cp.sexo::text, 'NAO_INFORMADO') = $${params.length}`;
+    }
+    if (filtro?.origem != null) {
+      params.push(filtro.origem);
+      where += ` AND COALESCE(cp.origem_contato::text, 'Nao informado') = $${params.length}`;
+    }
+    if (filtro?.faixaEtaria != null) {
+      params.push(filtro.faixaEtaria);
+      where += ` AND COALESCE(NULLIF(cp.faixa_etaria, ''), 'Nao informado') = $${params.length}`;
+    }
+    const join = precisaPerfil
+      ? ' LEFT JOIN clientes_perfil cp ON cp.cliente_id = v.cliente_id'
+      : '';
+    return { join, where };
   }
 
-  async topProdutos(limit: number, periodo?: Periodo): Promise<TopProduto[]> {
+  // Recorte demografico aplicado direto sobre clientes_perfil (alias `cp`).
+  // Aqui o "periodo" significa clientes CRIADOS no intervalo (cp.criado_em).
+  // Retorna apenas a clausula WHERE acumulada; tudo parametrizado ($n).
+  private filtroPerfil(
+    filtro: FiltroAnalitico | undefined,
+    params: unknown[],
+  ): string {
+    let where = '';
+    if (filtro?.dataInicio && filtro?.dataFim) {
+      params.push(filtro.dataInicio, filtro.dataFim);
+      where += ` AND cp.criado_em BETWEEN $${params.length - 1} AND $${params.length}`;
+    }
+    if (filtro?.sexo != null) {
+      params.push(filtro.sexo);
+      where += ` AND COALESCE(cp.sexo::text, 'NAO_INFORMADO') = $${params.length}`;
+    }
+    if (filtro?.origem != null) {
+      params.push(filtro.origem);
+      where += ` AND COALESCE(cp.origem_contato::text, 'Nao informado') = $${params.length}`;
+    }
+    if (filtro?.faixaEtaria != null) {
+      params.push(filtro.faixaEtaria);
+      where += ` AND COALESCE(NULLIF(cp.faixa_etaria, ''), 'Nao informado') = $${params.length}`;
+    }
+    return where;
+  }
+
+  async topProdutos(limit: number, filtro?: FiltroAnalitico): Promise<TopProduto[]> {
     const params: unknown[] = [];
-    const filtro = this.filtroPeriodo(periodo, params);
+    const { join: joinCp, where: whereDemo } = this.filtroVendas(filtro, params);
     params.push(limit);
     return this.ds.query<TopProduto[]>(
       `
@@ -130,9 +200,9 @@ export class AnalyticsRepository implements IAnalyticsRepository {
              COALESCE(SUM(i.valor_total_item), 0)::float AS receita,
              COALESCE(SUM(i.quantidade), 0)::float AS quantidade
       FROM itens_venda i
-      JOIN vendas v ON v.id = i.venda_id AND v.status = 'concluida'${filtro}
+      JOIN vendas v ON v.id = i.venda_id AND v.status = 'concluida'${joinCp}
       LEFT JOIN produtos p ON p.id = i.produto_id
-      WHERE i.produto_id IS NOT NULL
+      WHERE i.produto_id IS NOT NULL${whereDemo}
       GROUP BY i.produto_id, p.descricao_etiqueta, p.codigo_erp, p.categoria, p.familia
       ORDER BY "totalVendas" DESC, receita DESC
       LIMIT $${params.length}
@@ -141,19 +211,19 @@ export class AnalyticsRepository implements IAnalyticsRepository {
     );
   }
 
-  async giroEstoquePorFornecedor(periodo?: Periodo): Promise<GiroFornecedor[]> {
+  async giroEstoquePorFornecedor(filtro?: FiltroAnalitico): Promise<GiroFornecedor[]> {
     const params: unknown[] = [];
-    const filtro = this.filtroPeriodo(periodo, params);
+    const { join: joinCp, where: whereDemo } = this.filtroVendas(filtro, params);
     return this.ds.query<GiroFornecedor[]>(
       `
       SELECT COALESCE(NULLIF(p.referencia_fornecedor, ''), 'Nao informado') AS fornecedor,
              ROUND(AVG(EXTRACT(EPOCH FROM (v.data_venda - p.data_entrada_estoque)) / 86400))::int AS "tempoMedioEstoque",
              COUNT(*)::int AS "totalVendas"
       FROM itens_venda i
-      JOIN vendas v ON v.id = i.venda_id AND v.status = 'concluida'${filtro}
+      JOIN vendas v ON v.id = i.venda_id AND v.status = 'concluida'${joinCp}
       JOIN produtos p ON p.id = i.produto_id
       WHERE p.data_entrada_estoque IS NOT NULL
-        AND v.data_venda >= p.data_entrada_estoque
+        AND v.data_venda >= p.data_entrada_estoque${whereDemo}
       GROUP BY COALESCE(NULLIF(p.referencia_fornecedor, ''), 'Nao informado')
       ORDER BY "tempoMedioEstoque" ASC
       `,
@@ -161,16 +231,17 @@ export class AnalyticsRepository implements IAnalyticsRepository {
     );
   }
 
-  async distribuicaoPagamento(periodo?: Periodo): Promise<DistribuicaoPagamento[]> {
+  async distribuicaoPagamento(filtro?: FiltroAnalitico): Promise<DistribuicaoPagamento[]> {
     const params: unknown[] = [];
-    const filtro = this.filtroPeriodo(periodo, params);
+    const { join: joinCp, where: whereDemo } = this.filtroVendas(filtro, params);
     return this.ds.query<DistribuicaoPagamento[]>(
       `
       SELECT pg.forma_pagamento::text AS forma,
              COUNT(*)::int AS total,
              COALESCE(SUM(pg.valor), 0)::float AS valor
       FROM pagamentos_venda pg
-      JOIN vendas v ON v.id = pg.venda_id AND v.status = 'concluida'${filtro}
+      JOIN vendas v ON v.id = pg.venda_id AND v.status = 'concluida'${joinCp}
+      WHERE TRUE${whereDemo}
       GROUP BY pg.forma_pagamento
       ORDER BY valor DESC
       `,
@@ -178,9 +249,9 @@ export class AnalyticsRepository implements IAnalyticsRepository {
     );
   }
 
-  async resumoPeriodo(periodo?: Periodo): Promise<ResumoPeriodo> {
+  async resumoPeriodo(filtro?: FiltroAnalitico): Promise<ResumoPeriodo> {
     const params: unknown[] = [];
-    const filtro = this.filtroPeriodo(periodo, params);
+    const { join: joinCp, where: whereDemo } = this.filtroVendas(filtro, params);
     const rows = await this.ds.query<
       { receita: number; totalVendas: number; ticketMedio: number }[]
     >(
@@ -188,8 +259,8 @@ export class AnalyticsRepository implements IAnalyticsRepository {
       SELECT COALESCE(SUM(v.valor_total), 0)::float AS receita,
              COUNT(*)::int AS "totalVendas",
              COALESCE(AVG(v.valor_total), 0)::float AS "ticketMedio"
-      FROM vendas v
-      WHERE v.status = 'concluida'${filtro}
+      FROM vendas v${joinCp}
+      WHERE v.status = 'concluida'${whereDemo}
       `,
       params,
     );
@@ -231,50 +302,66 @@ export class AnalyticsRepository implements IAnalyticsRepository {
     };
   }
 
-  async distribuicaoOrigem(): Promise<DistribuicaoOrigem[]> {
+  async distribuicaoOrigem(filtro?: FiltroAnalitico): Promise<DistribuicaoOrigem[]> {
+    const params: unknown[] = [];
+    const whereDemo = this.filtroPerfil(filtro, params);
     return this.ds.query<DistribuicaoOrigem[]>(
       `
-      SELECT COALESCE(origem_contato::text, 'Nao informado') AS origem,
+      SELECT COALESCE(cp.origem_contato::text, 'Nao informado') AS origem,
              COUNT(*)::int AS total
-      FROM clientes_perfil
-      GROUP BY COALESCE(origem_contato::text, 'Nao informado')
+      FROM clientes_perfil cp
+      WHERE TRUE${whereDemo}
+      GROUP BY COALESCE(cp.origem_contato::text, 'Nao informado')
       ORDER BY total DESC
       `,
+      params,
     );
   }
 
-  async demografia(): Promise<Demografia> {
+  async demografia(filtro?: FiltroAnalitico): Promise<Demografia> {
+    const paramsSexo: unknown[] = [];
+    const whereSexo = this.filtroPerfil(filtro, paramsSexo);
     const porSexo = await this.ds.query<{ rotulo: string; total: number }[]>(
       `
-      SELECT COALESCE(sexo::text, 'NAO_INFORMADO') AS rotulo,
+      SELECT COALESCE(cp.sexo::text, 'NAO_INFORMADO') AS rotulo,
              COUNT(*)::int AS total
-      FROM clientes_perfil
-      GROUP BY COALESCE(sexo::text, 'NAO_INFORMADO')
+      FROM clientes_perfil cp
+      WHERE TRUE${whereSexo}
+      GROUP BY COALESCE(cp.sexo::text, 'NAO_INFORMADO')
       ORDER BY total DESC
       `,
+      paramsSexo,
     );
+    const paramsFaixa: unknown[] = [];
+    const whereFaixa = this.filtroPerfil(filtro, paramsFaixa);
     const porFaixaEtaria = await this.ds.query<
       { rotulo: string; total: number }[]
     >(
       `
-      SELECT COALESCE(NULLIF(faixa_etaria, ''), 'Nao informado') AS rotulo,
+      SELECT COALESCE(NULLIF(cp.faixa_etaria, ''), 'Nao informado') AS rotulo,
              COUNT(*)::int AS total
-      FROM clientes_perfil
-      GROUP BY COALESCE(NULLIF(faixa_etaria, ''), 'Nao informado')
+      FROM clientes_perfil cp
+      WHERE TRUE${whereFaixa}
+      GROUP BY COALESCE(NULLIF(cp.faixa_etaria, ''), 'Nao informado')
       ORDER BY total DESC
       `,
+      paramsFaixa,
     );
+    const paramsCruzada: unknown[] = [];
+    const whereCruzada = this.filtroPerfil(filtro, paramsCruzada);
     const cruzada = await this.ds.query<
       { faixa: string; sexo: string; total: number }[]
     >(
       `
-      SELECT COALESCE(NULLIF(faixa_etaria, ''), 'Nao informado') AS faixa,
-             COALESCE(sexo::text, 'NAO_INFORMADO') AS sexo,
+      SELECT COALESCE(NULLIF(cp.faixa_etaria, ''), 'Nao informado') AS faixa,
+             COALESCE(cp.sexo::text, 'NAO_INFORMADO') AS sexo,
              COUNT(*)::int AS total
-      FROM clientes_perfil
+      FROM clientes_perfil cp
+      WHERE TRUE${whereCruzada}
       GROUP BY faixa, sexo
       ORDER BY faixa, sexo
       `,
+      paramsCruzada,
     );
     return { porSexo, porFaixaEtaria, cruzada };
   }
