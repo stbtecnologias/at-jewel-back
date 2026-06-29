@@ -14,9 +14,22 @@ export interface TierCliente {
   total: number;
 }
 
+/**
+ * Filtro comum das telas administrativas (periodo + recorte demografico).
+ * Definido localmente para NAO acoplar o modulo de clientes ao de analytics;
+ * o shape e equivalente ao FiltroAnalitico. Agregado, sem PII.
+ */
+export interface FiltroDemografico {
+  dataInicio?: Date;
+  dataFim?: Date;
+  sexo?: string;
+  origem?: string;
+  faixaEtaria?: string;
+}
+
 export interface IClienteRepository {
   // Distribuicao de clientes por faixa de fidelidade (nº de compras concluidas).
-  distribuicaoTiers(): Promise<TierCliente[]>;
+  distribuicaoTiers(filtro?: FiltroDemografico): Promise<TierCliente[]>;
 
   /**
    * Cria cliente novo + perfil inicial em uma unica transacao.

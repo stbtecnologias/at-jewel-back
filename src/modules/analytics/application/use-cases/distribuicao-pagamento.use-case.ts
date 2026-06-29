@@ -2,8 +2,8 @@ import { Inject, Injectable } from '@nestjs/common';
 import { ANALYTICS_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type {
   DistribuicaoPagamento,
+  FiltroAnalitico,
   IAnalyticsRepository,
-  Periodo,
 } from '../../domain/ports/repositories/analytics-repository.port';
 
 @Injectable()
@@ -13,7 +13,7 @@ export class DistribuicaoPagamentoUseCase {
     private readonly repo: IAnalyticsRepository,
   ) {}
 
-  async execute(periodo?: Periodo): Promise<DistribuicaoPagamento[]> {
-    return this.repo.distribuicaoPagamento(periodo);
+  async execute(filtro?: FiltroAnalitico): Promise<DistribuicaoPagamento[]> {
+    return this.repo.distribuicaoPagamento(filtro);
   }
 }

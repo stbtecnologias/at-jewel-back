@@ -12,18 +12,32 @@ import { GiroEstoqueUseCase } from '../../../application/use-cases/giro-estoque.
 import { ReceitaMensalUseCase } from '../../../application/use-cases/receita-mensal.use-case';
 import { ResumoPeriodoUseCase } from '../../../application/use-cases/resumo-periodo.use-case';
 import { TopProdutosUseCase } from '../../../application/use-cases/top-produtos.use-case';
-import type { Periodo } from '../../../domain/ports/repositories/analytics-repository.port';
+import type { FiltroAnalitico } from '../../../domain/ports/repositories/analytics-repository.port';
 
-// Converte query strings (ISO) em um recorte de periodo; ambas as datas sao
-// necessarias para o filtro valer.
-function parsePeriodo(de?: string, ate?: string): Periodo | undefined {
-  if (!de || !ate) return undefined;
-  const dataInicio = new Date(de);
-  const dataFim = new Date(ate);
-  if (Number.isNaN(dataInicio.getTime()) || Number.isNaN(dataFim.getTime())) {
-    return undefined;
+// Converte as query strings do filtro comum das telas de Analytics num
+// FiltroAnalitico. Retorna undefined quando TUDO esta vazio. Periodo so vale
+// quando AMBAS as datas vem e sao validas; os recortes demograficos
+// (sexo/origem/faixa) entram individualmente quando presentes.
+function parseFiltro(
+  de?: string,
+  ate?: string,
+  sexo?: string,
+  origem?: string,
+  faixa?: string,
+): FiltroAnalitico | undefined {
+  const filtro: FiltroAnalitico = {};
+  if (de && ate) {
+    const dataInicio = new Date(de);
+    const dataFim = new Date(ate);
+    if (!Number.isNaN(dataInicio.getTime()) && !Number.isNaN(dataFim.getTime())) {
+      filtro.dataInicio = dataInicio;
+      filtro.dataFim = dataFim;
+    }
   }
-  return { dataInicio, dataFim };
+  if (sexo) filtro.sexo = sexo;
+  if (origem) filtro.origem = origem;
+  if (faixa) filtro.faixaEtaria = faixa;
+  return Object.keys(filtro).length > 0 ? filtro : undefined;
 }
 
 // Dashboards e KPIs gerenciais — exige analytics:read (RF-USU-01). Somente
@@ -50,8 +64,13 @@ export class AnalyticsController {
   async resumo(
     @Query('data_inicio') dataInicio?: string,
     @Query('data_fim') dataFim?: string,
+    @Query('sexo') sexo?: string,
+    @Query('origem') origem?: string,
+    @Query('faixa') faixa?: string,
   ) {
-    return this.resumoPeriodo.execute(parsePeriodo(dataInicio, dataFim));
+    return this.resumoPeriodo.execute(
+      parseFiltro(dataInicio, dataFim, sexo, origem, faixa),
+    );
   }
 
   @Get('receita-mensal')
@@ -64,10 +83,13 @@ export class AnalyticsController {
     @Query('limit') limit?: string,
     @Query('data_inicio') dataInicio?: string,
     @Query('data_fim') dataFim?: string,
+    @Query('sexo') sexo?: string,
+    @Query('origem') origem?: string,
+    @Query('faixa') faixa?: string,
   ) {
     return this.topProdutos.execute(
       limit ? Number(limit) : undefined,
-      parsePeriodo(dataInicio, dataFim),
+      parseFiltro(dataInicio, dataFim, sexo, origem, faixa),
     );
   }
 
@@ -75,16 +97,26 @@ export class AnalyticsController {
   async giro(
     @Query('data_inicio') dataInicio?: string,
     @Query('data_fim') dataFim?: string,
+    @Query('sexo') sexo?: string,
+    @Query('origem') origem?: string,
+    @Query('faixa') faixa?: string,
   ) {
-    return this.giroEstoque.execute(parsePeriodo(dataInicio, dataFim));
+    return this.giroEstoque.execute(
+      parseFiltro(dataInicio, dataFim, sexo, origem, faixa),
+    );
   }
 
   @Get('distribuicao-pagamento')
   async pagamento(
     @Query('data_inicio') dataInicio?: string,
     @Query('data_fim') dataFim?: string,
+    @Query('sexo') sexo?: string,
+    @Query('origem') origem?: string,
+    @Query('faixa') faixa?: string,
   ) {
-    return this.distribuicaoPagamento.execute(parsePeriodo(dataInicio, dataFim));
+    return this.distribuicaoPagamento.execute(
+      parseFiltro(dataInicio, dataFim, sexo, origem, faixa),
+    );
   }
 
   @Get('inventario')
@@ -93,21 +125,47 @@ export class AnalyticsController {
   }
 
   @Get('origem')
-  async origem() {
-    return this.distribuicaoOrigem.execute();
+  async origem(
+    @Query('data_inicio') dataInicio?: string,
+    @Query('data_fim') dataFim?: string,
+    @Query('sexo') sexo?: string,
+    @Query('origem') origem?: string,
+    @Query('faixa') faixa?: string,
+  ) {
+    return this.distribuicaoOrigem.execute(
+      parseFiltro(dataInicio, dataFim, sexo, origem, faixa),
+    );
   }
 
   @Get('demografia')
-  async demo() {
-    return this.demografia.execute();
+  async demo(
+    @Query('data_inicio') dataInicio?: string,
+    @Query('data_fim') dataFim?: string,
+    @Query('sexo') sexo?: string,
+    @Query('origem') origem?: string,
+    @Query('faixa') faixa?: string,
+  ) {
+    return this.demografia.execute(
+      parseFiltro(dataInicio, dataFim, sexo, origem, faixa),
+    );
   }
 
   // Comportamento de compra em torno de datas comemorativas (janela de 15 dias).
+  // O periodo vem das janelas; data_inicio/data_fim NAO se aplicam aqui, mas
+  // os recortes demograficos (sexo/origem/faixa) sim.
   @Get('datas-comemorativas')
-  async datas(@Query('ano') ano?: string) {
+  async datas(
+    @Query('ano') ano?: string,
+    @Query('sexo') sexo?: string,
+    @Query('origem') origem?: string,
+    @Query('faixa') faixa?: string,
+  ) {
     const anoNum = Number(ano);
     const alvo = Number.isInteger(anoNum) && anoNum > 2000 ? anoNum : new Date().getFullYear();
-    return this.comportamentoDatas.execute(alvo);
+    return this.comportamentoDatas.execute(
+      alvo,
+      parseFiltro(undefined, undefined, sexo, origem, faixa),
+    );
   }
 
   @Get('vendas.csv')

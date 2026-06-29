@@ -5,6 +5,7 @@ import { Cliente } from '../../../../domain/entities/cliente.entity';
 import { ClientePerfil } from '../../../../domain/entities/cliente-perfil.entity';
 import {
   FiltroCliente,
+  FiltroDemografico,
   IClienteRepository,
   TierCliente,
 } from '../../../../domain/ports/repositories/cliente-repository.port';
@@ -20,14 +21,40 @@ export class ClienteRepository implements IClienteRepository {
     private readonly dataSource: DataSource,
   ) {}
 
-  async distribuicaoTiers(): Promise<TierCliente[]> {
-    // Faixas por nº de compras concluidas. Agregado, sem PII.
+  async distribuicaoTiers(filtro?: FiltroDemografico): Promise<TierCliente[]> {
+    // Faixas por nº de compras concluidas. Agregado, sem PII. O recorte
+    // demografico (sexo/origem/faixa) vem de clientes_perfil; o periodo filtra
+    // por clientes CRIADOS no intervalo (c.criado_em). Tudo parametrizado ($n).
+    const params: unknown[] = [];
+    let whereDemo = '';
+    const precisaPerfil =
+      filtro?.sexo != null || filtro?.origem != null || filtro?.faixaEtaria != null;
+    if (filtro?.dataInicio && filtro?.dataFim) {
+      params.push(filtro.dataInicio, filtro.dataFim);
+      whereDemo += ` AND c.criado_em BETWEEN $${params.length - 1} AND $${params.length}`;
+    }
+    if (filtro?.sexo != null) {
+      params.push(filtro.sexo);
+      whereDemo += ` AND COALESCE(cp.sexo::text, 'NAO_INFORMADO') = $${params.length}`;
+    }
+    if (filtro?.origem != null) {
+      params.push(filtro.origem);
+      whereDemo += ` AND COALESCE(cp.origem_contato::text, 'Nao informado') = $${params.length}`;
+    }
+    if (filtro?.faixaEtaria != null) {
+      params.push(filtro.faixaEtaria);
+      whereDemo += ` AND COALESCE(NULLIF(cp.faixa_etaria, ''), 'Nao informado') = $${params.length}`;
+    }
+    const joinCp = precisaPerfil
+      ? ' LEFT JOIN clientes_perfil cp ON cp.cliente_id = c.id'
+      : '';
     const rows = await this.dataSource.query<{ tier: string; ordem: number; total: number }[]>(
       `
       WITH compras AS (
         SELECT c.id, COUNT(v.id) AS n
         FROM clientes c
-        LEFT JOIN vendas v ON v.cliente_id = c.id AND v.status = 'concluida'
+        LEFT JOIN vendas v ON v.cliente_id = c.id AND v.status = 'concluida'${joinCp}
+        WHERE TRUE${whereDemo}
         GROUP BY c.id
       )
       SELECT t.tier, t.ordem, COUNT(*)::int AS total
@@ -47,6 +74,7 @@ export class ClienteRepository implements IClienteRepository {
       GROUP BY t.tier, t.ordem
       ORDER BY t.ordem
       `,
+      params,
     );
     return rows.map((r) => ({ tier: r.tier, total: r.total }));
   }
