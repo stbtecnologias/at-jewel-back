@@ -63,7 +63,9 @@ export class WahaAdminClient {
 
   /**
    * Garante a sessao iniciada. Cria se nao existir; se estiver parada, inicia;
-   * se ja estiver ativa/aguardando QR, apenas retorna o estado.
+   * se estiver em FAILED (ex.: link do aparelho caiu), reinicia para abrir um
+   * novo ciclo de autenticacao (STARTING -> SCAN_QR_CODE); se ja estiver
+   * ativa/aguardando QR, apenas retorna o estado.
    */
   async conectar(): Promise<SessaoStatus> {
     const atual = await this.status();
@@ -73,6 +75,10 @@ export class WahaAdminClient {
       if (start.status === 404) {
         await this.req('POST', '/api/sessions', { name: this.session, start: true });
       }
+    } else if (atual.status === 'FAILED') {
+      // Restart e a unica saida do FAILED — start em sessao existente nao
+      // reautentica. Depois do restart a sessao pede QR novamente.
+      await this.req('POST', `/api/sessions/${this.session}/restart`);
     }
     return this.status();
   }
