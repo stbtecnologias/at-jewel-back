@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
+import { DemandasModule } from '../demandas/demandas.module';
 import { AnalisarProdutoUseCase } from './application/use-cases/analisar-produto.use-case';
 import { ChatAnastasiaUseCase } from './application/use-cases/chat-anastasia.use-case';
 import { ChatElenaUseCase } from './application/use-cases/chat-elena.use-case';
@@ -27,6 +28,8 @@ import { AgentesController } from './infrastructure/http/controllers/agentes.con
   imports: [
     TypeOrmModule.forFeature([ConversaOrmEntity, AgentePromptOrmEntity]),
     AuthModule,
+    // Reusa o CriarDemandaUseCase na tool registrar_demanda da Anastasia (RF-24).
+    DemandasModule,
   ],
   controllers: [AgentesController],
   providers: [

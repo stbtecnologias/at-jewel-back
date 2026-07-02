@@ -15,12 +15,23 @@ export interface TopProduto {
   totalVendas: number;
   receita: number;
   quantidade: number;
+  /** Soma de itens_venda.valor_desconto_item do produto no recorte. */
+  descontoTotal: number;
+  /** COUNT(DISTINCT cliente_id) das vendas que contem o produto. */
+  clientesAtendidos: number;
 }
 
 export interface GiroFornecedor {
   fornecedor: string;
   tempoMedioEstoque: number; // dias
   totalVendas: number;
+}
+
+export interface GiroFamilia {
+  familia: string;
+  tempoMedioEstoque: number; // dias
+  totalVendas: number;
+  estoqueAtual: number;
 }
 
 export interface DistribuicaoPagamento {
@@ -134,6 +145,7 @@ export interface IAnalyticsRepository {
   ): Promise<ComportamentoData[]>;
   topProdutos(limit: number, filtro?: FiltroAnalitico): Promise<TopProduto[]>;
   giroEstoquePorFornecedor(filtro?: FiltroAnalitico): Promise<GiroFornecedor[]>;
+  giroEstoquePorFamilia(filtro?: FiltroAnalitico): Promise<GiroFamilia[]>;
   distribuicaoPagamento(filtro?: FiltroAnalitico): Promise<DistribuicaoPagamento[]>;
   resumoPeriodo(filtro?: FiltroAnalitico): Promise<ResumoPeriodo>;
   estatisticasInventario(): Promise<EstatisticasInventario>;

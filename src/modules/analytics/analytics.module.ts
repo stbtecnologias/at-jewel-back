@@ -7,6 +7,7 @@ import { DistribuicaoPagamentoUseCase } from './application/use-cases/distribuic
 import { EstatisticasInventarioUseCase } from './application/use-cases/estatisticas-inventario.use-case';
 import { ExportarVendasCsvUseCase } from './application/use-cases/exportar-vendas-csv.use-case';
 import { GiroEstoqueUseCase } from './application/use-cases/giro-estoque.use-case';
+import { GiroFamiliasUseCase } from './application/use-cases/giro-familias.use-case';
 import { ReceitaMensalUseCase } from './application/use-cases/receita-mensal.use-case';
 import { ResumoPeriodoUseCase } from './application/use-cases/resumo-periodo.use-case';
 import { TopProdutosUseCase } from './application/use-cases/top-produtos.use-case';
@@ -21,6 +22,7 @@ import { AnalyticsController } from './infrastructure/http/controllers/analytics
     ReceitaMensalUseCase,
     TopProdutosUseCase,
     GiroEstoqueUseCase,
+    GiroFamiliasUseCase,
     DistribuicaoPagamentoUseCase,
     EstatisticasInventarioUseCase,
     DistribuicaoOrigemUseCase,

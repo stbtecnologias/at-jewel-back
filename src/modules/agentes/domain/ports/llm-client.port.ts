@@ -10,11 +10,28 @@ export interface GraficoDinamico {
   yKeys: { key: string; color: string; label: string }[];
 }
 
+// Handler injetado pela aplicacao para a tool `registrar_demanda`: recebe
+// o input higienizado do modelo e registra a demanda (canal ASSISTENTE),
+// devolvendo o id gerado. Mantem o modulo agentes desacoplado da regra de
+// negocio de demandas — a implementacao reusa o CriarDemandaUseCase.
+export type TipoDemandaLlm = 'RELATORIO' | 'AJUSTE' | 'DUVIDA' | 'OUTRO';
+
+export interface RegistrarDemandaInput {
+  tipo: TipoDemandaLlm;
+  descricao: string;
+}
+
+export type RegistrarDemandaHandler = (
+  input: RegistrarDemandaInput,
+) => Promise<{ id: string }>;
+
 export interface ChatParams {
   model: string;
   system: string;
   maxTokens: number;
   mensagens: MensagemAgente[];
+  // Quando presente, habilita a tool `registrar_demanda` no chatComGrafico.
+  registrarDemanda?: RegistrarDemandaHandler;
 }
 
 export interface ChatResultado {

@@ -79,6 +79,15 @@ export interface ComparativoVendedora {
   totalVendas: number;
   receita: number;
   ticketMedio: number;
+  /**
+   * Desconto concedido no recorte: soma de vendas.valor_desconto (nivel header)
+   * + soma de itens_venda.valor_desconto_item das vendas concluidas da vendedora.
+   */
+  descontoTotal: number;
+  /** Soma de itens_venda.quantidade das vendas concluidas da vendedora. */
+  qtdPecas: number;
+  /** COUNT(DISTINCT cliente_id) das vendas concluidas da vendedora. */
+  clientesAtendidos: number;
 }
 
 /**

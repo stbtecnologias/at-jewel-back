@@ -8,6 +8,7 @@ import type {
   DistribuicaoPagamento,
   EstatisticasInventario,
   FiltroAnalitico,
+  GiroFamilia,
   GiroFornecedor,
   IAnalyticsRepository,
   JanelaData,
@@ -226,7 +227,9 @@ export class AnalyticsRepository implements IAnalyticsRepository {
              ) AS nome,
              COUNT(DISTINCT i.venda_id)::int AS "totalVendas",
              COALESCE(SUM(i.valor_total_item), 0)::float AS receita,
-             COALESCE(SUM(i.quantidade), 0)::float AS quantidade
+             COALESCE(SUM(i.quantidade), 0)::float AS quantidade,
+             COALESCE(SUM(i.valor_desconto_item), 0)::float AS "descontoTotal",
+             COUNT(DISTINCT v.cliente_id)::int AS "clientesAtendidos"
       FROM itens_venda i
       JOIN vendas v ON v.id = i.venda_id AND v.status = 'concluida'${joinCp}
       LEFT JOIN produtos p ON p.id = i.produto_id
@@ -254,6 +257,38 @@ export class AnalyticsRepository implements IAnalyticsRepository {
         AND v.data_venda >= p.data_entrada_estoque${whereDemo}
       GROUP BY COALESCE(NULLIF(p.referencia_fornecedor, ''), 'Nao informado')
       ORDER BY "tempoMedioEstoque" ASC
+      `,
+      params,
+    );
+  }
+
+  async giroEstoquePorFamilia(filtro?: FiltroAnalitico): Promise<GiroFamilia[]> {
+    // Espelha giroEstoquePorFornecedor, mas agrupa por familia do produto
+    // (RF-15). Produtos sem familia entram como 'Sem familia'. tempoMedioEstoque
+    // = media de dias entre data_entrada_estoque e data_venda das vendas
+    // concluidas. estoqueAtual = soma do estoque_atual dos produtos da familia
+    // (independente de venda), obtido numa subquery para nao inflar por join.
+    const params: unknown[] = [];
+    const { join: joinCp, where: whereDemo } = this.filtroVendas(filtro, params);
+    return this.ds.query<GiroFamilia[]>(
+      `
+      SELECT COALESCE(NULLIF(p.familia, ''), 'Sem familia') AS familia,
+             ROUND(AVG(EXTRACT(EPOCH FROM (v.data_venda - p.data_entrada_estoque)) / 86400))::int AS "tempoMedioEstoque",
+             COUNT(*)::int AS "totalVendas",
+             COALESCE(MAX(est.estoque_atual), 0)::int AS "estoqueAtual"
+      FROM itens_venda i
+      JOIN vendas v ON v.id = i.venda_id AND v.status = 'concluida'${joinCp}
+      JOIN produtos p ON p.id = i.produto_id
+      LEFT JOIN (
+        SELECT COALESCE(NULLIF(familia, ''), 'Sem familia') AS familia,
+               SUM(estoque_atual) AS estoque_atual
+        FROM produtos
+        GROUP BY COALESCE(NULLIF(familia, ''), 'Sem familia')
+      ) est ON est.familia = COALESCE(NULLIF(p.familia, ''), 'Sem familia')
+      WHERE p.data_entrada_estoque IS NOT NULL
+        AND v.data_venda >= p.data_entrada_estoque${whereDemo}
+      GROUP BY COALESCE(NULLIF(p.familia, ''), 'Sem familia')
+      ORDER BY "tempoMedioEstoque" DESC
       `,
       params,
     );
