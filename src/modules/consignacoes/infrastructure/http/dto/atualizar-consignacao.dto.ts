@@ -5,6 +5,7 @@ import {
   IsString,
   MaxLength,
 } from 'class-validator';
+import { SanitizeText } from '../../../../../shared/http/sanitize/sanitize-text.transform';
 import {
   STATUS_CONSIGNACAO,
   type StatusConsignacao,
@@ -22,5 +23,6 @@ export class AtualizarConsignacaoDto {
   @IsOptional()
   @IsString()
   @MaxLength(2000)
+  @SanitizeText()
   observacao?: string;
 }

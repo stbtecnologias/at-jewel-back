@@ -8,6 +8,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { SanitizeText } from '../../../../../shared/http/sanitize/sanitize-text.transform';
 import {
   DESTINOS_CONSIGNACAO,
   type DestinoConsignacao,
@@ -40,5 +41,6 @@ export class CriarConsignacaoDto {
   @IsOptional()
   @IsString()
   @MaxLength(2000)
+  @SanitizeText()
   observacao?: string;
 }

@@ -144,6 +144,9 @@ export class AnthropicClient implements ILlmClient {
     // tool_result que voltam ao modelo na continuacao.
     let grafico: GraficoDinamico | undefined;
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
+    // Teto: 1 demanda por turno de chat, mesmo que o modelo emita varios
+    // blocos registrar_demanda (mitiga criacao em massa via prompt injection).
+    let demandaRegistrada = false;
 
     for (const toolUse of toolUses) {
       if (toolUse.name === 'gerar_grafico') {
@@ -165,6 +168,17 @@ export class AnthropicClient implements ILlmClient {
           content: 'Gráfico gerado com sucesso e já apareceu no painel de Analytics.',
         });
       } else if (toolUse.name === 'registrar_demanda' && params.registrarDemanda) {
+        if (demandaRegistrada) {
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: toolUse.id,
+            content:
+              'Ignorado: apenas uma demanda pode ser registrada por mensagem. Oriente a usuária a enviar as demais separadamente.',
+            is_error: true,
+          });
+          continue;
+        }
+        demandaRegistrada = true;
         toolResults.push(
           await this.executarRegistrarDemanda(toolUse, params.registrarDemanda),
         );

@@ -72,7 +72,9 @@ export class ChatAnastasiaUseCase {
     return async (input) => {
       const criada = await this.criarDemanda.execute({
         tipo: input.tipo,
-        descricao: input.descricao,
+        // A descricao vem do modelo (influenciavel pela conversa) e nao passa
+        // pelo DTO — higieniza aqui como os DTOs fazem via @SanitizeText().
+        descricao: limparEHigienizar(input.descricao),
         canal: 'ASSISTENTE',
         solicitanteUserId: solicitante.userId,
         solicitanteNomeFallback: solicitante.nomeFallback,
