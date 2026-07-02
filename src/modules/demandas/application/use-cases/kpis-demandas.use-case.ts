@@ -12,7 +12,7 @@ export class KpisDemandasUseCase {
     private readonly repo: IDemandaRepository,
   ) {}
 
-  async execute(): Promise<KpisDemandas> {
-    return this.repo.kpis();
+  async execute(solicitanteUserId?: string): Promise<KpisDemandas> {
+    return this.repo.kpis(solicitanteUserId);
   }
 }

@@ -122,7 +122,13 @@ export class DemandaRepository implements IDemandaRepository {
     return item;
   }
 
-  async kpis(): Promise<KpisDemandas> {
+  async kpis(solicitanteUserId?: string): Promise<KpisDemandas> {
+    const params: unknown[] = [];
+    let where = '';
+    if (solicitanteUserId !== undefined) {
+      params.push(solicitanteUserId);
+      where = `WHERE d.solicitante_user_id = $${params.length}`;
+    }
     // Contadores de estado + concluidas nos ultimos 30 dias, tudo numa
     // varredura via FILTER. tempo_medio_horas = media de
     // (concluida_em - created_at) das CONCLUIDAS dos ultimos 90 dias,
@@ -154,7 +160,9 @@ export class DemandaRepository implements IDemandaRepository {
           1
         ) AS tempo_medio_horas
       FROM demandas d
+      ${where}
       `,
+      params,
     );
     const r = rows[0];
     return {
@@ -192,6 +200,10 @@ export class DemandaRepository implements IDemandaRepository {
     if (filtro.dataAte !== undefined) {
       params.push(filtro.dataAte);
       conds.push(`d.created_at <= $${params.length}`);
+    }
+    if (filtro.solicitanteUserId !== undefined) {
+      params.push(filtro.solicitanteUserId);
+      conds.push(`d.solicitante_user_id = $${params.length}`);
     }
 
     const where = conds.length > 0 ? `WHERE ${conds.join(' AND ')}` : '';

@@ -7,6 +7,8 @@ export interface FiltroDemanda {
   // Recorte sobre created_at.
   dataDe?: Date;
   dataAte?: Date;
+  // Escopo por solicitante: quem nao tem demandas:manage so ve as proprias.
+  solicitanteUserId?: string;
   limit: number;
   offset: number;
 }
@@ -55,7 +57,8 @@ export interface IDemandaRepository {
   // estado atual antes de uma transicao).
   buscarPorId(id: string): Promise<Demanda | null>;
   atualizar(id: string, dados: AtualizarDemandaData): Promise<DemandaItem>;
-  kpis(): Promise<KpisDemandas>;
+  // Com solicitanteUserId, os KPIs consideram apenas as demandas dele.
+  kpis(solicitanteUserId?: string): Promise<KpisDemandas>;
   // Rotulo denormalizado de quem abriu (nome do staff). Usado na
   // criacao para preencher solicitante_nome sem acoplar ao modulo auth.
   buscarNomeUsuario(userId: string): Promise<string | null>;
