@@ -68,8 +68,17 @@ export class AgentesController {
   @Post('anastasia/chat')
   @Permissions('agentes:anastasia')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
-  async anastasiaChat(@Body() dto: ChatDto) {
-    return this.chatAnastasia.execute(dto.messages, dto.contexto);
+  async anastasiaChat(
+    @Body() dto: ChatDto,
+    @Req() req: { user?: { sub?: string; email?: string } },
+  ) {
+    // Identidade da usuaria para carimbar demandas registradas via tool (RF-24).
+    // O JWT nao traz nome; usa o email como rotulo de fallback.
+    const solicitante =
+      req.user?.sub
+        ? { userId: req.user.sub, nomeFallback: req.user.email ?? req.user.sub }
+        : undefined;
+    return this.chatAnastasia.execute(dto.messages, dto.contexto, solicitante);
   }
 
   @Post('anastasia/relatorio')

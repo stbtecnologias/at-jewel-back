@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { limparEHigienizar } from '../../../../shared/http/sanitize/sanitize-text.transform';
+import { CriarDemandaUseCase } from '../../../demandas/application/use-cases/criar-demanda.use-case';
 import type { MensagemAgente } from '../../domain/entities/conversa.entity';
 import {
   AGENTE_PROMPTS_REPOSITORY,
@@ -9,6 +10,7 @@ import {
 import type {
   ChatComGraficoResultado,
   ILlmClient,
+  RegistrarDemandaHandler,
 } from '../../domain/ports/llm-client.port';
 import type { IAgentePromptsRepository } from '../../domain/ports/repositories/agente-prompts-repository.port';
 import { ANASTASIA_SYSTEM } from '../personas';
@@ -16,6 +18,14 @@ import { ANASTASIA_SYSTEM } from '../personas';
 export interface ContextoAgente {
   aba?: string;
   dados?: unknown;
+}
+
+// Identidade da usuaria (staff) que conversa no painel. Vem do JWT do
+// controller e serve para carimbar o solicitante da demanda (RF-24).
+export interface SolicitanteChat {
+  userId: string;
+  // Rotulo de fallback (email do token) quando o staff nao tem nome cadastrado.
+  nomeFallback: string;
 }
 
 @Injectable()
@@ -26,11 +36,13 @@ export class ChatAnastasiaUseCase {
     private readonly config: ConfigService,
     @Inject(AGENTE_PROMPTS_REPOSITORY)
     private readonly prompts: IAgentePromptsRepository,
+    private readonly criarDemanda: CriarDemandaUseCase,
   ) {}
 
   async execute(
     mensagens: MensagemAgente[],
     contexto?: ContextoAgente,
+    solicitante?: SolicitanteChat,
   ): Promise<ChatComGraficoResultado> {
     const model =
       this.config.get<string>('ANTHROPIC_MODEL_ANASTASIA') ?? 'claude-opus-4-8';
@@ -45,7 +57,28 @@ export class ChatAnastasiaUseCase {
       system,
       maxTokens: 2048,
       mensagens: sanitizarMensagens(mensagens),
+      // So habilita a tool registrar_demanda quando conhecemos quem conversa.
+      registrarDemanda: solicitante
+        ? this.montarHandlerDemanda(solicitante)
+        : undefined,
     });
+  }
+
+  // Handler da tool registrar_demanda: reusa o use case de criar demanda,
+  // fixando canal ASSISTENTE e a usuaria autenticada como solicitante.
+  private montarHandlerDemanda(
+    solicitante: SolicitanteChat,
+  ): RegistrarDemandaHandler {
+    return async (input) => {
+      const criada = await this.criarDemanda.execute({
+        tipo: input.tipo,
+        descricao: input.descricao,
+        canal: 'ASSISTENTE',
+        solicitanteUserId: solicitante.userId,
+        solicitanteNomeFallback: solicitante.nomeFallback,
+      });
+      return { id: criada.id as string };
+    };
   }
 }
 
