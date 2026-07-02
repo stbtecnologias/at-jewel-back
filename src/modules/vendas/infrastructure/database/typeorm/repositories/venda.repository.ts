@@ -294,6 +294,9 @@ export class VendaRepository implements IVendaRepository {
       params.push(filtros.dataAte);
       conds.push(`v.data_venda <= $${params.length}`);
     }
+    // Os agregados de itens (desconto por item e quantidade) sao pre-somados
+    // por venda numa subquery para NAO inflar os agregados de header (COUNT,
+    // SUM(valor_total)) por fan-out do JOIN 1:N com itens_venda.
     const rows = await this.dataSource.query<
       {
         vendedoraId: string | null;
@@ -301,6 +304,9 @@ export class VendaRepository implements IVendaRepository {
         totalVendas: number;
         receita: number;
         ticketMedio: number;
+        descontoTotal: number;
+        qtdPecas: number;
+        clientesAtendidos: number;
       }[]
     >(
       `
@@ -308,9 +314,19 @@ export class VendaRepository implements IVendaRepository {
              vd.nome AS "vendedoraNome",
              COUNT(*)::int AS "totalVendas",
              COALESCE(SUM(v.valor_total), 0)::float AS receita,
-             COALESCE(AVG(v.valor_total), 0)::float AS "ticketMedio"
+             COALESCE(AVG(v.valor_total), 0)::float AS "ticketMedio",
+             (COALESCE(SUM(v.valor_desconto), 0) + COALESCE(SUM(iv.desconto_itens), 0))::float AS "descontoTotal",
+             COALESCE(SUM(iv.qtd_pecas), 0)::float AS "qtdPecas",
+             COUNT(DISTINCT v.cliente_id)::int AS "clientesAtendidos"
       FROM vendas v
       LEFT JOIN vendedoras vd ON vd.id = v.vendedora_id
+      LEFT JOIN (
+        SELECT venda_id,
+               SUM(valor_desconto_item) AS desconto_itens,
+               SUM(quantidade) AS qtd_pecas
+        FROM itens_venda
+        GROUP BY venda_id
+      ) iv ON iv.venda_id = v.id
       WHERE ${conds.join(' AND ')}
       GROUP BY v.vendedora_id, vd.nome
       ORDER BY receita DESC
@@ -323,6 +339,9 @@ export class VendaRepository implements IVendaRepository {
       totalVendas: r.totalVendas,
       receita: r.receita,
       ticketMedio: r.ticketMedio,
+      descontoTotal: r.descontoTotal,
+      qtdPecas: r.qtdPecas,
+      clientesAtendidos: r.clientesAtendidos,
     }));
   }
 

@@ -9,6 +9,7 @@ import { DistribuicaoPagamentoUseCase } from '../../../application/use-cases/dis
 import { EstatisticasInventarioUseCase } from '../../../application/use-cases/estatisticas-inventario.use-case';
 import { ExportarVendasCsvUseCase } from '../../../application/use-cases/exportar-vendas-csv.use-case';
 import { GiroEstoqueUseCase } from '../../../application/use-cases/giro-estoque.use-case';
+import { GiroFamiliasUseCase } from '../../../application/use-cases/giro-familias.use-case';
 import { ReceitaMensalUseCase } from '../../../application/use-cases/receita-mensal.use-case';
 import { ResumoPeriodoUseCase } from '../../../application/use-cases/resumo-periodo.use-case';
 import { TopProdutosUseCase } from '../../../application/use-cases/top-produtos.use-case';
@@ -60,6 +61,7 @@ export class AnalyticsController {
     private readonly receitaMensal: ReceitaMensalUseCase,
     private readonly topProdutos: TopProdutosUseCase,
     private readonly giroEstoque: GiroEstoqueUseCase,
+    private readonly giroFamilias: GiroFamiliasUseCase,
     private readonly distribuicaoPagamento: DistribuicaoPagamentoUseCase,
     private readonly estatisticasInventario: EstatisticasInventarioUseCase,
     private readonly distribuicaoOrigem: DistribuicaoOrigemUseCase,
@@ -118,6 +120,23 @@ export class AnalyticsController {
     @Query('idade_max') idadeMax?: string,
   ) {
     return this.giroEstoque.execute(
+      parseFiltro(dataInicio, dataFim, sexo, origem, faixa, idadeMin, idadeMax),
+    );
+  }
+
+  // Giro de estoque agrupado por familia de produto (RF-15). Mesmos recortes
+  // de periodo/demografia dos endpoints vizinhos.
+  @Get('giro-familias')
+  async giroPorFamilia(
+    @Query('data_inicio') dataInicio?: string,
+    @Query('data_fim') dataFim?: string,
+    @Query('sexo') sexo?: string,
+    @Query('origem') origem?: string,
+    @Query('faixa') faixa?: string,
+    @Query('idade_min') idadeMin?: string,
+    @Query('idade_max') idadeMax?: string,
+  ) {
+    return this.giroFamilias.execute(
       parseFiltro(dataInicio, dataFim, sexo, origem, faixa, idadeMin, idadeMax),
     );
   }
