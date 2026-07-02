@@ -87,4 +87,53 @@ describe('ProcessarMensagemWhatsappUseCase', () => {
     expect(conteudo).not.toContain('​'); // invisivel removido
     expect(conteudo).toBe(conteudo.trim()); // bordas aparadas
   });
+
+  it('inclui o historico do chat nas mensagens do turno seguinte', async () => {
+    const { useCase, llm } = make();
+
+    await useCase.execute({ de: '5585999@c.us', texto: 'Quero um anel de brilhantes' });
+    await useCase.execute({ de: '5585999@c.us', texto: 'É um presente de reconciliação' });
+
+    const segunda = llm.chat.mock.calls[1][0].mensagens;
+    expect(segunda).toEqual([
+      { role: 'user', content: 'Quero um anel de brilhantes' },
+      { role: 'assistant', content: 'Olá, seja bem-vinda à A.T. Jewel.' },
+      { role: 'user', content: 'É um presente de reconciliação' },
+    ]);
+  });
+
+  it('nao mistura historico entre chats diferentes', async () => {
+    const { useCase, llm } = make();
+
+    await useCase.execute({ de: '5585111@c.us', texto: 'Oi, sou o chat A' });
+    await useCase.execute({ de: '5585222@c.us', texto: 'Oi, sou o chat B' });
+
+    const chatB = llm.chat.mock.calls[1][0].mensagens;
+    expect(chatB).toEqual([{ role: 'user', content: 'Oi, sou o chat B' }]);
+  });
+
+  it('nao registra no historico a resposta que a cliente nao recebeu', async () => {
+    const { useCase, llm, whatsapp } = make();
+    whatsapp.enviarTexto.mockRejectedValueOnce(new Error('sessao WAHA nao conectada'));
+
+    await useCase.execute({ de: '5585999@c.us', texto: 'Primeira' });
+    await useCase.execute({ de: '5585999@c.us', texto: 'Segunda' });
+
+    // A mensagem da cliente fica; a resposta nao entregue NAO fica.
+    const segunda = llm.chat.mock.calls[1][0].mensagens;
+    expect(segunda).toEqual([
+      { role: 'user', content: 'Primeira' },
+      { role: 'user', content: 'Segunda' },
+    ]);
+  });
+
+  it('persona proibe presumir genero e recumprimentar', async () => {
+    const { useCase, llm } = make();
+
+    await useCase.execute({ de: '5585999@c.us', texto: 'Oi' });
+
+    const system = llm.chat.mock.calls[0][0].system;
+    expect(system).toMatch(/NUNCA presuma o g/i);
+    expect(system).toMatch(/APENAS na primeira mensagem/i);
+  });
 });
