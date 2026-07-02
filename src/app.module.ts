@@ -14,6 +14,8 @@ import { MetasModule } from './modules/metas/metas.module';
 import { MetaOrmEntity } from './modules/metas/infrastructure/database/typeorm/entities/meta.orm-entity';
 import { DefeitosModule } from './modules/defeitos/defeitos.module';
 import { DefeitoOrmEntity } from './modules/defeitos/infrastructure/database/typeorm/entities/defeito.orm-entity';
+import { ConsignacoesModule } from './modules/consignacoes/consignacoes.module';
+import { ConsignacaoOrmEntity } from './modules/consignacoes/infrastructure/database/typeorm/entities/consignacao.orm-entity';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AgentesModule } from './modules/agentes/agentes.module';
 import { AtendimentoModule } from './modules/atendimento/atendimento.module';
@@ -78,6 +80,7 @@ import { HealthController } from './health.controller';
           AgenteEventoOrmEntity,
           MetaOrmEntity,
           DefeitoOrmEntity,
+          ConsignacaoOrmEntity,
           ConversaOrmEntity,
           AgentePromptOrmEntity,
         ],
@@ -99,6 +102,7 @@ import { HealthController } from './health.controller';
     AgenteEventosModule,
     MetasModule,
     DefeitosModule,
+    ConsignacoesModule,
     AnalyticsModule,
     AgentesModule,
     AtendimentoModule,
