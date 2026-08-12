@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -17,6 +18,7 @@ import { Roles } from '../../../../auth/infrastructure/http/decorators/roles.dec
 import { RequireScopes } from '../../../../auth/infrastructure/http/decorators/scopes.decorator';
 import { ApiKeyGuard } from '../../../../auth/infrastructure/http/guards/api-key.guard';
 import { JwtAuthGuard } from '../../../../auth/infrastructure/http/guards/jwt-auth.guard';
+import { JwtOrApiKeyGuard } from '../../../../auth/infrastructure/http/guards/jwt-or-api-key.guard';
 import { PermissionsGuard } from '../../../../auth/infrastructure/http/guards/permissions.guard';
 import { RolesGuard } from '../../../../auth/infrastructure/http/guards/roles.guard';
 import { ScopesGuard } from '../../../../auth/infrastructure/http/guards/scopes.guard';
@@ -28,6 +30,7 @@ import { ListarVendedorasUseCase } from '../../../application/use-cases/listar-v
 import { ListarVendedorasDisponiveisUseCase } from '../../../application/use-cases/listar-vendedoras-disponiveis.use-case';
 import { ListarVendedorasMetricasUseCase } from '../../../application/use-cases/listar-vendedoras-metricas.use-case';
 import { RefreshVendedorasMetricasUseCase } from '../../../application/use-cases/refresh-vendedoras-metricas.use-case';
+import { RemoverVendedoraUseCase } from '../../../application/use-cases/remover-vendedora.use-case';
 import { SugerirVendedorasUseCase } from '../../../application/use-cases/sugerir-vendedoras.use-case';
 import { AtualizarVendedoraDto } from '../dto/atualizar-vendedora.dto';
 import { CriarVendedoraDto } from '../dto/criar-vendedora.dto';
@@ -37,10 +40,14 @@ import { SugerirVendedoraDto } from '../dto/sugerir-vendedora.dto';
 // Estrategia de auth por endpoint:
 //  - Roteamento do agente (GET /disponiveis) => API Key + scope
 //    'vendedoras:read' (chamado por n8n; serializacao reduzida sem PII)
-//  - Leitura administrativa (GET, GET /:id) => JWT qualquer role
-//    (ADMIN/GERENTE/VENDEDORA)
-//  - Escrita (POST/PATCH) => JWT + role ADMIN (criar e mudar status/tipo
-//    sao operacoes administrativas; a propria vendedora nao se cadastra)
+//  - CRUD (GET, GET /:id, POST, PATCH, DELETE) => JwtOrApiKeyGuard, aceitando
+//    JWT (checa @Permissions do papel) OU API Key (checa @RequireScopes).
+//    Aberto para chave em 12/08/2026 para a integracao do ERP Safira poder
+//    manter o cadastro — o ERP so envia codigo e nome, entao whatsapp_interno
+//    e especialidades continuam sendo preenchidos pelo painel.
+//  - Escrita (POST/PATCH/DELETE) => permissao 'vendedoras:write' ou scope
+//    de mesmo nome (criar e mudar status/tipo sao operacoes administrativas;
+//    a propria vendedora nao se cadastra)
 //  - Metricas (GET /metricas, GET /:id/metricas) => JWT + ADMIN/GERENTE.
 //    Dado gerencial agregado: NAO exposto a role VENDEDORA (uma vendedora
 //    nao deve ver a performance/carteira das colegas).
@@ -61,6 +68,7 @@ export class VendedorasController {
     private readonly buscarMetricas: BuscarVendedoraMetricasUseCase,
     private readonly refreshMetricas: RefreshVendedorasMetricasUseCase,
     private readonly sugerir: SugerirVendedorasUseCase,
+    private readonly remover: RemoverVendedoraUseCase,
   ) {}
 
   // Rotas estaticas de metricas declaradas ANTES de GET /:id para nao
@@ -120,16 +128,18 @@ export class VendedorasController {
   }
 
   @Get()
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @UseGuards(JwtOrApiKeyGuard)
   @Permissions('vendedoras:read')
+  @RequireScopes('vendedoras:read')
   async listarVendedoras(@Query() filtros: FiltroVendedoraDto) {
     const lista = await this.listar.execute(filtros);
     return lista.map((v) => v.toPublic());
   }
 
   @Get(':id')
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @UseGuards(JwtOrApiKeyGuard)
   @Permissions('vendedoras:read')
+  @RequireScopes('vendedoras:read')
   async buscarPorId(@Param('id', ParseUUIDPipe) id: string) {
     const v = await this.buscar.execute(id);
     return v.toPublic();
@@ -145,8 +155,9 @@ export class VendedorasController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @UseGuards(JwtOrApiKeyGuard)
   @Permissions('vendedoras:write')
+  @RequireScopes('vendedoras:write')
   async criarVendedora(@Body() dto: CriarVendedoraDto) {
     const v = await this.criar.execute({
       codigoErp: dto.codigoErp,
@@ -161,8 +172,9 @@ export class VendedorasController {
   }
 
   @Patch(':id')
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @UseGuards(JwtOrApiKeyGuard)
   @Permissions('vendedoras:write')
+  @RequireScopes('vendedoras:write')
   async atualizarVendedora(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AtualizarVendedoraDto,
@@ -178,5 +190,19 @@ export class VendedorasController {
       adminUserId: dto.adminUserId,
     });
     return v.toPublic();
+  }
+
+  // Exclusao FISICA. O desligamento do dia a dia e PATCH com `ativo: false`,
+  // que preserva a atribuicao de todo o historico. Aqui a linha some e as
+  // referencias caem para NULL (ON DELETE SET NULL em vendas, consignacoes,
+  // conversas, agente_eventos e nas FKs da migracao 29) — sem erro e sem
+  // reconstrucao possivel. Existe para a integracao ter o CRUD completo.
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(JwtOrApiKeyGuard)
+  @Permissions('vendedoras:write')
+  @RequireScopes('vendedoras:write')
+  async removerVendedora(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
+    await this.remover.execute(id);
   }
 }

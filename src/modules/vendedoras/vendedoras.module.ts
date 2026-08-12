@@ -11,6 +11,7 @@ import { ListarVendedorasUseCase } from './application/use-cases/listar-vendedor
 import { ListarVendedorasDisponiveisUseCase } from './application/use-cases/listar-vendedoras-disponiveis.use-case';
 import { ListarVendedorasMetricasUseCase } from './application/use-cases/listar-vendedoras-metricas.use-case';
 import { RefreshVendedorasMetricasUseCase } from './application/use-cases/refresh-vendedoras-metricas.use-case';
+import { RemoverVendedoraUseCase } from './application/use-cases/remover-vendedora.use-case';
 import { SugerirVendedorasUseCase } from './application/use-cases/sugerir-vendedoras.use-case';
 import {
   VENDEDORA_METRICAS_REPOSITORY,
@@ -39,6 +40,7 @@ import { VendedorasController } from './infrastructure/http/controllers/vendedor
     BuscarVendedoraMetricasUseCase,
     RefreshVendedorasMetricasUseCase,
     SugerirVendedorasUseCase,
+    RemoverVendedoraUseCase,
     { provide: VENDEDORA_REPOSITORY, useClass: VendedoraRepository },
     {
       provide: VENDEDORA_METRICAS_REPOSITORY,

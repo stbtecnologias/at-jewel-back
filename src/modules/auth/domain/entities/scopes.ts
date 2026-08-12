@@ -6,6 +6,7 @@ export const SCOPES_VALIDOS = [
   'clientes:read',
   'clientes:write',
   'vendedoras:read',
+  'vendedoras:write',
   'vendas:read',
   'vendas:write',
   'produtos:read',

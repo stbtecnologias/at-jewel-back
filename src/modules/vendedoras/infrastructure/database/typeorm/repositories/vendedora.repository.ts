@@ -69,6 +69,10 @@ export class VendedoraRepository implements IVendedoraRepository {
     return this.toDomain(refreshed);
   }
 
+  async remover(id: string): Promise<void> {
+    await this.repo.delete(id);
+  }
+
   private toOrm(v: Vendedora): Partial<VendedoraOrmEntity> {
     return {
       codigoErp: v.codigoErp,
