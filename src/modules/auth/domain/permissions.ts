@@ -19,6 +19,8 @@ export const PERMISSOES: PermissaoDef[] = [
   { chave: 'ocorrencias:write', label: 'Registrar ocorrências', grupo: 'Produtos' },
   { chave: 'consignacoes:read', label: 'Ver consignações', grupo: 'Produtos' },
   { chave: 'consignacoes:write', label: 'Registrar consignações', grupo: 'Produtos' },
+  { chave: 'fornecedores:read', label: 'Ver fornecedores', grupo: 'Produtos' },
+  { chave: 'fornecedores:write', label: 'Editar fornecedores', grupo: 'Produtos' },
   { chave: 'demandas:read', label: 'Ver demandas', grupo: 'Demandas' },
   { chave: 'demandas:write', label: 'Abrir demandas', grupo: 'Demandas' },
   { chave: 'demandas:manage', label: 'Responder e gerir demandas', grupo: 'Demandas' },
