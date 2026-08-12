@@ -113,19 +113,67 @@ function lerEnv() {
   return env;
 }
 
+/**
+ * Conexao. `DATABASE_URL` e a fonte canonica — e o que o `app.module.ts` usa
+ * (`config.getOrThrow('DATABASE_URL')`), e o docker-compose a sobrescreve no
+ * container para apontar ao host `postgres` da rede interna. Montar a conexao
+ * pelas variaveis avulsas ignora esse override e tenta `localhost`, que dentro
+ * do container e o proprio container.
+ *
+ * Devolve as opcoes do pg separadas dos campos de exibicao: passar
+ * connectionString junto com host/port/database confunde o driver.
+ */
 function conexao(env) {
-  return {
+  const url = env.DATABASE_URL || env.POSTGRES_URL;
+
+  if (url) {
+    let u;
+    try {
+      u = new URL(url);
+    } catch {
+      throw new Error('DATABASE_URL definida mas em formato invalido.');
+    }
+    return {
+      pg: { connectionString: url },
+      host: u.hostname,
+      port: Number(u.port || 5432),
+      user: decodeURIComponent(u.username || ''),
+      database: u.pathname.replace(/^\//, ''),
+      origem: 'DATABASE_URL',
+    };
+  }
+
+  const avulso = {
     host: env.POSTGRES_HOST || env.DB_HOST || 'localhost',
     port: Number(env.POSTGRES_PORT || env.DB_PORT || 5432),
     user: env.POSTGRES_USER || env.DB_USER,
     password: env.POSTGRES_PASSWORD || env.DB_PASSWORD,
     database: env.POSTGRES_DB || env.DB_NAME,
   };
+  return { pg: avulso, ...avulso, origem: 'variaveis avulsas' };
 }
 
-// Local = loopback ou o hostname do servico dentro da rede do compose.
+// Loopback, ou o nome do servico/container dentro da rede do compose.
 const HOSTS_LOCAIS = new Set(['localhost', '127.0.0.1', '::1', 'postgres', 'atjewel_postgres']);
-const ehLocal = (host) => HOSTS_LOCAIS.has(String(host).toLowerCase());
+
+/**
+ * Producao nao da para deduzir do host: rodando DENTRO do servidor de producao
+ * o banco tambem e `localhost`, e pelo container e `postgres` — os dois
+ * parecem local. E `NODE_ENV` nao ajuda: o compose fixa `development` nos dois
+ * ambientes.
+ *
+ * Por isso o criterio e um marcador explicito no `.env`:  AMBIENTE=producao
+ * Como o compose carrega o `.env` via `env_file`, uma linha so vale tanto para
+ * quem roda no host quanto por `docker exec`.
+ *
+ * O host continua valendo como rede de seguranca para conexao remota (ex.:
+ * apontar o .env local para 10.29.0.137).
+ */
+function ehProducao(env, host) {
+  const marcador = String(env.AMBIENTE || env.APP_ENV || '').trim().toLowerCase();
+  if (['producao', 'production', 'prod'].includes(marcador)) return true;
+  return !HOSTS_LOCAIS.has(String(host).toLowerCase());
+}
 
 // ---------------------------------------------------------------------------
 // Leitura dos arquivos
@@ -254,13 +302,23 @@ function confirmar(pergunta) {
 }
 
 async function exigirConfirmacao(cfg, acao) {
-  if (ehLocal(cfg.host)) return true;
+  if (!cfg.producao) return true;
+
   console.log('');
-  console.log('  \x1b[41m\x1b[97m  ATENCAO — HOST NAO LOCAL  \x1b[0m');
+  console.log('  \x1b[41m\x1b[97m  PRODUCAO  \x1b[0m');
   console.log(`  host:  ${cfg.host}:${cfg.port}`);
   console.log(`  banco: ${cfg.database}`);
   console.log(`  acao:  ${acao}`);
   console.log('');
+
+  // Sem TTY (ex.: `docker exec` sem -it) nao ha como confirmar. Abortar e o
+  // certo: rodar direto seria exatamente o que a barreira existe para impedir.
+  if (!process.stdin.isTTY) {
+    console.log('  \x1b[31mSem terminal interativo — nao da para confirmar.\x1b[0m');
+    console.log('  Repita com `docker exec -it` (ou rode direto no host).\n');
+    return false;
+  }
+
   const r = await confirmar('  Digite PRODUCAO para continuar: ');
   if (r !== 'PRODUCAO') {
     console.log('\n  Cancelado.\n');
@@ -270,9 +328,10 @@ async function exigirConfirmacao(cfg, acao) {
 }
 
 function cabecalho(cfg) {
-  const marca = ehLocal(cfg.host) ? '\x1b[32mlocal\x1b[0m' : '\x1b[31mNAO LOCAL\x1b[0m';
+  const marca = cfg.producao ? '\x1b[31mPRODUCAO\x1b[0m' : '\x1b[32mlocal\x1b[0m';
   console.log('');
   console.log(`  ${cfg.user}@${cfg.host}:${cfg.port}/${cfg.database}  [${marca}]`);
+  console.log(`  origem da conexao: ${cfg.origem}`);
   console.log('');
 }
 
@@ -436,17 +495,22 @@ async function main() {
   const cfg = conexao(env);
 
   if (!cfg.user || !cfg.database) {
-    console.error('\n  Faltam POSTGRES_USER / POSTGRES_DB no .env ou no ambiente.\n');
+    console.error('\n  Sem dados de conexao: defina DATABASE_URL (ou POSTGRES_USER/POSTGRES_DB).\n');
     process.exit(1);
   }
 
+  cfg.producao = ehProducao(env, cfg.host);
+
   const migracoes = listarMigracoes();
-  const client = new Client(cfg);
+  const client = new Client(cfg.pg);
 
   try {
     await client.connect();
   } catch (err) {
-    console.error(`\n  Nao conectou em ${cfg.host}:${cfg.port} — ${err.message}\n`);
+    // err.message vem vazio em alguns ECONNREFUSED; o code sempre vem.
+    const detalhe = err.message || err.code || 'motivo nao informado';
+    console.error(`\n  Nao conectou em ${cfg.host}:${cfg.port}/${cfg.database} — ${detalhe}`);
+    console.error(`  (conexao montada a partir de: ${cfg.origem})\n`);
     process.exit(1);
   }
 
