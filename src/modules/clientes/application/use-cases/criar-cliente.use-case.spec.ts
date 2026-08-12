@@ -8,12 +8,14 @@ import { CriarClienteUseCase } from './criar-cliente.use-case';
 function makeRepoMock(): jest.Mocked<IClienteRepository> {
   return {
     criarComPerfil: jest.fn(),
+    criar: jest.fn(),
     buscarPorId: jest.fn(),
     buscarPorCodigoErp: jest.fn(),
     buscarPorTelefone1Hash: jest.fn(),
     buscarPorEmailHash: jest.fn(),
     listar: jest.fn(),
     atualizar: jest.fn(),
+    remover: jest.fn(),
   } as unknown as jest.Mocked<IClienteRepository>;
 }
 
@@ -178,5 +180,56 @@ describe('CriarClienteUseCase', () => {
     const cliente = repo.criarComPerfil.mock.calls[0][0];
     expect(cliente.tipoPessoa).toBe('fisica');
     expect(cliente.tabelaPreco).toBe('varejo');
+  });
+
+  // Caminho aberto em 12/08/2026 para a integracao do ERP: cliente que nunca
+  // conversou nao tem WhatsApp e nao deve ganhar perfil. Perfil vazio nasceria
+  // em TRIAGE_IN_PROGRESS e penduraria o cliente no funil sem ele ter falado
+  // com ninguem.
+  describe('sem whatsapp (cadastro vindo do ERP)', () => {
+    it('cria SEM perfil quando whatsapp nao e informado', async () => {
+      repo.criar.mockResolvedValue({} as Cliente);
+
+      await useCase.execute({ nome: 'Cliente do ERP' });
+
+      expect(repo.criar).toHaveBeenCalledTimes(1);
+      expect(repo.criarComPerfil).not.toHaveBeenCalled();
+    });
+
+    it('preserva os hashes de telefone e email mesmo sem perfil', async () => {
+      repo.criar.mockResolvedValue({} as Cliente);
+
+      await useCase.execute({
+        nome: 'Cliente do ERP',
+        telefone1: '(85) 3333-4444',
+        email: 'contato@exemplo.com',
+      });
+
+      const cliente = repo.criar.mock.calls[0][0];
+      expect(cliente.telefone1Hash).toEqual(expect.any(String));
+      expect(cliente.emailHash).toEqual(expect.any(String));
+    });
+
+    it('continua barrando telefone duplicado', async () => {
+      repo.buscarPorTelefone1Hash.mockResolvedValue({ id: 'existente' } as Cliente);
+
+      await expect(
+        useCase.execute({ nome: 'Cliente do ERP', telefone1: '85988887777' }),
+      ).rejects.toThrow(ConflictException);
+      expect(repo.criar).not.toHaveBeenCalled();
+    });
+
+    it('volta a criar perfil assim que o whatsapp e informado', async () => {
+      repo.criarComPerfil.mockResolvedValue({} as Cliente);
+
+      await useCase.execute({
+        nome: 'Maria',
+        whatsapp: '85988887777',
+        origemContato: 'whatsapp',
+      });
+
+      expect(repo.criarComPerfil).toHaveBeenCalledTimes(1);
+      expect(repo.criar).not.toHaveBeenCalled();
+    });
   });
 });

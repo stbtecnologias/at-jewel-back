@@ -40,6 +40,16 @@ export interface IClienteRepository {
   criarComPerfil(cliente: Cliente, perfil: ClientePerfil): Promise<Cliente>;
 
   /**
+   * Cria cliente SEM perfil. Usado quando o cadastro chega por outra via que
+   * nao o WhatsApp — tipicamente a integracao do ERP.
+   *
+   * Nao criar o perfil e proposital: ele nasceria em `TRIAGE_IN_PROGRESS`
+   * (NOT NULL com default) e deixaria o cliente pendurado no funil sem nunca
+   * ter conversado. O perfil e criado depois, quando houver triagem.
+   */
+  criar(cliente: Cliente): Promise<Cliente>;
+
+  /**
    * Busca cliente por UUID. `incluirPerfil = true` carrega o `perfil`.
    */
   buscarPorId(id: string, opts?: { incluirPerfil?: boolean }): Promise<Cliente | null>;
@@ -55,4 +65,13 @@ export interface IClienteRepository {
   listar(filtros: FiltroCliente): Promise<Cliente[]>;
 
   atualizar(cliente: Cliente): Promise<Cliente>;
+
+  /**
+   * Exclusao FISICA. Nao confundir com `ativo = false`, o desligamento suave.
+   *
+   * `clientes_perfil` cai por CASCADE — some todo o dado da triagem — e as
+   * demais referencias (vendas, conversas, agente_eventos, consignacoes) caem
+   * para NULL. Nada disso levanta erro nem e reconstruivel depois.
+   */
+  remover(id: string): Promise<void>;
 }

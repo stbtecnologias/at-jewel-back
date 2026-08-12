@@ -109,6 +109,13 @@ export class ClienteRepository implements IClienteRepository {
     });
   }
 
+  async criar(cliente: Cliente): Promise<Cliente> {
+    // Sem transacao: e um unico INSERT, diferente do criarComPerfil acima.
+    const row = this.repo.create(this.toOrm(cliente));
+    const salvo = await this.repo.save(row);
+    return this.toDomain(salvo, null);
+  }
+
   async buscarPorId(
     id: string,
     opts?: { incluirPerfil?: boolean },
@@ -155,6 +162,12 @@ export class ClienteRepository implements IClienteRepository {
     await this.repo.update(cliente.id, this.toOrm(cliente));
     const refreshed = await this.repo.findOneByOrFail({ id: cliente.id });
     return this.toDomain(refreshed);
+  }
+
+  async remover(id: string): Promise<void> {
+    // `clientes_perfil` cai por CASCADE declarado no schema — nao e preciso
+    // apagar antes nem abrir transacao explicita.
+    await this.repo.delete(id);
   }
 
   // Mapeamento Domain -> ORM. Note que telefone/email cifrados sao passados

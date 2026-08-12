@@ -52,13 +52,32 @@ export class CriarClienteDto {
   @MaxLength(255)
   email?: string;
 
-  // WhatsApp e origem sao obrigatorios — cliente novo sempre chega por canal.
+  /**
+   * WhatsApp e origem sao OPCIONAIS desde 12/08/2026.
+   *
+   * Eram obrigatorios porque a rota nasceu para o fluxo da Anastasia — cliente
+   * novo aparece mandando mensagem. A integracao do ERP traz cliente que nunca
+   * conversou, e muitos nem CPF tem.
+   *
+   * COM WhatsApp: nasce cadastro + perfil de triagem, como antes.
+   * SEM WhatsApp: nasce so o cadastro. Perfil vazio ficaria em
+   * TRIAGE_IN_PROGRESS e penduraria o cliente no funil sem ele ter falado com
+   * ninguem.
+   *
+   * CONSEQUENCIA A SABER: cliente sem perfil e invisivel para
+   * GET /clientes/lookup, que procura apenas em clientes_perfil.whatsapp_hash.
+   * Se ele mandar mensagem depois, a Anastasia o trata como desconhecido e cria
+   * um duplicado. A mitigacao (fallback do lookup para
+   * clientes.telefone_1_hash) ficou como decisao a parte.
+   */
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
   @MinLength(8)
   @MaxLength(20)
-  whatsapp: string;
+  whatsapp?: string;
 
+  @IsOptional()
   @IsIn([...ORIGENS_CONTATO])
-  origemContato: OrigemContato;
+  origemContato?: OrigemContato;
 }

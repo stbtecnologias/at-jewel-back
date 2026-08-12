@@ -29,6 +29,7 @@ export const PERMISSOES: PermissaoDef[] = [
   { chave: 'demandas:write', label: 'Abrir demandas', grupo: 'Demandas' },
   { chave: 'demandas:manage', label: 'Responder e gerir demandas', grupo: 'Demandas' },
   { chave: 'clientes:read', label: 'Ver clientes (agregado)', grupo: 'Clientes' },
+  { chave: 'clientes:write', label: 'Criar, editar e remover clientes', grupo: 'Clientes' },
   { chave: 'analytics:read', label: 'Ver analytics', grupo: 'Analytics' },
   { chave: 'metas:read', label: 'Ver metas', grupo: 'Metas' },
   { chave: 'metas:write', label: 'Editar metas', grupo: 'Metas' },

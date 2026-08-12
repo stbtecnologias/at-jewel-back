@@ -21,9 +21,22 @@ export interface CriarClienteInput {
   telefone2?: string | null;
   email?: string | null;
 
-  // Perfil (sempre criado em TRIAGE_IN_PROGRESS para clientes novos)
-  whatsapp: string; // obrigatorio: cliente novo chega por canal
-  origemContato: OrigemContato; // obrigatorio: rastreio de funil
+  /**
+   * Perfil — OPCIONAIS desde 12/08/2026.
+   *
+   * Eram obrigatorios porque a rota nasceu para o fluxo da Anastasia: cliente
+   * novo aparece mandando mensagem, entao sempre tinha WhatsApp e origem. Com a
+   * integracao do ERP Safira passa a chegar cliente que nunca conversou — e
+   * muitos nem CPF tem, como o Alessandro relatou na reuniao de 11/08.
+   *
+   * Sem WhatsApp, NAO se cria perfil. Um perfil vazio nasceria com
+   * `estado_conversa = 'TRIAGE_IN_PROGRESS'` (NOT NULL com default), ou seja,
+   * o cliente importado ficaria pendurado no funil como "em triagem" sem nunca
+   * ter falado com ninguem — sujando qualquer relatorio de funil. O perfil
+   * nasce depois, quando a pessoa mandar mensagem: e o que ele representa.
+   */
+  whatsapp?: string | null;
+  origemContato?: OrigemContato | null;
 }
 
 @Injectable()
@@ -34,8 +47,11 @@ export class CriarClienteUseCase {
   ) {}
 
   async execute(input: CriarClienteInput): Promise<Cliente> {
-    const whatsappNormalizado = normalizarTelefone(input.whatsapp);
-    const whatsappHash = hashField(whatsappNormalizado);
+    // Sem WhatsApp o cliente nasce sem perfil — ver o comentario em
+    // CriarClienteInput.
+    const whatsappHash = input.whatsapp
+      ? hashField(normalizarTelefone(input.whatsapp))
+      : null;
 
     // Idempotencia: se ja existe cliente com esse whatsapp_hash, conflito.
     // (Quem quer o "ja existe? me devolve o atual" deve usar BuscarPorWhatsapp.)
@@ -75,12 +91,17 @@ export class CriarClienteUseCase {
       ativo: true,
     });
 
+    // Sem WhatsApp nao ha triagem, logo nao ha perfil.
+    if (!input.whatsapp) {
+      return this.clienteRepo.criar(cliente);
+    }
+
     // clienteId fica vazio nesse momento — o repo seta apos INSERT.
     const perfil = ClientePerfil.create({
       clienteId: '', // placeholder, sobrescrito no repositorio
       whatsapp: input.whatsapp,
       whatsappHash,
-      origemContato: input.origemContato,
+      origemContato: input.origemContato ?? null,
       estadoConversa: 'TRIAGE_IN_PROGRESS',
       estadoAtualizadoEm: new Date(),
     });

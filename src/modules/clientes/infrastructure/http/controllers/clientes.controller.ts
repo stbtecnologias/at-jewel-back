@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -17,8 +18,10 @@ import { Permissions } from '../../../../auth/infrastructure/http/decorators/per
 import { RequireScopes } from '../../../../auth/infrastructure/http/decorators/scopes.decorator';
 import { ApiKeyGuard } from '../../../../auth/infrastructure/http/guards/api-key.guard';
 import { JwtAuthGuard } from '../../../../auth/infrastructure/http/guards/jwt-auth.guard';
+import { JwtOrApiKeyGuard } from '../../../../auth/infrastructure/http/guards/jwt-or-api-key.guard';
 import { PermissionsGuard } from '../../../../auth/infrastructure/http/guards/permissions.guard';
 import { ScopesGuard } from '../../../../auth/infrastructure/http/guards/scopes.guard';
+import { AtualizarClienteUseCase } from '../../../application/use-cases/atualizar-cliente.use-case';
 import { AtualizarPerfilClienteUseCase } from '../../../application/use-cases/atualizar-perfil-cliente.use-case';
 import { BuscarClienteUseCase } from '../../../application/use-cases/buscar-cliente.use-case';
 import { BuscarClientePorWhatsappUseCase } from '../../../application/use-cases/buscar-cliente-por-whatsapp.use-case';
@@ -27,6 +30,8 @@ import { CriarClienteUseCase } from '../../../application/use-cases/criar-client
 import { DistribuicaoTiersUseCase } from '../../../application/use-cases/distribuicao-tiers.use-case';
 import { ListarClientesUseCase } from '../../../application/use-cases/listar-clientes.use-case';
 import { ListarClientesMonitoramentoSlaUseCase } from '../../../application/use-cases/listar-clientes-monitoramento-sla.use-case';
+import { RemoverClienteUseCase } from '../../../application/use-cases/remover-cliente.use-case';
+import { AtualizarClienteDto } from '../dto/atualizar-cliente.dto';
 import { AtualizarPerfilClienteDto } from '../dto/atualizar-perfil-cliente.dto';
 import { CriarClienteDto } from '../dto/criar-cliente.dto';
 import { FiltroClienteDto } from '../dto/filtro-cliente.dto';
@@ -51,6 +56,8 @@ export class ClientesController {
     private readonly buscarHistorico: BuscarHistoricoClienteUseCase,
     private readonly monitoramentoSla: ListarClientesMonitoramentoSlaUseCase,
     private readonly distribuicaoTiers: DistribuicaoTiersUseCase,
+    private readonly atualizarCadastro: AtualizarClienteUseCase,
+    private readonly remover: RemoverClienteUseCase,
   ) {}
 
   // Distribuicao por faixa de fidelidade (agregado, sem PII). Antes de :id.
@@ -94,8 +101,9 @@ export class ClientesController {
   }
 
   @Get()
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @UseGuards(JwtOrApiKeyGuard)
   @Permissions('clientes:read')
+  @RequireScopes('clientes:read')
   async listarClientes(@Query() filtros: FiltroClienteDto) {
     const clientes = await this.listar.execute(filtros);
     return clientes.map((c) => c.toPublic());
@@ -142,8 +150,9 @@ export class ClientesController {
   }
 
   @Get(':id')
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @UseGuards(JwtOrApiKeyGuard)
   @Permissions('clientes:read')
+  @RequireScopes('clientes:read')
   async buscarPorId(@Param('id', ParseUUIDPipe) id: string) {
     const cliente = await this.buscar.execute(id);
     return cliente.toPublic();
@@ -167,7 +176,8 @@ export class ClientesController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @UseGuards(ApiKeyGuard, ScopesGuard)
+  @UseGuards(JwtOrApiKeyGuard)
+  @Permissions('clientes:write')
   @RequireScopes('clientes:write')
   async criarCliente(@Body() dto: CriarClienteDto) {
     const cliente = await this.criar.execute({
@@ -184,8 +194,53 @@ export class ClientesController {
     return cliente.toPublic();
   }
 
+  // Atualiza o CADASTRO (tabela `clientes`). Nao confundir com
+  // PATCH /:id/perfil, logo abaixo, que mexe em `clientes_perfil` — os dados
+  // que a Anastasia coletou. Sao tabelas com donos diferentes, separacao
+  // proposital documentada na migracao 03.
+  @Patch(':id')
+  @UseGuards(JwtOrApiKeyGuard)
+  @Permissions('clientes:write')
+  @RequireScopes('clientes:write')
+  async atualizarCliente(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AtualizarClienteDto,
+  ) {
+    const cliente = await this.atualizarCadastro.execute(id, {
+      codigoErp: dto.codigoErp,
+      nome: dto.nome,
+      nomeFantasia: dto.nomeFantasia,
+      tipoPessoa: dto.tipoPessoa,
+      tabelaPreco: dto.tabelaPreco,
+      telefone1: dto.telefone1,
+      telefone2: dto.telefone2,
+      email: dto.email,
+      ativo: dto.ativo,
+      limiteCredito: dto.limiteCredito,
+      observacaoGeral: dto.observacaoGeral,
+      observacaoCredito: dto.observacaoCredito,
+      vendedoraCodigoErp: dto.vendedoraCodigoErp,
+    });
+    return cliente.toPublic();
+  }
+
+  // Exclusao FISICA. O desligamento do dia a dia e PATCH com `ativo: false`.
+  // Aqui `clientes_perfil` cai por CASCADE — some intencao de compra,
+  // wishlist, resumo de triagem e notas internas — e vendas/conversas/
+  // agente_eventos/consignacoes caem para NULL. Sem erro e sem volta.
+  // Efeito util: atende de fato um pedido de exclusao LGPD.
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(JwtOrApiKeyGuard)
+  @Permissions('clientes:write')
+  @RequireScopes('clientes:write')
+  async removerCliente(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
+    await this.remover.execute(id);
+  }
+
   @Patch(':id/perfil')
-  @UseGuards(ApiKeyGuard, ScopesGuard)
+  @UseGuards(JwtOrApiKeyGuard)
+  @Permissions('clientes:write')
   @RequireScopes('clientes:write')
   async atualizar(
     @Param('id', ParseUUIDPipe) id: string,
