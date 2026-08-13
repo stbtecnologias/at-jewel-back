@@ -10,6 +10,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { SCOPES_CATALOGO, type ScopeDef } from '../../../domain/entities/scopes';
 import { GerarApiKeyUseCase } from '../../../application/use-cases/gerar-api-key.use-case';
 import { ListarApiKeysUseCase } from '../../../application/use-cases/listar-api-keys.use-case';
 import { RevogarApiKeyUseCase } from '../../../application/use-cases/revogar-api-key.use-case';
@@ -44,6 +45,28 @@ export class ApiKeysController {
   @Get()
   findAll() {
     return this.listarApiKeys.execute();
+  }
+
+  /**
+   * Catalogo de scopes disponiveis, para a tela montar as caixas.
+   *
+   * Ate 13/08/2026 o front mantinha uma copia manual desta lista. Ela saiu de
+   * sincronia tres vezes em tres dias (produtos, vendedoras, fornecedores) — e
+   * scope existente no back sem copia no front simplesmente NAO APARECIA na
+   * tela, impedindo criar a chave pelo painel. O caso mais caro foi
+   * produtos:read/write, dois meses fora: a chave `integracao-catalogo`, ativa
+   * em producao, nao poderia ser recriada se fosse revogada.
+   *
+   * Espelha o GET /auth/roles/catalogo, que a tela de Papeis ja consumia.
+   *
+   * Herda os guards do controller (JWT + api_keys:manage). Nao expoe segredo:
+   * e a mesma lista que o CriarApiKeyDto ja usa para validar a entrada.
+   *
+   * Declarado ANTES da rota de parametro para nao ser capturado por ela.
+   */
+  @Get('scopes')
+  scopes(): ScopeDef[] {
+    return SCOPES_CATALOGO;
   }
 
   @Delete(':id')
