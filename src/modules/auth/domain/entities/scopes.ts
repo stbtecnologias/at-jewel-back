@@ -11,6 +11,8 @@ export const SCOPES_VALIDOS = [
   'vendas:write',
   'produtos:read',
   'produtos:write',
+  'fornecedores:read',
+  'fornecedores:write',
   'agente_eventos:write',
 ] as const;
 
