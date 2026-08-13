@@ -17,8 +17,10 @@ import { DefeitoOrmEntity } from './modules/defeitos/infrastructure/database/typ
 import { ConsignacoesModule } from './modules/consignacoes/consignacoes.module';
 import { DemandasModule } from './modules/demandas/demandas.module';
 import { FornecedoresModule } from './modules/fornecedores/fornecedores.module';
+import { FormasPagamentoModule } from './modules/formas-pagamento/formas-pagamento.module';
 import { DemandaOrmEntity } from './modules/demandas/infrastructure/database/typeorm/entities/demanda.orm-entity';
 import { FornecedorOrmEntity } from './modules/fornecedores/infrastructure/database/typeorm/entities/fornecedor.orm-entity';
+import { FormaPagamentoOrmEntity } from './modules/formas-pagamento/infrastructure/database/typeorm/entities/forma-pagamento.orm-entity';
 import { ConsignacaoOrmEntity } from './modules/consignacoes/infrastructure/database/typeorm/entities/consignacao.orm-entity';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AgentesModule } from './modules/agentes/agentes.module';
@@ -89,6 +91,7 @@ import { HealthController } from './health.controller';
           ConversaOrmEntity,
           AgentePromptOrmEntity,
           FornecedorOrmEntity,
+          FormaPagamentoOrmEntity,
         ],
         // Rede de seguranca: registra automaticamente toda entidade declarada
         // via TypeOrmModule.forFeature(...) nos modulos, evitando o erro
@@ -111,6 +114,7 @@ import { HealthController } from './health.controller';
     ConsignacoesModule,
     DemandasModule,
     FornecedoresModule,
+    FormasPagamentoModule,
     AnalyticsModule,
     AgentesModule,
     AtendimentoModule,

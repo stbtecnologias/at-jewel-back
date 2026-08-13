@@ -13,6 +13,8 @@ export const SCOPES_VALIDOS = [
   'produtos:write',
   'fornecedores:read',
   'fornecedores:write',
+  'formas_pagamento:read',
+  'formas_pagamento:write',
   'agente_eventos:write',
 ] as const;
 
@@ -51,6 +53,8 @@ export const SCOPE_DESCRICAO: Record<ApiKeyScope, string> = {
   'produtos:write': 'Criar, atualizar e remover produtos (integracao de catalogo)',
   'fornecedores:read': 'Listar e buscar fornecedores',
   'fornecedores:write': 'Criar, atualizar e remover fornecedores (integracao de cadastro)',
+  'formas_pagamento:read': 'Listar e buscar formas de pagamento',
+  'formas_pagamento:write': 'Criar, atualizar e remover formas de pagamento',
   'agente_eventos:write': 'Registrar eventos da Anastasia/Elena/Sofia',
 };
 
