@@ -1,0 +1,53 @@
+-- ============================================================
+-- A.T. JEWEL — Migracao 31: Permissoes que a tela de Consignacoes usa
+--
+-- A tela /admin/consignacoes e protegida por `consignacoes:read`, mas para
+-- montar as linhas ela chama rotas de OUTROS dois modulos:
+--
+--   listProdutos()    -> GET /produtos     exige produtos:read
+--   listVendedoras()  -> GET /vendedoras   exige vendedoras:read
+--
+-- Cruzando com quem tem `consignacoes:read` (concedido na migracao 24):
+--
+--   ADMIN / GERENTE   produtos:read OK   vendedoras:read OK
+--   ESTOQUISTA        produtos:read OK   vendedoras:read FALTA
+--   VENDEDORA         produtos:read FALTA  vendedoras:read OK
+--
+-- POR QUE APARECE AGORA:
+--   Ate o commit bb0e175 o JwtOrApiKeyGuard devolvia `true` para QUALQUER JWT
+--   valido, sem olhar permissao. Na pratica ESTOQUISTA ja enxergava a lista de
+--   vendedoras e VENDEDORA ja enxergava o catalogo — a tela funcionava para os
+--   dois. Ao fechar o guard, fechou junto o acesso legitimo.
+--
+--   Ou seja: esta migracao NAO abre acesso novo. Ela devolve, agora de forma
+--   declarada e auditavel na tela de Papeis, o que esses papeis ja tinham de
+--   fato. O buraco que a correcao do guard fechou era ESCRITA e EXCLUSAO
+--   (DELETE /produtos sobre os 2.505 itens reais), e esse continua fechado:
+--   nenhuma permissao de escrita e concedida aqui.
+--
+-- POR QUE CONCEDER EM VEZ DE DEGRADAR A TELA:
+--   A alternativa era a tela tolerar 403 nessas duas chamadas e mostrar codigo
+--   no lugar do nome. Mas consignacao E a peca com a vendedora — sem os dois
+--   nomes a tela nao cumpre a funcao para justamente os dois papeis que mais a
+--   usam no dia a dia. Nomear quem esta com a peca nao e informacao acessoria.
+--
+-- PONTO PARA REVISITAR, registrado para nao se perder:
+--   `vendedora.toPublic()` devolve `email` e `whatsapp_interno` DECIFRADOS.
+--   Quem tem `vendedoras:read` recebe os dois — hoje isso ja vale para
+--   ADMIN, GERENTE e VENDEDORA, e passa a valer tambem para ESTOQUISTA.
+--   Nao e regressao (era o comportamento efetivo antes do guard), mas a rota
+--   de listagem provavelmente deveria omitir contato, deixando-o so no
+--   detalhe. Fica como divida, nao bloqueia este deploy.
+--
+-- Aditiva/idempotente. Sem DDL — so seed incremental de permissao, no padrao
+-- das migracoes 22, 24, 25, 26 e 30.
+--
+-- Nada a alterar em src/modules/auth/domain/permissions.ts: `produtos:read` e
+-- `vendedoras:read` ja constam no catalogo (linhas 16 e 36). Falta so o
+-- vinculo com estes dois papeis.
+-- ============================================================
+
+INSERT INTO role_permissions (role_chave, permissao) VALUES
+  ('ESTOQUISTA', 'vendedoras:read'),
+  ('VENDEDORA',  'produtos:read')
+ON CONFLICT DO NOTHING;

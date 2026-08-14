@@ -53,6 +53,7 @@ const CAMINHO_ENV = path.join(__dirname, '..', '.env');
 // checar a coluna ou o indice especifico. Levantado arquivo por arquivo.
 //
 // tipo: 'tabela' | 'coluna' | 'indice' | 'tipo' | 'matview' | 'nullable'
+//     | 'constraint' | 'permissao'
 // ---------------------------------------------------------------------------
 const MANIFESTO = {
   '01_init.sql':                          { tipo: 'tabela',   alvo: 'produtos' },
@@ -83,6 +84,17 @@ const MANIFESTO = {
   '23_clientes_perfil_idade.sql':         { tipo: 'coluna',   alvo: 'clientes_perfil.idade' },
   '24_consignacoes.sql':                  { tipo: 'tabela',   alvo: 'consignacoes' },
   '25_demandas.sql':                      { tipo: 'tabela',   alvo: 'demandas' },
+  '26_fornecedores.sql':                  { tipo: 'tabela',     alvo: 'fornecedores' },
+  '27_empresas.sql':                      { tipo: 'tabela',     alvo: 'empresas' },
+  '28_formas_pagamento.sql':              { tipo: 'tabela',     alvo: 'formas_pagamento' },
+  // 29 nao cria tabela nem indice: fecha tres FKs por codigo ERP. O marcador e
+  // a primeira das constraints — as tres entram na MESMA transacao, entao uma
+  // existir significa que as tres existem.
+  '29_fk_vendedora_codigo.sql':           { tipo: 'constraint', alvo: 'fk_clientes_vendedora_codigo' },
+  // 30 e 31 nao tem DDL nenhum — so semeiam permissao. O marcador e a propria
+  // linha em role_permissions.
+  '30_permissao_clientes_write.sql':      { tipo: 'permissao',  alvo: 'ADMIN|clientes:write' },
+  '31_permissoes_consignacoes.sql':       { tipo: 'permissao',  alvo: 'ESTOQUISTA|vendedoras:read' },
 };
 
 // ---------------------------------------------------------------------------
@@ -268,6 +280,28 @@ async function existeMarcador(client, { tipo, alvo }) {
     }
     case 'tipo': {
       const { rows } = await client.query(`SELECT 1 FROM pg_type WHERE typname = $1`, [alvo]);
+      return rows.length > 0;
+    }
+    // Constraint nomeada (FK, check, unique). Serve para migracao que so
+    // amarra tabelas existentes e por isso nao cria objeto proprio.
+    case 'constraint': {
+      const { rows } = await client.query(
+        `SELECT 1 FROM pg_constraint c
+           JOIN pg_namespace n ON n.oid = c.connamespace
+          WHERE c.conname = $1 AND n.nspname = 'public'`,
+        [alvo],
+      );
+      return rows.length > 0;
+    }
+    // Migracao sem DDL, que so semeia permissao de papel. O marcador e a linha
+    // em role_permissions. Alvo no formato 'PAPEL|permissao' — o separador e
+    // `|` e nao `:` porque a permissao ja contem dois-pontos.
+    case 'permissao': {
+      const [papel, permissao] = alvo.split('|');
+      const { rows } = await client.query(
+        `SELECT 1 FROM role_permissions WHERE role_chave = $1 AND permissao = $2`,
+        [papel, permissao],
+      );
       return rows.length > 0;
     }
     default:
