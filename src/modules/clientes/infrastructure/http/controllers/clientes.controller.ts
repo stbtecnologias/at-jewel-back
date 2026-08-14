@@ -181,6 +181,7 @@ export class ClientesController {
   @RequireScopes('clientes:write')
   async criarCliente(@Body() dto: CriarClienteDto) {
     const cliente = await this.criar.execute({
+      codigoErp: dto.codigoErp,
       nome: dto.nome,
       nomeFantasia: dto.nomeFantasia,
       tipoPessoa: dto.tipoPessoa,

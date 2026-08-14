@@ -16,6 +16,22 @@ import type {
 } from '../../../domain/entities/enums';
 
 export class CriarClienteDto {
+  /**
+   * Codigo do cliente no ERP. Opcional: o fluxo da Anastasia cria cliente que
+   * nunca passou pelo Safira e portanto nao tem codigo.
+   *
+   * ACRESCENTADO EM 14/08/2026. Ate aqui so existia no PATCH, e quem importava
+   * do ERP era obrigado a criar primeiro e gravar o codigo numa SEGUNDA
+   * chamada. Se ela falhasse — rede, timeout, processo derrubado — sobrava
+   * cliente sem codigo; e como nao havia codigo para casar, a proxima
+   * sincronizacao criava OUTRO. Duplicata silenciosa, do tipo que so aparece
+   * semanas depois. Mesma posicao e mesmas regras dos outros quatro cadastros.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  codigoErp?: string;
+
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)

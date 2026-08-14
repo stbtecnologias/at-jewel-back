@@ -13,6 +13,7 @@ import { normalizarTelefone } from '../utils/normalizadores';
 
 export interface CriarClienteInput {
   // Cliente
+  codigoErp?: string | null;
   nome: string;
   nomeFantasia?: string | null;
   tipoPessoa?: TipoPessoa;
@@ -78,7 +79,24 @@ export class CriarClienteUseCase {
       }
     }
 
+    // Mesma checagem de telefone e email, agora para o codigo do ERP. A coluna
+    // ja e UNIQUE desde a migracao 03, entao sem isto a duplicata viria como
+    // erro de banco (500 generico) em vez de 409 com o id do existente.
+    //
+    // Importa para a INGESTAO: sincronizacao que reenvia por timeout recebe uma
+    // resposta que diz o que aconteceu e qual e o registro, em vez de um 500
+    // que nao distingue "ja existe" de "quebrou".
+    if (input.codigoErp) {
+      const duplicadoErp = await this.clienteRepo.buscarPorCodigoErp(input.codigoErp);
+      if (duplicadoErp) {
+        throw new ConflictException(
+          `Ja existe cliente com esse codigo ERP (id: ${duplicadoErp.id})`,
+        );
+      }
+    }
+
     const cliente = Cliente.create({
+      codigoErp: input.codigoErp ?? null,
       nome: input.nome,
       nomeFantasia: input.nomeFantasia ?? null,
       tipoPessoa: input.tipoPessoa ?? 'fisica',

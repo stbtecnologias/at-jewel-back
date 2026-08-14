@@ -232,4 +232,52 @@ describe('CriarClienteUseCase', () => {
       expect(repo.criar).not.toHaveBeenCalled();
     });
   });
+
+  // Ate 14/08/2026 o codigo do ERP so existia no PATCH: importar exigia criar e
+  // depois gravar o codigo numa segunda chamada. Se ela falhasse, sobrava
+  // cliente sem codigo — e sem codigo para casar, a sincronizacao seguinte
+  // criava OUTRO.
+  describe('codigo do ERP na criacao', () => {
+    it('grava o codigo recebido no POST', async () => {
+      repo.criar.mockResolvedValue({} as Cliente);
+
+      await useCase.execute({ codigoErp: 'C1042', nome: 'Cliente do ERP' });
+
+      expect(repo.criar).toHaveBeenCalledTimes(1);
+      expect(repo.criar.mock.calls[0][0]).toMatchObject({ codigoErp: 'C1042' });
+    });
+
+    it('recusa codigo ja usado com 409, em vez de deixar estourar no banco', async () => {
+      repo.buscarPorCodigoErp.mockResolvedValue(
+        Cliente.create({
+          id: 'uuid-existente',
+          codigoErp: 'C1042',
+          nome: 'Cliente ja importado',
+          tipoPessoa: 'fisica',
+          tabelaPreco: 'varejo',
+          ativo: true,
+        }),
+      );
+
+      await expect(
+        useCase.execute({ codigoErp: 'C1042', nome: 'Reenvio por timeout' }),
+      ).rejects.toThrow(ConflictException);
+      expect(repo.criar).not.toHaveBeenCalled();
+    });
+
+    // Regressao: o fluxo da Anastasia nao manda codigo e nao pode pagar uma
+    // consulta a mais por cliente novo.
+    it('nao consulta duplicidade quando o codigo nao e informado', async () => {
+      repo.criarComPerfil.mockResolvedValue({} as Cliente);
+
+      await useCase.execute({
+        nome: 'Contato novo do WhatsApp',
+        whatsapp: '85988887777',
+        origemContato: 'whatsapp',
+      });
+
+      expect(repo.buscarPorCodigoErp).not.toHaveBeenCalled();
+      expect(repo.criarComPerfil).toHaveBeenCalledTimes(1);
+    });
+  });
 });
