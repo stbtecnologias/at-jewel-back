@@ -1,6 +1,9 @@
 import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import { hashField } from '../../../../shared/database/transformers/encrypted-column.transformer';
-import { normalizarTelefone } from '../../../clientes/application/utils/normalizadores';
+import {
+  normalizarTelefone,
+  variantesTelefone,
+} from '../../../clientes/application/utils/normalizadores';
 import { Vendedora } from '../../domain/entities/vendedora.entity';
 import type { TipoVendedora } from '../../domain/entities/enums';
 import { VENDEDORA_REPOSITORY } from '../../domain/ports/injection-tokens';
@@ -33,9 +36,13 @@ export class CriarVendedoraUseCase {
       const dup = await this.repo.buscarPorEmailHash(emailHash);
       if (dup) throw new ConflictException('Email ja cadastrado em outra vendedora');
     }
-    if (whatsappInternoHash) {
-      const dup = await this.repo.buscarPorWhatsappHash(whatsappInternoHash);
-      if (dup) throw new ConflictException('WhatsApp ja cadastrado em outra vendedora');
+    if (input.whatsappInterno) {
+      // Todas as formas equivalentes (nono digito, DDI): o mesmo numero em dois
+      // formatos criaria duas vendedoras, e a Elena responderia so a uma delas.
+      for (const variante of variantesTelefone(input.whatsappInterno)) {
+        const dup = await this.repo.buscarPorWhatsappHash(hashField(variante));
+        if (dup) throw new ConflictException('WhatsApp ja cadastrado em outra vendedora');
+      }
     }
     if (input.codigoErp) {
       const dup = await this.repo.buscarPorCodigoErp(input.codigoErp);

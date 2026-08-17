@@ -88,4 +88,78 @@ describe('BuscarClientePorWhatsappUseCase', () => {
       incluirPerfil: true,
     });
   });
+  // Caso real de 17/08/2026: o cadastro tem o nono digito, mas a conta de
+  // WhatsApp e anterior a mudanca e o evento chega sem ele. Sem tolerancia, o
+  // lookup daria 404 e o agente criaria um cliente duplicado a cada conversa.
+  it('encontra o cliente cadastrado COM nono digito quando o WhatsApp manda SEM', async () => {
+    const clienteRepo = makeClienteRepoMock();
+    const perfilRepo = makePerfilRepoMock();
+    const useCase = new BuscarClientePorWhatsappUseCase(clienteRepo, perfilRepo);
+
+    const hashCadastrado = hashField('5585986467241');
+    const perfil = ClientePerfil.create({
+      clienteId: 'uuid-cliente',
+      whatsapp: '5585986467241',
+      whatsappHash: hashCadastrado,
+      estadoConversa: 'TRIAGE_IN_PROGRESS',
+    });
+    const cliente = Cliente.create({
+      id: 'uuid-cliente',
+      nome: 'Maria',
+      tipoPessoa: 'fisica',
+      tabelaPreco: 'varejo',
+      ativo: true,
+      perfil,
+    });
+
+    perfilRepo.buscarPorWhatsappHash.mockImplementation(async (hash: string) =>
+      hash === hashCadastrado ? perfil : null,
+    );
+    clienteRepo.buscarPorId.mockResolvedValue(cliente);
+
+    // Como o WhatsApp entrega: sem o nono digito.
+    const resultado = await useCase.execute('558586467241');
+
+    expect(resultado).toBe(cliente);
+  });
+
+  it('encontra o cliente cadastrado SEM DDI quando a busca vem COM DDI', async () => {
+    const clienteRepo = makeClienteRepoMock();
+    const perfilRepo = makePerfilRepoMock();
+    const useCase = new BuscarClientePorWhatsappUseCase(clienteRepo, perfilRepo);
+
+    const hashCadastrado = hashField('85986467241');
+    const perfil = ClientePerfil.create({
+      clienteId: 'uuid-cliente',
+      whatsapp: '85986467241',
+      whatsappHash: hashCadastrado,
+      estadoConversa: 'TRIAGE_IN_PROGRESS',
+    });
+    const cliente = Cliente.create({
+      id: 'uuid-cliente',
+      nome: 'Maria',
+      tipoPessoa: 'fisica',
+      tabelaPreco: 'varejo',
+      ativo: true,
+      perfil,
+    });
+
+    perfilRepo.buscarPorWhatsappHash.mockImplementation(async (hash: string) =>
+      hash === hashCadastrado ? perfil : null,
+    );
+    clienteRepo.buscarPorId.mockResolvedValue(cliente);
+
+    expect(await useCase.execute('5585986467241')).toBe(cliente);
+  });
+
+  it('numero realmente desconhecido continua devolvendo null', async () => {
+    const clienteRepo = makeClienteRepoMock();
+    const perfilRepo = makePerfilRepoMock();
+    const useCase = new BuscarClientePorWhatsappUseCase(clienteRepo, perfilRepo);
+
+    perfilRepo.buscarPorWhatsappHash.mockResolvedValue(null);
+
+    expect(await useCase.execute('5511999990000')).toBeNull();
+    expect(clienteRepo.buscarPorId).not.toHaveBeenCalled();
+  });
 });

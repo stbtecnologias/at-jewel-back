@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'crypto';
+import { hashField } from '../../../../shared/database/transformers/encrypted-column.transformer';
 import { Vendedora } from '../../domain/entities/vendedora.entity';
 import { IVendedoraRepository } from '../../domain/ports/repositories/vendedora-repository.port';
 import { AtualizarVendedoraUseCase } from './atualizar-vendedora.use-case';
@@ -104,5 +105,45 @@ describe('AtualizarVendedoraUseCase', () => {
     const result = await useCase.execute('uuid-v', { ativo: false });
 
     expect(result.ativo).toBe(false);
+  });
+
+  // Antes desta correcao o PATCH nao checava duplicidade: o UNIQUE do banco
+  // estourava como 500 com stack do Postgres, exatamente o que aconteceu ao
+  // cadastrar um numero ja usado em 17/08/2026.
+  it('recusa com 409 quando o WhatsApp ja e de outra vendedora', async () => {
+    repo.buscarPorId.mockResolvedValue(makeVendedora());
+    repo.buscarPorWhatsappHash.mockResolvedValue(makeVendedora({ id: 'outra-uuid' }));
+
+    await expect(
+      useCase.execute('uuid-v', { whatsappInterno: '5511988887777' }),
+    ).rejects.toThrow('WhatsApp ja cadastrado em outra vendedora');
+    expect(repo.atualizar).not.toHaveBeenCalled();
+  });
+
+  // O nono digito nao pode ser porta dos fundos para duplicar: o mesmo numero
+  // em outro formato tem que colidir do mesmo jeito.
+  it('recusa tambem quando o numero existe em OUTRO formato', async () => {
+    const outraComNove = makeVendedora({ id: 'outra-uuid' });
+    repo.buscarPorId.mockResolvedValue(makeVendedora({ id: 'uuid-v' }));
+    // So a variante COM nono digito existe no banco.
+    repo.buscarPorWhatsappHash.mockImplementation(async (hash: string) =>
+      hash === hashField('5585986467241') ? outraComNove : null,
+    );
+
+    // Chega no formato do WhatsApp: sem o nono digito.
+    await expect(
+      useCase.execute('uuid-v', { whatsappInterno: '558586467241' }),
+    ).rejects.toThrow('WhatsApp ja cadastrado em outra vendedora');
+  });
+
+  it('deixa passar quando o numero e da propria vendedora', async () => {
+    const eu = makeVendedora({ id: 'uuid-v' });
+    repo.buscarPorId.mockResolvedValue(eu);
+    repo.buscarPorWhatsappHash.mockResolvedValue(eu);
+    repo.atualizar.mockImplementation(async (v) => v);
+
+    await expect(
+      useCase.execute('uuid-v', { whatsappInterno: '5585986467241' }),
+    ).resolves.toBeDefined();
   });
 });
