@@ -11,6 +11,8 @@ export interface FiltroFormaPagamento {
 export interface IFormaPagamentoRepository {
   criar(forma: FormaPagamentoEntity): Promise<FormaPagamentoEntity>;
   buscarPorId(id: string): Promise<FormaPagamentoEntity | null>;
+  /** Identidade no ERP — chave da sincronizacao. */
+  buscarPorIdErp(idErp: string): Promise<FormaPagamentoEntity | null>;
   buscarPorCodigoErp(codigoErp: string): Promise<FormaPagamentoEntity | null>;
   listar(filtros: FiltroFormaPagamento): Promise<FormaPagamentoEntity[]>;
   atualizar(forma: FormaPagamentoEntity): Promise<FormaPagamentoEntity>;

@@ -107,6 +107,7 @@ export class ProdutosController {
     @Body() dto: AtualizarProdutoDto,
   ) {
     return this.atualizarProduto.execute(id, {
+      idErp: dto.id_erp_produto,
       categoria: dto.categoria,
       familia: dto.familia,
       colecao: dto.colecao,
@@ -141,6 +142,7 @@ export class ProdutosController {
 // Compartilhado entre criar (1 item) e criarLote (N itens).
 function dtoParaInput(dto: CriarProdutoDto): CriarProdutoInput {
   return {
+    idErp: dto.id_erp_produto,
     codigoErp: dto.codigo_erp,
     categoria: dto.categoria,
     familia: dto.familia,

@@ -20,6 +20,11 @@ export class ItemVendaDto {
   @IsOptional()
   @IsString()
   @MaxLength(50)
+  idErpItem?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
   codigoErpItem?: string;
 
   @IsNumber({ maxDecimalPlaces: 4 })

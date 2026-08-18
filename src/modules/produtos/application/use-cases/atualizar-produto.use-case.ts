@@ -4,6 +4,7 @@ import { PRODUTO_REPOSITORY } from '../../../erp/domain/ports/injection-tokens';
 import type { IProdutoRepository } from '../../../erp/domain/ports/repositories/produto-repository.port';
 
 export interface AtualizarProdutoInput {
+  idErp?: string | null;
   categoria?: string;
   familia?: string;
   colecao?: string | null;
@@ -37,6 +38,7 @@ export class AtualizarProdutoUseCase {
 
     const atualizado = Produto.create({
       id: existente.id,
+      idErp: input.idErp !== undefined ? input.idErp : existente.idErp,
       codigoErp: existente.codigoErp,
       categoria: input.categoria !== undefined ? input.categoria : existente.categoria,
       familia: input.familia !== undefined ? input.familia : existente.familia,

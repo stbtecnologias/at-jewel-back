@@ -9,6 +9,8 @@ export interface FiltroEmpresa {
 export interface IEmpresaRepository {
   criar(empresa: Empresa): Promise<Empresa>;
   buscarPorId(id: string): Promise<Empresa | null>;
+  /** Identidade no ERP — chave da sincronizacao. */
+  buscarPorIdErp(idErp: string): Promise<Empresa | null>;
   buscarPorCodigoErp(codigoErp: string): Promise<Empresa | null>;
   listar(filtros: FiltroEmpresa): Promise<Empresa[]>;
   atualizar(empresa: Empresa): Promise<Empresa>;

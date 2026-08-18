@@ -4,6 +4,7 @@ import { EMPRESA_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { IEmpresaRepository } from '../../domain/ports/repositories/empresa-repository.port';
 
 export interface AtualizarEmpresaInput {
+  idErp?: string | null;
   codigoErp?: string | null;
   nome?: string;
   ativo?: boolean;
@@ -21,7 +22,17 @@ export class AtualizarEmpresaUseCase {
     if (!atual) throw new NotFoundException(`Empresa ${id} nao encontrada`);
 
     // `undefined` = campo ausente no PATCH, mantem o atual. `null` = limpar.
+    const idErp = input.idErp !== undefined ? input.idErp : atual.idErp;
     const codigoErp = input.codigoErp !== undefined ? input.codigoErp : atual.codigoErp;
+
+    if (idErp && idErp !== atual.idErp) {
+      const dup = await this.repo.buscarPorIdErp(idErp);
+      if (dup && dup.id !== id) {
+        throw new ConflictException(
+          `Ja existe empresa com esse id do ERP (id: ${dup.id})`,
+        );
+      }
+    }
 
     if (codigoErp && codigoErp !== atual.codigoErp) {
       const dup = await this.repo.buscarPorCodigoErp(codigoErp);
@@ -35,6 +46,7 @@ export class AtualizarEmpresaUseCase {
     return this.repo.atualizar(
       Empresa.create({
         id: atual.id,
+        idErp,
         codigoErp,
         nome: input.nome ?? atual.nome,
         ativo: input.ativo !== undefined ? input.ativo : atual.ativo,

@@ -12,6 +12,7 @@ import type { IClienteRepository } from '../../domain/ports/repositories/cliente
 import { normalizarTelefone, variantesTelefone } from '../utils/normalizadores';
 
 export interface CriarClienteInput {
+  idErp?: string | null;
   // Cliente
   codigoErp?: string | null;
   nome: string;
@@ -48,6 +49,16 @@ export class CriarClienteUseCase {
   ) {}
 
   async execute(input: CriarClienteInput): Promise<Cliente> {
+    // `id_erp` e a IDENTIDADE no ERP e a chave da sincronizacao — imutavel.
+    if (input.idErp) {
+      const dupIdErp = await this.clienteRepo.buscarPorIdErp(input.idErp);
+      if (dupIdErp) {
+        throw new ConflictException(
+          'Ja existe cliente com esse id do ERP: ' + dupIdErp.id,
+        );
+      }
+    }
+
     // Sem WhatsApp o cliente nasce sem perfil — ver o comentario em
     // CriarClienteInput.
     const whatsappHash = input.whatsapp
@@ -103,6 +114,7 @@ export class CriarClienteUseCase {
     }
 
     const cliente = Cliente.create({
+      idErp: input.idErp ?? null,
       codigoErp: input.codigoErp ?? null,
       nome: input.nome,
       nomeFantasia: input.nomeFantasia ?? null,

@@ -16,6 +16,13 @@ import type {
 } from '../../../domain/entities/enums';
 
 export class CriarClienteDto {
+  // ID do registro na tabela do ERP: chave tecnica, imutavel. E por ele que a
+  // sincronizacao encontra o cadastro. Sufixo no nome para saber de que tabela.
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  idErpCliente?: string;
+
   /**
    * Codigo do cliente no ERP. Opcional: o fluxo da Anastasia cria cliente que
    * nunca passou pelo Safira e portanto nao tem codigo.

@@ -14,6 +14,11 @@ export class AtualizarFormaPagamentoDto {
   @IsOptional()
   @IsString()
   @MaxLength(50)
+  idErpFormaPagamento?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
   codigoErp?: string | null;
 
   @IsOptional()

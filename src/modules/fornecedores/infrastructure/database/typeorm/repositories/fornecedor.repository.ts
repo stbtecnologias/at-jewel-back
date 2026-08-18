@@ -26,6 +26,11 @@ export class FornecedorRepository implements IFornecedorRepository {
     return row ? this.toDomain(row) : null;
   }
 
+  async buscarPorIdErp(idErp: string): Promise<Fornecedor | null> {
+    const row = await this.repo.findOne({ where: { idErp } });
+    return row ? this.toDomain(row) : null;
+  }
+
   async buscarPorCodigoErp(codigoErp: string): Promise<Fornecedor | null> {
     const row = await this.repo.findOne({ where: { codigoErp } });
     return row ? this.toDomain(row) : null;

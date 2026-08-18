@@ -1,4 +1,6 @@
 export interface ProdutoProps {
+  /** Identidade no ERP: chave da tabela la, imutavel. */
+  idErp?: string | null;
   id?: string;
   codigoErp: string | null;
   categoria: string;
@@ -26,6 +28,7 @@ export interface ProdutoProps {
 }
 
 export class Produto {
+  readonly idErp: string | null;
   readonly id: string | undefined;
   readonly codigoErp: string | null;
   readonly categoria: string;
@@ -52,6 +55,7 @@ export class Produto {
   readonly atualizadoEm: Date | undefined;
 
   private constructor(props: ProdutoProps) {
+    this.idErp = props.idErp ?? null;
     this.id = props.id;
     this.codigoErp = props.codigoErp;
     this.categoria = props.categoria;

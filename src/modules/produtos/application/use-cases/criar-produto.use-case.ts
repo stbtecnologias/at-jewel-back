@@ -4,6 +4,7 @@ import { PRODUTO_REPOSITORY } from '../../../erp/domain/ports/injection-tokens';
 import type { IProdutoRepository } from '../../../erp/domain/ports/repositories/produto-repository.port';
 
 export interface CriarProdutoInput {
+  idErp?: string | null;
   codigoErp?: string | null;
   categoria: string;
   familia: string;

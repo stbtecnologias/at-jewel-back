@@ -134,6 +134,7 @@ export class ProdutoRepository implements IProdutoRepository {
 
   private toOrm(p: Produto): Partial<ProdutoOrmEntity> {
     return {
+      idErp: p.idErp,
       codigoErp: p.codigoErp,
       categoria: p.categoria,
       familia: p.familia,
@@ -160,6 +161,7 @@ export class ProdutoRepository implements IProdutoRepository {
 
   private toDomain(o: ProdutoOrmEntity): Produto {
     return Produto.create({
+      idErp: o.idErp,
       id: o.id,
       codigoErp: o.codigoErp,
       categoria: o.categoria,

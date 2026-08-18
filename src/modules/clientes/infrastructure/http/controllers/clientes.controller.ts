@@ -181,6 +181,7 @@ export class ClientesController {
   @RequireScopes('clientes:write')
   async criarCliente(@Body() dto: CriarClienteDto) {
     const cliente = await this.criar.execute({
+      idErp: dto.idErpCliente,
       codigoErp: dto.codigoErp,
       nome: dto.nome,
       nomeFantasia: dto.nomeFantasia,
@@ -208,6 +209,7 @@ export class ClientesController {
     @Body() dto: AtualizarClienteDto,
   ) {
     const cliente = await this.atualizarCadastro.execute(id, {
+      idErp: dto.idErpCliente,
       codigoErp: dto.codigoErp,
       nome: dto.nome,
       nomeFantasia: dto.nomeFantasia,

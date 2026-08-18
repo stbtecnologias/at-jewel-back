@@ -127,6 +127,11 @@ export class ClienteRepository implements IClienteRepository {
     return row ? this.toDomain(row, row.perfil) : null;
   }
 
+  async buscarPorIdErp(idErp: string): Promise<Cliente | null> {
+    const row = await this.repo.findOne({ where: { idErp } });
+    return row ? this.toDomain(row) : null;
+  }
+
   async buscarPorCodigoErp(codigoErp: string): Promise<Cliente | null> {
     const row = await this.repo.findOne({ where: { codigoErp } });
     return row ? this.toDomain(row) : null;

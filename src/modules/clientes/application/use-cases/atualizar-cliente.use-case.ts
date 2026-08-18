@@ -19,6 +19,7 @@ import { normalizarTelefone, variantesTelefone } from '../utils/normalizadores';
  * PATCH /clientes/:id/perfil, e o cadastro em si nao tinha update.
  */
 export interface AtualizarClienteInput {
+  idErp?: string | null;
   codigoErp?: string | null;
   nome?: string;
   nomeFantasia?: string | null;
@@ -88,6 +89,7 @@ export class AtualizarClienteUseCase {
 
     const atualizado = Cliente.create({
       id: atual.id,
+      idErp: input.idErp !== undefined ? input.idErp : atual.idErp,
       codigoErp: input.codigoErp !== undefined ? input.codigoErp : atual.codigoErp,
       nome: input.nome ?? atual.nome,
       nomeFantasia:

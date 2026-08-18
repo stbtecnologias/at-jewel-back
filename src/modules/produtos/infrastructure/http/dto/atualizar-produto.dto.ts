@@ -10,6 +10,10 @@ import {
 export class AtualizarProdutoDto {
   @IsOptional()
   @IsString()
+  id_erp_produto?: string;
+
+  @IsOptional()
+  @IsString()
   @IsNotEmpty()
   categoria?: string;
 

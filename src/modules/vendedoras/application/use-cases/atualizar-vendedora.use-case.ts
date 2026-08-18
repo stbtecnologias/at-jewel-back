@@ -18,6 +18,7 @@ import { VENDEDORA_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { IVendedoraRepository } from '../../domain/ports/repositories/vendedora-repository.port';
 
 export interface AtualizarVendedoraInput {
+  idErp?: string | null;
   nome?: string;
   tipo?: TipoVendedora;
   ativo?: boolean;
@@ -65,6 +66,7 @@ export class AtualizarVendedoraUseCase {
 
     const novo = Vendedora.create({
       id: atual.id,
+      idErp: input.idErp !== undefined ? input.idErp : atual.idErp,
       codigoErp: atual.codigoErp,
       nome: input.nome ?? atual.nome,
       tipo: input.tipo ?? atual.tipo,

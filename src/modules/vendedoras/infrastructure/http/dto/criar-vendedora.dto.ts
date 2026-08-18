@@ -14,6 +14,13 @@ import { TIPOS_VENDEDORA } from '../../../domain/entities/enums';
 import type { TipoVendedora } from '../../../domain/entities/enums';
 
 export class CriarVendedoraDto {
+  // ID do registro na tabela do ERP: chave tecnica, imutavel. E por ele que a
+  // sincronizacao encontra o cadastro. Sufixo no nome para saber de que tabela.
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  idErpVendedora?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(50)

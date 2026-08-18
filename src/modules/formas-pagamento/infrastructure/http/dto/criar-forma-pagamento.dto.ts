@@ -4,6 +4,13 @@ import { FORMAS_PAGAMENTO } from '../../../../vendas/domain/entities/enums';
 import type { FormaPagamento as ClassificacaoPagamento } from '../../../../vendas/domain/entities/enums';
 
 export class CriarFormaPagamentoDto {
+  // ID do registro na tabela do ERP: chave tecnica, imutavel. E por ele que a
+  // sincronizacao encontra o cadastro. Sufixo no nome para saber de que tabela.
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  idErpFormaPagamento?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(50)

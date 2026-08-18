@@ -23,6 +23,13 @@ import { PagamentoVendaDto } from './pagamento-venda.dto';
 const VALOR_MAXIMO = 9_999_999_999_999;
 
 export class RegistrarVendaDto {
+  // ID da venda na tabela do ERP: chave tecnica, imutavel. Exposto no CRUD;
+  // a idempotencia da ingestao continua por codigoErp (ver registrar-venda).
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  idErpVenda?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(50)
