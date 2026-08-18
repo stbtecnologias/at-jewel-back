@@ -4,6 +4,7 @@ import { LOCAL_ESTOQUE_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { ILocalEstoqueRepository } from '../../domain/ports/repositories/local-estoque-repository.port';
 
 export interface AtualizarLocalEstoqueInput {
+  idErp?: string | null;
   codigoErp?: string | null;
   nome?: string;
   ativo?: boolean;
@@ -21,7 +22,17 @@ export class AtualizarLocalEstoqueUseCase {
     if (!atual) throw new NotFoundException(`LocalEstoque ${id} nao encontrada`);
 
     // `undefined` = campo ausente no PATCH, mantem o atual. `null` = limpar.
+    const idErp = input.idErp !== undefined ? input.idErp : atual.idErp;
     const codigoErp = input.codigoErp !== undefined ? input.codigoErp : atual.codigoErp;
+
+    if (idErp && idErp !== atual.idErp) {
+      const dup = await this.repo.buscarPorIdErp(idErp);
+      if (dup && dup.id !== id) {
+        throw new ConflictException(
+          'Ja existe local de estoque com esse id do ERP: ' + dup.id,
+        );
+      }
+    }
 
     if (codigoErp && codigoErp !== atual.codigoErp) {
       const dup = await this.repo.buscarPorCodigoErp(codigoErp);
@@ -35,6 +46,7 @@ export class AtualizarLocalEstoqueUseCase {
     return this.repo.atualizar(
       LocalEstoque.create({
         id: atual.id,
+        idErp,
         codigoErp,
         nome: input.nome ?? atual.nome,
         ativo: input.ativo !== undefined ? input.ativo : atual.ativo,

@@ -70,7 +70,9 @@ export class GruposEstoqueController {
   @Permissions('estoque:write')
   @RequireScopes('estoque:write')
   async criarGrupoEstoque(@Body() dto: CriarGrupoEstoqueDto) {
-    const e = await this.criar.execute(dto);
+    // O campo da API leva o sufixo da tabela (`idErpGrupo`) para quem monta o
+    // payload saber de que cadastro e o id; dentro, o dominio chama de `idErp`.
+    const e = await this.criar.execute({ ...dto, idErp: dto.idErpGrupo });
     return e.toPublic();
   }
 
@@ -82,7 +84,7 @@ export class GruposEstoqueController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AtualizarGrupoEstoqueDto,
   ) {
-    const e = await this.atualizar.execute(id, dto);
+    const e = await this.atualizar.execute(id, { ...dto, idErp: dto.idErpGrupo });
     return e.toPublic();
   }
 

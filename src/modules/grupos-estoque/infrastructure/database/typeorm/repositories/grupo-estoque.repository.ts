@@ -26,6 +26,11 @@ export class GrupoEstoqueRepository implements IGrupoEstoqueRepository {
     return row ? this.toDomain(row) : null;
   }
 
+  async buscarPorIdErp(idErp: string): Promise<GrupoEstoque | null> {
+    const row = await this.repo.findOne({ where: { idErp } });
+    return row ? this.toDomain(row) : null;
+  }
+
   async buscarPorCodigoErp(codigoErp: string): Promise<GrupoEstoque | null> {
     const row = await this.repo.findOne({ where: { codigoErp } });
     return row ? this.toDomain(row) : null;
@@ -57,12 +62,13 @@ export class GrupoEstoqueRepository implements IGrupoEstoqueRepository {
   }
 
   private toOrm(e: GrupoEstoque): Partial<GrupoEstoqueOrmEntity> {
-    return { codigoErp: e.codigoErp, nome: e.nome, ativo: e.ativo };
+    return { idErp: e.idErp, codigoErp: e.codigoErp, nome: e.nome, ativo: e.ativo };
   }
 
   private toDomain(o: GrupoEstoqueOrmEntity): GrupoEstoque {
     return GrupoEstoque.create({
       id: o.id,
+      idErp: o.idErp,
       codigoErp: o.codigoErp,
       nome: o.nome,
       ativo: o.ativo,

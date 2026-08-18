@@ -45,6 +45,8 @@ import { FormaPagamento as ClassificacaoPagamento } from '../../../vendas/domain
  * deploys no meio — ver o cabecalho da migracao 28.
  */
 export interface FormaPagamentoProps {
+  /** Identidade no ERP: chave da tabela LA, imutavel. */
+  idErp?: string | null;
   id?: string;
   codigoErp?: string | null;
   nome: string;
@@ -56,6 +58,7 @@ export interface FormaPagamentoProps {
 
 export class FormaPagamentoEntity {
   readonly id: string | undefined;
+  readonly idErp: string | null;
   readonly codigoErp: string | null;
   readonly nome: string;
   readonly classificacao: ClassificacaoPagamento;
@@ -64,6 +67,7 @@ export class FormaPagamentoEntity {
   readonly atualizadoEm: Date | undefined;
 
   private constructor(props: FormaPagamentoProps) {
+    this.idErp = props.idErp ?? null;
     this.id = props.id;
     this.codigoErp = props.codigoErp ?? null;
     this.nome = props.nome;
@@ -80,6 +84,7 @@ export class FormaPagamentoEntity {
   toPublic(): Record<string, unknown> {
     return {
       id: this.id,
+      idErpFormaPagamento: this.idErp,
       codigoErp: this.codigoErp,
       nome: this.nome,
       classificacao: this.classificacao,

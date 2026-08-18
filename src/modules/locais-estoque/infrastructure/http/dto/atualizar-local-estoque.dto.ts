@@ -6,6 +6,11 @@ export class AtualizarLocalEstoqueDto {
   @IsOptional()
   @IsString()
   @MaxLength(50)
+  idErpLocal?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
   codigoErp?: string | null;
 
   @IsOptional()

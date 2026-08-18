@@ -19,9 +19,9 @@ export class SincronizarEstoqueUseCase {
   ) {}
 
   async execute(input: CriarEstoqueInput): Promise<Estoque> {
-    if (Estoque.contarContrapartes(input) !== 1) {
+    if (Estoque.contarLocais(input) !== 1) {
       throw new BadRequestException(
-        'Informe exatamente uma contraparte: localEstoqueId, fornecedorId, clienteId ou vendedoraId',
+        'Informe exatamente um local: localEstoqueId, fornecedorId, clienteId ou vendedoraId',
       );
     }
     return this.repo.upsert(Estoque.create(input));

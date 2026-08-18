@@ -75,6 +75,7 @@ export class VendedoraRepository implements IVendedoraRepository {
 
   private toOrm(v: Vendedora): Partial<VendedoraOrmEntity> {
     return {
+      idErp: v.idErp,
       codigoErp: v.codigoErp,
       nome: v.nome,
       tipo: v.tipo,
@@ -92,6 +93,7 @@ export class VendedoraRepository implements IVendedoraRepository {
   private toDomain(o: VendedoraOrmEntity): Vendedora {
     return Vendedora.create({
       id: o.id,
+      idErp: o.idErp,
       codigoErp: o.codigoErp,
       nome: o.nome,
       tipo: o.tipo,

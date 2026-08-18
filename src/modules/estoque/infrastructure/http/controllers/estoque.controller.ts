@@ -73,22 +73,24 @@ export class EstoqueController {
   @Permissions('estoque:write')
   @RequireScopes('estoque:write')
   async criarEstoque(@Body() dto: CriarEstoqueDto) {
-    const e = await this.criar.execute(dto);
+    // O campo da API leva o sufixo da tabela (`idErpEstoque`) para quem monta o
+    // payload saber de que tabela e o id; dentro, o dominio chama de `idErp`.
+    const e = await this.criar.execute({ ...dto, idErp: dto.idErpEstoque });
     return e.toPublic();
   }
 
-  // SINCRONIZACAO com o ERP: upsert pela chave (empresa, grupo, produto,
-  // contraparte). Idempotente de proposito — o Safira manda a FOTO do saldo, e
-  // reenviar a mesma foto e o comportamento normal, nao erro.
+  // SINCRONIZACAO com o ERP. Idempotente de proposito — o Safira manda a FOTO
+  // do saldo, e reenviar a mesma foto e o comportamento normal, nao erro.
   //
-  // Sem :id na URL porque o recurso e identificado pela CHAVE, nao pelo id
-  // interno — quem integra nao conhece nossos UUIDs de linha.
+  // Identifica o registro por `idErpEstoque` quando ele vem; sem ele, pela
+  // chave (empresa, grupo, produto, local). Sem :id na URL porque quem integra
+  // nao conhece nossos UUIDs de linha.
   @Put()
   @UseGuards(JwtOrApiKeyGuard)
   @Permissions('estoque:write')
   @RequireScopes('estoque:write')
   async sincronizarEstoque(@Body() dto: CriarEstoqueDto) {
-    const e = await this.sincronizar.execute(dto);
+    const e = await this.sincronizar.execute({ ...dto, idErp: dto.idErpEstoque });
     return e.toPublic();
   }
 

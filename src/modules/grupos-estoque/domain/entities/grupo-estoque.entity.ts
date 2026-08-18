@@ -16,6 +16,8 @@
  */
 export interface GrupoEstoqueProps {
   id?: string;
+  /** ID da linha no ERP: chave tecnica, imutavel. Identidade na sincronizacao. */
+  idErp?: string | null;
   codigoErp?: string | null;
   nome: string;
   ativo: boolean;
@@ -25,6 +27,7 @@ export interface GrupoEstoqueProps {
 
 export class GrupoEstoque {
   readonly id: string | undefined;
+  readonly idErp: string | null;
   readonly codigoErp: string | null;
   readonly nome: string;
   readonly ativo: boolean;
@@ -33,6 +36,7 @@ export class GrupoEstoque {
 
   private constructor(props: GrupoEstoqueProps) {
     this.id = props.id;
+    this.idErp = props.idErp ?? null;
     this.codigoErp = props.codigoErp ?? null;
     this.nome = props.nome;
     this.ativo = props.ativo;
@@ -47,6 +51,9 @@ export class GrupoEstoque {
   toPublic(): Record<string, unknown> {
     return {
       id: this.id,
+      // Exposto com o sufixo da tabela para quem integra saber a que
+      // cadastro o id pertence ao montar o payload.
+      idErpGrupo: this.idErp,
       codigoErp: this.codigoErp,
       nome: this.nome,
       ativo: this.ativo,

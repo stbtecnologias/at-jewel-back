@@ -22,6 +22,8 @@
  * mas muda a expectativa. Pendente de confirmacao com o Alessandro.
  */
 export interface EmpresaProps {
+  /** Identidade no ERP: chave da tabela LA, imutavel. */
+  idErp?: string | null;
   id?: string;
   codigoErp?: string | null;
   nome: string;
@@ -31,6 +33,7 @@ export interface EmpresaProps {
 }
 
 export class Empresa {
+  readonly idErp: string | null;
   readonly id: string | undefined;
   readonly codigoErp: string | null;
   readonly nome: string;
@@ -39,6 +42,7 @@ export class Empresa {
   readonly atualizadoEm: Date | undefined;
 
   private constructor(props: EmpresaProps) {
+    this.idErp = props.idErp ?? null;
     this.id = props.id;
     this.codigoErp = props.codigoErp ?? null;
     this.nome = props.nome;
@@ -54,6 +58,7 @@ export class Empresa {
   toPublic(): Record<string, unknown> {
     return {
       id: this.id,
+      idErpEmpresa: this.idErp,
       codigoErp: this.codigoErp,
       nome: this.nome,
       ativo: this.ativo,

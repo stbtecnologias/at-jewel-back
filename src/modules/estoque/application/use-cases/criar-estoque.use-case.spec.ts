@@ -9,7 +9,7 @@ function makeRepoMock(): jest.Mocked<IEstoqueRepository> {
     criar: jest.fn(),
     buscarPorId: jest.fn(),
     buscarPorChave: jest.fn(),
-    buscarPorCodigoErp: jest.fn(),
+    buscarPorIdErp: jest.fn(),
     listar: jest.fn(),
     atualizar: jest.fn(),
     remover: jest.fn(),
@@ -34,11 +34,11 @@ describe('CriarEstoqueUseCase', () => {
     repo = makeRepoMock();
     useCase = new CriarEstoqueUseCase(repo);
     repo.buscarPorChave.mockResolvedValue(null);
-    repo.buscarPorCodigoErp.mockResolvedValue(null);
+    repo.buscarPorIdErp.mockResolvedValue(null);
     repo.criar.mockImplementation(async (e) => e);
   });
 
-  it('cria com uma contraparte', async () => {
+  it('cria com um local', async () => {
     await expect(
       useCase.execute({ ...BASE, localEstoqueId: LOCAL }),
     ).resolves.toBeDefined();
@@ -56,12 +56,12 @@ describe('CriarEstoqueUseCase', () => {
     expect(criado.quantidade).toBe(-2);
   });
 
-  it('recusa quando NENHUMA contraparte vem', async () => {
+  it('recusa quando NENHUM local vem', async () => {
     await expect(useCase.execute({ ...BASE })).rejects.toThrow(BadRequestException);
     expect(repo.criar).not.toHaveBeenCalled();
   });
 
-  it('recusa quando vem MAIS DE UMA contraparte', async () => {
+  it('recusa quando vem MAIS DE UM local', async () => {
     await expect(
       useCase.execute({ ...BASE, localEstoqueId: LOCAL, fornecedorId: FORNECEDOR }),
     ).rejects.toThrow(BadRequestException);
@@ -106,7 +106,7 @@ describe('SincronizarEstoqueUseCase', () => {
     expect(repo.buscarPorChave).not.toHaveBeenCalled();
   });
 
-  it('mantem a validacao de contraparte', async () => {
+  it('mantem a validacao de local', async () => {
     await expect(useCase.execute({ ...BASE })).rejects.toThrow(BadRequestException);
     expect(repo.upsert).not.toHaveBeenCalled();
   });

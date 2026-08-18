@@ -70,7 +70,9 @@ export class LocaisEstoqueController {
   @Permissions('estoque:write')
   @RequireScopes('estoque:write')
   async criarLocalEstoque(@Body() dto: CriarLocalEstoqueDto) {
-    const e = await this.criar.execute(dto);
+    // O campo da API leva o sufixo da tabela (`idErpLocal`) para quem monta o
+    // payload saber de que cadastro e o id; dentro, o dominio chama de `idErp`.
+    const e = await this.criar.execute({ ...dto, idErp: dto.idErpLocal });
     return e.toPublic();
   }
 
@@ -82,7 +84,7 @@ export class LocaisEstoqueController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AtualizarLocalEstoqueDto,
   ) {
-    const e = await this.atualizar.execute(id, dto);
+    const e = await this.atualizar.execute(id, { ...dto, idErp: dto.idErpLocal });
     return e.toPublic();
   }
 

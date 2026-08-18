@@ -19,6 +19,8 @@ import { TipoPessoa } from '../../../clientes/domain/entities/enums';
  * nomes para a mesma coluna.
  */
 export interface FornecedorProps {
+  /** Identidade no ERP: chave da tabela LA, imutavel. */
+  idErp?: string | null;
   id?: string;
   codigoErp?: string | null;
   nome: string;
@@ -47,6 +49,7 @@ export interface FornecedorProps {
 }
 
 export class Fornecedor {
+  readonly idErp: string | null;
   readonly id: string | undefined;
   readonly codigoErp: string | null;
   readonly nome: string;
@@ -73,6 +76,7 @@ export class Fornecedor {
   readonly atualizadoEm: Date | undefined;
 
   private constructor(props: FornecedorProps) {
+    this.idErp = props.idErp ?? null;
     this.id = props.id;
     this.codigoErp = props.codigoErp ?? null;
     this.nome = props.nome;
@@ -102,6 +106,7 @@ export class Fornecedor {
   toPublic(): Record<string, unknown> {
     return {
       id: this.id,
+      idErpFornecedor: this.idErp,
       codigoErp: this.codigoErp,
       nome: this.nome,
       nomeFantasia: this.nomeFantasia,

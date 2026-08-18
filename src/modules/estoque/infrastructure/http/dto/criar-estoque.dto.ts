@@ -3,14 +3,20 @@ import { IsInt, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator'
 /**
  * Corpo de POST /estoque e de PUT /estoque.
  *
- * Exatamente UMA das quatro contrapartes deve vir preenchida — o DTO nao tem
+ * Exatamente UM dos quatro locais deve vir preenchido — o DTO nao tem
  * como expressar isso, entao a regra e validada no use case (mensagem util) e
  * garantida pelo CHECK do banco (ultima linha de defesa).
  */
 export class CriarEstoqueDto {
-  // Codigo da LINHA de saldo no ERP. Quando vem, e ele que identifica o
-  // registro na sincronizacao — o integrador nao precisa conhecer nossos UUIDs
-  // de linha, so os das quatro dimensoes.
+  // ID da linha de saldo na tabela do ERP: chave tecnica, imutavel. E ele que
+  // identifica o registro na sincronizacao — o integrador nao precisa conhecer
+  // nossos UUIDs de linha. Sufixo no nome para saber de que tabela e o id.
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  idErpEstoque?: string;
+
+  // Codigo de NEGOCIO: exibicao e conferencia, nao identidade.
   @IsOptional()
   @IsString()
   @MaxLength(50)

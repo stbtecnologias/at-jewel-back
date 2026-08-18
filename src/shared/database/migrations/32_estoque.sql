@@ -1,5 +1,5 @@
 -- ============================================================
--- A.T. JEWEL — Migracao 32: Estoque por empresa, grupo e contraparte
+-- A.T. JEWEL — Migracao 32: Estoque por empresa, grupo e local
 --
 -- Fecha o pre-requisito anunciado na migracao 27: "a tabela acordada
 -- tem chave (empresa, grupo de local, local, produto)".
@@ -29,15 +29,18 @@
 --   discriminador (tipo 1/2) e descartado: a FK deixaria de impedir
 --   que um local fosse gravado na coluna de grupo, em silencio.
 --
--- A DIMENSAO "LOCAL" DO ERP E, NA VERDADE, UMA CONTRAPARTE:
+-- O QUE CABE EM "LOCAL" — mais do que lugar:
 --   A mesma coluna guarda `Armario 01` (lugar nosso), `Ana` (pessoa)
 --   e `Fornecedor 1` (empresa a quem devemos). No ERP convive porque
 --   tudo e texto. Aqui fornecedores, clientes e vendedoras sao
 --   tabelas com UUID — gravar "Fornecedor 1" como texto perderia o
 --   vinculo, e nao daria para responder "o que devo a esse
 --   fornecedor?" nem "o que a Ana esta com nossa peca?" sem casar por
---   nome. Dai as quatro colunas de contraparte, com FK de verdade e
---   CHECK garantindo exatamente uma preenchida.
+--   nome. Dai as quatro colunas de local, com FK de verdade e CHECK
+--   garantindo exatamente uma preenchida. O nome `local` acompanha o
+--   vocabulario do ERP de proposito: e como o Lucas e o Alessandro se
+--   referem a essa dimensao, e evita traduzir termo na hora de conferir
+--   uma divergencia de saldo.
 --
 -- Sem CREATE TYPE — integralmente re-executavel.
 -- Aditiva/idempotente.
@@ -51,8 +54,12 @@ CREATE TABLE IF NOT EXISTS grupos_estoque (
   -- [SYS] Identificador interno, desacoplado do ERP.
   id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
 
-  -- [ERP] Codigo do grupo no ERP Safira. Chave de idempotencia da
-  -- sincronizacao. Nullable: grupo criado a mao nao tem codigo.
+  -- [ERP] ID da linha na tabela do ERP Safira. E a chave da tabela LA:
+  -- imutavel, e por isso a chave de idempotencia da sincronizacao.
+  id_erp         VARCHAR(50)  UNIQUE,
+
+  -- [ERP] Codigo de NEGOCIO, que a loja escolhe e pode trocar. Serve para
+  -- exibir e conferir — nao para identificar na sincronizacao.
   codigo_erp     VARCHAR(50)  UNIQUE,
 
   -- [ERP] Nome exibido. E o que aparece nas telas e nos relatorios.
@@ -69,11 +76,12 @@ CREATE TABLE IF NOT EXISTS grupos_estoque (
 -- Locais de estoque — lugar FISICO nosso
 -- Ex.: Armario 01 · Armario 02 · Cofre
 --
--- So lugares. Pessoa e fornecedor NAO entram aqui: viram contraparte
--- na tabela `estoque`, com FK para a entidade de verdade.
+-- So lugares. Pessoa e fornecedor NAO entram aqui: na tabela `estoque`
+-- eles tem coluna propria, com FK para a entidade de verdade.
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS locais_estoque (
   id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  id_erp         VARCHAR(50)  UNIQUE,
   codigo_erp     VARCHAR(50)  UNIQUE,
   nome           VARCHAR(255) NOT NULL,
   ativo          BOOLEAN      NOT NULL DEFAULT TRUE,
@@ -88,15 +96,23 @@ CREATE TABLE IF NOT EXISTS estoque (
   -- [SYS] Identificador interno.
   id               UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
 
-  -- [ERP] Codigo da LINHA de saldo no ERP Safira — cada linha tem o seu
-  -- (confirmado pelo Lucas em 18/08/2026). E a chave de idempotencia da
-  -- sincronizacao: com ele o integrador manda UM campo em vez de resolver as
-  -- quatro dimensoes. Nullable porque saldo lancado pela tela nao tem codigo.
+  -- [ERP] ID da linha de saldo na tabela do ERP — cada linha tem o seu.
+  -- E a chave da tabela LA, imutavel, e por isso a chave de idempotencia
+  -- da sincronizacao: com ele o integrador manda UM campo em vez de
+  -- resolver as quatro dimensoes.
   --
-  -- Nao substitui a UNIQUE composta abaixo: as duas convivem. O codigo diz
-  -- "esta linha e aquela linha de la"; a composta impede que dois codigos
-  -- diferentes apontem para a MESMA combinacao, que seria saldo duplicado com
-  -- dois nomes.
+  -- POR QUE NAO O codigo_erp: o codigo e escolhido pela loja e pode ser
+  -- TROCADO. Se a sincronizacao dependesse dele, renomear no Safira faria
+  -- o upsert nao achar o registro antigo e criar um segundo — a linha
+  -- velha viraria saldo fantasma. O id nao muda.
+  --
+  -- Nao substitui a UNIQUE composta abaixo: as duas convivem. O id diz
+  -- "esta linha e aquela linha de la"; a composta impede que dois ids
+  -- diferentes apontem para a MESMA combinacao, que seria saldo duplicado
+  -- com dois nomes.
+  id_erp           VARCHAR(50) UNIQUE,
+
+  -- [ERP] Codigo de NEGOCIO. Exibicao e conferencia, nao identidade.
   codigo_erp       VARCHAR(50) UNIQUE,
 
   -- [ERP] De quem e o saldo. Empresas compartilham o mesmo cadastro de
@@ -109,7 +125,7 @@ CREATE TABLE IF NOT EXISTS estoque (
   -- [ERP] Qual peca.
   produto_id       UUID    NOT NULL REFERENCES produtos(id),
 
-  -- [ERP] CONTRAPARTE: onde esta, ou com quem esta. Exatamente UMA das
+  -- [ERP] LOCAL: onde esta, ou com quem esta. Exatamente UMA das
   -- quatro. Sem ON DELETE de proposito — o banco passa a impedir apagar
   -- cliente ou vendedora que esteja com peca nossa. E uma regra nova de
   -- operacao (aqui cliente e vendedora sao apagados de verdade, nao
@@ -132,9 +148,9 @@ CREATE TABLE IF NOT EXISTS estoque (
 
   criado_em        TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-  -- Exatamente uma contraparte. Zero deixaria o saldo sem lugar; duas
-  -- tornariam a chave ambigua.
-  CONSTRAINT chk_estoque_contraparte CHECK (
+  -- Exatamente um local. Zero deixaria o saldo sem lugar; duas tornariam
+  -- a chave ambigua.
+  CONSTRAINT chk_estoque_local CHECK (
       (local_estoque_id IS NOT NULL)::int
     + (fornecedor_id    IS NOT NULL)::int
     + (cliente_id       IS NOT NULL)::int
@@ -142,11 +158,16 @@ CREATE TABLE IF NOT EXISTS estoque (
   ),
 
   -- Colunas DERIVADAS pelo banco. Existem por um motivo tecnico: a
-  -- UNIQUE precisa da contraparte, mas tres das quatro colunas estao
-  -- sempre nulas — e no Postgres nulos nunca colidem entre si, entao a
-  -- restricao nao pegaria nada. Colapsando a contraparte em (tipo, id),
-  -- a UNIQUE volta a valer. Ninguem escreve nelas.
-  contraparte_tipo TEXT GENERATED ALWAYS AS (
+  -- UNIQUE precisa do local, mas tres das quatro colunas estao sempre
+  -- nulas — e no Postgres nulos nunca colidem entre si, entao a restricao
+  -- nao pegaria nada. Colapsando o local em (tipo, id), a UNIQUE volta a
+  -- valer. Ninguem escreve nelas.
+  --
+  -- LOCAL_TIPO diz QUAL das quatro colunas veio preenchida:
+  --   LOCAL      lugar fisico nosso (local_estoque_id)
+  --   FORNECEDOR CLIENTE  VENDEDORA   quem esta com a peca, ou a quem
+  --                                   devemos, no caso do saldo negativo
+  local_tipo TEXT GENERATED ALWAYS AS (
     CASE
       WHEN local_estoque_id IS NOT NULL THEN 'LOCAL'
       WHEN fornecedor_id    IS NOT NULL THEN 'FORNECEDOR'
@@ -155,7 +176,7 @@ CREATE TABLE IF NOT EXISTS estoque (
     END
   ) STORED,
 
-  contraparte_id UUID GENERATED ALWAYS AS (
+  local_id UUID GENERATED ALWAYS AS (
     COALESCE(local_estoque_id, fornecedor_id, cliente_id, vendedora_id)
   ) STORED,
 
@@ -169,7 +190,7 @@ CREATE TABLE IF NOT EXISTS estoque (
   --
   -- O ERP manda a foto quantas vezes quiser; nunca duplica.
   CONSTRAINT uq_estoque_chave
-    UNIQUE (empresa_id, grupo_estoque_id, produto_id, contraparte_tipo, contraparte_id)
+    UNIQUE (empresa_id, grupo_estoque_id, produto_id, local_tipo, local_id)
 );
 
 -- "Onde esta esta peca?" — a pergunta mais frequente, e a que a Elena
@@ -178,7 +199,7 @@ CREATE INDEX IF NOT EXISTS idx_estoque_produto
   ON estoque (produto_id);
 
 -- "O que tem neste armario / com esta pessoa?" — indices parciais: so
--- as linhas daquela contraparte, que sao uma fracao do total.
+-- as linhas daquele local, que sao uma fracao do total.
 CREATE INDEX IF NOT EXISTS idx_estoque_local
   ON estoque (local_estoque_id) WHERE local_estoque_id IS NOT NULL;
 

@@ -30,8 +30,8 @@ export interface IEstoqueRepository {
   /** Busca pela chave de negocio — nao pelo id. Usada antes de criar. */
   buscarPorChave(chave: ChaveEstoque): Promise<Estoque | null>;
 
-  /** Chave de idempotencia da sincronizacao com o ERP. */
-  buscarPorCodigoErp(codigoErp: string): Promise<Estoque | null>;
+  /** Identidade no ERP — chave da sincronizacao. */
+  buscarPorIdErp(idErp: string): Promise<Estoque | null>;
 
   listar(filtros: FiltroEstoque): Promise<Estoque[]>;
   atualizar(estoque: Estoque): Promise<Estoque>;

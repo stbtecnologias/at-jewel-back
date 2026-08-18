@@ -9,6 +9,8 @@ export interface FiltroGrupoEstoque {
 export interface IGrupoEstoqueRepository {
   criar(registro: GrupoEstoque): Promise<GrupoEstoque>;
   buscarPorId(id: string): Promise<GrupoEstoque | null>;
+  /** Identidade no ERP — chave da sincronizacao. */
+  buscarPorIdErp(idErp: string): Promise<GrupoEstoque | null>;
   buscarPorCodigoErp(codigoErp: string): Promise<GrupoEstoque | null>;
   listar(filtros: FiltroGrupoEstoque): Promise<GrupoEstoque[]>;
   atualizar(registro: GrupoEstoque): Promise<GrupoEstoque>;

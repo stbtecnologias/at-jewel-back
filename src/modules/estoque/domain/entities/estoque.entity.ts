@@ -1,6 +1,6 @@
 /**
  * Saldo de estoque — uma quantidade de um produto, de uma empresa, numa
- * situacao (grupo) e com uma contraparte.
+ * situacao (grupo) e num local.
  *
  * Criado na migracao 32, a partir do modelo do ERP descrito pelo Lucas em
  * 17/08/2026.
@@ -14,15 +14,17 @@
  * CONTRAPARTE: exatamente UMA de local, fornecedor, cliente ou vendedora. No
  * ERP essa dimensao e uma coluna de texto so, que guarda `Armario 01`, `Ana` e
  * `Fornecedor 1` misturados. Aqui cada uma e uma FK de verdade, e o invariante
- * de "exatamente uma" e garantido pelo CHECK `chk_estoque_contraparte` — mas
+ * de "exatamente uma" e garantido pelo CHECK `chk_estoque_local` — mas
  * tambem e validado aqui, para a chamada falhar com mensagem util antes de
  * chegar ao banco.
  */
-export type ContraparteTipo = 'LOCAL' | 'FORNECEDOR' | 'CLIENTE' | 'VENDEDORA';
+export type LocalTipo = 'LOCAL' | 'FORNECEDOR' | 'CLIENTE' | 'VENDEDORA';
 
 export interface EstoqueProps {
   id?: string;
-  /** Codigo da linha no ERP. Chave de idempotencia da sincronizacao. */
+  /** Identidade no ERP: chave da tabela LA, imutavel. Chave da sincronizacao. */
+  idErp?: string | null;
+  /** Codigo de NEGOCIO: a loja escolhe e pode trocar. Exibicao, nao identidade. */
   codigoErp?: string | null;
   empresaId: string;
   grupoEstoqueId: string;
@@ -33,14 +35,15 @@ export interface EstoqueProps {
   vendedoraId?: string | null;
   quantidade: number;
   /** Derivadas pelo banco (GENERATED). Nunca sao enviadas na escrita. */
-  contraparteTipo?: ContraparteTipo;
-  contraparteId?: string;
+  localTipo?: LocalTipo;
+  localId?: string;
   atualizadoEm?: Date;
   criadoEm?: Date;
 }
 
 export class Estoque {
   readonly id: string | undefined;
+  readonly idErp: string | null;
   readonly codigoErp: string | null;
   readonly empresaId: string;
   readonly grupoEstoqueId: string;
@@ -50,13 +53,14 @@ export class Estoque {
   readonly clienteId: string | null;
   readonly vendedoraId: string | null;
   readonly quantidade: number;
-  readonly contraparteTipo: ContraparteTipo | undefined;
-  readonly contraparteId: string | undefined;
+  readonly localTipo: LocalTipo | undefined;
+  readonly localId: string | undefined;
   readonly atualizadoEm: Date | undefined;
   readonly criadoEm: Date | undefined;
 
   private constructor(props: EstoqueProps) {
     this.id = props.id;
+    this.idErp = props.idErp ?? null;
     this.codigoErp = props.codigoErp ?? null;
     this.empresaId = props.empresaId;
     this.grupoEstoqueId = props.grupoEstoqueId;
@@ -66,8 +70,8 @@ export class Estoque {
     this.clienteId = props.clienteId ?? null;
     this.vendedoraId = props.vendedoraId ?? null;
     this.quantidade = props.quantidade;
-    this.contraparteTipo = props.contraparteTipo;
-    this.contraparteId = props.contraparteId;
+    this.localTipo = props.localTipo;
+    this.localId = props.localId;
     this.atualizadoEm = props.atualizadoEm;
     this.criadoEm = props.criadoEm;
   }
@@ -77,11 +81,11 @@ export class Estoque {
   }
 
   /**
-   * Quantas contrapartes vieram preenchidas. O invariante e "exatamente uma";
+   * Quantos locais vieram preenchidos. O invariante e "exatamente uma";
    * o chamador decide a excecao a lancar, porque a mensagem util depende do
    * contexto (criacao, atualizacao ou sincronizacao).
    */
-  static contarContrapartes(props: {
+  static contarLocais(props: {
     localEstoqueId?: string | null;
     fornecedorId?: string | null;
     clienteId?: string | null;
@@ -98,6 +102,7 @@ export class Estoque {
   toPublic(): Record<string, unknown> {
     return {
       id: this.id,
+      idErpEstoque: this.idErp,
       codigoErp: this.codigoErp,
       empresaId: this.empresaId,
       grupoEstoqueId: this.grupoEstoqueId,
@@ -106,8 +111,8 @@ export class Estoque {
       fornecedorId: this.fornecedorId,
       clienteId: this.clienteId,
       vendedoraId: this.vendedoraId,
-      contraparteTipo: this.contraparteTipo,
-      contraparteId: this.contraparteId,
+      localTipo: this.localTipo,
+      localId: this.localId,
       quantidade: this.quantidade,
       atualizadoEm: this.atualizadoEm,
       criadoEm: this.criadoEm,

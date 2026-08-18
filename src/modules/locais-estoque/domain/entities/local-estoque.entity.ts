@@ -15,6 +15,8 @@
  */
 export interface LocalEstoqueProps {
   id?: string;
+  /** ID da linha no ERP: chave tecnica, imutavel. Identidade na sincronizacao. */
+  idErp?: string | null;
   codigoErp?: string | null;
   nome: string;
   ativo: boolean;
@@ -24,6 +26,7 @@ export interface LocalEstoqueProps {
 
 export class LocalEstoque {
   readonly id: string | undefined;
+  readonly idErp: string | null;
   readonly codigoErp: string | null;
   readonly nome: string;
   readonly ativo: boolean;
@@ -32,6 +35,7 @@ export class LocalEstoque {
 
   private constructor(props: LocalEstoqueProps) {
     this.id = props.id;
+    this.idErp = props.idErp ?? null;
     this.codigoErp = props.codigoErp ?? null;
     this.nome = props.nome;
     this.ativo = props.ativo;
@@ -46,6 +50,9 @@ export class LocalEstoque {
   toPublic(): Record<string, unknown> {
     return {
       id: this.id,
+      // Exposto com o sufixo da tabela para quem integra saber a que
+      // cadastro o id pertence ao montar o payload.
+      idErpLocal: this.idErp,
       codigoErp: this.codigoErp,
       nome: this.nome,
       ativo: this.ativo,

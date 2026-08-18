@@ -3,6 +3,8 @@ import { TabelaPreco, TipoPessoa } from './enums';
 
 export interface ClienteProps {
   id?: string;
+  /** Identidade no ERP: chave da tabela LA, imutavel. */
+  idErp?: string | null;
   codigoErp?: string | null;
   nome: string;
   nomeFantasia?: string | null;
@@ -25,6 +27,7 @@ export interface ClienteProps {
 
 export class Cliente {
   readonly id: string | undefined;
+  readonly idErp: string | null;
   readonly codigoErp: string | null;
   readonly nome: string;
   readonly nomeFantasia: string | null;
@@ -52,6 +55,7 @@ export class Cliente {
 
   private constructor(props: ClienteProps) {
     this.id = props.id;
+    this.idErp = props.idErp ?? null;
     this.codigoErp = props.codigoErp ?? null;
     this.nome = props.nome;
     this.nomeFantasia = props.nomeFantasia ?? null;
@@ -81,6 +85,7 @@ export class Cliente {
   toPublic(): Record<string, unknown> {
     return {
       id: this.id,
+      idErpCliente: this.idErp,
       codigoErp: this.codigoErp,
       nome: this.nome,
       nomeFantasia: this.nomeFantasia,

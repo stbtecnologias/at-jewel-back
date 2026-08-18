@@ -9,8 +9,8 @@ import {
 /**
  * Espelha a tabela criada na migracao 32. Sem PII, sem coluna cifrada.
  *
- * `contraparte_tipo` e `contraparte_id` sao GENERATED ALWAYS no banco: existem
- * para a UNIQUE composta funcionar (tres das quatro colunas de contraparte
+ * `local_tipo` e `local_id` sao GENERATED ALWAYS no banco: existem
+ * para a UNIQUE composta funcionar (tres das quatro colunas de local
  * estao sempre nulas, e no Postgres nulos nunca colidem entre si). Aqui elas
  * sao `insert: false, update: false` — o TypeORM le, nunca escreve. Tentar
  * gravar devolveria erro do proprio Postgres.
@@ -19,6 +19,15 @@ import {
 export class EstoqueOrmEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column({
+    name: 'id_erp',
+    type: 'varchar',
+    length: 50,
+    unique: true,
+    nullable: true,
+  })
+  idErp: string | null;
 
   @Column({
     name: 'codigo_erp',
@@ -55,15 +64,15 @@ export class EstoqueOrmEntity {
   quantidade: number;
 
   @Column({
-    name: 'contraparte_tipo',
+    name: 'local_tipo',
     type: 'text',
     insert: false,
     update: false,
   })
-  contraparteTipo: 'LOCAL' | 'FORNECEDOR' | 'CLIENTE' | 'VENDEDORA';
+  localTipo: 'LOCAL' | 'FORNECEDOR' | 'CLIENTE' | 'VENDEDORA';
 
-  @Column({ name: 'contraparte_id', type: 'uuid', insert: false, update: false })
-  contraparteId: string;
+  @Column({ name: 'local_id', type: 'uuid', insert: false, update: false })
+  localId: string;
 
   @CreateDateColumn({ name: 'criado_em', type: 'timestamptz' })
   criadoEm: Date;

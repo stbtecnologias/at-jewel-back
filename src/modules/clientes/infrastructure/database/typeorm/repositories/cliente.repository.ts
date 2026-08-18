@@ -175,6 +175,7 @@ export class ClienteRepository implements IClienteRepository {
   // Os hashes vao em texto puro (nao sao cifrados).
   private toOrm(c: Cliente): Partial<ClienteOrmEntity> {
     return {
+      idErp: c.idErp,
       codigoErp: c.codigoErp,
       nome: c.nome,
       nomeFantasia: c.nomeFantasia,
@@ -226,6 +227,7 @@ export class ClienteRepository implements IClienteRepository {
   ): Cliente {
     return Cliente.create({
       id: c.id,
+      idErp: c.idErp,
       codigoErp: c.codigoErp,
       nome: c.nome,
       nomeFantasia: c.nomeFantasia,

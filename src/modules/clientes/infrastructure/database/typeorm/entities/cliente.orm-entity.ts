@@ -15,6 +15,9 @@ export class ClienteOrmEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Column({ name: 'id_erp', type: 'varchar', length: 50, unique: true, nullable: true })
+  idErp: string | null;
+
   @Column({ name: 'codigo_erp', type: 'varchar', length: 50, unique: true, nullable: true })
   codigoErp: string | null;
 

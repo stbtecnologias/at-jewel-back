@@ -4,6 +4,7 @@ import { ESTOQUE_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { IEstoqueRepository } from '../../domain/ports/repositories/estoque-repository.port';
 
 export interface CriarEstoqueInput {
+  idErp?: string | null;
   codigoErp?: string | null;
   empresaId: string;
   grupoEstoqueId: string;
@@ -23,28 +24,26 @@ export class CriarEstoqueUseCase {
   ) {}
 
   async execute(input: CriarEstoqueInput): Promise<Estoque> {
-    // Invariante do CHECK `chk_estoque_contraparte`, validado aqui para a
+    // Invariante do CHECK `chk_estoque_local`, validado aqui para a
     // mensagem sair util em vez de violacao crua do Postgres como 500.
-    const contrapartes = Estoque.contarContrapartes(input);
-    if (contrapartes !== 1) {
+    const locais = Estoque.contarLocais(input);
+    if (locais !== 1) {
       throw new BadRequestException(
-        'Informe exatamente uma contraparte: localEstoqueId, fornecedorId, clienteId ou vendedoraId',
+        'Informe exatamente um local: localEstoqueId, fornecedorId, clienteId ou vendedoraId',
       );
     }
 
-    // `codigo_erp` tambem e UNIQUE. Checar antes devolve 409 util em vez de
-    // violacao crua do Postgres como 500.
-    if (input.codigoErp) {
-      const dupCodigo = await this.repo.buscarPorCodigoErp(input.codigoErp);
-      if (dupCodigo) {
+    // `id_erp` e a IDENTIDADE no ERP e a chave da sincronizacao.
+    if (input.idErp) {
+      const dupId = await this.repo.buscarPorIdErp(input.idErp);
+      if (dupId) {
         throw new ConflictException(
-          `Ja existe saldo com esse codigo ERP (id: ${dupCodigo.id}). ` +
-            'Use PUT /estoque para atualizar.',
+          'Ja existe saldo com esse id do ERP: ' + dupId.id + '. Use PUT /estoque para atualizar.',
         );
       }
     }
 
-    // A chave (empresa, grupo, produto, contraparte) e UNIQUE. Checar antes
+    // A chave (empresa, grupo, produto, local) e UNIQUE. Checar antes
     // devolve 409 com o id do saldo existente — quem quer somar/substituir
     // deve usar o PUT de sincronizacao, que faz upsert.
     const existente = await this.repo.buscarPorChave(input);

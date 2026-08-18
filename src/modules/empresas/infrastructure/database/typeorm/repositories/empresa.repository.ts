@@ -57,12 +57,13 @@ export class EmpresaRepository implements IEmpresaRepository {
   }
 
   private toOrm(e: Empresa): Partial<EmpresaOrmEntity> {
-    return { codigoErp: e.codigoErp, nome: e.nome, ativo: e.ativo };
+    return { idErp: e.idErp, codigoErp: e.codigoErp, nome: e.nome, ativo: e.ativo };
   }
 
   private toDomain(o: EmpresaOrmEntity): Empresa {
     return Empresa.create({
       id: o.id,
+      idErp: o.idErp,
       codigoErp: o.codigoErp,
       nome: o.nome,
       ativo: o.ativo,

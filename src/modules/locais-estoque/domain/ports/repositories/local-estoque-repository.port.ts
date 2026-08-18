@@ -9,6 +9,8 @@ export interface FiltroLocalEstoque {
 export interface ILocalEstoqueRepository {
   criar(registro: LocalEstoque): Promise<LocalEstoque>;
   buscarPorId(id: string): Promise<LocalEstoque | null>;
+  /** Identidade no ERP — chave da sincronizacao. */
+  buscarPorIdErp(idErp: string): Promise<LocalEstoque | null>;
   buscarPorCodigoErp(codigoErp: string): Promise<LocalEstoque | null>;
   listar(filtros: FiltroLocalEstoque): Promise<LocalEstoque[]>;
   atualizar(registro: LocalEstoque): Promise<LocalEstoque>;

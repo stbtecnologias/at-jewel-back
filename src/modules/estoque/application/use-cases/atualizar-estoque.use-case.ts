@@ -9,7 +9,7 @@ export interface AtualizarEstoqueInput {
 
 /**
  * Ajuste manual de quantidade. NAO permite trocar empresa, grupo, produto nem
- * contraparte: essas quatro sao a IDENTIDADE do saldo — mudar qualquer uma
+ * local: essas quatro sao a IDENTIDADE do saldo — mudar qualquer uma
  * significa que o saldo e outro, e o caminho e apagar e criar.
  */
 @Injectable()

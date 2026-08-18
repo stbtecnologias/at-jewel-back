@@ -68,6 +68,7 @@ export class FornecedorRepository implements IFornecedorRepository {
   // no INSERT/UPDATE. Mesmo padrao de clientes e vendedoras.
   private toOrm(f: Fornecedor): Partial<FornecedorOrmEntity> {
     return {
+      idErp: f.idErp,
       codigoErp: f.codigoErp,
       nome: f.nome,
       nomeFantasia: f.nomeFantasia,
@@ -91,6 +92,7 @@ export class FornecedorRepository implements IFornecedorRepository {
   private toDomain(o: FornecedorOrmEntity): Fornecedor {
     return Fornecedor.create({
       id: o.id,
+      idErp: o.idErp,
       codigoErp: o.codigoErp,
       nome: o.nome,
       nomeFantasia: o.nomeFantasia,
