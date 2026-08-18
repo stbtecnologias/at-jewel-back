@@ -6,6 +6,7 @@ import type { IFornecedorRepository } from '../../domain/ports/repositories/forn
 import { normalizarOpcional } from '../utils/normalizadores';
 
 export interface CriarFornecedorInput {
+  idErp?: string | null;
   codigoErp?: string | null;
   nome: string;
   nomeFantasia?: string | null;
@@ -32,6 +33,16 @@ export class CriarFornecedorUseCase {
   ) {}
 
   async execute(input: CriarFornecedorInput): Promise<Fornecedor> {
+    // `id_erp` e a IDENTIDADE no ERP e a chave da sincronizacao — imutavel.
+    if (input.idErp) {
+      const dupIdErp = await this.repo.buscarPorIdErp(input.idErp);
+      if (dupIdErp) {
+        throw new ConflictException(
+          'Ja existe fornecedor com esse id do ERP: ' + dupIdErp.id,
+        );
+      }
+    }
+
     // `codigo_erp` e UNIQUE e e a chave de idempotencia da sincronizacao.
     // Checar antes devolve 409 com mensagem util em vez de deixar estourar
     // violacao crua como 500.
@@ -45,6 +56,7 @@ export class CriarFornecedorUseCase {
     }
 
     const fornecedor = Fornecedor.create({
+      idErp: input.idErp ?? null,
       codigoErp: input.codigoErp ?? null,
       nome: input.nome,
       nomeFantasia: input.nomeFantasia ?? null,

@@ -2,6 +2,8 @@ import { StatusDisponibilidadeVendedora, TipoVendedora } from './enums';
 
 export interface VendedoraProps {
   id?: string;
+  /** Identidade no ERP: chave da tabela LA, imutavel. */
+  idErp?: string | null;
   codigoErp?: string | null;
   nome: string;
   tipo: TipoVendedora;
@@ -19,6 +21,7 @@ export interface VendedoraProps {
 
 export class Vendedora {
   readonly id: string | undefined;
+  readonly idErp: string | null;
   readonly codigoErp: string | null;
   readonly nome: string;
   readonly tipo: TipoVendedora;
@@ -38,6 +41,7 @@ export class Vendedora {
 
   private constructor(props: VendedoraProps) {
     this.id = props.id;
+    this.idErp = props.idErp ?? null;
     this.codigoErp = props.codigoErp ?? null;
     this.nome = props.nome;
     this.tipo = props.tipo;
@@ -60,6 +64,7 @@ export class Vendedora {
   toPublic(): Record<string, unknown> {
     return {
       id: this.id,
+      idErpVendedora: this.idErp,
       codigoErp: this.codigoErp,
       nome: this.nome,
       tipo: this.tipo,

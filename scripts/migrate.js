@@ -95,6 +95,11 @@ const MANIFESTO = {
   // linha em role_permissions.
   '30_permissao_clientes_write.sql':      { tipo: 'permissao',  alvo: 'ADMIN|clientes:write' },
   '31_permissoes_consignacoes.sql':       { tipo: 'permissao',  alvo: 'ESTOQUISTA|vendedoras:read' },
+  // 32 cria TRES tabelas. O marcador e `estoque` porque ela referencia as
+  // outras duas — se ela existe, grupos_estoque e locais_estoque existem.
+  '32_estoque.sql':                       { tipo: 'tabela',     alvo: 'estoque' },
+  '33_permissoes_estoque.sql':            { tipo: 'permissao',  alvo: 'ESTOQUISTA|estoque:write' },
+  '34_id_erp_cadastros.sql':              { tipo: 'coluna',     alvo: 'produtos.id_erp' },
 };
 
 // ---------------------------------------------------------------------------

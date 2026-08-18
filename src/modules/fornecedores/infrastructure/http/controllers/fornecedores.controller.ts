@@ -67,8 +67,8 @@ export class FornecedoresController {
   @Permissions('fornecedores:write')
   @RequireScopes('fornecedores:write')
   async criarFornecedor(@Body() dto: CriarFornecedorDto) {
-    const f = await this.criar.execute(dto);
-    return f.toPublic();
+    const criado = await this.criar.execute({ ...dto, idErp: dto.idErpFornecedor });
+    return criado.toPublic();
   }
 
   @Patch(':id')
@@ -79,8 +79,8 @@ export class FornecedoresController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AtualizarFornecedorDto,
   ) {
-    const f = await this.atualizar.execute(id, dto);
-    return f.toPublic();
+    const atualizado = await this.atualizar.execute(id, { ...dto, idErp: dto.idErpFornecedor });
+    return atualizado.toPublic();
   }
 
   // Exclusao FISICA. O desligamento do dia a dia e PATCH com `ativo: false`.

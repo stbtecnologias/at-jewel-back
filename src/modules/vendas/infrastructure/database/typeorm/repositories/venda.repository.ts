@@ -513,6 +513,7 @@ export class VendaRepository implements IVendaRepository {
 
   private toOrm(v: Venda): Partial<VendaOrmEntity> {
     return {
+      idErp: v.idErp,
       codigoErp: v.codigoErp,
       clienteId: v.clienteId,
       vendedoraId: v.vendedoraId,
@@ -530,6 +531,7 @@ export class VendaRepository implements IVendaRepository {
   private itemToOrm(i: ItemVenda): Partial<ItemVendaOrmEntity> {
     return {
       produtoId: i.produtoId,
+      idErpItem: i.idErpItem,
       codigoErpItem: i.codigoErpItem,
       quantidade: i.quantidade.toString(),
       valorUnitario: i.valorUnitario.toString(),
@@ -557,6 +559,7 @@ export class VendaRepository implements IVendaRepository {
   ): Venda {
     return Venda.create({
       id: v.id,
+      idErp: v.idErp,
       codigoErp: v.codigoErp,
       clienteId: v.clienteId,
       vendedoraId: v.vendedoraId,
@@ -580,6 +583,7 @@ export class VendaRepository implements IVendaRepository {
       id: i.id,
       vendaId: i.vendaId,
       produtoId: i.produtoId,
+      idErpItem: i.idErpItem,
       codigoErpItem: i.codigoErpItem,
       quantidade: Number(i.quantidade),
       valorUnitario: Number(i.valorUnitario),

@@ -66,8 +66,8 @@ export class FormasPagamentoController {
   @Permissions('formas_pagamento:write')
   @RequireScopes('formas_pagamento:write')
   async criarForma(@Body() dto: CriarFormaPagamentoDto) {
-    const f = await this.criar.execute(dto);
-    return f.toPublic();
+    const criado = await this.criar.execute({ ...dto, idErp: dto.idErpFormaPagamento });
+    return criado.toPublic();
   }
 
   @Patch(':id')
@@ -78,8 +78,8 @@ export class FormasPagamentoController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AtualizarFormaPagamentoDto,
   ) {
-    const f = await this.atualizar.execute(id, dto);
-    return f.toPublic();
+    const atualizado = await this.atualizar.execute(id, { ...dto, idErp: dto.idErpFormaPagamento });
+    return atualizado.toPublic();
   }
 
   // Exclusao FISICA. Aqui o desligamento suave (PATCH com `ativo: false`) e

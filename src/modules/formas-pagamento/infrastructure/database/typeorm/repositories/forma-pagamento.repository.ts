@@ -26,6 +26,11 @@ export class FormaPagamentoRepository implements IFormaPagamentoRepository {
     return row ? this.toDomain(row) : null;
   }
 
+  async buscarPorIdErp(idErp: string): Promise<FormaPagamentoEntity | null> {
+    const row = await this.repo.findOne({ where: { idErp } });
+    return row ? this.toDomain(row) : null;
+  }
+
   async buscarPorCodigoErp(codigoErp: string): Promise<FormaPagamentoEntity | null> {
     const row = await this.repo.findOne({ where: { codigoErp } });
     return row ? this.toDomain(row) : null;
@@ -59,6 +64,7 @@ export class FormaPagamentoRepository implements IFormaPagamentoRepository {
 
   private toOrm(f: FormaPagamentoEntity): Partial<FormaPagamentoOrmEntity> {
     return {
+      idErp: f.idErp,
       codigoErp: f.codigoErp,
       nome: f.nome,
       classificacao: f.classificacao,
@@ -69,6 +75,7 @@ export class FormaPagamentoRepository implements IFormaPagamentoRepository {
   private toDomain(o: FormaPagamentoOrmEntity): FormaPagamentoEntity {
     return FormaPagamentoEntity.create({
       id: o.id,
+      idErp: o.idErp,
       codigoErp: o.codigoErp,
       nome: o.nome,
       classificacao: o.classificacao,

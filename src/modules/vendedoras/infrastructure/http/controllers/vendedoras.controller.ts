@@ -160,6 +160,7 @@ export class VendedorasController {
   @RequireScopes('vendedoras:write')
   async criarVendedora(@Body() dto: CriarVendedoraDto) {
     const v = await this.criar.execute({
+      idErp: dto.idErpVendedora,
       codigoErp: dto.codigoErp,
       nome: dto.nome,
       tipo: dto.tipo,
@@ -180,6 +181,7 @@ export class VendedorasController {
     @Body() dto: AtualizarVendedoraDto,
   ) {
     const v = await this.atualizar.execute(id, {
+      idErp: dto.idErpVendedora,
       nome: dto.nome,
       tipo: dto.tipo,
       ativo: dto.ativo,

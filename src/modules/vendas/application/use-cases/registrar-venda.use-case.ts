@@ -16,6 +16,7 @@ import type { IVendaRepository } from '../../domain/ports/repositories/venda-rep
 
 export interface ItemVendaInput {
   produtoId?: string | null;
+  idErpItem?: string | null;
   codigoErpItem?: string | null;
   quantidade: number;
   valorUnitario: number;
@@ -34,6 +35,7 @@ export interface PagamentoVendaInput {
 }
 
 export interface RegistrarVendaInput {
+  idErp?: string | null;
   codigoErp?: string | null;
   clienteId?: string | null;
   vendedoraId?: string | null;
@@ -59,6 +61,7 @@ export class RegistrarVendaUseCase {
     const itens = input.itens.map((i) =>
       ItemVenda.create({
         produtoId: i.produtoId ?? null,
+        idErpItem: i.idErpItem ?? null,
         codigoErpItem: i.codigoErpItem ?? null,
         quantidade: i.quantidade,
         valorUnitario: i.valorUnitario,
@@ -80,6 +83,7 @@ export class RegistrarVendaUseCase {
     );
 
     const venda = Venda.create({
+      idErp: input.idErp ?? null,
       codigoErp: input.codigoErp ?? null,
       clienteId: input.clienteId ?? null,
       vendedoraId: input.vendedoraId ?? null,

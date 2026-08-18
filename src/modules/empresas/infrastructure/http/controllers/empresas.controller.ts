@@ -67,7 +67,9 @@ export class EmpresasController {
   @Permissions('empresas:write')
   @RequireScopes('empresas:write')
   async criarEmpresa(@Body() dto: CriarEmpresaDto) {
-    const e = await this.criar.execute(dto);
+    // O campo da API leva o sufixo da tabela para quem monta o payload saber de
+    // que cadastro e o id; dentro, o dominio chama de `idErp`.
+    const e = await this.criar.execute({ ...dto, idErp: dto.idErpEmpresa });
     return e.toPublic();
   }
 
@@ -79,7 +81,7 @@ export class EmpresasController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AtualizarEmpresaDto,
   ) {
-    const e = await this.atualizar.execute(id, dto);
+    const e = await this.atualizar.execute(id, { ...dto, idErp: dto.idErpEmpresa });
     return e.toPublic();
   }
 

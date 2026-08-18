@@ -6,6 +6,7 @@ import type { IFornecedorRepository } from '../../domain/ports/repositories/forn
 import { normalizarOpcional } from '../utils/normalizadores';
 
 export interface AtualizarFornecedorInput {
+  idErp?: string | null;
   codigoErp?: string | null;
   nome?: string;
   nomeFantasia?: string | null;
@@ -38,7 +39,17 @@ export class AtualizarFornecedorUseCase {
 
     // `undefined` = campo ausente no PATCH, mantem o atual.
     // `null` = pedido explicito de limpar.
+    const idErp = input.idErp !== undefined ? input.idErp : atual.idErp;
     const codigoErp = input.codigoErp !== undefined ? input.codigoErp : atual.codigoErp;
+
+    if (idErp && idErp !== atual.idErp) {
+      const dupIdErp = await this.repo.buscarPorIdErp(idErp);
+      if (dupIdErp && dupIdErp.id !== id) {
+        throw new ConflictException(
+          'Ja existe fornecedor com esse id do ERP: ' + dupIdErp.id,
+        );
+      }
+    }
 
     if (codigoErp && codigoErp !== atual.codigoErp) {
       const dup = await this.repo.buscarPorCodigoErp(codigoErp);
@@ -54,6 +65,7 @@ export class AtualizarFornecedorUseCase {
 
     const atualizado = Fornecedor.create({
       id: atual.id,
+      idErp,
       codigoErp,
       nome: input.nome ?? atual.nome,
       nomeFantasia: manter(input.nomeFantasia, atual.nomeFantasia),

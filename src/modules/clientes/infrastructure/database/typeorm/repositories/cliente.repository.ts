@@ -127,6 +127,11 @@ export class ClienteRepository implements IClienteRepository {
     return row ? this.toDomain(row, row.perfil) : null;
   }
 
+  async buscarPorIdErp(idErp: string): Promise<Cliente | null> {
+    const row = await this.repo.findOne({ where: { idErp } });
+    return row ? this.toDomain(row) : null;
+  }
+
   async buscarPorCodigoErp(codigoErp: string): Promise<Cliente | null> {
     const row = await this.repo.findOne({ where: { codigoErp } });
     return row ? this.toDomain(row) : null;
@@ -175,6 +180,7 @@ export class ClienteRepository implements IClienteRepository {
   // Os hashes vao em texto puro (nao sao cifrados).
   private toOrm(c: Cliente): Partial<ClienteOrmEntity> {
     return {
+      idErp: c.idErp,
       codigoErp: c.codigoErp,
       nome: c.nome,
       nomeFantasia: c.nomeFantasia,
@@ -226,6 +232,7 @@ export class ClienteRepository implements IClienteRepository {
   ): Cliente {
     return Cliente.create({
       id: c.id,
+      idErp: c.idErp,
       codigoErp: c.codigoErp,
       nome: c.nome,
       nomeFantasia: c.nomeFantasia,

@@ -26,6 +26,11 @@ export class EmpresaRepository implements IEmpresaRepository {
     return row ? this.toDomain(row) : null;
   }
 
+  async buscarPorIdErp(idErp: string): Promise<Empresa | null> {
+    const row = await this.repo.findOne({ where: { idErp } });
+    return row ? this.toDomain(row) : null;
+  }
+
   async buscarPorCodigoErp(codigoErp: string): Promise<Empresa | null> {
     const row = await this.repo.findOne({ where: { codigoErp } });
     return row ? this.toDomain(row) : null;
@@ -57,12 +62,13 @@ export class EmpresaRepository implements IEmpresaRepository {
   }
 
   private toOrm(e: Empresa): Partial<EmpresaOrmEntity> {
-    return { codigoErp: e.codigoErp, nome: e.nome, ativo: e.ativo };
+    return { idErp: e.idErp, codigoErp: e.codigoErp, nome: e.nome, ativo: e.ativo };
   }
 
   private toDomain(o: EmpresaOrmEntity): Empresa {
     return Empresa.create({
       id: o.id,
+      idErp: o.idErp,
       codigoErp: o.codigoErp,
       nome: o.nome,
       ativo: o.ativo,

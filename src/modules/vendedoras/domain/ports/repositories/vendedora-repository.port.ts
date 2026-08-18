@@ -15,6 +15,8 @@ export interface FiltroVendedora {
 export interface IVendedoraRepository {
   criar(vendedora: Vendedora): Promise<Vendedora>;
   buscarPorId(id: string): Promise<Vendedora | null>;
+  /** Identidade no ERP — chave da sincronizacao. */
+  buscarPorIdErp(idErp: string): Promise<Vendedora | null>;
   buscarPorCodigoErp(codigoErp: string): Promise<Vendedora | null>;
   buscarPorEmailHash(hash: string): Promise<Vendedora | null>;
   buscarPorWhatsappHash(hash: string): Promise<Vendedora | null>;

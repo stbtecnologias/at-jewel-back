@@ -9,9 +9,10 @@ import {
 } from '../../domain/entities/enums';
 import { CLIENTE_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { IClienteRepository } from '../../domain/ports/repositories/cliente-repository.port';
-import { normalizarTelefone } from '../utils/normalizadores';
+import { normalizarTelefone, variantesTelefone } from '../utils/normalizadores';
 
 export interface CriarClienteInput {
+  idErp?: string | null;
   // Cliente
   codigoErp?: string | null;
   nome: string;
@@ -48,6 +49,16 @@ export class CriarClienteUseCase {
   ) {}
 
   async execute(input: CriarClienteInput): Promise<Cliente> {
+    // `id_erp` e a IDENTIDADE no ERP e a chave da sincronizacao — imutavel.
+    if (input.idErp) {
+      const dupIdErp = await this.clienteRepo.buscarPorIdErp(input.idErp);
+      if (dupIdErp) {
+        throw new ConflictException(
+          'Ja existe cliente com esse id do ERP: ' + dupIdErp.id,
+        );
+      }
+    }
+
     // Sem WhatsApp o cliente nasce sem perfil — ver o comentario em
     // CriarClienteInput.
     const whatsappHash = input.whatsapp
@@ -62,12 +73,19 @@ export class CriarClienteUseCase {
       : null;
     const emailHash = input.email ? hashField(input.email) : null;
 
-    if (telefone1Hash) {
-      const duplicadoTel = await this.clienteRepo.buscarPorTelefone1Hash(telefone1Hash);
-      if (duplicadoTel) {
-        throw new ConflictException(
-          `Ja existe cliente com esse telefone (id: ${duplicadoTel.id})`,
+    // Checa TODAS as formas equivalentes do numero (nono digito, DDI): o mesmo
+    // telefone cadastrado em dois formatos gera dois clientes, e a duplicata
+    // so aparece semanas depois, quando o historico ja esta partido em dois.
+    if (input.telefone1) {
+      for (const variante of variantesTelefone(input.telefone1)) {
+        const duplicadoTel = await this.clienteRepo.buscarPorTelefone1Hash(
+          hashField(variante),
         );
+        if (duplicadoTel) {
+          throw new ConflictException(
+            `Ja existe cliente com esse telefone (id: ${duplicadoTel.id})`,
+          );
+        }
       }
     }
     if (emailHash) {
@@ -96,6 +114,7 @@ export class CriarClienteUseCase {
     }
 
     const cliente = Cliente.create({
+      idErp: input.idErp ?? null,
       codigoErp: input.codigoErp ?? null,
       nome: input.nome,
       nomeFantasia: input.nomeFantasia ?? null,

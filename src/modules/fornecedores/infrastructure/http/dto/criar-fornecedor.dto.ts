@@ -19,6 +19,13 @@ import type { TipoPessoa } from '../../../../clientes/domain/entities/enums';
  * tamanho aqui sao folgados: `11.222.333/0001-44` tem 18 caracteres e vira 14.
  */
 export class CriarFornecedorDto {
+  // ID do registro na tabela do ERP: chave tecnica, imutavel. E por ele que a
+  // sincronizacao encontra o cadastro. Sufixo no nome para saber de que tabela.
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  idErpFornecedor?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(50)

@@ -13,6 +13,8 @@ export interface FiltroFornecedor {
 export interface IFornecedorRepository {
   criar(fornecedor: Fornecedor): Promise<Fornecedor>;
   buscarPorId(id: string): Promise<Fornecedor | null>;
+  /** Identidade no ERP — chave da sincronizacao. */
+  buscarPorIdErp(idErp: string): Promise<Fornecedor | null>;
   buscarPorCodigoErp(codigoErp: string): Promise<Fornecedor | null>;
   listar(filtros: FiltroFornecedor): Promise<Fornecedor[]>;
   atualizar(fornecedor: Fornecedor): Promise<Fornecedor>;

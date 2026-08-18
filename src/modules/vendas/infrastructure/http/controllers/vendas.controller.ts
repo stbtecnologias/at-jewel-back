@@ -55,6 +55,7 @@ export class VendasController {
   @RequireScopes('vendas:write')
   async registrarVenda(@Body() dto: RegistrarVendaDto) {
     const venda = await this.registrar.execute({
+      idErp: dto.idErpVenda,
       codigoErp: dto.codigoErp,
       clienteId: dto.clienteId,
       vendedoraId: dto.vendedoraId,
@@ -67,6 +68,7 @@ export class VendasController {
       observacao: dto.observacao,
       itens: dto.itens.map((i) => ({
         produtoId: i.produtoId ?? null,
+        idErpItem: i.idErpItem ?? null,
         codigoErpItem: i.codigoErpItem ?? null,
         quantidade: i.quantidade,
         valorUnitario: i.valorUnitario,

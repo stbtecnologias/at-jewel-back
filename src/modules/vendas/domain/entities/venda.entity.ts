@@ -24,6 +24,8 @@ function paraCentavos(valor: number): number {
 
 export interface VendaProps {
   id?: string;
+  /** Identidade no ERP: chave da tabela la, imutavel. */
+  idErp?: string | null;
   codigoErp?: string | null;
   clienteId?: string | null;
   vendedoraId?: string | null;
@@ -43,6 +45,7 @@ export interface VendaProps {
 
 export class Venda {
   readonly id: string | undefined;
+  readonly idErp: string | null;
   readonly codigoErp: string | null;
   readonly clienteId: string | null;
   readonly vendedoraId: string | null;
@@ -61,6 +64,7 @@ export class Venda {
 
   private constructor(props: VendaProps) {
     this.id = props.id;
+    this.idErp = props.idErp ?? null;
     this.codigoErp = props.codigoErp ?? null;
     this.clienteId = props.clienteId ?? null;
     this.vendedoraId = props.vendedoraId ?? null;
@@ -130,6 +134,7 @@ export class Venda {
   toPublic(): Record<string, unknown> {
     return {
       id: this.id,
+      idErpVenda: this.idErp,
       codigoErp: this.codigoErp,
       clienteId: this.clienteId,
       vendedoraId: this.vendedoraId,

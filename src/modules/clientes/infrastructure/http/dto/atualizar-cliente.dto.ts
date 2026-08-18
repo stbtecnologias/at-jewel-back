@@ -31,6 +31,11 @@ export class AtualizarClienteDto {
   @IsOptional()
   @IsString()
   @MaxLength(50)
+  idErpCliente?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
   codigoErp?: string | null;
 
   @IsOptional()

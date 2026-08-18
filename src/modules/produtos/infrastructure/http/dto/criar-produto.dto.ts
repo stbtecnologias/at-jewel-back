@@ -9,6 +9,12 @@ import {
 } from 'class-validator';
 
 export class CriarProdutoDto {
+  // ID do registro na tabela do ERP: chave tecnica, imutavel. Segue o
+  // snake_case do proprio modulo de produtos, com o sufixo da tabela.
+  @IsOptional()
+  @IsString()
+  id_erp_produto?: string;
+
   @IsOptional()
   @IsString()
   codigo_erp?: string;

@@ -1,12 +1,16 @@
 import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import { hashField } from '../../../../shared/database/transformers/encrypted-column.transformer';
-import { normalizarTelefone } from '../../../clientes/application/utils/normalizadores';
+import {
+  normalizarTelefone,
+  variantesTelefone,
+} from '../../../clientes/application/utils/normalizadores';
 import { Vendedora } from '../../domain/entities/vendedora.entity';
 import type { TipoVendedora } from '../../domain/entities/enums';
 import { VENDEDORA_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { IVendedoraRepository } from '../../domain/ports/repositories/vendedora-repository.port';
 
 export interface CriarVendedoraInput {
+  idErp?: string | null;
   codigoErp?: string | null;
   nome: string;
   tipo?: TipoVendedora;
@@ -24,6 +28,16 @@ export class CriarVendedoraUseCase {
   ) {}
 
   async execute(input: CriarVendedoraInput): Promise<Vendedora> {
+    // `id_erp` e a IDENTIDADE no ERP e a chave da sincronizacao — imutavel.
+    if (input.idErp) {
+      const dupIdErp = await this.repo.buscarPorIdErp(input.idErp);
+      if (dupIdErp) {
+        throw new ConflictException(
+          'Ja existe vendedora com esse id do ERP: ' + dupIdErp.id,
+        );
+      }
+    }
+
     const emailHash = input.email ? hashField(input.email) : null;
     const whatsappInternoHash = input.whatsappInterno
       ? hashField(normalizarTelefone(input.whatsappInterno))
@@ -33,9 +47,13 @@ export class CriarVendedoraUseCase {
       const dup = await this.repo.buscarPorEmailHash(emailHash);
       if (dup) throw new ConflictException('Email ja cadastrado em outra vendedora');
     }
-    if (whatsappInternoHash) {
-      const dup = await this.repo.buscarPorWhatsappHash(whatsappInternoHash);
-      if (dup) throw new ConflictException('WhatsApp ja cadastrado em outra vendedora');
+    if (input.whatsappInterno) {
+      // Todas as formas equivalentes (nono digito, DDI): o mesmo numero em dois
+      // formatos criaria duas vendedoras, e a Elena responderia so a uma delas.
+      for (const variante of variantesTelefone(input.whatsappInterno)) {
+        const dup = await this.repo.buscarPorWhatsappHash(hashField(variante));
+        if (dup) throw new ConflictException('WhatsApp ja cadastrado em outra vendedora');
+      }
     }
     if (input.codigoErp) {
       const dup = await this.repo.buscarPorCodigoErp(input.codigoErp);
@@ -43,6 +61,7 @@ export class CriarVendedoraUseCase {
     }
 
     const vendedora = Vendedora.create({
+      idErp: input.idErp ?? null,
       codigoErp: input.codigoErp ?? null,
       nome: input.nome,
       tipo: input.tipo ?? 'LOCAL',

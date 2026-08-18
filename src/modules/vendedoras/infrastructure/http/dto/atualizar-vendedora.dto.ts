@@ -19,6 +19,11 @@ import type {
 export class AtualizarVendedoraDto {
   @IsOptional()
   @IsString()
+  @MaxLength(50)
+  idErpVendedora?: string | null;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(255)
   @SanitizeText()
   nome?: string;

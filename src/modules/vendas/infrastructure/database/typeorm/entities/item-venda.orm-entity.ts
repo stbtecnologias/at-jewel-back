@@ -23,6 +23,9 @@ export class ItemVendaOrmEntity {
   @Column({ name: 'produto_id', type: 'uuid', nullable: true })
   produtoId: string | null;
 
+  @Column({ name: 'id_erp_item', type: 'varchar', length: 50, unique: true, nullable: true })
+  idErpItem: string | null;
+
   @Column({ name: 'codigo_erp_item', type: 'varchar', length: 50, nullable: true })
   codigoErpItem: string | null;
 

@@ -4,7 +4,7 @@ import { Cliente } from '../../domain/entities/cliente.entity';
 import { TabelaPreco, TipoPessoa } from '../../domain/entities/enums';
 import { CLIENTE_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { IClienteRepository } from '../../domain/ports/repositories/cliente-repository.port';
-import { normalizarTelefone } from '../utils/normalizadores';
+import { normalizarTelefone, variantesTelefone } from '../utils/normalizadores';
 
 /**
  * Atualiza o CADASTRO do cliente — os dados operacionais/ERP da tabela
@@ -19,6 +19,7 @@ import { normalizarTelefone } from '../utils/normalizadores';
  * PATCH /clientes/:id/perfil, e o cadastro em si nao tinha update.
  */
 export interface AtualizarClienteInput {
+  idErp?: string | null;
   codigoErp?: string | null;
   nome?: string;
   nomeFantasia?: string | null;
@@ -67,10 +68,16 @@ export class AtualizarClienteUseCase {
 
     // As colunas de hash sao UNIQUE. Checar antes devolve 409 com mensagem
     // util, em vez de deixar estourar violacao crua do Postgres como 500.
-    if (telefoneMudou && telefone1Hash) {
-      const dup = await this.repo.buscarPorTelefone1Hash(telefone1Hash);
-      if (dup && dup.id !== id) {
-        throw new ConflictException(`Ja existe cliente com esse telefone (id: ${dup.id})`);
+    if (telefoneMudou && telefone1 && telefone1Hash) {
+      // Todas as formas equivalentes (nono digito, DDI) — o mesmo numero em
+      // outro formato ja pertence a outro cliente.
+      for (const variante of variantesTelefone(telefone1)) {
+        const dup = await this.repo.buscarPorTelefone1Hash(hashField(variante));
+        if (dup && dup.id !== id) {
+          throw new ConflictException(
+            `Ja existe cliente com esse telefone (id: ${dup.id})`,
+          );
+        }
       }
     }
     if (emailMudou && emailHash) {
@@ -82,6 +89,7 @@ export class AtualizarClienteUseCase {
 
     const atualizado = Cliente.create({
       id: atual.id,
+      idErp: input.idErp !== undefined ? input.idErp : atual.idErp,
       codigoErp: input.codigoErp !== undefined ? input.codigoErp : atual.codigoErp,
       nome: input.nome ?? atual.nome,
       nomeFantasia:

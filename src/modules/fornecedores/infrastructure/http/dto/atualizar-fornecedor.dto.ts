@@ -23,6 +23,11 @@ export class AtualizarFornecedorDto {
   @IsOptional()
   @IsString()
   @MaxLength(50)
+  idErpFornecedor?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
   codigoErp?: string;
 
   @IsOptional()

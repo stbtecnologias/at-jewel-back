@@ -2,6 +2,8 @@ export interface ItemVendaProps {
   id?: string;
   vendaId?: string;
   produtoId?: string | null;
+  /** Identidade do item no ERP. */
+  idErpItem?: string | null;
   codigoErpItem?: string | null;
   quantidade: number;
   valorUnitario: number;
@@ -16,6 +18,7 @@ export class ItemVenda {
   readonly id: string | undefined;
   readonly vendaId: string | undefined;
   readonly produtoId: string | null;
+  readonly idErpItem: string | null;
   readonly codigoErpItem: string | null;
   readonly quantidade: number;
   readonly valorUnitario: number;
@@ -29,6 +32,7 @@ export class ItemVenda {
     this.id = props.id;
     this.vendaId = props.vendaId;
     this.produtoId = props.produtoId ?? null;
+    this.idErpItem = props.idErpItem ?? null;
     this.codigoErpItem = props.codigoErpItem ?? null;
     this.quantidade = props.quantidade;
     this.valorUnitario = props.valorUnitario;
@@ -47,6 +51,7 @@ export class ItemVenda {
     return {
       id: this.id,
       produtoId: this.produtoId,
+      idErpItem: this.idErpItem,
       codigoErpItem: this.codigoErpItem,
       quantidade: this.quantidade,
       valorUnitario: this.valorUnitario,

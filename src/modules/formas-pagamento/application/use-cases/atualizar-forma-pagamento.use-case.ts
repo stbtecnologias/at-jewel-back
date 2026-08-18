@@ -5,6 +5,7 @@ import { FORMA_PAGAMENTO_REPOSITORY } from '../../domain/ports/injection-tokens'
 import type { IFormaPagamentoRepository } from '../../domain/ports/repositories/forma-pagamento-repository.port';
 
 export interface AtualizarFormaPagamentoInput {
+  idErp?: string | null;
   codigoErp?: string | null;
   nome?: string;
   classificacao?: ClassificacaoPagamento;
@@ -25,7 +26,17 @@ export class AtualizarFormaPagamentoUseCase {
     const atual = await this.repo.buscarPorId(id);
     if (!atual) throw new NotFoundException(`Forma de pagamento ${id} nao encontrada`);
 
+    const idErp = input.idErp !== undefined ? input.idErp : atual.idErp;
     const codigoErp = input.codigoErp !== undefined ? input.codigoErp : atual.codigoErp;
+
+    if (idErp && idErp !== atual.idErp) {
+      const dupIdErp = await this.repo.buscarPorIdErp(idErp);
+      if (dupIdErp && dupIdErp.id !== id) {
+        throw new ConflictException(
+          'Ja existe forma de pagamento com esse id do ERP: ' + dupIdErp.id,
+        );
+      }
+    }
 
     if (codigoErp && codigoErp !== atual.codigoErp) {
       const dup = await this.repo.buscarPorCodigoErp(codigoErp);
@@ -42,6 +53,7 @@ export class AtualizarFormaPagamentoUseCase {
     // ingestao exige exatamente isso —, mas nao e operacao inocente.
     const atualizado = FormaPagamentoEntity.create({
       id: atual.id,
+      idErp,
       codigoErp,
       nome: input.nome ?? atual.nome,
       classificacao: input.classificacao ?? atual.classificacao,

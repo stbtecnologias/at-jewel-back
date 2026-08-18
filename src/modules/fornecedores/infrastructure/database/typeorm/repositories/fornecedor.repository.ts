@@ -26,6 +26,11 @@ export class FornecedorRepository implements IFornecedorRepository {
     return row ? this.toDomain(row) : null;
   }
 
+  async buscarPorIdErp(idErp: string): Promise<Fornecedor | null> {
+    const row = await this.repo.findOne({ where: { idErp } });
+    return row ? this.toDomain(row) : null;
+  }
+
   async buscarPorCodigoErp(codigoErp: string): Promise<Fornecedor | null> {
     const row = await this.repo.findOne({ where: { codigoErp } });
     return row ? this.toDomain(row) : null;
@@ -68,6 +73,7 @@ export class FornecedorRepository implements IFornecedorRepository {
   // no INSERT/UPDATE. Mesmo padrao de clientes e vendedoras.
   private toOrm(f: Fornecedor): Partial<FornecedorOrmEntity> {
     return {
+      idErp: f.idErp,
       codigoErp: f.codigoErp,
       nome: f.nome,
       nomeFantasia: f.nomeFantasia,
@@ -91,6 +97,7 @@ export class FornecedorRepository implements IFornecedorRepository {
   private toDomain(o: FornecedorOrmEntity): Fornecedor {
     return Fornecedor.create({
       id: o.id,
+      idErp: o.idErp,
       codigoErp: o.codigoErp,
       nome: o.nome,
       nomeFantasia: o.nomeFantasia,
