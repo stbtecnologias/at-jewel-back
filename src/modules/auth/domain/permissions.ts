@@ -21,6 +21,9 @@ export const PERMISSOES: PermissaoDef[] = [
   { chave: 'consignacoes:write', label: 'Registrar consignações', grupo: 'Produtos' },
   { chave: 'fornecedores:read', label: 'Ver fornecedores', grupo: 'Produtos' },
   { chave: 'fornecedores:write', label: 'Editar fornecedores', grupo: 'Produtos' },
+  // Um par cobre as tres tabelas do assunto: saldo, grupos e locais.
+  { chave: 'estoque:read', label: 'Ver estoque, grupos e locais', grupo: 'Produtos' },
+  { chave: 'estoque:write', label: 'Editar estoque, grupos e locais', grupo: 'Produtos' },
   { chave: 'empresas:read', label: 'Ver empresas do grupo', grupo: 'Cadastros' },
   { chave: 'empresas:write', label: 'Editar empresas do grupo', grupo: 'Cadastros' },
   { chave: 'formas_pagamento:read', label: 'Ver formas de pagamento', grupo: 'Cadastros' },

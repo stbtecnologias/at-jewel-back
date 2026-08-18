@@ -19,6 +19,12 @@ import { DemandasModule } from './modules/demandas/demandas.module';
 import { FornecedoresModule } from './modules/fornecedores/fornecedores.module';
 import { FormasPagamentoModule } from './modules/formas-pagamento/formas-pagamento.module';
 import { EmpresasModule } from './modules/empresas/empresas.module';
+import { GruposEstoqueModule } from './modules/grupos-estoque/grupos-estoque.module';
+import { LocaisEstoqueModule } from './modules/locais-estoque/locais-estoque.module';
+import { EstoqueModule } from './modules/estoque/estoque.module';
+import { GrupoEstoqueOrmEntity } from './modules/grupos-estoque/infrastructure/database/typeorm/entities/grupo-estoque.orm-entity';
+import { LocalEstoqueOrmEntity } from './modules/locais-estoque/infrastructure/database/typeorm/entities/local-estoque.orm-entity';
+import { EstoqueOrmEntity } from './modules/estoque/infrastructure/database/typeorm/entities/estoque.orm-entity';
 import { DemandaOrmEntity } from './modules/demandas/infrastructure/database/typeorm/entities/demanda.orm-entity';
 import { FornecedorOrmEntity } from './modules/fornecedores/infrastructure/database/typeorm/entities/fornecedor.orm-entity';
 import { FormaPagamentoOrmEntity } from './modules/formas-pagamento/infrastructure/database/typeorm/entities/forma-pagamento.orm-entity';
@@ -95,6 +101,9 @@ import { HealthController } from './health.controller';
           FornecedorOrmEntity,
           FormaPagamentoOrmEntity,
           EmpresaOrmEntity,
+          GrupoEstoqueOrmEntity,
+          LocalEstoqueOrmEntity,
+          EstoqueOrmEntity,
         ],
         // Rede de seguranca: registra automaticamente toda entidade declarada
         // via TypeOrmModule.forFeature(...) nos modulos, evitando o erro
@@ -119,6 +128,9 @@ import { HealthController } from './health.controller';
     FornecedoresModule,
     FormasPagamentoModule,
     EmpresasModule,
+    GruposEstoqueModule,
+    LocaisEstoqueModule,
+    EstoqueModule,
     AnalyticsModule,
     AgentesModule,
     AtendimentoModule,

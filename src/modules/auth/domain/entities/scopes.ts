@@ -17,6 +17,11 @@ export const SCOPES_VALIDOS = [
   'formas_pagamento:write',
   'empresas:read',
   'empresas:write',
+  // Um par cobre as TRES tabelas do assunto (grupos_estoque, locais_estoque e
+  // o saldo): quem integra estoque precisa das tres juntas, e separar so
+  // aumentaria o numero de scopes a administrar sem separar risco nenhum.
+  'estoque:read',
+  'estoque:write',
   'agente_eventos:write',
 ] as const;
 
@@ -59,6 +64,9 @@ export const SCOPE_DESCRICAO: Record<ApiKeyScope, string> = {
   'formas_pagamento:write': 'Criar, atualizar e remover formas de pagamento',
   'empresas:read': 'Listar e buscar empresas do grupo',
   'empresas:write': 'Criar, atualizar e remover empresas do grupo',
+  'estoque:read': 'Consultar saldo de estoque, grupos e locais',
+  'estoque:write':
+    'Sincronizar saldo de estoque e manter grupos e locais (integracao do ERP)',
   'agente_eventos:write': 'Registrar eventos da Anastasia/Elena/Sofia',
 };
 
