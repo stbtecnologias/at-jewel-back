@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AgentesModule } from '../agentes/agentes.module';
 import { AuthModule } from '../auth/auth.module';
-import { ProcessarMensagemWhatsappUseCase } from './application/use-cases/processar-mensagem-whatsapp.use-case';
+import { AtendimentosModule } from '../atendimentos/atendimentos.module';
 import { WhatsappWebhookController } from './infrastructure/http/controllers/whatsapp-webhook.controller';
 import { WhatsappAdminController } from './infrastructure/http/controllers/whatsapp-admin.controller';
 import { WahaAuthGuard } from './infrastructure/http/guards/waha-auth.guard';
@@ -14,10 +14,11 @@ import { WhatsappGatewayModule } from './whatsapp-gateway.module';
  * (reusa o LLM_CLIENT exportado pelo AgentesModule) e envia de volta via WAHA.
  */
 @Module({
-  imports: [AgentesModule, AuthModule, WhatsappGatewayModule],
+  // AtendimentosModule traz o ProcessarMensagemInternaUseCase — o webhook
+  // deste modulo passou a ser a porta do canal INTERNO (ADM e vendedoras).
+  imports: [AgentesModule, AuthModule, WhatsappGatewayModule, AtendimentosModule],
   controllers: [WhatsappWebhookController, WhatsappAdminController],
   providers: [
-    ProcessarMensagemWhatsappUseCase,
     WahaAuthGuard,
     WahaAdminClient,
   ],

@@ -2,12 +2,15 @@ import {
   Body,
   Controller,
   HttpCode,
+  Inject,
   Logger,
   Post,
   UseGuards,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ProcessarMensagemWhatsappUseCase } from '../../../application/use-cases/processar-mensagem-whatsapp.use-case';
+import { ProcessarMensagemInternaUseCase } from '../../../../atendimentos/application/use-cases/processar-mensagem-interna.use-case';
+import { WHATSAPP_GATEWAY } from '../../../domain/ports/injection-tokens';
+import type { IWhatsappGateway } from '../../../domain/ports/whatsapp-gateway.port';
 import { extrairMensagemRecebida } from '../waha-webhook';
 import { WahaAuthGuard } from '../guards/waha-auth.guard';
 
@@ -24,8 +27,10 @@ export class WhatsappWebhookController {
   private readonly logger = new Logger(WhatsappWebhookController.name);
 
   constructor(
-    private readonly processar: ProcessarMensagemWhatsappUseCase,
+    private readonly processar: ProcessarMensagemInternaUseCase,
     private readonly config: ConfigService,
+    @Inject(WHATSAPP_GATEWAY)
+    private readonly whatsapp: IWhatsappGateway,
   ) {}
 
   @Post('webhook')
@@ -38,13 +43,19 @@ export class WhatsappWebhookController {
 
     try {
       const resultado = await this.processar.execute(msg);
+      // Remetente nao reconhecido: nem resposta, nem envio. Ver o default-deny
+      // em ProcessarMensagemInternaUseCase.
+      if (!resultado.resposta) {
+        return { ok: true, ignorado: true, motivo: resultado.motivo };
+      }
+      await this.whatsapp.enviarTexto(msg.de, resultado.resposta);
       // Fora de producao, devolve a resposta gerada para facilitar debug do
       // webhook (atras do token; e a mensagem da propria agente, nao PII).
       const debug =
         this.config.get<string>('NODE_ENV') !== 'production'
-          ? { resposta: resultado?.resposta }
+          ? { resposta: resultado.resposta }
           : {};
-      return { ok: true, enviada: resultado?.enviada ?? false, ...debug };
+      return { ok: true, enviada: true, motivo: resultado.motivo, ...debug };
     } catch (err) {
       // Mesmo em erro, retornamos 200 para o WAHA nao entrar em retry-storm;
       // o erro fica registrado para diagnostico.

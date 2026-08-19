@@ -87,6 +87,22 @@ export interface IAtendimentoRepository {
     combinadoEm: Date,
   ): Promise<void>;
 
+  /**
+   * A cobranca que espera relato de uma vendedora, com o atendimento a que
+   * pertence. E o gancho do canal interno: quando ela responde no WhatsApp, e
+   * ESTA pendencia que a resposta fecha.
+   *
+   * Devolve a mais recente quando ha mais de uma — na pratica raro, porque so
+   * existe um atendimento aberto por cliente, mas a vendedora pode ter varios
+   * clientes em curso.
+   */
+  buscarCobrancaAguardando(
+    vendedoraId: string,
+  ): Promise<{ interacao: Interacao; atendimento: Atendimento } | null>;
+
+  /** Fecha o episodio. O CHECK do banco exige desfecho junto. */
+  fechar(atendimentoId: string, desfecho: DesfechoAtendimento): Promise<void>;
+
   /** Linha do tempo completa, em ordem cronologica. */
   listarInteracoes(atendimentoId: string): Promise<Interacao[]>;
 

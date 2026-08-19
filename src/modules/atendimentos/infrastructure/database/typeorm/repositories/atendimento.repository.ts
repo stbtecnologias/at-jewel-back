@@ -9,6 +9,7 @@ import type {
   Interacao,
 } from '../../../../domain/ports/repositories/atendimento-repository.port';
 import type {
+  DesfechoAtendimento,
   StatusInteracao,
   OcasiaoAtendimento,
   TipoInteracao,
@@ -107,6 +108,30 @@ export class AtendimentoRepository implements IAtendimentoRepository {
         status: 'PENDENTE',
       }),
     );
+  }
+
+  async buscarCobrancaAguardando(
+    vendedoraId: string,
+  ): Promise<{ interacao: Interacao; atendimento: Atendimento } | null> {
+    const row = await this.interacoes
+      .createQueryBuilder('i')
+      .innerJoinAndSelect('i.atendimento', 'a')
+      .where('a.vendedora_id = :vendedoraId', { vendedoraId })
+      .andWhere('a.fechado_em IS NULL')
+      .andWhere("i.tipo = 'COBRANCA'")
+      .andWhere("i.status = 'AGUARDANDO_RESPOSTA'")
+      .orderBy('i.ocorrido_em', 'DESC')
+      .getOne();
+
+    if (!row?.atendimento) return null;
+    return {
+      interacao: interacaoParaDominio(row),
+      atendimento: paraDominio(row.atendimento),
+    };
+  }
+
+  async fechar(atendimentoId: string, desfecho: DesfechoAtendimento): Promise<void> {
+    await this.repo.update({ id: atendimentoId }, { fechadoEm: new Date(), desfecho });
   }
 
   async listarInteracoes(atendimentoId: string): Promise<Interacao[]> {

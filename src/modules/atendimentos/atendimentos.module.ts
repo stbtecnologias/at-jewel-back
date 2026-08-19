@@ -3,7 +3,10 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { WhatsappGatewayModule } from '../atendimento/whatsapp-gateway.module';
 import { ClientesModule } from '../clientes/clientes.module';
 import { VendedorasModule } from '../vendedoras/vendedoras.module';
+import { LlmModule } from '../agentes/llm.module';
 import { DispararPendenciasUseCase } from './application/use-cases/disparar-pendencias.use-case';
+import { ProcessarMensagemInternaUseCase } from './application/use-cases/processar-mensagem-interna.use-case';
+import { ProcessarRelatoVendedoraUseCase } from './application/use-cases/processar-relato-vendedora.use-case';
 import { PendenciasScheduler } from './infrastructure/schedule/pendencias.scheduler';
 import { ATENDIMENTO_REPOSITORY } from './domain/ports/injection-tokens';
 import { AtendimentoInteracaoOrmEntity } from './infrastructure/database/typeorm/entities/atendimento-interacao.orm-entity';
@@ -24,12 +27,18 @@ import { AtendimentoRepository } from './infrastructure/database/typeorm/reposit
     ClientesModule,
     VendedorasModule,
     WhatsappGatewayModule,
+    // So o LLM, nao o AgentesModule inteiro: aquele importa ESTE modulo (a
+    // tool avisar_vendedora abre atendimento), e o Nest recusa o ciclo.
+    LlmModule,
   ],
   providers: [
     { provide: ATENDIMENTO_REPOSITORY, useClass: AtendimentoRepository },
     DispararPendenciasUseCase,
     PendenciasScheduler,
+    ProcessarRelatoVendedoraUseCase,
+    ProcessarMensagemInternaUseCase,
   ],
-  exports: [ATENDIMENTO_REPOSITORY],
+  // O controller do webhook interno vive no modulo atendimento (singular).
+  exports: [ATENDIMENTO_REPOSITORY, ProcessarMensagemInternaUseCase],
 })
 export class AtendimentosModule {}

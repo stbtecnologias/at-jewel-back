@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { AgenteEventosModule } from '../agente-eventos/agente-eventos.module';
+import { LlmModule } from './llm.module';
 import { WhatsappGatewayModule } from '../atendimento/whatsapp-gateway.module';
 import { AtendimentosModule } from '../atendimentos/atendimentos.module';
 import { ClientesModule } from '../clientes/clientes.module';
@@ -20,14 +21,12 @@ import {
   AGENTES_DATA_REPOSITORY,
   AGENTE_PROMPTS_REPOSITORY,
   CONVERSA_REPOSITORY,
-  LLM_CLIENT,
 } from './domain/ports/injection-tokens';
 import { AgentesDataRepository } from './infrastructure/database/typeorm/repositories/agentes-data.repository';
 import { ConversaOrmEntity } from './infrastructure/database/typeorm/entities/conversa.orm-entity';
 import { AgentePromptOrmEntity } from './infrastructure/database/typeorm/entities/agente-prompt.orm-entity';
 import { ConversaRepository } from './infrastructure/database/typeorm/repositories/conversa.repository';
 import { AgentePromptRepository } from './infrastructure/database/typeorm/repositories/agente-prompt.repository';
-import { AnthropicClient } from './infrastructure/llm/anthropic.client';
 import { AgentesController } from './infrastructure/http/controllers/agentes.controller';
 
 @Module({
@@ -44,6 +43,7 @@ import { AgentesController } from './infrastructure/http/controllers/agentes.con
     WhatsappGatewayModule,
     AgenteEventosModule,
     AtendimentosModule,
+    LlmModule,
   ],
   controllers: [AgentesController],
   providers: [
@@ -56,13 +56,14 @@ import { AgentesController } from './infrastructure/http/controllers/agentes.con
     SalvarConversaUseCase,
     ListarPromptsUseCase,
     AtualizarPromptUseCase,
-    { provide: LLM_CLIENT, useClass: AnthropicClient },
     { provide: CONVERSA_REPOSITORY, useClass: ConversaRepository },
     { provide: AGENTES_DATA_REPOSITORY, useClass: AgentesDataRepository },
     { provide: AGENTE_PROMPTS_REPOSITORY, useClass: AgentePromptRepository },
   ],
   // Exporta o LLM_CLIENT e o repo de prompts para o modulo de atendimento
   // (WhatsApp) reusar o mesmo cliente Anthropic e os overrides de prompt.
-  exports: [LLM_CLIENT, AGENTE_PROMPTS_REPOSITORY],
+  // Reexporta o LlmModule para quem ja importava o AgentesModule por causa do
+  // LLM_CLIENT (o modulo atendimento) continuar funcionando sem alteracao.
+  exports: [LlmModule, AGENTE_PROMPTS_REPOSITORY],
 })
 export class AgentesModule {}
