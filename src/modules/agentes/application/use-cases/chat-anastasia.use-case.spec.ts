@@ -4,6 +4,7 @@ import type { MensagemAgente } from '../../domain/entities/conversa.entity';
 import type { ChatParams, ILlmClient } from '../../domain/ports/llm-client.port';
 import type { IAgentePromptsRepository } from '../../domain/ports/repositories/agente-prompts-repository.port';
 import { ChatAnastasiaUseCase } from './chat-anastasia.use-case';
+import { AvisarVendedoraUseCase } from './avisar-vendedora.use-case';
 
 function makeLlmMock(): jest.Mocked<ILlmClient> {
   return {
@@ -31,13 +32,23 @@ describe('ChatAnastasiaUseCase (tool registrar_demanda)', () => {
   let llm: jest.Mocked<ILlmClient>;
   let prompts: jest.Mocked<IAgentePromptsRepository>;
   let criarDemanda: jest.Mocked<CriarDemandaUseCase>;
+  let avisarVendedora: jest.Mocked<AvisarVendedoraUseCase>;
   let useCase: ChatAnastasiaUseCase;
 
   beforeEach(() => {
     llm = makeLlmMock();
     prompts = makePromptsMock();
     criarDemanda = makeCriarDemandaMock();
-    useCase = new ChatAnastasiaUseCase(llm, config, prompts, criarDemanda);
+    avisarVendedora = {
+      execute: jest.fn(),
+    } as unknown as jest.Mocked<AvisarVendedoraUseCase>;
+    useCase = new ChatAnastasiaUseCase(
+      llm,
+      config,
+      prompts,
+      criarDemanda,
+      avisarVendedora,
+    );
   });
 
   it('nao habilita a tool quando nao ha solicitante identificado', async () => {

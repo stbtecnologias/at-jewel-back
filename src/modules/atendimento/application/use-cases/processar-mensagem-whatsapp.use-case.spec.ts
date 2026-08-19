@@ -12,6 +12,8 @@ function make() {
 
   const whatsapp: jest.Mocked<IWhatsappGateway> = {
     enviarTexto: jest.fn().mockResolvedValue(undefined),
+    // Nao usado neste fluxo: o webhook ja traz o chatId pronto do WAHA.
+    resolverChatId: jest.fn(),
   };
 
   const config = {

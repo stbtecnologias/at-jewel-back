@@ -82,6 +82,45 @@ const DEMANDA_TOOL: Anthropic.Tool = {
   },
 };
 
+const AVISAR_TOOL: Anthropic.Tool = {
+  name: 'avisar_vendedora',
+  description:
+    'Avisa pelo WhatsApp a vendedora responsavel por um cliente de que ele pediu atendimento. Use quando a usuaria disser algo como "o cliente Henrique quer atendimento, avise a vendedora dele". Voce NAO escolhe a vendedora: o sistema descobre quem e a partir da carteira do cliente. Passe apenas o nome do cliente como a usuaria falou, e o assunto e o horario se ela mencionar.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      cliente: {
+        type: 'string',
+        description:
+          'Nome do cliente como a usuaria escreveu. Nao invente sobrenome nem complete o nome.',
+      },
+      assunto: {
+        type: 'string',
+        description:
+          'O que o cliente procura, em poucas palavras (ex.: "colar de safira"). Omita se a usuaria nao disser.',
+      },
+      quando: {
+        type: 'string',
+        description:
+          'Horario ou momento combinado, nas palavras da usuaria (ex.: "hoje no fim da tarde"). Omita se ela nao disser.',
+      },
+    },
+    required: ['cliente'],
+  },
+};
+
+interface AvisarToolInput {
+  cliente?: unknown;
+  assunto?: unknown;
+  quando?: unknown;
+}
+
+// Tetos defensivos para o que vem do modelo e entra no texto enviado a
+// vendedora — o `assunto` e o `quando` sao os unicos trechos originados na
+// conversa, e uma mensagem de WhatsApp nao tem por que ser longa.
+const AVISO_CLIENTE_MAX = 120;
+const AVISO_TRECHO_MAX = 160;
+
 interface DemandaToolInput {
   tipo: 'RELATORIO' | 'AJUSTE' | 'DUVIDA' | 'OUTRO';
   descricao: string;
@@ -121,6 +160,7 @@ export class AnthropicClient implements ILlmClient {
     // registrar_demanda so entra quando a aplicacao fornece o handler.
     const tools: Anthropic.Tool[] = [CHART_TOOL];
     if (params.registrarDemanda) tools.push(DEMANDA_TOOL);
+    if (params.avisarVendedora) tools.push(AVISAR_TOOL);
 
     const first = await this.client.messages.create({
       model: params.model,
@@ -147,6 +187,8 @@ export class AnthropicClient implements ILlmClient {
     // Teto: 1 demanda por turno de chat, mesmo que o modelo emita varios
     // blocos registrar_demanda (mitiga criacao em massa via prompt injection).
     let demandaRegistrada = false;
+    // Mesmo teto para o aviso: um WhatsApp disparado por turno, no maximo.
+    let avisoEnviado = false;
 
     for (const toolUse of toolUses) {
       if (toolUse.name === 'gerar_grafico') {
@@ -181,6 +223,21 @@ export class AnthropicClient implements ILlmClient {
         demandaRegistrada = true;
         toolResults.push(
           await this.executarRegistrarDemanda(toolUse, params.registrarDemanda),
+        );
+      } else if (toolUse.name === 'avisar_vendedora' && params.avisarVendedora) {
+        if (avisoEnviado) {
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: toolUse.id,
+            content:
+              'Ignorado: apenas um aviso por mensagem. Peca a usuaria para tratar um cliente de cada vez.',
+            is_error: true,
+          });
+          continue;
+        }
+        avisoEnviado = true;
+        toolResults.push(
+          await this.executarAvisarVendedora(toolUse, params.avisarVendedora),
         );
       }
     }
@@ -231,6 +288,57 @@ export class AnthropicClient implements ILlmClient {
         is_error: true,
         content:
           'Não foi possível registrar a demanda agora. Peça desculpas à usuária e sugira tentar novamente em instantes.',
+      };
+    }
+  }
+
+  private async executarAvisarVendedora(
+    toolUse: Anthropic.ToolUseBlock,
+    handler: NonNullable<ChatParams['avisarVendedora']>,
+  ): Promise<Anthropic.ToolResultBlockParam> {
+    const input = toolUse.input as AvisarToolInput;
+    const texto = (v: unknown, max: number): string | undefined => {
+      if (typeof v !== 'string') return undefined;
+      const limpo = v.trim().slice(0, max);
+      return limpo.length > 0 ? limpo : undefined;
+    };
+
+    const cliente = texto(input.cliente, AVISO_CLIENTE_MAX);
+    if (!cliente) {
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUse.id,
+        is_error: true,
+        content:
+          'Faltou o nome do cliente. Pergunte à usuária de qual cliente se trata.',
+      };
+    }
+
+    try {
+      const r = await handler({
+        cliente,
+        assunto: texto(input.assunto, AVISO_TRECHO_MAX),
+        quando: texto(input.quando, AVISO_TRECHO_MAX),
+      });
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUse.id,
+        // Falha de NEGOCIO (cliente sem vendedora, por exemplo) nao e erro de
+        // ferramenta: o modelo precisa explicar o motivo à usuária, nao pedir
+        // desculpas por uma falha tecnica.
+        is_error: r.status === 'FALHA_ENVIO' ? true : undefined,
+        content: r.mensagem,
+      };
+    } catch (erro) {
+      this.logger.error(
+        `Falha ao avisar vendedora via tool: ${(erro as Error).message}`,
+      );
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUse.id,
+        is_error: true,
+        content:
+          'Não foi possível avisar a vendedora agora. Peça desculpas à usuária e sugira tentar novamente em instantes.',
       };
     }
   }

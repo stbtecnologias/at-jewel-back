@@ -138,6 +138,21 @@ export class ClienteRepository implements IClienteRepository {
     return row ? this.toDomain(row, row.perfil) : null;
   }
 
+  async buscarPorNomeParcial(termo: string, limite: number): Promise<Cliente[]> {
+    // unaccent nao esta instalado no banco; ILIKE resolve maiuscula/minuscula,
+    // e o acento fica por conta de quem digita. Escapamos os curingas do LIKE
+    // para que "%" digitado pelo ADM nao vire "traga todo mundo".
+    const alvo = termo.replace(/[\\%_]/g, (c) => '\\' + c);
+    const rows = await this.repo
+      .createQueryBuilder('c')
+      .where('c.nome ILIKE :alvo', { alvo: '%' + alvo + '%' })
+      .andWhere('c.ativo = true')
+      .orderBy('c.nome', 'ASC')
+      .limit(limite)
+      .getMany();
+    return rows.map((r) => this.toDomain(r));
+  }
+
   async buscarPorCodigoErp(codigoErp: string): Promise<Cliente | null> {
     const row = await this.repo.findOne({ where: { codigoErp } });
     return row ? this.toDomain(row) : null;

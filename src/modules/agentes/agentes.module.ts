@@ -1,7 +1,12 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
+import { AgenteEventosModule } from '../agente-eventos/agente-eventos.module';
+import { WhatsappGatewayModule } from '../atendimento/whatsapp-gateway.module';
+import { ClientesModule } from '../clientes/clientes.module';
 import { DemandasModule } from '../demandas/demandas.module';
+import { VendedorasModule } from '../vendedoras/vendedoras.module';
+import { AvisarVendedoraUseCase } from './application/use-cases/avisar-vendedora.use-case';
 import { AnalisarProdutoUseCase } from './application/use-cases/analisar-produto.use-case';
 import { ChatAnastasiaUseCase } from './application/use-cases/chat-anastasia.use-case';
 import { ChatElenaUseCase } from './application/use-cases/chat-elena.use-case';
@@ -30,10 +35,18 @@ import { AgentesController } from './infrastructure/http/controllers/agentes.con
     AuthModule,
     // Reusa o CriarDemandaUseCase na tool registrar_demanda da Anastasia (RF-24).
     DemandasModule,
+    // Tool avisar_vendedora: le a carteira do cliente, resolve a vendedora,
+    // envia pelo WAHA e registra o evento. O gateway vem do modulo isolado
+    // para nao fechar ciclo com o AtendimentoModule, que importa este aqui.
+    ClientesModule,
+    VendedorasModule,
+    WhatsappGatewayModule,
+    AgenteEventosModule,
   ],
   controllers: [AgentesController],
   providers: [
     ChatAnastasiaUseCase,
+    AvisarVendedoraUseCase,
     ChatElenaUseCase,
     GerarRelatorioUseCase,
     SugerirComprasFeiraUseCase,

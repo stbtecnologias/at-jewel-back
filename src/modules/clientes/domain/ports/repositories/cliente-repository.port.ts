@@ -60,6 +60,13 @@ export interface IClienteRepository {
     opts?: { incluirPerfil?: boolean },
   ): Promise<Cliente | null>;
   buscarPorCodigoErp(codigoErp: string): Promise<Cliente | null>;
+
+  /**
+   * Busca por parte do nome, sem acento e sem diferenciar maiuscula. Usada
+   * pela tool avisar_vendedora da Anastasia, onde o ADM digita o nome como
+   * lembra. O limite existe para responder "achei varios" sem varrer a base.
+   */
+  buscarPorNomeParcial(termo: string, limite: number): Promise<Cliente[]>;
   buscarPorTelefone1Hash(hash: string): Promise<Cliente | null>;
   buscarPorEmailHash(hash: string): Promise<Cliente | null>;
 

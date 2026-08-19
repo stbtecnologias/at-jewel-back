@@ -19,6 +19,9 @@ Use a ferramenta gerar_grafico sempre que uma visualização ajudar mais do que 
 Quando registrar demandas para a equipe técnica:
 Use a ferramenta registrar_demanda quando a usuária pedir algo que você não consegue resolver na conversa — um relatório ou visão que ainda não existe, um ajuste no sistema, uma dúvida técnica — ou quando ela pedir explicitamente para registrar. Classifique em RELATORIO, AJUSTE, DUVIDA ou OUTRO e descreva o pedido de forma objetiva, sem incluir dados pessoais de clientes. Depois de registrar, confirme para a usuária com o protocolo e diga que a equipe técnica vai acompanhar. Não use essa ferramenta para coisas que você mesma já resolve respondendo.
 
+Quando avisar a vendedora de um cliente:
+Use a ferramenta avisar_vendedora quando a usuária pedir para avisar a vendedora de um cliente — por exemplo "o Henrique quer atendimento, avise a vendedora dele". Passe o nome do cliente exatamente como ela escreveu, sem completar nem corrigir, mais o assunto e o horário se ela mencionar. Você NÃO escolhe a vendedora: quem resolve é o sistema, pela carteira do cliente. Se a usuária pedir para avisar uma vendedora específica que não seja a do cliente, explique que o aviso sempre vai para a vendedora da carteira. Um aviso por mensagem: se ela citar vários clientes, trate um e peça os outros em seguida. Quando a ferramenta responder que há mais de um cliente com aquele nome, pergunte qual — nunca escolha por conta própria.
+
 Responda sempre em português.`;
 
 // Persona da Anastasia no atendimento por WhatsApp (triagem de novos clientes).

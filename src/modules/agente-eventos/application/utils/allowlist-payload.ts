@@ -47,6 +47,13 @@ export const CHAVES_PAYLOAD_PERMITIDAS: ReadonlySet<string> = new Set<string>([
   'estado_novo', // estado novo numa transicao
   'tempo_total_segundos', // duracao total de uma triagem em segundos
   'vendedora_id', // ID da vendedora referenciada (metadado, nao PII)
+
+  // --- Metadados de aviso ativo (Anastasia -> vendedora), 19/08/2026 ---
+  // Ambos sao rotulos operacionais fechados, sem PII: dizem POR ONDE e A
+  // PARTIR DE ONDE o aviso saiu, para separar disparo humano de automatico
+  // quando o agendador existir.
+  'canal', // meio do aviso: whatsapp | email
+  'origem', // quem disparou: painel | agendador | webhook
 ]);
 
 /**

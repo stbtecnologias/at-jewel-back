@@ -25,6 +25,36 @@ export type RegistrarDemandaHandler = (
   input: RegistrarDemandaInput,
 ) => Promise<{ id: string }>;
 
+// Handler da tool `avisar_vendedora`. Recebe o que o modelo extraiu da
+// conversa e devolve um resultado FECHADO — a identidade da vendedora e
+// resolvida no servidor, a partir da carteira do cliente, e nunca chega aqui
+// vinda do texto. O retorno nao carrega telefone.
+export interface AvisarVendedoraLlmInput {
+  cliente: string;
+  assunto?: string;
+  quando?: string;
+}
+
+export type StatusAvisoLlm =
+  | 'ENVIADO'
+  | 'CLIENTE_NAO_ENCONTRADO'
+  | 'CLIENTE_AMBIGUO'
+  | 'SEM_VENDEDORA'
+  | 'VENDEDORA_NAO_ENCONTRADA'
+  | 'VENDEDORA_SEM_WHATSAPP'
+  | 'NUMERO_SEM_WHATSAPP'
+  | 'FALHA_ENVIO';
+
+export interface AvisarVendedoraLlmResultado {
+  status: StatusAvisoLlm;
+  /** Frase pronta para o modelo repassar ao ADM. Sem dado sensivel. */
+  mensagem: string;
+}
+
+export type AvisarVendedoraHandler = (
+  input: AvisarVendedoraLlmInput,
+) => Promise<AvisarVendedoraLlmResultado>;
+
 export interface ChatParams {
   model: string;
   system: string;
@@ -32,6 +62,8 @@ export interface ChatParams {
   mensagens: MensagemAgente[];
   // Quando presente, habilita a tool `registrar_demanda` no chatComGrafico.
   registrarDemanda?: RegistrarDemandaHandler;
+  // Idem para `avisar_vendedora`.
+  avisarVendedora?: AvisarVendedoraHandler;
 }
 
 export interface ChatResultado {

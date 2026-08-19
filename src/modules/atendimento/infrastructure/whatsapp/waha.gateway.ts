@@ -13,6 +13,37 @@ export class WahaGateway implements IWhatsappGateway {
 
   constructor(private readonly config: ConfigService) {}
 
+  async resolverChatId(telefone: string): Promise<string | null> {
+    const baseUrl = this.config.get<string>('WAHA_BASE_URL');
+    const apiKey = this.config.get<string>('WAHA_API_KEY');
+    const session = this.config.get<string>('WAHA_SESSION') ?? 'default';
+
+    if (!baseUrl || !apiKey) {
+      this.logger.warn('WAHA_BASE_URL/WAHA_API_KEY ausentes — chatId nao resolvido.');
+      return null;
+    }
+
+    const digitos = telefone.replace(/\D/g, '');
+    if (digitos.length === 0) return null;
+
+    const url =
+      `${baseUrl.replace(/\/$/, '')}/api/contacts/check-exists` +
+      `?phone=${encodeURIComponent(digitos)}&session=${encodeURIComponent(session)}`;
+
+    const resp = await fetch(url, { headers: { 'X-Api-Key': apiKey } });
+    if (!resp.ok) {
+      this.logger.error(`WAHA check-exists falhou: ${resp.status}`);
+      throw new Error(`WAHA check-exists retornou ${resp.status}`);
+    }
+
+    const dados = (await resp.json()) as {
+      numberExists?: boolean;
+      chatId?: string;
+    };
+    if (!dados.numberExists || !dados.chatId) return null;
+    return dados.chatId;
+  }
+
   async enviarTexto(chatId: string, texto: string): Promise<void> {
     const baseUrl = this.config.get<string>('WAHA_BASE_URL');
     const apiKey = this.config.get<string>('WAHA_API_KEY');
