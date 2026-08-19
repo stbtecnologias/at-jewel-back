@@ -68,9 +68,9 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
-  -- Estado de uma interacao AGENDADA. Interacao que ja aconteceu (RELATO,
+  -- Status de uma interacao a notificar. Interacao que ja aconteceu (RELATO,
   -- NOTA) nasce CONCLUIDA.
-  CREATE TYPE estado_interacao AS ENUM (
+  CREATE TYPE status_interacao AS ENUM (
     'PENDENTE',            -- agendada, ainda nao disparada
     'ENVIADA',             -- mensagem entregue ao WhatsApp
     'AGUARDANDO_RESPOSTA', -- enviada e esperando o relato
@@ -153,7 +153,7 @@ CREATE TABLE IF NOT EXISTS atendimento_interacoes (
   notificar_em   TIMESTAMPTZ,
   ocorrido_em    TIMESTAMPTZ,
 
-  estado         estado_interacao NOT NULL DEFAULT 'PENDENTE',
+  status         status_interacao NOT NULL DEFAULT 'PENDENTE',
 
   -- O que a vendedora contou, nas palavras dela. CIFRADO (AES-256-GCM, mesmo
   -- transformer de telefone e e-mail): texto livre nao tem como ser previsto,
@@ -177,7 +177,7 @@ CREATE TABLE IF NOT EXISTS atendimento_interacoes (
 -- Parcial, porque o volume interessante e sempre uma fracao minima da tabela.
 CREATE INDEX IF NOT EXISTS idx_interacoes_a_notificar
   ON atendimento_interacoes (notificar_em)
-  WHERE estado = 'PENDENTE' AND notificar_em IS NOT NULL;
+  WHERE status = 'PENDENTE' AND notificar_em IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_interacoes_atendimento
   ON atendimento_interacoes (atendimento_id, criado_em);

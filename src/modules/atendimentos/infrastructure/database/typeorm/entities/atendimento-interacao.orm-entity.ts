@@ -10,7 +10,7 @@ import {
 } from 'typeorm';
 import { encryptedTransformer } from '../../../../../../shared/database/transformers/encrypted-column.transformer';
 import type {
-  EstadoInteracao,
+  StatusInteracao,
   TipoInteracao,
 } from '../../../../domain/entities/enums';
 import { AtendimentoOrmEntity } from './atendimento.orm-entity';
@@ -47,7 +47,7 @@ export class AtendimentoInteracaoOrmEntity {
   ocorridoEm: Date | null;
 
   @Column({ type: 'text', default: 'PENDENTE' })
-  estado: EstadoInteracao;
+  status: StatusInteracao;
 
   /**
    * [ENCRYPTED] O que a vendedora contou, nas palavras dela. Texto livre nao

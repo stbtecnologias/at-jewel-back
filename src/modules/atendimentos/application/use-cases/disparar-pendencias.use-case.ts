@@ -30,7 +30,7 @@ const HORAS_MAXIMAS_ATRASO = 6;
  * SEM REGRA DE HORARIO COMERCIAL (decisao do Lucas, 19/08/2026): o combinado
  * com o cliente vale como foi dito, inclusive domingo as 21h.
  *
- * IDEMPOTENCIA: o estado da interacao e o que impede reenvio. Enquanto o envio
+ * IDEMPOTENCIA: o status da interacao e o que impede reenvio. Enquanto o envio
  * nao confirma, ela segue PENDENTE e volta na proxima rodada — repetir uma
  * mensagem e menos grave do que marcar como enviada uma que nunca saiu.
  */
@@ -85,7 +85,7 @@ export class DispararPendenciasUseCase {
 
     const atrasoHoras = (agora.getTime() - agendado.getTime()) / 3_600_000;
     if (atrasoHoras > HORAS_MAXIMAS_ATRASO) {
-      await this.atendimentos.atualizarEstadoInteracao(pendencia.id, 'EXPIRADA');
+      await this.atendimentos.atualizarStatusInteracao(pendencia.id, 'EXPIRADA');
       this.logger.warn(
         `Interacao ${pendencia.id} expirou: ${atrasoHoras.toFixed(1)}h de atraso.`,
       );
@@ -97,7 +97,7 @@ export class DispararPendenciasUseCase {
 
     // Atendimento ja fechado nao gera cobranca: o episodio acabou.
     if (atendimento.fechadoEm) {
-      await this.atendimentos.atualizarEstadoInteracao(pendencia.id, 'EXPIRADA');
+      await this.atendimentos.atualizarStatusInteracao(pendencia.id, 'EXPIRADA');
       return 'EXPIRADA';
     }
 
@@ -125,9 +125,9 @@ export class DispararPendenciasUseCase {
       montarTexto(pendencia, vendedora.nome, cliente.nome),
     );
 
-    // A cobranca fica esperando o relato — e por este estado que a resposta da
+    // A cobranca fica esperando o relato — e por este status que a resposta da
     // vendedora sera reconhecida. O lembrete nao espera resposta.
-    await this.atendimentos.atualizarEstadoInteracao(
+    await this.atendimentos.atualizarStatusInteracao(
       pendencia.id,
       pendencia.tipo === 'COBRANCA' ? 'AGUARDANDO_RESPOSTA' : 'ENVIADA',
       agora,

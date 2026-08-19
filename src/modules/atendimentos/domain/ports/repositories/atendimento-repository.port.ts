@@ -1,6 +1,6 @@
 import type {
   DesfechoAtendimento,
-  EstadoInteracao,
+  StatusInteracao,
   OcasiaoAtendimento,
   TipoInteracao,
 } from '../../entities/enums';
@@ -22,7 +22,7 @@ export interface Interacao {
   combinadoEm: Date | null;
   notificarEm: Date | null;
   ocorridoEm: Date | null;
-  estado: EstadoInteracao;
+  status: StatusInteracao;
   relato: string | null;
   criadoEm: Date;
 }
@@ -39,7 +39,7 @@ export interface CriarInteracaoInput {
   combinadoEm?: Date | null;
   notificarEm?: Date | null;
   ocorridoEm?: Date | null;
-  estado?: EstadoInteracao;
+  status?: StatusInteracao;
   relato?: string | null;
 }
 
@@ -98,9 +98,9 @@ export interface IAtendimentoRepository {
    */
   listarVencidas(agora: Date, limite: number): Promise<Interacao[]>;
 
-  atualizarEstadoInteracao(
+  atualizarStatusInteracao(
     id: string,
-    estado: EstadoInteracao,
+    status: StatusInteracao,
     ocorridoEm?: Date | null,
   ): Promise<void>;
 }

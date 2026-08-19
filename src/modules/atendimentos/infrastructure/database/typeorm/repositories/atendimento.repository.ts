@@ -9,7 +9,7 @@ import type {
   Interacao,
 } from '../../../../domain/ports/repositories/atendimento-repository.port';
 import type {
-  EstadoInteracao,
+  StatusInteracao,
   OcasiaoAtendimento,
   TipoInteracao,
 } from '../../../../domain/entities/enums';
@@ -66,7 +66,7 @@ export class AtendimentoRepository implements IAtendimentoRepository {
         combinadoEm: input.combinadoEm ?? null,
         notificarEm: input.notificarEm ?? null,
         ocorridoEm: input.ocorridoEm ?? null,
-        estado: input.estado ?? 'PENDENTE',
+        status: input.status ?? 'PENDENTE',
         relato: input.relato ?? null,
       }),
     );
@@ -91,7 +91,7 @@ export class AtendimentoRepository implements IAtendimentoRepository {
     combinadoEm: Date,
   ): Promise<void> {
     const pendente = await this.interacoes.findOne({
-      where: { atendimentoId, tipo, estado: 'PENDENTE' as EstadoInteracao },
+      where: { atendimentoId, tipo, status: 'PENDENTE' as StatusInteracao },
       order: { criadoEm: 'DESC' },
     });
     if (pendente) {
@@ -104,7 +104,7 @@ export class AtendimentoRepository implements IAtendimentoRepository {
         tipo,
         notificarEm,
         combinadoEm,
-        estado: 'PENDENTE',
+        status: 'PENDENTE',
       }),
     );
   }
@@ -120,7 +120,7 @@ export class AtendimentoRepository implements IAtendimentoRepository {
   async listarVencidas(agora: Date, limite: number): Promise<Interacao[]> {
     const rows = await this.interacoes.find({
       where: {
-        estado: 'PENDENTE' as EstadoInteracao,
+        status: 'PENDENTE' as StatusInteracao,
         notificarEm: LessThanOrEqual(agora),
       },
       // Mais antiga primeiro: se a fila acumulou, o mais atrasado sai antes.
@@ -130,14 +130,14 @@ export class AtendimentoRepository implements IAtendimentoRepository {
     return rows.map(interacaoParaDominio);
   }
 
-  async atualizarEstadoInteracao(
+  async atualizarStatusInteracao(
     id: string,
-    estado: EstadoInteracao,
+    status: StatusInteracao,
     ocorridoEm?: Date | null,
   ): Promise<void> {
     await this.interacoes.update(
       { id },
-      ocorridoEm === undefined ? { estado } : { estado, ocorridoEm },
+      ocorridoEm === undefined ? { status } : { status, ocorridoEm },
     );
   }
 }
@@ -162,7 +162,7 @@ function interacaoParaDominio(row: AtendimentoInteracaoOrmEntity): Interacao {
     combinadoEm: row.combinadoEm,
     notificarEm: row.notificarEm,
     ocorridoEm: row.ocorridoEm,
-    estado: row.estado,
+    status: row.status,
     relato: row.relato,
     criadoEm: row.criadoEm,
   };

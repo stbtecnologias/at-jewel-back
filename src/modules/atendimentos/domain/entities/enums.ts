@@ -33,10 +33,10 @@ export type TipoInteracao =
   | 'REAGENDAMENTO'
   | 'NOTA';
 
-/** Interacoes que EXIGEM `agendadoPara` — espelha o CHECK da migracao 35. */
+/** Interacoes que EXIGEM `notificarEm` — espelha o CHECK da migracao 35. */
 export const TIPOS_AGENDAVEIS: readonly TipoInteracao[] = ['LEMBRETE', 'COBRANCA'] as const;
 
-export type EstadoInteracao =
+export type StatusInteracao =
   | 'PENDENTE'
   | 'ENVIADA'
   | 'AGUARDANDO_RESPOSTA'

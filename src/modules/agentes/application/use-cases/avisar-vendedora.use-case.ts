@@ -263,7 +263,7 @@ export class AvisarVendedoraUseCase {
         atendimentoId: atendimento.id,
         tipo: 'ENCAMINHADO',
         ocorridoEm: agora,
-        estado: 'CONCLUIDA',
+        status: 'CONCLUIDA',
       });
     }
 
@@ -282,13 +282,13 @@ export class AvisarVendedoraUseCase {
       'COBRANCA',
     );
     const anterior =
-      cobrancaAtual?.estado === 'PENDENTE' ? cobrancaAtual.notificarEm : null;
+      cobrancaAtual?.status === 'PENDENTE' ? cobrancaAtual.notificarEm : null;
     if (anterior && anterior.getTime() !== cobranca.getTime()) {
       await this.atendimentos.criarInteracao({
         atendimentoId: atendimento.id,
         tipo: 'REAGENDAMENTO',
         ocorridoEm: agora,
-        estado: 'CONCLUIDA',
+        status: 'CONCLUIDA',
       });
     }
 
