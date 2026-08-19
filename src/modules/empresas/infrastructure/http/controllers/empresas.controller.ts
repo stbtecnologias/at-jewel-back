@@ -17,6 +17,7 @@ import { RequireScopes } from '../../../../auth/infrastructure/http/decorators/s
 import { JwtOrApiKeyGuard } from '../../../../auth/infrastructure/http/guards/jwt-or-api-key.guard';
 import { AtualizarEmpresaUseCase } from '../../../application/use-cases/atualizar-empresa.use-case';
 import { BuscarEmpresaUseCase } from '../../../application/use-cases/buscar-empresa.use-case';
+import { BuscarEmpresaPorIdErpUseCase } from '../../../application/use-cases/buscar-empresa-por-id-erp.use-case';
 import { CriarEmpresaUseCase } from '../../../application/use-cases/criar-empresa.use-case';
 import { ListarEmpresasUseCase } from '../../../application/use-cases/listar-empresas.use-case';
 import { RemoverEmpresaUseCase } from '../../../application/use-cases/remover-empresa.use-case';
@@ -38,6 +39,7 @@ export class EmpresasController {
   constructor(
     private readonly criar: CriarEmpresaUseCase,
     private readonly buscar: BuscarEmpresaUseCase,
+    private readonly buscarPorIdErp: BuscarEmpresaPorIdErpUseCase,
     private readonly listar: ListarEmpresasUseCase,
     private readonly atualizar: AtualizarEmpresaUseCase,
     private readonly remover: RemoverEmpresaUseCase,
@@ -50,6 +52,18 @@ export class EmpresasController {
   async listarEmpresas(@Query() filtros: FiltroEmpresaDto) {
     const lista = await this.listar.execute(filtros);
     return lista.map((e) => e.toPublic());
+  }
+
+  // Busca pela identidade no ERP. Declarada ANTES de @Get(':id') porque o Nest
+  // casa as rotas na ordem em que aparecem — depois dele, "iderp" seria lido
+  // como um id e cairia no ParseUUIDPipe.
+  @Get('iderp/:id')
+  @UseGuards(JwtOrApiKeyGuard)
+  @Permissions('empresas:read')
+  @RequireScopes('empresas:read')
+  async buscarPeloIdErp(@Param('id') idErp: string) {
+    const e = await this.buscarPorIdErp.execute(idErp);
+    return e.toPublic();
   }
 
   @Get(':id')

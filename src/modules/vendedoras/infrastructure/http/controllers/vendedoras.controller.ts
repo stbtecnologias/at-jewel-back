@@ -24,6 +24,7 @@ import { RolesGuard } from '../../../../auth/infrastructure/http/guards/roles.gu
 import { ScopesGuard } from '../../../../auth/infrastructure/http/guards/scopes.guard';
 import { AtualizarVendedoraUseCase } from '../../../application/use-cases/atualizar-vendedora.use-case';
 import { BuscarVendedoraUseCase } from '../../../application/use-cases/buscar-vendedora.use-case';
+import { BuscarVendedoraPorIdErpUseCase } from '../../../application/use-cases/buscar-vendedora-por-id-erp.use-case';
 import { BuscarVendedoraMetricasUseCase } from '../../../application/use-cases/buscar-vendedora-metricas.use-case';
 import { CriarVendedoraUseCase } from '../../../application/use-cases/criar-vendedora.use-case';
 import { ListarVendedorasUseCase } from '../../../application/use-cases/listar-vendedoras.use-case';
@@ -61,6 +62,7 @@ export class VendedorasController {
   constructor(
     private readonly criar: CriarVendedoraUseCase,
     private readonly buscar: BuscarVendedoraUseCase,
+    private readonly buscarPorIdErp: BuscarVendedoraPorIdErpUseCase,
     private readonly listar: ListarVendedorasUseCase,
     private readonly listarDisponiveis: ListarVendedorasDisponiveisUseCase,
     private readonly atualizar: AtualizarVendedoraUseCase,
@@ -134,6 +136,18 @@ export class VendedorasController {
   async listarVendedoras(@Query() filtros: FiltroVendedoraDto) {
     const lista = await this.listar.execute(filtros);
     return lista.map((v) => v.toPublic());
+  }
+
+  // Busca pela identidade no ERP. Declarada ANTES de @Get(':id') porque o Nest
+  // casa as rotas na ordem em que aparecem — depois dele, "iderp" seria lido
+  // como um id e cairia no ParseUUIDPipe.
+  @Get('iderp/:id')
+  @UseGuards(JwtOrApiKeyGuard)
+  @Permissions('vendedoras:read')
+  @RequireScopes('vendedoras:read')
+  async buscarPeloIdErp(@Param('id') idErp: string) {
+    const v = await this.buscarPorIdErp.execute(idErp);
+    return v.toPublic();
   }
 
   @Get(':id')

@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { AtualizarEmpresaUseCase } from './application/use-cases/atualizar-empresa.use-case';
 import { BuscarEmpresaUseCase } from './application/use-cases/buscar-empresa.use-case';
+import { BuscarEmpresaPorIdErpUseCase } from './application/use-cases/buscar-empresa-por-id-erp.use-case';
 import { CriarEmpresaUseCase } from './application/use-cases/criar-empresa.use-case';
 import { ListarEmpresasUseCase } from './application/use-cases/listar-empresas.use-case';
 import { RemoverEmpresaUseCase } from './application/use-cases/remover-empresa.use-case';
@@ -19,6 +20,7 @@ import { EmpresasController } from './infrastructure/http/controllers/empresas.c
   providers: [
     CriarEmpresaUseCase,
     BuscarEmpresaUseCase,
+    BuscarEmpresaPorIdErpUseCase,
     ListarEmpresasUseCase,
     AtualizarEmpresaUseCase,
     RemoverEmpresaUseCase,

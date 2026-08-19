@@ -17,6 +17,7 @@ import { JwtOrApiKeyGuard } from '../../../../auth/infrastructure/http/guards/jw
 import { AlertasEstoqueUseCase } from '../../../application/use-cases/alertas-estoque.use-case';
 import { AtualizarProdutoUseCase } from '../../../application/use-cases/atualizar-produto.use-case';
 import { BuscarProdutoUseCase } from '../../../application/use-cases/buscar-produto.use-case';
+import { BuscarProdutoPorIdErpUseCase } from '../../../application/use-cases/buscar-produto-por-id-erp.use-case';
 import { FacetasProdutosUseCase } from '../../../application/use-cases/facetas-produtos.use-case';
 import {
   CriarProdutoInput,
@@ -35,6 +36,7 @@ export class ProdutosController {
   constructor(
     private readonly listarProdutos: ListarProdutosUseCase,
     private readonly buscarProduto: BuscarProdutoUseCase,
+    private readonly buscarProdutoPorIdErp: BuscarProdutoPorIdErpUseCase,
     private readonly criarProduto: CriarProdutoUseCase,
     private readonly criarProdutosLote: CriarProdutosLoteUseCase,
     private readonly atualizarProduto: AtualizarProdutoUseCase,
@@ -70,6 +72,16 @@ export class ProdutosController {
       limite ? Number(limite) : undefined,
       dias ? Number(dias) : undefined,
     );
+  }
+
+  // Busca pela identidade no ERP. Declarada ANTES de @Get(':id') porque o Nest
+  // casa as rotas na ordem em que aparecem — depois dele, "iderp" seria lido
+  // como um id e cairia no ParseUUIDPipe.
+  @Get('iderp/:id')
+  @UseGuards(JwtOrApiKeyGuard)
+  @RequireScopes('produtos:read')
+  async buscarPeloIdErp(@Param('id') idErp: string) {
+    return this.buscarProdutoPorIdErp.execute(idErp);
   }
 
   @Get(':id')

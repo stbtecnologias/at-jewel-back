@@ -4,6 +4,7 @@ import { AuthModule } from '../auth/auth.module';
 import { AlertasEstoqueUseCase } from './application/use-cases/alertas-estoque.use-case';
 import { AtualizarProdutoUseCase } from './application/use-cases/atualizar-produto.use-case';
 import { BuscarProdutoUseCase } from './application/use-cases/buscar-produto.use-case';
+import { BuscarProdutoPorIdErpUseCase } from './application/use-cases/buscar-produto-por-id-erp.use-case';
 import { CriarProdutoUseCase } from './application/use-cases/criar-produto.use-case';
 import { CriarProdutosLoteUseCase } from './application/use-cases/criar-produtos-lote.use-case';
 import { FacetasProdutosUseCase } from './application/use-cases/facetas-produtos.use-case';
@@ -20,6 +21,7 @@ import { ProdutosController } from './infrastructure/http/controllers/produtos.c
   providers: [
     ListarProdutosUseCase,
     BuscarProdutoUseCase,
+    BuscarProdutoPorIdErpUseCase,
     CriarProdutoUseCase,
     CriarProdutosLoteUseCase,
     AtualizarProdutoUseCase,

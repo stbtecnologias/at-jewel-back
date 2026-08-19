@@ -5,6 +5,7 @@ import { VendasModule } from '../vendas/vendas.module';
 import { AtualizarClienteUseCase } from './application/use-cases/atualizar-cliente.use-case';
 import { AtualizarPerfilClienteUseCase } from './application/use-cases/atualizar-perfil-cliente.use-case';
 import { BuscarClienteUseCase } from './application/use-cases/buscar-cliente.use-case';
+import { BuscarClientePorIdErpUseCase } from './application/use-cases/buscar-cliente-por-id-erp.use-case';
 import { BuscarClientePorWhatsappUseCase } from './application/use-cases/buscar-cliente-por-whatsapp.use-case';
 import { BuscarHistoricoClienteUseCase } from './application/use-cases/buscar-historico-cliente.use-case';
 import { CriarClienteUseCase } from './application/use-cases/criar-cliente.use-case';
@@ -33,6 +34,7 @@ import { ClientesController } from './infrastructure/http/controllers/clientes.c
   providers: [
     CriarClienteUseCase,
     BuscarClienteUseCase,
+    BuscarClientePorIdErpUseCase,
     BuscarClientePorWhatsappUseCase,
     ListarClientesUseCase,
     AtualizarClienteUseCase,

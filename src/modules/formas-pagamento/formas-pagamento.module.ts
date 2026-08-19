@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { AtualizarFormaPagamentoUseCase } from './application/use-cases/atualizar-forma-pagamento.use-case';
 import { BuscarFormaPagamentoUseCase } from './application/use-cases/buscar-forma-pagamento.use-case';
+import { BuscarFormaPagamentoPorIdErpUseCase } from './application/use-cases/buscar-forma-pagamento-por-id-erp.use-case';
 import { CriarFormaPagamentoUseCase } from './application/use-cases/criar-forma-pagamento.use-case';
 import { ListarFormasPagamentoUseCase } from './application/use-cases/listar-formas-pagamento.use-case';
 import { RemoverFormaPagamentoUseCase } from './application/use-cases/remover-forma-pagamento.use-case';
@@ -19,6 +20,7 @@ import { FormasPagamentoController } from './infrastructure/http/controllers/for
   providers: [
     CriarFormaPagamentoUseCase,
     BuscarFormaPagamentoUseCase,
+    BuscarFormaPagamentoPorIdErpUseCase,
     ListarFormasPagamentoUseCase,
     AtualizarFormaPagamentoUseCase,
     RemoverFormaPagamentoUseCase,

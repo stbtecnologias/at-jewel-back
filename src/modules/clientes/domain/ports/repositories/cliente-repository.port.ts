@@ -55,7 +55,10 @@ export interface IClienteRepository {
   buscarPorId(id: string, opts?: { incluirPerfil?: boolean }): Promise<Cliente | null>;
 
   /** Identidade no ERP — chave da sincronizacao. */
-  buscarPorIdErp(idErp: string): Promise<Cliente | null>;
+  buscarPorIdErp(
+    idErp: string,
+    opts?: { incluirPerfil?: boolean },
+  ): Promise<Cliente | null>;
   buscarPorCodigoErp(codigoErp: string): Promise<Cliente | null>;
   buscarPorTelefone1Hash(hash: string): Promise<Cliente | null>;
   buscarPorEmailHash(hash: string): Promise<Cliente | null>;

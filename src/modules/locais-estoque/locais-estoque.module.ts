@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { AtualizarLocalEstoqueUseCase } from './application/use-cases/atualizar-local-estoque.use-case';
 import { BuscarLocalEstoqueUseCase } from './application/use-cases/buscar-local-estoque.use-case';
+import { BuscarLocalEstoquePorIdErpUseCase } from './application/use-cases/buscar-local-estoque-por-id-erp.use-case';
 import { CriarLocalEstoqueUseCase } from './application/use-cases/criar-local-estoque.use-case';
 import { ListarLocaisEstoqueUseCase } from './application/use-cases/listar-locais-estoque.use-case';
 import { RemoverLocalEstoqueUseCase } from './application/use-cases/remover-local-estoque.use-case';
@@ -19,6 +20,7 @@ import { LocaisEstoqueController } from './infrastructure/http/controllers/locai
   providers: [
     CriarLocalEstoqueUseCase,
     BuscarLocalEstoqueUseCase,
+    BuscarLocalEstoquePorIdErpUseCase,
     ListarLocaisEstoqueUseCase,
     AtualizarLocalEstoqueUseCase,
     RemoverLocalEstoqueUseCase,

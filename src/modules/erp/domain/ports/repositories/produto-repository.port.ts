@@ -31,6 +31,8 @@ export interface AlertasEstoque {
 export interface IProdutoRepository {
   upsertByCodigoErp(produto: Produto): Promise<Produto>;
   findByCodigoErp(codigoErp: string): Promise<Produto | null>;
+  /** Identidade no ERP — imutavel, ao contrario do `codigo_erp`. */
+  findByIdErp(idErp: string): Promise<Produto | null>;
   findAll(filtros: FiltroProduto): Promise<Produto[]>;
   findById(id: string): Promise<Produto | null>;
   save(produto: Produto): Promise<Produto>;

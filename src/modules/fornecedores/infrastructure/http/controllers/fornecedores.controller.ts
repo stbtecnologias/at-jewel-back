@@ -17,6 +17,7 @@ import { RequireScopes } from '../../../../auth/infrastructure/http/decorators/s
 import { JwtOrApiKeyGuard } from '../../../../auth/infrastructure/http/guards/jwt-or-api-key.guard';
 import { AtualizarFornecedorUseCase } from '../../../application/use-cases/atualizar-fornecedor.use-case';
 import { BuscarFornecedorUseCase } from '../../../application/use-cases/buscar-fornecedor.use-case';
+import { BuscarFornecedorPorIdErpUseCase } from '../../../application/use-cases/buscar-fornecedor-por-id-erp.use-case';
 import { CriarFornecedorUseCase } from '../../../application/use-cases/criar-fornecedor.use-case';
 import { ListarFornecedoresUseCase } from '../../../application/use-cases/listar-fornecedores.use-case';
 import { RemoverFornecedorUseCase } from '../../../application/use-cases/remover-fornecedor.use-case';
@@ -38,6 +39,7 @@ export class FornecedoresController {
   constructor(
     private readonly criar: CriarFornecedorUseCase,
     private readonly buscar: BuscarFornecedorUseCase,
+    private readonly buscarPorIdErp: BuscarFornecedorPorIdErpUseCase,
     private readonly listar: ListarFornecedoresUseCase,
     private readonly atualizar: AtualizarFornecedorUseCase,
     private readonly remover: RemoverFornecedorUseCase,
@@ -50,6 +52,18 @@ export class FornecedoresController {
   async listarFornecedores(@Query() filtros: FiltroFornecedorDto) {
     const lista = await this.listar.execute(filtros);
     return lista.map((f) => f.toPublic());
+  }
+
+  // Busca pela identidade no ERP. Declarada ANTES de @Get(':id') porque o Nest
+  // casa as rotas na ordem em que aparecem — depois dele, "iderp" seria lido
+  // como um id e cairia no ParseUUIDPipe.
+  @Get('iderp/:id')
+  @UseGuards(JwtOrApiKeyGuard)
+  @Permissions('fornecedores:read')
+  @RequireScopes('fornecedores:read')
+  async buscarPeloIdErp(@Param('id') idErp: string) {
+    const f = await this.buscarPorIdErp.execute(idErp);
+    return f.toPublic();
   }
 
   @Get(':id')

@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { AtualizarEstoqueUseCase } from './application/use-cases/atualizar-estoque.use-case';
 import { BuscarEstoqueUseCase } from './application/use-cases/buscar-estoque.use-case';
+import { BuscarEstoquePorIdErpUseCase } from './application/use-cases/buscar-estoque-por-id-erp.use-case';
 import { CriarEstoqueUseCase } from './application/use-cases/criar-estoque.use-case';
 import { ListarEstoqueUseCase } from './application/use-cases/listar-estoque.use-case';
 import { RemoverEstoqueUseCase } from './application/use-cases/remover-estoque.use-case';
@@ -21,6 +22,7 @@ import { EstoqueController } from './infrastructure/http/controllers/estoque.con
     CriarEstoqueUseCase,
     SincronizarEstoqueUseCase,
     BuscarEstoqueUseCase,
+    BuscarEstoquePorIdErpUseCase,
     ListarEstoqueUseCase,
     AtualizarEstoqueUseCase,
     RemoverEstoqueUseCase,

@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { AtualizarFornecedorUseCase } from './application/use-cases/atualizar-fornecedor.use-case';
 import { BuscarFornecedorUseCase } from './application/use-cases/buscar-fornecedor.use-case';
+import { BuscarFornecedorPorIdErpUseCase } from './application/use-cases/buscar-fornecedor-por-id-erp.use-case';
 import { CriarFornecedorUseCase } from './application/use-cases/criar-fornecedor.use-case';
 import { ListarFornecedoresUseCase } from './application/use-cases/listar-fornecedores.use-case';
 import { RemoverFornecedorUseCase } from './application/use-cases/remover-fornecedor.use-case';
@@ -19,6 +20,7 @@ import { FornecedoresController } from './infrastructure/http/controllers/fornec
   providers: [
     CriarFornecedorUseCase,
     BuscarFornecedorUseCase,
+    BuscarFornecedorPorIdErpUseCase,
     ListarFornecedoresUseCase,
     AtualizarFornecedorUseCase,
     RemoverFornecedorUseCase,

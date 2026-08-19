@@ -17,6 +17,7 @@ import { RequireScopes } from '../../../../auth/infrastructure/http/decorators/s
 import { JwtOrApiKeyGuard } from '../../../../auth/infrastructure/http/guards/jwt-or-api-key.guard';
 import { AtualizarFormaPagamentoUseCase } from '../../../application/use-cases/atualizar-forma-pagamento.use-case';
 import { BuscarFormaPagamentoUseCase } from '../../../application/use-cases/buscar-forma-pagamento.use-case';
+import { BuscarFormaPagamentoPorIdErpUseCase } from '../../../application/use-cases/buscar-forma-pagamento-por-id-erp.use-case';
 import { CriarFormaPagamentoUseCase } from '../../../application/use-cases/criar-forma-pagamento.use-case';
 import { ListarFormasPagamentoUseCase } from '../../../application/use-cases/listar-formas-pagamento.use-case';
 import { RemoverFormaPagamentoUseCase } from '../../../application/use-cases/remover-forma-pagamento.use-case';
@@ -37,6 +38,7 @@ export class FormasPagamentoController {
   constructor(
     private readonly criar: CriarFormaPagamentoUseCase,
     private readonly buscar: BuscarFormaPagamentoUseCase,
+    private readonly buscarPorIdErp: BuscarFormaPagamentoPorIdErpUseCase,
     private readonly listar: ListarFormasPagamentoUseCase,
     private readonly atualizar: AtualizarFormaPagamentoUseCase,
     private readonly remover: RemoverFormaPagamentoUseCase,
@@ -49,6 +51,18 @@ export class FormasPagamentoController {
   async listarFormas(@Query() filtros: FiltroFormaPagamentoDto) {
     const lista = await this.listar.execute(filtros);
     return lista.map((f) => f.toPublic());
+  }
+
+  // Busca pela identidade no ERP. Declarada ANTES de @Get(':id') porque o Nest
+  // casa as rotas na ordem em que aparecem — depois dele, "iderp" seria lido
+  // como um id e cairia no ParseUUIDPipe.
+  @Get('iderp/:id')
+  @UseGuards(JwtOrApiKeyGuard)
+  @Permissions('formas_pagamento:read')
+  @RequireScopes('formas_pagamento:read')
+  async buscarPeloIdErp(@Param('id') idErp: string) {
+    const f = await this.buscarPorIdErp.execute(idErp);
+    return f.toPublic();
   }
 
   @Get(':id')

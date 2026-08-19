@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { AtualizarGrupoEstoqueUseCase } from './application/use-cases/atualizar-grupo-estoque.use-case';
 import { BuscarGrupoEstoqueUseCase } from './application/use-cases/buscar-grupo-estoque.use-case';
+import { BuscarGrupoEstoquePorIdErpUseCase } from './application/use-cases/buscar-grupo-estoque-por-id-erp.use-case';
 import { CriarGrupoEstoqueUseCase } from './application/use-cases/criar-grupo-estoque.use-case';
 import { ListarGruposEstoqueUseCase } from './application/use-cases/listar-grupos-estoque.use-case';
 import { RemoverGrupoEstoqueUseCase } from './application/use-cases/remover-grupo-estoque.use-case';
@@ -19,6 +20,7 @@ import { GruposEstoqueController } from './infrastructure/http/controllers/grupo
   providers: [
     CriarGrupoEstoqueUseCase,
     BuscarGrupoEstoqueUseCase,
+    BuscarGrupoEstoquePorIdErpUseCase,
     ListarGruposEstoqueUseCase,
     AtualizarGrupoEstoqueUseCase,
     RemoverGrupoEstoqueUseCase,

@@ -17,6 +17,7 @@ import { RequireScopes } from '../../../../auth/infrastructure/http/decorators/s
 import { JwtOrApiKeyGuard } from '../../../../auth/infrastructure/http/guards/jwt-or-api-key.guard';
 import { AtualizarGrupoEstoqueUseCase } from '../../../application/use-cases/atualizar-grupo-estoque.use-case';
 import { BuscarGrupoEstoqueUseCase } from '../../../application/use-cases/buscar-grupo-estoque.use-case';
+import { BuscarGrupoEstoquePorIdErpUseCase } from '../../../application/use-cases/buscar-grupo-estoque-por-id-erp.use-case';
 import { CriarGrupoEstoqueUseCase } from '../../../application/use-cases/criar-grupo-estoque.use-case';
 import { ListarGruposEstoqueUseCase } from '../../../application/use-cases/listar-grupos-estoque.use-case';
 import { RemoverGrupoEstoqueUseCase } from '../../../application/use-cases/remover-grupo-estoque.use-case';
@@ -41,6 +42,7 @@ export class GruposEstoqueController {
   constructor(
     private readonly criar: CriarGrupoEstoqueUseCase,
     private readonly buscar: BuscarGrupoEstoqueUseCase,
+    private readonly buscarPorIdErp: BuscarGrupoEstoquePorIdErpUseCase,
     private readonly listar: ListarGruposEstoqueUseCase,
     private readonly atualizar: AtualizarGrupoEstoqueUseCase,
     private readonly remover: RemoverGrupoEstoqueUseCase,
@@ -53,6 +55,18 @@ export class GruposEstoqueController {
   async listarGruposEstoque(@Query() filtros: FiltroGrupoEstoqueDto) {
     const lista = await this.listar.execute(filtros);
     return lista.map((e) => e.toPublic());
+  }
+
+  // Busca pela identidade no ERP. Declarada ANTES de @Get(':id') porque o Nest
+  // casa as rotas na ordem em que aparecem — depois dele, "iderp" seria lido
+  // como um id e cairia no ParseUUIDPipe.
+  @Get('iderp/:id')
+  @UseGuards(JwtOrApiKeyGuard)
+  @Permissions('estoque:read')
+  @RequireScopes('estoque:read')
+  async buscarPeloIdErp(@Param('id') idErp: string) {
+    const e = await this.buscarPorIdErp.execute(idErp);
+    return e.toPublic();
   }
 
   @Get(':id')

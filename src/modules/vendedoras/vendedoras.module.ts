@@ -5,6 +5,7 @@ import { ClientesModule } from '../clientes/clientes.module';
 import { VendasModule } from '../vendas/vendas.module';
 import { AtualizarVendedoraUseCase } from './application/use-cases/atualizar-vendedora.use-case';
 import { BuscarVendedoraUseCase } from './application/use-cases/buscar-vendedora.use-case';
+import { BuscarVendedoraPorIdErpUseCase } from './application/use-cases/buscar-vendedora-por-id-erp.use-case';
 import { BuscarVendedoraMetricasUseCase } from './application/use-cases/buscar-vendedora-metricas.use-case';
 import { CriarVendedoraUseCase } from './application/use-cases/criar-vendedora.use-case';
 import { ListarVendedorasUseCase } from './application/use-cases/listar-vendedoras.use-case';
@@ -33,6 +34,7 @@ import { VendedorasController } from './infrastructure/http/controllers/vendedor
   providers: [
     CriarVendedoraUseCase,
     BuscarVendedoraUseCase,
+    BuscarVendedoraPorIdErpUseCase,
     ListarVendedorasUseCase,
     ListarVendedorasDisponiveisUseCase,
     AtualizarVendedoraUseCase,

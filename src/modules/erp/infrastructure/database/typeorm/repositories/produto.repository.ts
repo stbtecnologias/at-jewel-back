@@ -36,6 +36,11 @@ export class ProdutoRepository implements IProdutoRepository {
     return entity ? this.toDomain(entity) : null;
   }
 
+  async findByIdErp(idErp: string): Promise<Produto | null> {
+    const entity = await this.repo.findOneBy({ idErp });
+    return entity ? this.toDomain(entity) : null;
+  }
+
   async findAll(filtros: FiltroProduto): Promise<Produto[]> {
     const where: FindOptionsWhere<ProdutoOrmEntity> = {};
     if (filtros.categoria !== undefined) where.categoria = filtros.categoria;

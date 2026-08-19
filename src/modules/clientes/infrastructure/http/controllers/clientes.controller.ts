@@ -24,6 +24,7 @@ import { ScopesGuard } from '../../../../auth/infrastructure/http/guards/scopes.
 import { AtualizarClienteUseCase } from '../../../application/use-cases/atualizar-cliente.use-case';
 import { AtualizarPerfilClienteUseCase } from '../../../application/use-cases/atualizar-perfil-cliente.use-case';
 import { BuscarClienteUseCase } from '../../../application/use-cases/buscar-cliente.use-case';
+import { BuscarClientePorIdErpUseCase } from '../../../application/use-cases/buscar-cliente-por-id-erp.use-case';
 import { BuscarClientePorWhatsappUseCase } from '../../../application/use-cases/buscar-cliente-por-whatsapp.use-case';
 import { BuscarHistoricoClienteUseCase } from '../../../application/use-cases/buscar-historico-cliente.use-case';
 import { CriarClienteUseCase } from '../../../application/use-cases/criar-cliente.use-case';
@@ -50,6 +51,7 @@ export class ClientesController {
   constructor(
     private readonly criar: CriarClienteUseCase,
     private readonly buscar: BuscarClienteUseCase,
+    private readonly buscarPorIdErp: BuscarClientePorIdErpUseCase,
     private readonly buscarPorWhatsapp: BuscarClientePorWhatsappUseCase,
     private readonly listar: ListarClientesUseCase,
     private readonly atualizarPerfil: AtualizarPerfilClienteUseCase,
@@ -147,6 +149,18 @@ export class ClientesController {
       estado: query.estado,
       limit: query.limit ?? 200,
     });
+  }
+
+  // Busca pela identidade no ERP. Declarada ANTES de @Get(':id') porque o Nest
+  // casa as rotas na ordem em que aparecem — depois dele, "iderp" seria lido
+  // como um id e cairia no ParseUUIDPipe.
+  @Get('iderp/:id')
+  @UseGuards(JwtOrApiKeyGuard)
+  @Permissions('clientes:read')
+  @RequireScopes('clientes:read')
+  async buscarPeloIdErp(@Param('id') idErp: string) {
+    const cliente = await this.buscarPorIdErp.execute(idErp);
+    return cliente.toPublic();
   }
 
   @Get(':id')
