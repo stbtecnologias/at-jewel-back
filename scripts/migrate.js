@@ -100,6 +100,7 @@ const MANIFESTO = {
   '32_estoque.sql':                       { tipo: 'tabela',     alvo: 'estoque' },
   '33_permissoes_estoque.sql':            { tipo: 'permissao',  alvo: 'ESTOQUISTA|estoque:write' },
   '34_id_erp_cadastros.sql':              { tipo: 'coluna',     alvo: 'produtos.id_erp' },
+  '35_atendimentos.sql':                  { tipo: 'tabela',     alvo: 'atendimentos' },
 };
 
 // ---------------------------------------------------------------------------
