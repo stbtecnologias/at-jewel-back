@@ -33,10 +33,14 @@ export interface AvisarVendedoraLlmInput {
   cliente: string;
   assunto?: string;
   quando?: string;
+  /** O mesmo horario em ISO 8601 — e o que permite agendar. */
+  quandoIso?: string;
+  ocasiao?: string;
 }
 
 export type StatusAvisoLlm =
   | 'ENVIADO'
+  | 'COMPLEMENTADO'
   | 'CLIENTE_NAO_ENCONTRADO'
   | 'CLIENTE_AMBIGUO'
   | 'SEM_VENDEDORA'

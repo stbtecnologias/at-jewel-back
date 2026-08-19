@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { AgenteEventosModule } from '../agente-eventos/agente-eventos.module';
 import { WhatsappGatewayModule } from '../atendimento/whatsapp-gateway.module';
+import { AtendimentosModule } from '../atendimentos/atendimentos.module';
 import { ClientesModule } from '../clientes/clientes.module';
 import { DemandasModule } from '../demandas/demandas.module';
 import { VendedorasModule } from '../vendedoras/vendedoras.module';
@@ -42,6 +43,7 @@ import { AgentesController } from './infrastructure/http/controllers/agentes.con
     VendedorasModule,
     WhatsappGatewayModule,
     AgenteEventosModule,
+    AtendimentosModule,
   ],
   controllers: [AgentesController],
   providers: [

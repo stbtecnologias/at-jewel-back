@@ -33,6 +33,8 @@ import { ConsignacaoOrmEntity } from './modules/consignacoes/infrastructure/data
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AgentesModule } from './modules/agentes/agentes.module';
 import { AtendimentoModule } from './modules/atendimento/atendimento.module';
+import { ScheduleModule } from '@nestjs/schedule';
+import { AtendimentosModule } from './modules/atendimentos/atendimentos.module';
 import { ConversaOrmEntity } from './modules/agentes/infrastructure/database/typeorm/entities/conversa.orm-entity';
 import { AgentePromptOrmEntity } from './modules/agentes/infrastructure/database/typeorm/entities/agente-prompt.orm-entity';
 import { AgenteEventoOrmEntity } from './modules/agente-eventos/infrastructure/database/typeorm/entities/agente-evento.orm-entity';
@@ -57,6 +59,10 @@ import { HealthController } from './health.controller';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    // Relogio do processo. Primeiro agendador do projeto (19/08/2026): a
+    // agenda de atendimentos precisa disparar lembrete e cobranca na hora
+    // combinada com o cliente.
+    ScheduleModule.forRoot(),
     // Logger estruturado Pino: JSON em prod, pretty em dev. Request ID por
     // requisicao + redacao de PII e secrets. Substitui console.log.
     LoggerModule.forRoot(buildLoggerOptions()),
@@ -134,6 +140,7 @@ import { HealthController } from './health.controller';
     AnalyticsModule,
     AgentesModule,
     AtendimentoModule,
+    AtendimentosModule,
   ],
   controllers: [HealthController],
   providers: [

@@ -51,9 +51,17 @@ export class ChatAnastasiaUseCase {
       this.config.get<string>('ANTHROPIC_MODEL_ANASTASIA') ?? 'claude-opus-4-8';
 
     const base = (await this.prompts.buscar('anastasia')) ?? ANASTASIA_SYSTEM;
+
+    // SEM ISTO A TOOL NAO CONSEGUE AGENDAR. O modelo nao sabe que dia e hoje;
+    // para converter "hoje as 17:00" em data ele precisa da referencia. O fuso
+    // e o da operacao (TZ do processo, America/Sao_Paulo).
+    const comData = `${base}
+
+Agora sao ${agoraLocal()} (fuso da loja). Use isto para interpretar "hoje", "amanhã", "sexta" e horários relativos.`;
+
     const system = contexto
-      ? `${base}\n\nContexto da aba aberta: ${contexto.aba ?? 'não informada'}.\nDados disponíveis no momento: ${JSON.stringify(contexto.dados ?? {})}`
-      : base;
+      ? `${comData}\n\nContexto da aba aberta: ${contexto.aba ?? 'não informada'}.\nDados disponíveis no momento: ${JSON.stringify(contexto.dados ?? {})}`
+      : comData;
 
     return this.llm.chatComGrafico({
       model,
@@ -94,6 +102,22 @@ export class ChatAnastasiaUseCase {
   }
 }
 
+/** "quarta-feira, 19/08/2026 as 11:47" — no fuso do processo. */
+function agoraLocal(): string {
+  const agora = new Date();
+  const dia = agora.toLocaleDateString('pt-BR', {
+    weekday: 'long',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+  const hora = agora.toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  return `${dia} às ${hora}`;
+}
+
 // Handler da tool avisar_vendedora. Traduz o resultado fechado do use case
 // em UMA frase para a Anastasia repassar. Nenhuma variante devolve telefone,
 // e a vendedora nunca vem da conversa — sai da carteira do cliente.
@@ -107,14 +131,35 @@ function montarHandlerAvisoDe(
       cliente: limparEHigienizar(input.cliente),
       assunto: input.assunto ? limparEHigienizar(input.assunto) : undefined,
       quando: input.quando ? limparEHigienizar(input.quando) : undefined,
+      // ISO e enum nao passam pelo higienizador: sao validados por formato no
+      // use case, e limpar caractere invisivel aqui so mascararia lixo.
+      quandoIso: input.quandoIso,
+      ocasiao: input.ocasiao,
     });
 
     switch (r.status) {
-      case 'ENVIADO':
+      case 'ENVIADO': {
+        const agendamento = r.cobrancaEm
+          ? ` O atendimento foi aberto e às ${r.cobrancaEm.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} eu pergunto a ela como foi.`
+          : ' O atendimento foi aberto. Como não houve horário combinado, não agendei acompanhamento — se a usuária disser o horário, eu agendo.';
         return {
           status: r.status,
-          mensagem: `Aviso enviado no WhatsApp de ${r.vendedoraNome}, sobre o cliente ${r.clienteNome}. Confirme isso à usuária em uma frase.`,
+          mensagem: `Aviso enviado no WhatsApp de ${r.vendedoraNome}, sobre o cliente ${r.clienteNome}.${agendamento} Confirme isso à usuária em uma ou duas frases.`,
         };
+      }
+      case 'COMPLEMENTADO': {
+        const agendamento = r.cobrancaEm
+          ? `Às ${r.cobrancaEm.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} eu pergunto a ela como foi.`
+          : 'Ainda sem horário combinado, então não há acompanhamento agendado.';
+        return {
+          status: r.status,
+          mensagem:
+            `Anotei no atendimento da ${r.clienteNome}, que já está com ${r.vendedoraNome}. ` +
+            `NÃO reenviei o WhatsApp — ela foi avisada há pouco e receberia a mesma coisa duas vezes. ` +
+            `${agendamento} Diga isso à usuária em uma frase, deixando claro que os dados ` +
+            `foram acrescentados ao aviso que já saiu.`,
+        };
+      }
       case 'CLIENTE_NAO_ENCONTRADO':
         return {
           status: r.status,

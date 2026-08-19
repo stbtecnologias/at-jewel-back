@@ -104,6 +104,25 @@ const AVISAR_TOOL: Anthropic.Tool = {
         description:
           'Horario ou momento combinado, nas palavras da usuaria (ex.: "hoje no fim da tarde"). Omita se ela nao disser.',
       },
+      quando_iso: {
+        type: 'string',
+        description:
+          'O MESMO horario em ISO 8601 com fuso (ex.: "2026-08-19T17:00:00-03:00"), calculado a partir da data de hoje informada no system prompt. E o que permite agendar a cobranca. Preencha SEMPRE que houver um horario identificavel; omita se a usuaria falou algo vago como "mais tarde".',
+      },
+      ocasiao: {
+        type: 'string',
+        enum: [
+          'CASAMENTO',
+          'NOIVADO',
+          'ANIVERSARIO',
+          'FORMATURA',
+          'DATA_COMEMORATIVA',
+          'AUTOPRESENTE',
+          'OUTRO',
+        ],
+        description:
+          'Para qual acontecimento o cliente procura a peca, se a usuaria disser. Nao adivinhe: omita quando ela nao mencionar.',
+      },
     },
     required: ['cliente'],
   },
@@ -113,6 +132,8 @@ interface AvisarToolInput {
   cliente?: unknown;
   assunto?: unknown;
   quando?: unknown;
+  quando_iso?: unknown;
+  ocasiao?: unknown;
 }
 
 // Tetos defensivos para o que vem do modelo e entra no texto enviado a
@@ -319,6 +340,8 @@ export class AnthropicClient implements ILlmClient {
         cliente,
         assunto: texto(input.assunto, AVISO_TRECHO_MAX),
         quando: texto(input.quando, AVISO_TRECHO_MAX),
+        quandoIso: texto(input.quando_iso, 40),
+        ocasiao: texto(input.ocasiao, 30),
       });
       return {
         type: 'tool_result',

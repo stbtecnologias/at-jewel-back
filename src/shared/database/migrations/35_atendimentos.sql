@@ -134,11 +134,23 @@ CREATE TABLE IF NOT EXISTS atendimento_interacoes (
   atendimento_id UUID NOT NULL REFERENCES atendimentos(id) ON DELETE CASCADE,
   tipo           tipo_interacao NOT NULL,
 
-  -- Quando a interacao DEVE acontecer (LEMBRETE, COBRANCA). NULL no que ja
-  -- aconteceu. E por esta coluna que o agendador varre o que venceu, e e ela
-  -- que monta a agenda diaria da vendedora.
-  agendado_para  TIMESTAMPTZ,
-  -- Quando aconteceu de fato.
+  -- TRES TEMPOS, e cada um responde a uma pergunta diferente. Confundi-los
+  -- foi o que fez a primeira versao guardar so um:
+  --
+  --   combinado_em  quando a VENDEDORA fala com o CLIENTE   fato do negocio
+  --   notificar_em  quando o SISTEMA manda a mensagem       tarefa nossa
+  --   ocorrido_em   quando aconteceu de fato
+  --
+  -- O `notificar_em` e DERIVADO do combinado (menos a antecedencia no
+  -- lembrete, mais o intervalo na cobranca). Mudar essa politica muda o
+  -- notificar_em e deixa o combinado intacto — ele e o que a cliente disse.
+  --
+  -- O combinado fica NA INTERACAO, nao no atendimento, porque muda dentro do
+  -- mesmo episodio: marcou 17h hoje, remarcou 09h amanha. Uma coluna so no
+  -- episodio guardaria o ultimo e perderia o resto — e a linha do tempo
+  -- passaria a dizer QUE remarcou sem dizer PARA QUANDO.
+  combinado_em   TIMESTAMPTZ,
+  notificar_em   TIMESTAMPTZ,
   ocorrido_em    TIMESTAMPTZ,
 
   estado         estado_interacao NOT NULL DEFAULT 'PENDENTE',
@@ -154,23 +166,27 @@ CREATE TABLE IF NOT EXISTS atendimento_interacoes (
   criado_em      TIMESTAMPTZ NOT NULL DEFAULT now(),
   atualizado_em  TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-  -- Interacao agendada precisa de horario; sem horario nao ha o que agendar.
+  -- Interacao a notificar precisa de horario; sem ele nao ha o que disparar.
   CONSTRAINT chk_interacao_agendada CHECK (
-    (tipo IN ('LEMBRETE', 'COBRANCA') AND agendado_para IS NOT NULL) OR
+    (tipo IN ('LEMBRETE', 'COBRANCA') AND notificar_em IS NOT NULL) OR
     (tipo NOT IN ('LEMBRETE', 'COBRANCA'))
   )
 );
 
--- A varredura do agendador: "o que venceu e ainda nao foi disparado".
+-- A varredura do agendador: "o que venceu e ainda nao foi notificado".
 -- Parcial, porque o volume interessante e sempre uma fracao minima da tabela.
-CREATE INDEX IF NOT EXISTS idx_interacoes_pendentes
-  ON atendimento_interacoes (agendado_para)
-  WHERE estado = 'PENDENTE' AND agendado_para IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_interacoes_a_notificar
+  ON atendimento_interacoes (notificar_em)
+  WHERE estado = 'PENDENTE' AND notificar_em IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_interacoes_atendimento
   ON atendimento_interacoes (atendimento_id, criado_em);
 
 COMMENT ON TABLE atendimento_interacoes IS
   'Linha do tempo de um atendimento. Reagendar NAO abre atendimento novo: vira mais uma linha, e a data nova gera a proxima cobranca.';
+COMMENT ON COLUMN atendimento_interacoes.combinado_em IS
+  'Horario acertado com o cliente. O notificar_em e derivado dele, nao o contrario.';
+COMMENT ON COLUMN atendimento_interacoes.notificar_em IS
+  'Quando NOS mandamos a mensagem. Nao e o horario do cliente — esse e o combinado_em.';
 COMMENT ON COLUMN atendimento_interacoes.relato IS
   'Texto livre da vendedora, cifrado. A ocasiao, que e o dado analitico, fica em atendimentos.ocasiao, em claro.';
