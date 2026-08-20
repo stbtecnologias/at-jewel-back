@@ -59,15 +59,67 @@ export type AvisarVendedoraHandler = (
   input: AvisarVendedoraLlmInput,
 ) => Promise<AvisarVendedoraLlmResultado>;
 
+// Handler da tool `consultar_agenda`, do canal INTERNO de WhatsApp.
+//
+// REPARE NO QUE NAO EXISTE AQUI: nao ha `vendedoraId` no input. A identidade
+// vem do telefone resolvido na entrada do canal e fica fechada no handler, por
+// closure. O modelo escolhe o PERIODO e mais nada — nao existe parametro para
+// "a agenda da Beatriz", entao nenhuma frase alcanca outra vendedora.
+export type PeriodoAgendaLlm = 'HOJE' | 'AMANHA' | 'SEMANA';
+
+export interface ConsultarAgendaLlmInput {
+  periodo: PeriodoAgendaLlm;
+}
+
+export interface CompromissoLlm {
+  cliente: string;
+  /** Ja formatado ("hoje as 15:00", "sexta as 10:00"). */
+  quando: string;
+  ocasiao?: string;
+}
+
+export interface ConsultarAgendaLlmResultado {
+  compromissos: CompromissoLlm[];
+}
+
+export type ConsultarAgendaHandler = (
+  input: ConsultarAgendaLlmInput,
+) => Promise<ConsultarAgendaLlmResultado>;
+
+// Handler da tool `registrar_relato`, do canal INTERNO.
+//
+// SEM PARAMETROS, de proposito. O relato guardado tem que ser a FRASE DELA, e
+// nao o que o modelo entendeu dela — resumo alucina. O handler le a mensagem
+// original e entrega ao extrator de sempre. O modelo aqui decide apenas UMA
+// coisa: se a mensagem e sobre o contato pendente ou nao.
+export interface RegistrarRelatoLlmResultado {
+  status: 'SEM_PENDENCIA' | 'NAO_ENTENDI' | 'REGISTRADO';
+  /** Frase pronta para o modelo repassar, quando registrou. */
+  mensagem: string;
+}
+
+export type RegistrarRelatoHandler = () => Promise<RegistrarRelatoLlmResultado>;
+
 export interface ChatParams {
   model: string;
   system: string;
   maxTokens: number;
   mensagens: MensagemAgente[];
-  // Quando presente, habilita a tool `registrar_demanda` no chatComGrafico.
+  // Quando presente, habilita a tool `registrar_demanda` no chatComFerramentas.
   registrarDemanda?: RegistrarDemandaHandler;
   // Idem para `avisar_vendedora`.
   avisarVendedora?: AvisarVendedoraHandler;
+  // Idem para `consultar_agenda` — canal interno da vendedora.
+  consultarAgenda?: ConsultarAgendaHandler;
+  // Idem para `registrar_relato` — canal interno da vendedora.
+  registrarRelato?: RegistrarRelatoHandler;
+  /**
+   * Habilita `gerar_grafico`. Default true, que preserva o painel.
+   *
+   * O canal de WhatsApp passa `false`: nao ha onde renderizar grafico numa
+   * conversa, e oferecer a ferramenta so convida o modelo a tentar.
+   */
+  graficos?: boolean;
 }
 
 export interface ChatResultado {
@@ -75,7 +127,7 @@ export interface ChatResultado {
   tokens: number;
 }
 
-export interface ChatComGraficoResultado extends ChatResultado {
+export interface ChatComFerramentasResultado extends ChatResultado {
   grafico?: GraficoDinamico;
 }
 
@@ -85,5 +137,5 @@ export interface ILlmClient {
   chat(params: ChatParams): Promise<ChatResultado>;
   // Variante que habilita a ferramenta gerar_grafico e resolve o ciclo
   // tool_use -> tool_result -> continuacao internamente.
-  chatComGrafico(params: ChatParams): Promise<ChatComGraficoResultado>;
+  chatComFerramentas(params: ChatParams): Promise<ChatComFerramentasResultado>;
 }

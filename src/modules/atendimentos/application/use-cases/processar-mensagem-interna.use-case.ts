@@ -1,9 +1,19 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { limparEHigienizar } from '../../../../shared/http/sanitize/sanitize-text.transform';
+import { ELENA_INTERNA_SYSTEM } from '../../../agentes/application/personas';
+import { LLM_CLIENT } from '../../../agentes/domain/ports/injection-tokens';
+import type { ILlmClient } from '../../../agentes/domain/ports/llm-client.port';
+import { CLIENTE_REPOSITORY } from '../../../clientes/domain/ports/injection-tokens';
+import type { IClienteRepository } from '../../../clientes/domain/ports/repositories/cliente-repository.port';
 import { BuscarVendedoraPorWhatsappUseCase } from '../../../vendedoras/application/use-cases/buscar-vendedora-por-whatsapp.use-case';
+import { ATENDIMENTO_REPOSITORY } from '../../domain/ports/injection-tokens';
+import type { IAtendimentoRepository } from '../../domain/ports/repositories/atendimento-repository.port';
+import { ConsultarAgendaVendedoraUseCase } from './consultar-agenda-vendedora.use-case';
 import { ProcessarRelatoVendedoraUseCase } from './processar-relato-vendedora.use-case';
 
 export interface MensagemInterna {
-  /** Chat de origem (`5585...@c.us`). */
+  /** Chat de origem, ja traduzido de LID para telefone na borda HTTP. */
   de: string;
   texto: string;
 }
@@ -14,13 +24,13 @@ export interface RespostaInterna {
   /** Rotulo do que aconteceu, para o log. Nunca contem PII. */
   motivo:
     | 'ignorado_remetente_desconhecido'
-    | 'sem_pendencia'
-    | 'nao_entendi'
-    | 'relato_registrado';
+    | 'relato_registrado'
+    | 'conversa'
+    | 'falha_agente';
 }
 
 /**
- * Porta de entrada do canal INTERNO de WhatsApp (ADM e vendedoras).
+ * Porta de entrada do canal INTERNO de WhatsApp (vendedoras).
  *
  * DEFAULT-DENY POR REMETENTE, e essa e a primeira coisa que acontece: telefone
  * que nao pertence a uma vendedora ativa nao recebe resposta e NAO chega ao
@@ -30,8 +40,23 @@ export interface RespostaInterna {
  * Silencio, e nao uma mensagem de erro, e deliberado: responder "voce nao esta
  * cadastrado" confirmaria a quem sondasse que existe um canal aqui.
  *
- * O ADM ainda nao entra: `admin_users` nao tem coluna de telefone. Quando
- * tiver, este e o ponto onde o segundo ramo entra.
+ * ==========================================================================
+ * O AGENTE VEM ANTES DO RELATO, e a ordem importa.
+ *
+ * Ate 20/08/2026 toda mensagem ia direto para o extrator de relato. Ao ganhar
+ * ferramentas, manter essa ordem seria perigoso: uma pergunta como "como esta
+ * minha agenda hoje?" chegando com cobranca aberta cairia num extrator que
+ * procura {contatou, resultado} — e ele poderia devolver NAO_CONSEGUIU_FALAR,
+ * gravando um relato falso e agendando retomada. Errado e silencioso.
+ *
+ * Entao quem decide o que a mensagem E e o agente, e registrar o relato virou
+ * ferramenta dele. A EXTRACAO continua identica, no
+ * ProcessarRelatoVendedoraUseCase: o agente roteia, o especialista extrai.
+ *
+ * ESCOPO: as ferramentas recebem o `vendedoraId` por CLOSURE, resolvido do
+ * telefone. Nenhuma aceita "de quem" como parametro — nao e regra de prompt, e
+ * ausencia de caminho.
+ * ==========================================================================
  */
 @Injectable()
 export class ProcessarMensagemInternaUseCase {
@@ -40,6 +65,14 @@ export class ProcessarMensagemInternaUseCase {
   constructor(
     private readonly identificarVendedora: BuscarVendedoraPorWhatsappUseCase,
     private readonly relato: ProcessarRelatoVendedoraUseCase,
+    private readonly agenda: ConsultarAgendaVendedoraUseCase,
+    @Inject(ATENDIMENTO_REPOSITORY)
+    private readonly atendimentos: IAtendimentoRepository,
+    @Inject(CLIENTE_REPOSITORY)
+    private readonly clientes: IClienteRepository,
+    @Inject(LLM_CLIENT)
+    private readonly llm: ILlmClient,
+    private readonly config: ConfigService,
   ) {}
 
   async execute(msg: MensagemInterna): Promise<RespostaInterna> {
@@ -52,26 +85,117 @@ export class ProcessarMensagemInternaUseCase {
       return { resposta: null, motivo: 'ignorado_remetente_desconhecido' };
     }
 
-    const r = await this.relato.execute(vendedora.id, msg.texto);
+    const vendedoraId = vendedora.id;
+    const primeiroNome = vendedora.nome.trim().split(/\s+/)[0];
 
-    if (r.status === 'SEM_PENDENCIA') {
-      // Ela escreveu sem que houvesse cobranca aberta. Nao inventamos conversa:
-      // o canal existe para o acompanhamento, e quem inicia e o sistema.
+    // O que o agente precisa saber antes de decidir. Pre-carregado como DADO,
+    // do mesmo jeito que a Anastasia do painel recebe o contexto da aba.
+    const pendencia = await this.montarContextoPendencia(vendedoraId);
+
+    const system =
+      `${ELENA_INTERNA_SYSTEM}\n\n` +
+      `Você está falando com ${primeiroNome}. Agora são ${agoraLocal()} (fuso da loja) — ` +
+      `use isto para entender "hoje", "amanhã" e horários relativos.\n\n${pendencia}`;
+
+    let relatoRegistrado = false;
+
+    try {
+      const { texto } = await this.llm.chatComFerramentas({
+        model: this.config.get<string>('ANTHROPIC_MODEL_INTERNO') ?? 'claude-opus-4-8',
+        system,
+        maxTokens: 700,
+        mensagens: [{ role: 'user', content: limparEHigienizar(msg.texto) }],
+        // WhatsApp nao renderiza grafico. Oferecer a ferramenta so convida o
+        // modelo a tentar e depois se desculpar.
+        graficos: false,
+        consultarAgenda: async ({ periodo }) => {
+          const compromissos = await this.agenda.execute(vendedoraId, periodo);
+          return {
+            compromissos: compromissos.map((c) => ({
+              cliente: c.cliente,
+              quando: formatarQuando(c.quando),
+              ocasiao: c.ocasiao ?? undefined,
+            })),
+          };
+        },
+        registrarRelato: async () => {
+          // O texto ORIGINAL, nao o que o modelo entendeu: o relato guardado
+          // tem que ser a frase dela.
+          const r = await this.relato.execute(vendedoraId, msg.texto);
+          if (r.status === 'REGISTRADO') relatoRegistrado = true;
+          return {
+            status: r.status,
+            mensagem: r.status === 'REGISTRADO' ? r.resposta : '',
+          };
+        },
+      });
+
+      return {
+        resposta: texto,
+        motivo: relatoRegistrado ? 'relato_registrado' : 'conversa',
+      };
+    } catch (err) {
+      this.logger.error(
+        `Falha do agente interno: ${err instanceof Error ? err.message : err}`,
+      );
       return {
         resposta:
-          'Oi! No momento não tenho nenhum acompanhamento aberto com você. Quando eu te encaminhar um cliente, é só me contar por aqui como foi.',
-        motivo: 'sem_pendencia',
+          'Tive um problema aqui do meu lado agora. Pode me mandar de novo daqui a pouco?',
+        motivo: 'falha_agente',
       };
     }
-
-    if (r.status === 'NAO_ENTENDI') {
-      return {
-        resposta:
-          'Desculpa, não consegui entender. Você chegou a falar com o cliente? Se ficou de retornar, me diz o horário.',
-        motivo: 'nao_entendi',
-      };
-    }
-
-    return { resposta: r.resposta, motivo: 'relato_registrado' };
   }
+
+  /**
+   * A cobranca aberta, se houver, entra no prompt como CONTEXTO — e o que
+   * permite o agente reconhecer "falei com ela, pediu para retornar amanha"
+   * como relato daquele cliente, em vez de conversa solta.
+   *
+   * Sem cobranca aberta, a frase diz isso — para ele nao chamar a ferramenta a
+   * toa e acabar registrando relato de um contato que ninguem pediu.
+   */
+  private async montarContextoPendencia(vendedoraId: string): Promise<string> {
+    const pendencia = await this.atendimentos.buscarCobrancaAguardando(vendedoraId);
+    if (!pendencia) {
+      return 'Não há retorno pendente dela no momento — ninguém está esperando relato de contato. Não use a ferramenta registrar_relato.';
+    }
+
+    const cliente = await this.clientes.buscarPorId(pendencia.atendimento.clienteId);
+    const nome = cliente?.nome ?? 'um cliente';
+
+    return (
+      `Você perguntou a ela há pouco como foi o contato com ${nome}, e ainda espera a resposta. ` +
+      'Se a mensagem dela for sobre esse contato — se falou, se não conseguiu falar, se remarcou —, ' +
+      'use a ferramenta registrar_relato. Se for outro assunto, responda normalmente e não registre nada.'
+    );
+  }
+}
+
+/** "hoje às 15:00", "amanhã às 10:00", "sexta-feira às 09:30", "28/08 às 14:00". */
+function formatarQuando(d: Date): string {
+  const agora = new Date();
+  const hora = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+  const soDia = (x: Date) =>
+    new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const dias = (soDia(d) - soDia(agora)) / 86_400_000;
+
+  if (dias === 0) return `hoje às ${hora}`;
+  if (dias === 1) return `amanhã às ${hora}`;
+  if (dias > 1 && dias < 7) {
+    return `${d.toLocaleDateString('pt-BR', { weekday: 'long' })} às ${hora}`;
+  }
+  return `${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às ${hora}`;
+}
+
+function agoraLocal(): string {
+  const agora = new Date();
+  const dia = agora.toLocaleDateString('pt-BR', {
+    weekday: 'long',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+  const hora = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  return `${dia}, ${hora}`;
 }

@@ -4,6 +4,7 @@ import { WhatsappGatewayModule } from '../atendimento/whatsapp-gateway.module';
 import { ClientesModule } from '../clientes/clientes.module';
 import { VendedorasModule } from '../vendedoras/vendedoras.module';
 import { LlmModule } from '../agentes/llm.module';
+import { ConsultarAgendaVendedoraUseCase } from './application/use-cases/consultar-agenda-vendedora.use-case';
 import { DispararPendenciasUseCase } from './application/use-cases/disparar-pendencias.use-case';
 import { ProcessarMensagemInternaUseCase } from './application/use-cases/processar-mensagem-interna.use-case';
 import { ProcessarRelatoVendedoraUseCase } from './application/use-cases/processar-relato-vendedora.use-case';
@@ -34,6 +35,7 @@ import { AtendimentoRepository } from './infrastructure/database/typeorm/reposit
   providers: [
     { provide: ATENDIMENTO_REPOSITORY, useClass: AtendimentoRepository },
     DispararPendenciasUseCase,
+    ConsultarAgendaVendedoraUseCase,
     PendenciasScheduler,
     ProcessarRelatoVendedoraUseCase,
     ProcessarMensagemInternaUseCase,

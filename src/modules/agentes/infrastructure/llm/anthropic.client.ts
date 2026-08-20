@@ -2,11 +2,12 @@ import Anthropic from '@anthropic-ai/sdk';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type {
-  ChatComGraficoResultado,
+  ChatComFerramentasResultado,
   ChatParams,
   ChatResultado,
   GraficoDinamico,
   ILlmClient,
+  PeriodoAgendaLlm,
 } from '../../domain/ports/llm-client.port';
 
 // Ferramenta de geracao de grafico (Anthropic tool-use). Vive aqui porque o
@@ -80,6 +81,31 @@ const DEMANDA_TOOL: Anthropic.Tool = {
     },
     required: ['tipo', 'descricao'],
   },
+};
+
+const AGENDA_TOOL: Anthropic.Tool = {
+  name: 'consultar_agenda',
+  description:
+    'Consulta os compromissos JA AGENDADOS de quem esta falando com voce. Use quando ela perguntar sobre a agenda dela — "como esta minha agenda hoje", "tenho algum contato amanha", "o que tenho essa semana". Devolve com quem ela combinou de falar e a que horas. Voce NAO escolhe de quem e a agenda: e sempre a de quem esta na conversa, resolvida pelo telefone. Se ela perguntar pela agenda de outra pessoa, diga que voce so enxerga a dela.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'AMANHA', 'SEMANA'],
+        description:
+          'HOJE = o que ainda vem hoje; AMANHA = o dia seguinte inteiro; SEMANA = os proximos sete dias. Na duvida, use HOJE.',
+      },
+    },
+    required: ['periodo'],
+  },
+};
+
+const RELATO_TOOL: Anthropic.Tool = {
+  name: 'registrar_relato',
+  description:
+    'Registra o que a vendedora acabou de contar sobre o contato dela com o cliente que esta pendente. Use quando a mensagem dela responder "como foi com o cliente" — se falou, se nao conseguiu falar, se o cliente pediu para remarcar, se fechou venda ou desistiu. NAO use para outros assuntos: pergunta sobre agenda, sobre numeros, ou conversa solta nao sao relato. Voce nao precisa passar nada: o sistema le a mensagem original dela.',
+  input_schema: { type: 'object', properties: {} },
 };
 
 const AVISAR_TOOL: Anthropic.Tool = {
@@ -175,13 +201,18 @@ export class AnthropicClient implements ILlmClient {
     return { texto: this.extrairTexto(resp), tokens: resp.usage.output_tokens };
   }
 
-  async chatComGrafico(params: ChatParams): Promise<ChatComGraficoResultado> {
+  async chatComFerramentas(params: ChatParams): Promise<ChatComFerramentasResultado> {
     const apiMessages = this.toApiMessages(params.mensagens);
 
-    // registrar_demanda so entra quando a aplicacao fornece o handler.
-    const tools: Anthropic.Tool[] = [CHART_TOOL];
+    // Cada ferramenta so entra quando a aplicacao fornece o handler. O
+    // grafico e a excecao historica: nasceu antes dos handlers e vale por
+    // padrao, mas o canal de WhatsApp desliga (ver ChatParams.graficos).
+    const tools: Anthropic.Tool[] = [];
+    if (params.graficos ?? true) tools.push(CHART_TOOL);
     if (params.registrarDemanda) tools.push(DEMANDA_TOOL);
     if (params.avisarVendedora) tools.push(AVISAR_TOOL);
+    if (params.consultarAgenda) tools.push(AGENDA_TOOL);
+    if (params.registrarRelato) tools.push(RELATO_TOOL);
 
     const first = await this.client.messages.create({
       model: params.model,
@@ -210,6 +241,8 @@ export class AnthropicClient implements ILlmClient {
     let demandaRegistrada = false;
     // Mesmo teto para o aviso: um WhatsApp disparado por turno, no maximo.
     let avisoEnviado = false;
+    // E para o relato: uma gravacao por mensagem dela.
+    let relatoGravado = false;
 
     for (const toolUse of toolUses) {
       if (toolUse.name === 'gerar_grafico') {
@@ -245,6 +278,24 @@ export class AnthropicClient implements ILlmClient {
         toolResults.push(
           await this.executarRegistrarDemanda(toolUse, params.registrarDemanda),
         );
+      } else if (toolUse.name === 'registrar_relato' && params.registrarRelato) {
+        if (relatoGravado) {
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: toolUse.id,
+            content: 'Ignorado: o relato desta mensagem ja foi registrado.',
+            is_error: true,
+          });
+          continue;
+        }
+        relatoGravado = true;
+        toolResults.push(
+          await this.executarRegistrarRelato(toolUse, params.registrarRelato),
+        );
+      } else if (toolUse.name === 'consultar_agenda' && params.consultarAgenda) {
+        toolResults.push(
+          await this.executarConsultarAgenda(toolUse, params.consultarAgenda),
+        );
       } else if (toolUse.name === 'avisar_vendedora' && params.avisarVendedora) {
         if (avisoEnviado) {
           toolResults.push({
@@ -278,6 +329,109 @@ export class AnthropicClient implements ILlmClient {
 
     tokens += cont.usage.output_tokens;
     return { texto: this.extrairTexto(cont), tokens, grafico };
+  }
+
+  /**
+   * Executa `registrar_relato`. O texto de volta ja vem pronto do servidor —
+   * o modelo repassa, nao reescreve, porque a frase carrega horario remarcado
+   * e desfecho, que sao exatamente o que ele inventaria.
+   */
+  private async executarRegistrarRelato(
+    toolUse: Anthropic.ToolUseBlock,
+    handler: NonNullable<ChatParams['registrarRelato']>,
+  ): Promise<Anthropic.ToolResultBlockParam> {
+    try {
+      const r = await handler();
+
+      if (r.status === 'SEM_PENDENCIA') {
+        return {
+          type: 'tool_result',
+          tool_use_id: toolUse.id,
+          content:
+            'Nao ha retorno pendente dela. Diga que nao ha acompanhamento aberto no momento e que, quando voce encaminhar um cliente, ela conta por aqui como foi.',
+        };
+      }
+
+      if (r.status === 'NAO_ENTENDI') {
+        return {
+          type: 'tool_result',
+          tool_use_id: toolUse.id,
+          content:
+            'Nao deu para entender o relato. Pergunte a ela, em uma frase, se chegou a falar com o cliente e, se ficou de retornar, qual o horario.',
+        };
+      }
+
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUse.id,
+        content: `Relato registrado. Responda a ela exatamente isto, sem alterar horarios nem nomes: "${r.mensagem}"`,
+      };
+    } catch (err) {
+      this.logger.error(
+        `Falha ao registrar o relato: ${err instanceof Error ? err.message : err}`,
+      );
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUse.id,
+        content:
+          'Nao consegui registrar agora. Peca desculpa e diga que ela pode repetir em instantes.',
+        is_error: true,
+      };
+    }
+  }
+
+  /**
+   * Executa `consultar_agenda`. Sem teto de chamadas: e leitura, e perguntar
+   * "e amanha?" na mesma mensagem e uso legitimo.
+   *
+   * O tool_result ja vai FORMATADO. O modelo repassa o que esta escrito em vez
+   * de recalcular horario — data e hora sao exatamente onde ele inventa.
+   */
+  private async executarConsultarAgenda(
+    toolUse: Anthropic.ToolUseBlock,
+    handler: NonNullable<ChatParams['consultarAgenda']>,
+  ): Promise<Anthropic.ToolResultBlockParam> {
+    const input = toolUse.input as { periodo?: PeriodoAgendaLlm };
+    try {
+      const { compromissos } = await handler({
+        periodo: input.periodo ?? 'HOJE',
+      });
+
+      if (compromissos.length === 0) {
+        return {
+          type: 'tool_result',
+          tool_use_id: toolUse.id,
+          content:
+            'Nenhum compromisso agendado nesse periodo. Diga isso a ela em uma frase, sem inventar nada.',
+        };
+      }
+
+      const linhas = compromissos
+        .map(
+          (c) =>
+            `- ${c.cliente}, ${c.quando}${c.ocasiao ? ` (${c.ocasiao.toLowerCase()})` : ''}`,
+        )
+        .join('\n');
+
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUse.id,
+        content:
+          `Compromissos dela:\n${linhas}\n\nRepasse exatamente estes nomes e horarios, ` +
+          'sem alterar nem completar. Escreva em uma ou duas frases naturais.',
+      };
+    } catch (err) {
+      this.logger.error(
+        `Falha ao consultar a agenda: ${err instanceof Error ? err.message : err}`,
+      );
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUse.id,
+        content:
+          'Nao consegui consultar a agenda agora. Peca desculpa e diga que ela pode tentar de novo em instantes.',
+        is_error: true,
+      };
+    }
   }
 
   // Executa a tool registrar_demanda e monta o tool_result. Nunca loga a

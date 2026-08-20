@@ -7,7 +7,7 @@ import { ProcessarMensagemWhatsappUseCase } from './processar-mensagem-whatsapp.
 function make() {
   const llm: jest.Mocked<ILlmClient> = {
     chat: jest.fn().mockResolvedValue({ texto: 'Olá, seja bem-vinda à A.T. Jewel.', tokens: 10 }),
-    chatComGrafico: jest.fn(),
+    chatComFerramentas: jest.fn(),
   } as unknown as jest.Mocked<ILlmClient>;
 
   const whatsapp: jest.Mocked<IWhatsappGateway> = {

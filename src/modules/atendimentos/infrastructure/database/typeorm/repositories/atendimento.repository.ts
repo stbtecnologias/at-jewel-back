@@ -4,6 +4,7 @@ import { IsNull, LessThanOrEqual, Repository } from 'typeorm';
 import type {
   AbrirAtendimentoInput,
   Atendimento,
+  CompromissoAgenda,
   CriarInteracaoInput,
   IAtendimentoRepository,
   Interacao,
@@ -128,6 +129,44 @@ export class AtendimentoRepository implements IAtendimentoRepository {
       interacao: interacaoParaDominio(row),
       atendimento: paraDominio(row.atendimento),
     };
+  }
+
+  async listarAgenda(
+    vendedoraId: string,
+    de: Date,
+    ate: Date,
+  ): Promise<CompromissoAgenda[]> {
+    // DISTINCT no par (atendimento, horario): lembrete e cobranca compartilham
+    // o mesmo `combinado_em`, e a agenda dela tem UM compromisso ali, nao dois.
+    const rows = await this.interacoes
+      .createQueryBuilder('i')
+      // `.distinct(true)` em vez de "DISTINCT" dentro do select: o TypeORM
+      // reescreve `alias.coluna` e quebra a clausula (syntax error no Postgres).
+      .distinct(true)
+      .select('a.id', 'atendimentoId')
+      .addSelect('a.cliente_id', 'clienteId')
+      .addSelect('a.ocasiao', 'ocasiao')
+      .addSelect('i.combinado_em', 'combinadoEm')
+      .innerJoin('i.atendimento', 'a')
+      .where('a.vendedora_id = :vendedoraId', { vendedoraId })
+      .andWhere('a.fechado_em IS NULL')
+      .andWhere('i.combinado_em IS NOT NULL')
+      .andWhere('i.combinado_em >= :de', { de })
+      .andWhere('i.combinado_em <= :ate', { ate })
+      .orderBy('i.combinado_em', 'ASC')
+      .getRawMany<{
+        atendimentoId: string;
+        clienteId: string;
+        ocasiao: OcasiaoAtendimento | null;
+        combinadoEm: Date;
+      }>();
+
+    return rows.map((r) => ({
+      atendimentoId: r.atendimentoId,
+      clienteId: r.clienteId,
+      ocasiao: r.ocasiao,
+      combinadoEm: r.combinadoEm,
+    }));
   }
 
   async fechar(atendimentoId: string, desfecho: DesfechoAtendimento): Promise<void> {
