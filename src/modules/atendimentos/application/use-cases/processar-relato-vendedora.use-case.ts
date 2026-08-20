@@ -14,6 +14,20 @@ const MINUTOS_COBRANCA = 60;
 const MINUTOS_LEMBRETE = 15;
 /** Teto de quanto no futuro um reagendamento pode estar. */
 const DIAS_MAXIMOS = 180;
+/**
+ * Quando ela nao consegue falar com o cliente e nao marca nada, o sistema
+ * pergunta de novo depois deste intervalo (decisao do Lucas, 20/08/2026).
+ *
+ * A SABER: sao 48h corridas. Sexta as 18h cai em domingo as 18h. Diferente do
+ * horario combinado, que e escolha do cliente, este e criterio NOSSO — se
+ * incomodar no uso, e aqui que se muda.
+ */
+const HORAS_RETOMADA = 48;
+/**
+ * Teto de tentativas antes de encerrar por INATIVIDADE. Sem teto a mesma
+ * pergunta voltaria a cada 48h para sempre. Duas cobrem seis dias.
+ */
+const MAXIMO_RETOMADAS = 2;
 
 export type ResultadoRelato =
   | { status: 'SEM_PENDENCIA' }
@@ -129,12 +143,77 @@ export class ProcessarRelatoVendedoraUseCase {
       };
     }
 
+    // NAO FALOU e nao marcou nada. Sem o que vem abaixo o episodio morria
+    // aqui: nenhuma pendencia agendada, ninguem perguntando de novo, e o
+    // atendimento aberto para sempre. Como so pode haver UM aberto por cliente
+    // (indice parcial da migracao 35), um dia isso travaria um encaminhamento
+    // novo do mesmo cliente.
+    if (!extraido.contatou) {
+      return this.agendarRetomada(atendimento.id, nomeCliente);
+    }
+
     return {
       status: 'REGISTRADO',
-      resposta: extraido.contatou
-        ? `Anotei, obrigada. O atendimento de ${nomeCliente} segue em aberto.`
-        : `Anotei que ainda não deu para falar com ${nomeCliente}. Se marcar um horário, me avisa que eu te lembro.`,
+      resposta: `Anotei, obrigada. O atendimento de ${nomeCliente} segue em aberto.`,
     };
+  }
+
+  /**
+   * "Liguei e ninguem atendeu", "trocou de numero": nao ha o que remarcar,
+   * porque o cliente nao combinou nada. Entao o SISTEMA volta a perguntar.
+   *
+   * A retomada e uma COBRANCA comum, SEM `combinado_em` — e e justamente a
+   * ausencia dele que a distingue: toda cobranca normal nasce de um horario
+   * combinado (o `avisar_vendedora` faz `if (!combinado) return null`), entao
+   * cobranca sem horario so pode ser retomada. Isso evita um valor novo no
+   * enum, e a resposta dela volta pelo mesmo caminho de sempre.
+   */
+  private async agendarRetomada(
+    atendimentoId: string,
+    nomeCliente: string,
+  ): Promise<ResultadoRelato> {
+    const anteriores = await this.contarRetomadas(atendimentoId);
+
+    if (anteriores >= MAXIMO_RETOMADAS) {
+      await this.atendimentos.fechar(atendimentoId, 'INATIVIDADE');
+      return {
+        status: 'REGISTRADO',
+        resposta: `Anotei. Foram ${MAXIMO_RETOMADAS} tentativas sem conseguir falar com ${nomeCliente}, então encerrei esse atendimento por ora. Se ela procurar de novo, é só me avisar que eu abro outro.`,
+      };
+    }
+
+    const proxima = new Date(Date.now() + HORAS_RETOMADA * 3_600_000);
+
+    await this.atendimentos.criarInteracao({
+      atendimentoId,
+      tipo: 'COBRANCA',
+      notificarEm: proxima,
+      status: 'PENDENTE',
+    });
+
+    // A linha do tempo tem que se explicar sozinha para quem abrir a tabela
+    // daqui a um mes. O RELATO acima guarda a frase DELA; esta nota guarda o
+    // que o SISTEMA decidiu por causa dela.
+    await this.atendimentos.criarInteracao({
+      atendimentoId,
+      tipo: 'NOTA',
+      ocorridoEm: new Date(),
+      status: 'CONCLUIDA',
+      relato: `Não conseguiu falar com o cliente. Nova tentativa agendada para ${formatar(proxima)} (${anteriores + 1}ª de ${MAXIMO_RETOMADAS}).`,
+    });
+
+    return {
+      status: 'REGISTRADO',
+      resposta: `Anotei que ainda não deu para falar com ${nomeCliente}. Te pergunto de novo em ${formatar(proxima)}. Se conseguir falar antes, ou se marcar um horário, é só me avisar.`,
+    };
+  }
+
+  /** Cobrancas SEM horario combinado no episodio — ver `agendarRetomada`. */
+  private async contarRetomadas(atendimentoId: string): Promise<number> {
+    const linha = await this.atendimentos.listarInteracoes(atendimentoId);
+    // Conta inclusive as EXPIRADAS: tentativa feita e tentativa gasta, tenha
+    // ela sido respondida ou nao.
+    return linha.filter((i) => i.tipo === 'COBRANCA' && !i.combinadoEm).length;
   }
 
   /**

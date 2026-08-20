@@ -158,5 +158,11 @@ function montarTexto(
     return `${primeiroNome}, daqui a pouco é o contato com ${clienteNome} — combinado para as ${hora}.`;
   }
 
+  // Cobranca SEM horario combinado e retomada: ela ja disse que nao
+  // conseguiu falar, entao "como foi" nao faz sentido — nao houve nada ainda.
+  if (!pendencia.combinadoEm) {
+    return `${primeiroNome}, conseguiu falar com ${clienteNome} depois?`;
+  }
+
   return `${primeiroNome}, como foi com ${clienteNome}?`;
 }
