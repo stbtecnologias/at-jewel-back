@@ -18,6 +18,7 @@ describe('ProcessarMensagemInternaUseCase', () => {
   let identificar: { execute: jest.Mock };
   let relato: { execute: jest.Mock };
   let agenda: { execute: jest.Mock };
+  let desempenho: { vendas: jest.Mock; metas: jest.Mock };
   let atendimentos: { buscarCobrancaAguardando: jest.Mock };
   let clientes: { buscarPorId: jest.Mock };
   let llm: { chatComFerramentas: jest.Mock; chat: jest.Mock };
@@ -27,6 +28,12 @@ describe('ProcessarMensagemInternaUseCase', () => {
     identificar = { execute: jest.fn().mockResolvedValue(VENDEDORA) };
     relato = { execute: jest.fn().mockResolvedValue({ status: 'SEM_PENDENCIA' }) };
     agenda = { execute: jest.fn().mockResolvedValue([]) };
+    desempenho = {
+      vendas: jest
+        .fn()
+        .mockResolvedValue({ quantidade: 3, receita: 12400, ticketMedio: 4133.33 }),
+      metas: jest.fn().mockResolvedValue([]),
+    };
     atendimentos = { buscarCobrancaAguardando: jest.fn().mockResolvedValue(null) };
     clientes = { buscarPorId: jest.fn().mockResolvedValue({ nome: 'Helena Gomes' }) };
     llm = {
@@ -38,6 +45,7 @@ describe('ProcessarMensagemInternaUseCase', () => {
       identificar as never,
       relato as never,
       agenda as never,
+      desempenho as never,
       atendimentos as never,
       clientes as never,
       llm as never,
@@ -79,6 +87,22 @@ describe('ProcessarMensagemInternaUseCase', () => {
       await params().consultarAgenda!({ periodo: 'HOJE' });
 
       expect(agenda.execute).toHaveBeenCalledWith('vd-1', 'HOJE');
+    });
+
+    it('as vendas sao sempre as da vendedora identificada', async () => {
+      await useCase.execute({ de: '558586467241@c.us', texto: 'quantas vendas fiz?' });
+
+      await params().consultarVendas!({ periodo: 'SEMANA' });
+
+      expect(desempenho.vendas).toHaveBeenCalledWith('vd-1', 'SEMANA');
+    });
+
+    it('as metas sao sempre as dela — a ferramenta nem recebe parametro', async () => {
+      await useCase.execute({ de: '558586467241@c.us', texto: 'bati minha meta?' });
+
+      await params().consultarMetas!();
+
+      expect(desempenho.metas).toHaveBeenCalledWith('vd-1');
     });
 
     it('o relato guarda a FRASE DELA, nao o que o modelo entendeu', async () => {

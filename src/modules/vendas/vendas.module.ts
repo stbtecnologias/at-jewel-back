@@ -33,6 +33,6 @@ import { VendasController } from './infrastructure/http/controllers/vendas.contr
     EscopoVendasService,
     { provide: VENDA_REPOSITORY, useClass: VendaRepository },
   ],
-  exports: [VENDA_REPOSITORY],
+  exports: [VENDA_REPOSITORY, ResumoVendasUseCase],
 })
 export class VendasModule {}

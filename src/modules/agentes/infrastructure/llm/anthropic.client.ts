@@ -8,6 +8,7 @@ import type {
   GraficoDinamico,
   ILlmClient,
   PeriodoAgendaLlm,
+  PeriodoVendasLlm,
 } from '../../domain/ports/llm-client.port';
 
 // Ferramenta de geracao de grafico (Anthropic tool-use). Vive aqui porque o
@@ -99,6 +100,31 @@ const AGENDA_TOOL: Anthropic.Tool = {
     },
     required: ['periodo'],
   },
+};
+
+const VENDAS_TOOL: Anthropic.Tool = {
+  name: 'consultar_vendas',
+  description:
+    'Consulta quantas vendas ELA fez e quanto faturou num periodo. Use quando ela perguntar sobre o proprio desempenho — "quantas vendas eu fiz hoje", "como foi minha semana", "quanto vendi no mes". Sao sempre as vendas DELA: voce nao escolhe de quem, o sistema resolve pelo telefone de quem esta falando.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'SEMANA', 'MES'],
+        description:
+          'HOJE = desde a meia-noite; SEMANA = os ultimos sete dias; MES = os ultimos trinta dias.',
+      },
+    },
+    required: ['periodo'],
+  },
+};
+
+const METAS_TOOL: Anthropic.Tool = {
+  name: 'consultar_metas',
+  description:
+    'Consulta as metas DELA: qual o alvo, quanto ja realizou, quanto falta e se ja bateu. Use quando ela perguntar sobre meta — "bati minha meta?", "quanto falta pra minha meta", "quais metas eu tenho". Nao precisa passar nada.',
+  input_schema: { type: 'object', properties: {} },
 };
 
 const RELATO_TOOL: Anthropic.Tool = {
@@ -213,6 +239,8 @@ export class AnthropicClient implements ILlmClient {
     if (params.avisarVendedora) tools.push(AVISAR_TOOL);
     if (params.consultarAgenda) tools.push(AGENDA_TOOL);
     if (params.registrarRelato) tools.push(RELATO_TOOL);
+    if (params.consultarVendas) tools.push(VENDAS_TOOL);
+    if (params.consultarMetas) tools.push(METAS_TOOL);
 
     const first = await this.client.messages.create({
       model: params.model,
@@ -292,6 +320,31 @@ export class AnthropicClient implements ILlmClient {
         toolResults.push(
           await this.executarRegistrarRelato(toolUse, params.registrarRelato),
         );
+      } else if (toolUse.name === 'consultar_vendas' && params.consultarVendas) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const { resumo } = await params.consultarVendas!({
+              periodo: (toolUse.input as { periodo?: PeriodoVendasLlm }).periodo ?? 'HOJE',
+            });
+            return (
+              `Vendas dela no periodo: ${resumo}. Repasse estes numeros exatamente ` +
+              'como estao, em uma ou duas frases naturais.'
+            );
+          }),
+        );
+      } else if (toolUse.name === 'consultar_metas' && params.consultarMetas) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const { metas } = await params.consultarMetas!();
+            if (metas.length === 0) {
+              return 'Ela nao tem meta cadastrada no momento. Diga isso em uma frase, sem inventar numero.';
+            }
+            return (
+              `Metas dela:\n${metas.map((m) => `- ${m.linha}`).join('\n')}\n\n` +
+              'Repasse os numeros exatamente como estao.'
+            );
+          }),
+        );
       } else if (toolUse.name === 'consultar_agenda' && params.consultarAgenda) {
         toolResults.push(
           await this.executarConsultarAgenda(toolUse, params.consultarAgenda),
@@ -329,6 +382,33 @@ export class AnthropicClient implements ILlmClient {
 
     tokens += cont.usage.output_tokens;
     return { texto: this.extrairTexto(cont), tokens, grafico };
+  }
+
+  /**
+   * Envelope comum das ferramentas de LEITURA do canal interno.
+   *
+   * Sem teto de chamadas: ler duas vezes na mesma mensagem ("e amanha? e a
+   * meta?") e uso legitimo. Falha vira tool_result de erro, e o modelo se
+   * recupera na conversa em vez de derrubar a resposta inteira.
+   */
+  private async executarLeitura(
+    toolUse: Anthropic.ToolUseBlock,
+    corpo: () => Promise<string>,
+  ): Promise<Anthropic.ToolResultBlockParam> {
+    try {
+      return { type: 'tool_result', tool_use_id: toolUse.id, content: await corpo() };
+    } catch (err) {
+      this.logger.error(
+        `Falha na ferramenta ${toolUse.name}: ${err instanceof Error ? err.message : err}`,
+      );
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUse.id,
+        content:
+          'Nao consegui consultar isso agora. Peca desculpa e diga que ela pode tentar de novo em instantes.',
+        is_error: true,
+      };
+    }
   }
 
   /**

@@ -24,6 +24,6 @@ import { MetasController } from './infrastructure/http/controllers/metas.control
     ProgressoMetaUseCase,
     { provide: META_REPOSITORY, useClass: MetaRepository },
   ],
-  exports: [META_REPOSITORY],
+  exports: [META_REPOSITORY, ListarMetasUseCase, ProgressoMetaUseCase],
 })
 export class MetasModule {}

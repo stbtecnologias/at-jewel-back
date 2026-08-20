@@ -10,6 +10,7 @@ import { BuscarVendedoraPorWhatsappUseCase } from '../../../vendedoras/applicati
 import { ATENDIMENTO_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { IAtendimentoRepository } from '../../domain/ports/repositories/atendimento-repository.port';
 import { ConsultarAgendaVendedoraUseCase } from './consultar-agenda-vendedora.use-case';
+import { ConsultarDesempenhoVendedoraUseCase } from './consultar-desempenho-vendedora.use-case';
 import { ProcessarRelatoVendedoraUseCase } from './processar-relato-vendedora.use-case';
 
 export interface MensagemInterna {
@@ -66,6 +67,7 @@ export class ProcessarMensagemInternaUseCase {
     private readonly identificarVendedora: BuscarVendedoraPorWhatsappUseCase,
     private readonly relato: ProcessarRelatoVendedoraUseCase,
     private readonly agenda: ConsultarAgendaVendedoraUseCase,
+    private readonly desempenho: ConsultarDesempenhoVendedoraUseCase,
     @Inject(ATENDIMENTO_REPOSITORY)
     private readonly atendimentos: IAtendimentoRepository,
     @Inject(CLIENTE_REPOSITORY)
@@ -115,6 +117,27 @@ export class ProcessarMensagemInternaUseCase {
               cliente: c.cliente,
               quando: formatarQuando(c.quando),
               ocasiao: c.ocasiao ?? undefined,
+            })),
+          };
+        },
+        consultarVendas: async ({ periodo }) => {
+          const v = await this.desempenho.vendas(vendedoraId, periodo);
+          if (v.quantidade === 0) {
+            return { resumo: 'nenhuma venda concluída nesse período' };
+          }
+          return {
+            resumo:
+              `${v.quantidade} ${v.quantidade === 1 ? 'venda' : 'vendas'}, ` +
+              `${moeda(v.receita)} em receita, ticket médio ${moeda(v.ticketMedio)}`,
+          };
+        },
+        consultarMetas: async () => {
+          const metas = await this.desempenho.metas(vendedoraId);
+          return {
+            metas: metas.map((m) => ({
+              linha: m.batida
+                ? `${m.descricao}: alvo ${moeda(m.alvo)}, já batida — realizado ${moeda(m.realizado)} (${m.percentual}%)`
+                : `${m.descricao}: alvo ${moeda(m.alvo)}, realizado ${moeda(m.realizado)} (${m.percentual}%), faltam ${moeda(m.restante)} até ${m.prazo.toLocaleDateString('pt-BR')}`,
             })),
           };
         },
@@ -169,6 +192,14 @@ export class ProcessarMensagemInternaUseCase {
       'use a ferramenta registrar_relato. Se for outro assunto, responda normalmente e não registre nada.'
     );
   }
+}
+
+function moeda(v: number): string {
+  return v.toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    minimumFractionDigits: 2,
+  });
 }
 
 /** "hoje às 15:00", "amanhã às 10:00", "sexta-feira às 09:30", "28/08 às 14:00". */

@@ -2,9 +2,12 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WhatsappGatewayModule } from '../atendimento/whatsapp-gateway.module';
 import { ClientesModule } from '../clientes/clientes.module';
+import { MetasModule } from '../metas/metas.module';
+import { VendasModule } from '../vendas/vendas.module';
 import { VendedorasModule } from '../vendedoras/vendedoras.module';
 import { LlmModule } from '../agentes/llm.module';
 import { ConsultarAgendaVendedoraUseCase } from './application/use-cases/consultar-agenda-vendedora.use-case';
+import { ConsultarDesempenhoVendedoraUseCase } from './application/use-cases/consultar-desempenho-vendedora.use-case';
 import { DispararPendenciasUseCase } from './application/use-cases/disparar-pendencias.use-case';
 import { ProcessarMensagemInternaUseCase } from './application/use-cases/processar-mensagem-interna.use-case';
 import { ProcessarRelatoVendedoraUseCase } from './application/use-cases/processar-relato-vendedora.use-case';
@@ -27,6 +30,10 @@ import { AtendimentoRepository } from './infrastructure/database/typeorm/reposit
     // gateway de envio. Nenhum destes importa atendimentos — sem ciclo.
     ClientesModule,
     VendedorasModule,
+    // Vendas e metas: o que a vendedora consulta sobre si mesma no canal
+    // interno. Os dois sao folhas (so TypeORM e Auth), entao nao ha ciclo.
+    VendasModule,
+    MetasModule,
     WhatsappGatewayModule,
     // So o LLM, nao o AgentesModule inteiro: aquele importa ESTE modulo (a
     // tool avisar_vendedora abre atendimento), e o Nest recusa o ciclo.
@@ -36,6 +43,7 @@ import { AtendimentoRepository } from './infrastructure/database/typeorm/reposit
     { provide: ATENDIMENTO_REPOSITORY, useClass: AtendimentoRepository },
     DispararPendenciasUseCase,
     ConsultarAgendaVendedoraUseCase,
+    ConsultarDesempenhoVendedoraUseCase,
     PendenciasScheduler,
     ProcessarRelatoVendedoraUseCase,
     ProcessarMensagemInternaUseCase,

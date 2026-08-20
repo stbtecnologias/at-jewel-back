@@ -100,6 +100,34 @@ export interface RegistrarRelatoLlmResultado {
 
 export type RegistrarRelatoHandler = () => Promise<RegistrarRelatoLlmResultado>;
 
+// Handlers das tools de desempenho, do canal INTERNO. Mesma regra das
+// outras: sem "de quem" no input. O periodo e a unica escolha do modelo.
+export type PeriodoVendasLlm = 'HOJE' | 'SEMANA' | 'MES';
+
+export interface ConsultarVendasLlmInput {
+  periodo: PeriodoVendasLlm;
+}
+
+export interface ConsultarVendasLlmResultado {
+  /** Ja formatado ("3 vendas, R$ 12.400,00, ticket medio R$ 4.133,33"). */
+  resumo: string;
+}
+
+export type ConsultarVendasHandler = (
+  input: ConsultarVendasLlmInput,
+) => Promise<ConsultarVendasLlmResultado>;
+
+export interface MetaLlm {
+  /** Uma linha pronta por meta, com alvo, realizado e quanto falta. */
+  linha: string;
+}
+
+export interface ConsultarMetasLlmResultado {
+  metas: MetaLlm[];
+}
+
+export type ConsultarMetasHandler = () => Promise<ConsultarMetasLlmResultado>;
+
 export interface ChatParams {
   model: string;
   system: string;
@@ -113,6 +141,9 @@ export interface ChatParams {
   consultarAgenda?: ConsultarAgendaHandler;
   // Idem para `registrar_relato` — canal interno da vendedora.
   registrarRelato?: RegistrarRelatoHandler;
+  // Idem para `consultar_vendas` e `consultar_metas`.
+  consultarVendas?: ConsultarVendasHandler;
+  consultarMetas?: ConsultarMetasHandler;
   /**
    * Habilita `gerar_grafico`. Default true, que preserva o painel.
    *
