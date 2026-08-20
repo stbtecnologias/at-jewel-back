@@ -41,14 +41,20 @@ export class WhatsappWebhookController {
     // Evento ignorado (status, ack, mensagem nossa, grupo, etc.): apenas ack.
     if (!msg) return { ok: true, ignorado: true };
 
+    // O `from` do WAHA pode ser um LID, e nao um telefone. A traducao e
+    // assunto de TRANSPORTE — acontece aqui, na borda, e o use case recebe
+    // sempre um identificador com telefone dentro. Ver `resolverRemetente`.
+    const de = await this.whatsapp.resolverRemetente(msg.de);
+
     try {
-      const resultado = await this.processar.execute(msg);
+      const resultado = await this.processar.execute({ ...msg, de });
       // Remetente nao reconhecido: nem resposta, nem envio. Ver o default-deny
       // em ProcessarMensagemInternaUseCase.
       if (!resultado.resposta) {
         return { ok: true, ignorado: true, motivo: resultado.motivo };
       }
-      await this.whatsapp.enviarTexto(msg.de, resultado.resposta);
+      // Responde para o chat resolvido, nunca para o LID.
+      await this.whatsapp.enviarTexto(de, resultado.resposta);
       // Fora de producao, devolve a resposta gerada para facilitar debug do
       // webhook (atras do token; e a mensagem da propria agente, nao PII).
       const debug =
