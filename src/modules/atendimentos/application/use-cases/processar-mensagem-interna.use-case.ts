@@ -11,6 +11,7 @@ import { ATENDIMENTO_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { IAtendimentoRepository } from '../../domain/ports/repositories/atendimento-repository.port';
 import { ConsultarAgendaVendedoraUseCase } from './consultar-agenda-vendedora.use-case';
 import { ConsultarDesempenhoVendedoraUseCase } from './consultar-desempenho-vendedora.use-case';
+import { AgendarContatoVendedoraUseCase } from './agendar-contato-vendedora.use-case';
 import { ConsultarCarteiraVendedoraUseCase } from './consultar-carteira-vendedora.use-case';
 import { ConsultarProdutosVendedoraUseCase } from './consultar-produtos-vendedora.use-case';
 import { ProcessarRelatoVendedoraUseCase } from './processar-relato-vendedora.use-case';
@@ -72,6 +73,7 @@ export class ProcessarMensagemInternaUseCase {
     private readonly desempenho: ConsultarDesempenhoVendedoraUseCase,
     private readonly produtos: ConsultarProdutosVendedoraUseCase,
     private readonly carteira: ConsultarCarteiraVendedoraUseCase,
+    private readonly agendarContato: AgendarContatoVendedoraUseCase,
     @Inject(ATENDIMENTO_REPOSITORY)
     private readonly atendimentos: IAtendimentoRepository,
     @Inject(CLIENTE_REPOSITORY)
@@ -182,6 +184,46 @@ export class ProcessarMensagemInternaUseCase {
               linha: `${c.nome} — ${c.quantidade} ${c.quantidade === 1 ? unidade : unidade + `s`}, ${moeda(c.valorTotal)}`,
             })),
           };
+        },
+        agendarContato: async ({ cliente, quandoIso }) => {
+          const r = await this.agendarContato.execute(
+            vendedoraId,
+            codigoErp,
+            cliente,
+            quandoIso,
+          );
+
+          // A frase de volta e montada AQUI, no servidor, e nao pelo
+          // modelo: ela carrega nome e horario, que sao exatamente o que
+          // ele inventaria.
+          switch (r.status) {
+            case 'AGENDADO':
+              return {
+                status: r.status,
+                mensagem: `Marcado: contato com ${r.cliente} em ${formatarQuando(r.quando)}. Te lembro perto da hora.`,
+              };
+            case 'CLIENTE_AMBIGUO':
+              return {
+                status: r.status,
+                mensagem: `Tem mais de um cliente com esse nome na carteira dela: ${r.nomes.join(`, `)}. Pergunte qual e antes de marcar.`,
+              };
+            case 'HORARIO_INVALIDO':
+              return {
+                status: r.status,
+                mensagem:
+                  `O horário não serve — precisa ser no futuro e dentro dos próximos seis meses. Peça o horário de novo.`,
+              };
+            case 'ATENDIMENTO_DE_OUTRA_PESSOA':
+              return {
+                status: r.status,
+                mensagem: `${r.cliente} já tem um atendimento em andamento que não é dela. Diga que a administração precisa resolver isso antes.`,
+              };
+            default:
+              return {
+                status: r.status,
+                mensagem: `Não encontrei esse cliente na carteira dela. Diga isso, sem sugerir que ele exista em outro lugar.`,
+              };
+          }
         },
         registrarRelato: async () => {
           // O texto ORIGINAL, nao o que o modelo entendeu: o relato guardado

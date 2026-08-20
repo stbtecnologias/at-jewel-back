@@ -90,6 +90,21 @@ export interface IClienteRepository {
    * Cliente que NUNCA comprou entra na lista, com `ultimaCompra` nula: para
    * quem vai ligar, "nunca comprou" e tao relevante quanto "faz oito meses".
    */
+  /**
+   * Clientes da carteira de UMA vendedora cujo nome casa com o termo.
+   *
+   * NAO E `buscarPorNomeParcial` COM FILTRO DEPOIS. O recorte entra no
+   * `WHERE`: cliente de fora da carteira nao e recusado, ele nao existe para
+   * esta consulta. A diferenca importa porque a RECUSA tambem vaza — dizer
+   * "esse cliente e de outra vendedora" ja conta que ele existe e que tem
+   * dona. Aqui a resposta e a mesma de nome errado: lista vazia.
+   */
+  buscarNaCarteiraPorNome(
+    vendedoraCodigoErp: string,
+    termo: string,
+    limite: number,
+  ): Promise<Cliente[]>;
+
   inativosDaCarteira(
     vendedoraCodigoErp: string,
     meses: number,

@@ -182,6 +182,28 @@ const MELHORES_TOOL: Anthropic.Tool = {
   },
 };
 
+const AGENDAR_TOOL: Anthropic.Tool = {
+  name: 'agendar_contato',
+  description:
+    'Coloca um contato com um cliente na agenda DELA, e agenda o lembrete. Use quando ela pedir para marcar, lembrar ou agendar — "me lembra de ligar pra Helena amanha as 10", "marca a Carla pra sexta as 15h". So funciona com cliente da carteira dela. Preencha quandoIso SEMPRE em ISO 8601 com fuso, calculado a partir da data de hoje informada acima. Se ela nao disser um horario, PERGUNTE antes de chamar — nao invente.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      cliente: {
+        type: 'string',
+        description:
+          'Nome do cliente como ela escreveu. Nao complete nem corrija o sobrenome.',
+      },
+      quandoIso: {
+        type: 'string',
+        description:
+          'O horario combinado em ISO 8601 com fuso, ex.: "2026-08-21T10:00:00-03:00".',
+      },
+    },
+    required: ['cliente', 'quandoIso'],
+  },
+};
+
 const RELATO_TOOL: Anthropic.Tool = {
   name: 'registrar_relato',
   description:
@@ -299,6 +321,7 @@ export class AnthropicClient implements ILlmClient {
     if (params.consultarProdutos) tools.push(PRODUTOS_TOOL);
     if (params.clientesSemComprar) tools.push(SEM_COMPRAR_TOOL);
     if (params.melhoresClientes) tools.push(MELHORES_TOOL);
+    if (params.agendarContato) tools.push(AGENDAR_TOOL);
 
     const first = await this.client.messages.create({
       model: params.model,
@@ -327,6 +350,8 @@ export class AnthropicClient implements ILlmClient {
     let demandaRegistrada = false;
     // Mesmo teto para o aviso: um WhatsApp disparado por turno, no maximo.
     let avisoEnviado = false;
+    // E para o agendamento: uma escrita por mensagem, como no aviso.
+    let contatoAgendado = false;
     // E para o relato: uma gravacao por mensagem dela.
     let relatoGravado = false;
 
@@ -415,6 +440,29 @@ export class AnthropicClient implements ILlmClient {
             return (
               `Pecas encontradas:\n${produtos.map((p) => `- ${p.linha}`).join('\n')}\n\n` +
               'Repasse os precos e quantidades exatamente como estao. Se ela pedir custo ou margem, diga que voce nao consegue ver isso.'
+            );
+          }),
+        );
+      } else if (toolUse.name === 'agendar_contato' && params.agendarContato) {
+        if (contatoAgendado) {
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: toolUse.id,
+            content: 'Ignorado: um agendamento por mensagem. Peca para ela tratar um cliente de cada vez.',
+            is_error: true,
+          });
+          continue;
+        }
+        contatoAgendado = true;
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const entrada = toolUse.input as { cliente?: string; quandoIso?: string };
+            const r = await params.agendarContato!({
+              cliente: String(entrada.cliente ?? '').slice(0, 120),
+              quandoIso: String(entrada.quandoIso ?? ''),
+            });
+            return (
+              `${r.mensagem}\n\nResponda a ela com isso, sem alterar nomes nem horarios.`
             );
           }),
         );

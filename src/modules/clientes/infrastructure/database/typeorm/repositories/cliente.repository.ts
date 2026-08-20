@@ -185,6 +185,25 @@ export class ClienteRepository implements IClienteRepository {
     return row ? this.toDomain(row) : null;
   }
 
+  async buscarNaCarteiraPorNome(
+    vendedoraCodigoErp: string,
+    termo: string,
+    limite: number,
+  ): Promise<Cliente[]> {
+    // Escapa os curingas do LIKE: "%" digitado nao pode virar "traga todo
+    // mundo" — mesmo cuidado do buscarPorNomeParcial.
+    const alvo = termo.replace(/[\\%_]/g, (c) => '\\' + c);
+    const rows = await this.repo
+      .createQueryBuilder('c')
+      .where('c.vendedora_codigo_erp = :codigo', { codigo: vendedoraCodigoErp })
+      .andWhere('c.nome ILIKE :alvo', { alvo: '%' + alvo + '%' })
+      .andWhere('c.ativo = true')
+      .orderBy('c.nome', 'ASC')
+      .limit(limite)
+      .getMany();
+    return rows.map((r) => this.toDomain(r));
+  }
+
   async inativosDaCarteira(
     vendedoraCodigoErp: string,
     meses: number,

@@ -26,6 +26,7 @@ describe('ProcessarMensagemInternaUseCase', () => {
   let desempenho: { vendas: jest.Mock; metas: jest.Mock };
   let produtos: { execute: jest.Mock };
   let carteira: { semComprar: jest.Mock; maioresCompradores: jest.Mock };
+  let agendar: { execute: jest.Mock };
   let atendimentos: { buscarCobrancaAguardando: jest.Mock };
   let clientes: { buscarPorId: jest.Mock };
   let llm: { chatComFerramentas: jest.Mock; chat: jest.Mock };
@@ -57,6 +58,13 @@ describe('ProcessarMensagemInternaUseCase', () => {
       semComprar: jest.fn().mockResolvedValue([]),
       maioresCompradores: jest.fn().mockResolvedValue([]),
     };
+    agendar = {
+      execute: jest.fn().mockResolvedValue({
+        status: 'AGENDADO',
+        cliente: 'Helena Gomes',
+        quando: new Date('2026-08-21T10:00:00-03:00'),
+      }),
+    };
     atendimentos = { buscarCobrancaAguardando: jest.fn().mockResolvedValue(null) };
     clientes = { buscarPorId: jest.fn().mockResolvedValue({ nome: 'Helena Gomes' }) };
     llm = {
@@ -71,6 +79,7 @@ describe('ProcessarMensagemInternaUseCase', () => {
       desempenho as never,
       produtos as never,
       carteira as never,
+      agendar as never,
       atendimentos as never,
       clientes as never,
       llm as never,
@@ -156,6 +165,40 @@ describe('ProcessarMensagemInternaUseCase', () => {
         categoria: 'Anel',
         ultimosMeses: undefined,
       });
+    });
+
+    // A UNICA ferramenta que escreve. O id e o codigo vem os dois do
+    // telefone resolvido — o modelo so escolhe cliente e horario.
+    it('agendar recebe a identidade dela, nunca uma vinda do texto', async () => {
+      await useCase.execute({ de: '558586467241@c.us', texto: 'marca a Helena amanhã 10h' });
+
+      const r = await params().agendarContato!({
+        cliente: 'Helena',
+        quandoIso: '2026-08-21T10:00:00-03:00',
+      });
+
+      expect(agendar.execute).toHaveBeenCalledWith(
+        'vd-1',
+        'SEED-VD01',
+        'Helena',
+        '2026-08-21T10:00:00-03:00',
+      );
+      expect(r.status).toBe('AGENDADO');
+      expect(r.mensagem).toContain('Helena Gomes');
+    });
+
+    // A recusa nao pode contar que o cliente existe em outro lugar.
+    it('cliente fora da carteira devolve a mesma coisa que nome errado', async () => {
+      agendar.execute.mockResolvedValue({ status: 'CLIENTE_NAO_ENCONTRADO' });
+
+      await useCase.execute({ de: '558586467241@c.us', texto: 'marca a Gabriela amanhã 10h' });
+      const r = await params().agendarContato!({
+        cliente: 'Gabriela',
+        quandoIso: '2026-08-21T10:00:00-03:00',
+      });
+
+      expect(r.mensagem.toLowerCase()).toContain('não encontrei');
+      expect(r.mensagem.toLowerCase()).not.toContain('outra vendedora');
     });
 
     it('o relato guarda a FRASE DELA, nao o que o modelo entendeu', async () => {

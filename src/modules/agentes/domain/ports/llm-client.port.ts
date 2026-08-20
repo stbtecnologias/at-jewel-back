@@ -170,6 +170,32 @@ export type MelhoresClientesHandler = (input: {
   ultimosMeses?: number;
 }) => Promise<ConsultarCarteiraLlmResultado>;
 
+// Handler da tool `agendar_contato`, do canal INTERNO. UNICA ferramenta do
+// canal que ESCREVE — por isso o resultado e fechado, com um status por
+// caminho, e a frase de volta e montada pelo servidor.
+export type StatusAgendamentoLlm =
+  | 'AGENDADO'
+  | 'CLIENTE_NAO_ENCONTRADO'
+  | 'CLIENTE_AMBIGUO'
+  | 'HORARIO_INVALIDO'
+  | 'ATENDIMENTO_DE_OUTRA_PESSOA';
+
+export interface AgendarContatoLlmInput {
+  cliente: string;
+  /** Horario em ISO 8601 com fuso, calculado a partir da data de hoje. */
+  quandoIso: string;
+}
+
+export interface AgendarContatoLlmResultado {
+  status: StatusAgendamentoLlm;
+  /** Frase pronta para o modelo repassar. Sem dado de terceiros. */
+  mensagem: string;
+}
+
+export type AgendarContatoHandler = (
+  input: AgendarContatoLlmInput,
+) => Promise<AgendarContatoLlmResultado>;
+
 export interface ChatParams {
   model: string;
   system: string;
@@ -191,6 +217,8 @@ export interface ChatParams {
   // Idem para as duas de carteira.
   clientesSemComprar?: ClientesSemComprarHandler;
   melhoresClientes?: MelhoresClientesHandler;
+  // Idem para `agendar_contato` — a unica que escreve.
+  agendarContato?: AgendarContatoHandler;
   /**
    * Habilita `gerar_grafico`. Default true, que preserva o painel.
    *
