@@ -127,6 +127,23 @@ const METAS_TOOL: Anthropic.Tool = {
   input_schema: { type: 'object', properties: {} },
 };
 
+const PRODUTOS_TOOL: Anthropic.Tool = {
+  name: 'consultar_produtos',
+  description:
+    'Procura pecas no catalogo e devolve descricao, preco de venda e quantidade em estoque. Use quando ela perguntar sobre produto — "quanto custa o brinco de esmeralda", "tem alianca de ouro 18k", "quantos pingentes de zirconia temos". Devolve no maximo seis pecas. Voce nao tem acesso a custo nem margem: se ela perguntar isso, diga que nao consegue ver.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      busca: {
+        type: 'string',
+        description:
+          'O que procurar, nas palavras dela: nome da peca, categoria, familia, colecao, pedra, cor ou codigo do ERP. Ex.: "esmeralda", "alianca ouro 18k", "SEED-P0002".',
+      },
+    },
+    required: ['busca'],
+  },
+};
+
 const RELATO_TOOL: Anthropic.Tool = {
   name: 'registrar_relato',
   description:
@@ -241,6 +258,7 @@ export class AnthropicClient implements ILlmClient {
     if (params.registrarRelato) tools.push(RELATO_TOOL);
     if (params.consultarVendas) tools.push(VENDAS_TOOL);
     if (params.consultarMetas) tools.push(METAS_TOOL);
+    if (params.consultarProdutos) tools.push(PRODUTOS_TOOL);
 
     const first = await this.client.messages.create({
       model: params.model,
@@ -342,6 +360,21 @@ export class AnthropicClient implements ILlmClient {
             return (
               `Metas dela:\n${metas.map((m) => `- ${m.linha}`).join('\n')}\n\n` +
               'Repasse os numeros exatamente como estao.'
+            );
+          }),
+        );
+      } else if (toolUse.name === 'consultar_produtos' && params.consultarProdutos) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const { produtos } = await params.consultarProdutos!({
+              busca: String((toolUse.input as { busca?: string }).busca ?? '').slice(0, 120),
+            });
+            if (produtos.length === 0) {
+              return 'Nenhuma peca encontrada com esse termo. Diga isso a ela e pergunte se quer procurar de outro jeito.';
+            }
+            return (
+              `Pecas encontradas:\n${produtos.map((p) => `- ${p.linha}`).join('\n')}\n\n` +
+              'Repasse os precos e quantidades exatamente como estao. Se ela pedir custo ou margem, diga que voce nao consegue ver isso.'
             );
           }),
         );

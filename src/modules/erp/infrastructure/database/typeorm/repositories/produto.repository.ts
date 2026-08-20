@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { FindOptionsWhere, Repository } from 'typeorm';
+import { Brackets, Repository } from 'typeorm';
 import { Produto } from '../../../../domain/entities/produto.entity';
 import {
   AlertasEstoque,
@@ -42,12 +42,48 @@ export class ProdutoRepository implements IProdutoRepository {
   }
 
   async findAll(filtros: FiltroProduto): Promise<Produto[]> {
-    const where: FindOptionsWhere<ProdutoOrmEntity> = {};
-    if (filtros.categoria !== undefined) where.categoria = filtros.categoria;
-    if (filtros.familia !== undefined) where.familia = filtros.familia;
-    if (filtros.ativo !== undefined) where.ativo = filtros.ativo;
+    const qb = this.repo.createQueryBuilder('p');
 
-    const entities = await this.repo.find({ where, order: { criadoEm: 'DESC' } });
+    if (filtros.categoria !== undefined) {
+      qb.andWhere('p.categoria = :categoria', { categoria: filtros.categoria });
+    }
+    if (filtros.familia !== undefined) {
+      qb.andWhere('p.familia = :familia', { familia: filtros.familia });
+    }
+    if (filtros.ativo !== undefined) {
+      qb.andWhere('p.ativo = :ativo', { ativo: filtros.ativo });
+    }
+
+    // CADA PALAVRA precisa aparecer em ALGUM campo — e nao a frase inteira
+    // num campo so. "brinco de esmeralda" nao casa com "Brinco Vintage
+    // Esmeralda" se procurado como uma string unica, porque as palavras nao
+    // sao vizinhas. Entao: AND entre as palavras, OR entre as colunas.
+    //
+    // Palavras de ate dois caracteres saem ("de", "do", "e"): elas casam com
+    // quase tudo e so estragariam o filtro.
+    for (const [i, palavra] of palavrasDaBusca(filtros.busca).entries()) {
+      const chave = `busca${i}`;
+      const termo = `%${palavra}%`;
+      qb.andWhere(
+        // Os parenteses importam: sem eles o OR vazaria e anularia os
+        // filtros de categoria/familia/ativo acima.
+        new Brackets((b) =>
+          b
+            .where(`p.descricao_etiqueta ILIKE :${chave}`, { [chave]: termo })
+            .orWhere(`p.categoria ILIKE :${chave}`, { [chave]: termo })
+            .orWhere(`p.familia ILIKE :${chave}`, { [chave]: termo })
+            .orWhere(`p.colecao ILIKE :${chave}`, { [chave]: termo })
+            .orWhere(`p.tipo_pedra ILIKE :${chave}`, { [chave]: termo })
+            .orWhere(`p.cor ILIKE :${chave}`, { [chave]: termo })
+            .orWhere(`p.codigo_erp ILIKE :${chave}`, { [chave]: termo }),
+        ),
+      );
+    }
+
+    qb.orderBy('p.criado_em', 'DESC');
+    if (filtros.limit) qb.take(filtros.limit);
+
+    const entities = await qb.getMany();
     return entities.map((e) => this.toDomain(e));
   }
 
@@ -193,4 +229,17 @@ export class ProdutoRepository implements IProdutoRepository {
       atualizadoEm: o.atualizadoEm,
     });
   }
+}
+
+/**
+ * Palavras uteis de uma busca livre. Descarta as de ate dois caracteres — "de",
+ * "do", "e" casam com quase tudo — e limita a quatro, para uma frase longa nao
+ * virar oito condicoes no banco.
+ */
+function palavrasDaBusca(busca: string | undefined): string[] {
+  return (busca ?? '')
+    .trim()
+    .split(/\s+/)
+    .filter((p) => p.length > 2)
+    .slice(0, 4);
 }

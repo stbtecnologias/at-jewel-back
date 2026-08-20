@@ -128,6 +128,28 @@ export interface ConsultarMetasLlmResultado {
 
 export type ConsultarMetasHandler = () => Promise<ConsultarMetasLlmResultado>;
 
+// Handler da tool `consultar_produtos`, do canal INTERNO.
+//
+// Unica ferramenta do canal que nao e restrita a pessoa: catalogo e da loja.
+// O corte aqui e por CAMPO — o resultado nao carrega custo nem margem, entao
+// nao ha o que revelar mesmo sob instrucao no meio da conversa.
+export interface ConsultarProdutosLlmInput {
+  busca: string;
+}
+
+export interface ProdutoLlm {
+  /** Uma linha pronta: descricao, preco e quantidade. */
+  linha: string;
+}
+
+export interface ConsultarProdutosLlmResultado {
+  produtos: ProdutoLlm[];
+}
+
+export type ConsultarProdutosHandler = (
+  input: ConsultarProdutosLlmInput,
+) => Promise<ConsultarProdutosLlmResultado>;
+
 export interface ChatParams {
   model: string;
   system: string;
@@ -144,6 +166,8 @@ export interface ChatParams {
   // Idem para `consultar_vendas` e `consultar_metas`.
   consultarVendas?: ConsultarVendasHandler;
   consultarMetas?: ConsultarMetasHandler;
+  // Idem para `consultar_produtos`.
+  consultarProdutos?: ConsultarProdutosHandler;
   /**
    * Habilita `gerar_grafico`. Default true, que preserva o painel.
    *

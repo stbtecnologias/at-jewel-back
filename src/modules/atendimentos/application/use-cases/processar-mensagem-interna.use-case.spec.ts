@@ -19,6 +19,7 @@ describe('ProcessarMensagemInternaUseCase', () => {
   let relato: { execute: jest.Mock };
   let agenda: { execute: jest.Mock };
   let desempenho: { vendas: jest.Mock; metas: jest.Mock };
+  let produtos: { execute: jest.Mock };
   let atendimentos: { buscarCobrancaAguardando: jest.Mock };
   let clientes: { buscarPorId: jest.Mock };
   let llm: { chatComFerramentas: jest.Mock; chat: jest.Mock };
@@ -34,6 +35,18 @@ describe('ProcessarMensagemInternaUseCase', () => {
         .mockResolvedValue({ quantidade: 3, receita: 12400, ticketMedio: 4133.33 }),
       metas: jest.fn().mockResolvedValue([]),
     };
+    produtos = {
+      execute: jest.fn().mockResolvedValue([
+        {
+          descricao: 'Brinco Vintage Esmeralda',
+          categoria: 'Brinco',
+          familia: 'Ouro Branco',
+          codigo: 'SEED-P0002',
+          precoVenda: 7490.37,
+          emEstoque: 1,
+        },
+      ]),
+    };
     atendimentos = { buscarCobrancaAguardando: jest.fn().mockResolvedValue(null) };
     clientes = { buscarPorId: jest.fn().mockResolvedValue({ nome: 'Helena Gomes' }) };
     llm = {
@@ -46,6 +59,7 @@ describe('ProcessarMensagemInternaUseCase', () => {
       relato as never,
       agenda as never,
       desempenho as never,
+      produtos as never,
       atendimentos as never,
       clientes as never,
       llm as never,
@@ -103,6 +117,20 @@ describe('ProcessarMensagemInternaUseCase', () => {
       await params().consultarMetas!();
 
       expect(desempenho.metas).toHaveBeenCalledWith('vd-1');
+    });
+
+    // Catalogo e da loja, entao esta ferramenta nao e restrita a pessoa. O
+    // corte aqui e por CAMPO: custo e margem nao saem do use case.
+    it('o produto que chega ao modelo nao carrega custo nem margem', async () => {
+      await useCase.execute({ de: '558586467241@c.us', texto: 'quanto custa o brinco?' });
+
+      const r = await params().consultarProdutos!({ busca: 'brinco' });
+
+      expect(produtos.execute).toHaveBeenCalledWith('brinco');
+      const linha = r.produtos[0].linha;
+      expect(linha).toContain('7.490,37');
+      expect(linha).toContain('1 em estoque');
+      expect(linha).not.toMatch(/custo|margem/i);
     });
 
     it('o relato guarda a FRASE DELA, nao o que o modelo entendeu', async () => {

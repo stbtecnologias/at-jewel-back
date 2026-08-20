@@ -11,6 +11,7 @@ import { ATENDIMENTO_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { IAtendimentoRepository } from '../../domain/ports/repositories/atendimento-repository.port';
 import { ConsultarAgendaVendedoraUseCase } from './consultar-agenda-vendedora.use-case';
 import { ConsultarDesempenhoVendedoraUseCase } from './consultar-desempenho-vendedora.use-case';
+import { ConsultarProdutosVendedoraUseCase } from './consultar-produtos-vendedora.use-case';
 import { ProcessarRelatoVendedoraUseCase } from './processar-relato-vendedora.use-case';
 
 export interface MensagemInterna {
@@ -68,6 +69,7 @@ export class ProcessarMensagemInternaUseCase {
     private readonly relato: ProcessarRelatoVendedoraUseCase,
     private readonly agenda: ConsultarAgendaVendedoraUseCase,
     private readonly desempenho: ConsultarDesempenhoVendedoraUseCase,
+    private readonly produtos: ConsultarProdutosVendedoraUseCase,
     @Inject(ATENDIMENTO_REPOSITORY)
     private readonly atendimentos: IAtendimentoRepository,
     @Inject(CLIENTE_REPOSITORY)
@@ -138,6 +140,18 @@ export class ProcessarMensagemInternaUseCase {
               linha: m.batida
                 ? `${m.descricao}: alvo ${moeda(m.alvo)}, já batida — realizado ${moeda(m.realizado)} (${m.percentual}%)`
                 : `${m.descricao}: alvo ${moeda(m.alvo)}, realizado ${moeda(m.realizado)} (${m.percentual}%), faltam ${moeda(m.restante)} até ${m.prazo.toLocaleDateString('pt-BR')}`,
+            })),
+          };
+        },
+        consultarProdutos: async ({ busca }) => {
+          const achados = await this.produtos.execute(busca);
+          return {
+            produtos: achados.map((p) => ({
+              linha:
+                `${p.descricao} (${p.categoria} / ${p.familia})` +
+                `${p.codigo ? ` — código ${p.codigo}` : ''}: ` +
+                `${moeda(p.precoVenda)}, ` +
+                `${p.emEstoque === 0 ? 'sem estoque' : `${p.emEstoque} em estoque`}`,
             })),
           };
         },
