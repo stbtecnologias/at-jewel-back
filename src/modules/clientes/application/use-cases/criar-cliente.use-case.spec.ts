@@ -2,6 +2,7 @@ import { ConflictException } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { Cliente } from '../../domain/entities/cliente.entity';
 import { ClientePerfil } from '../../domain/entities/cliente-perfil.entity';
+import { IClientePerfilRepository } from '../../domain/ports/repositories/cliente-perfil-repository.port';
 import { IClienteRepository } from '../../domain/ports/repositories/cliente-repository.port';
 import { CriarClienteUseCase } from './criar-cliente.use-case';
 
@@ -19,16 +20,24 @@ function makeRepoMock(): jest.Mocked<IClienteRepository> {
   } as unknown as jest.Mocked<IClienteRepository>;
 }
 
+function makePerfilRepoMock(): jest.Mocked<IClientePerfilRepository> {
+  return {
+    buscarPorWhatsappHash: jest.fn(),
+  } as unknown as jest.Mocked<IClientePerfilRepository>;
+}
+
 describe('CriarClienteUseCase', () => {
   const ORIGINAL_ENV = { ...process.env };
   let useCase: CriarClienteUseCase;
   let repo: jest.Mocked<IClienteRepository>;
+  let perfilRepo: jest.Mocked<IClientePerfilRepository>;
 
   beforeEach(() => {
     process.env = { ...ORIGINAL_ENV };
     process.env.HASH_SECRET = randomBytes(32).toString('hex');
     repo = makeRepoMock();
-    useCase = new CriarClienteUseCase(repo);
+    perfilRepo = makePerfilRepoMock();
+    useCase = new CriarClienteUseCase(repo, perfilRepo);
   });
 
   afterAll(() => {
@@ -106,8 +115,6 @@ describe('CriarClienteUseCase', () => {
 
   it('calcula telefone_1_hash e email_hash quando informados', async () => {
     repo.criarComPerfil.mockResolvedValue({} as Cliente);
-    repo.buscarPorTelefone1Hash.mockResolvedValue(null);
-    repo.buscarPorEmailHash.mockResolvedValue(null);
 
     await useCase.execute({
       nome: 'Maria',
@@ -120,49 +127,89 @@ describe('CriarClienteUseCase', () => {
     const cliente = repo.criarComPerfil.mock.calls[0][0];
     expect(cliente.telefone1Hash).toBeTruthy();
     expect(cliente.emailHash).toBeTruthy();
-    expect(repo.buscarPorTelefone1Hash).toHaveBeenCalledWith(cliente.telefone1Hash);
-    expect(repo.buscarPorEmailHash).toHaveBeenCalledWith(cliente.emailHash);
+
+    // Os hashes continuam existindo — sao o caminho de BUSCA. O que deixou de
+    // existir e a consulta de duplicidade antes de inserir (migracao 36).
+    expect(repo.buscarPorTelefone1Hash).not.toHaveBeenCalled();
+    expect(repo.buscarPorEmailHash).not.toHaveBeenCalled();
   });
 
-  it('lanca ConflictException se telefone ja existe', async () => {
+  // Migracao 36: telefone e email deixaram de ser unicos. O ERP tem mae e
+  // filha com o mesmo numero, marido e mulher com o mesmo email, o fixo da
+  // empresa no cadastro do dono. Antes disto o SEGUNDO nunca entrava no CRM.
+  it('aceita telefone ja usado por outro cliente', async () => {
+    repo.criarComPerfil.mockResolvedValue({} as Cliente);
     repo.buscarPorTelefone1Hash.mockResolvedValue(
       Cliente.create({
         id: 'existente',
-        nome: 'Outro',
+        nome: 'Mae',
         tipoPessoa: 'fisica',
         tabelaPreco: 'varejo',
         ativo: true,
       }),
     );
 
+    await useCase.execute({
+      nome: 'Filha',
+      whatsapp: '85988887777',
+      origemContato: 'whatsapp',
+      telefone1: '8533334444',
+    });
+
+    expect(repo.criarComPerfil).toHaveBeenCalledTimes(1);
+  });
+
+  it('aceita email ja usado por outro cliente', async () => {
+    repo.criarComPerfil.mockResolvedValue({} as Cliente);
+    repo.buscarPorEmailHash.mockResolvedValue(
+      Cliente.create({
+        id: 'existente',
+        nome: 'Marido',
+        tipoPessoa: 'fisica',
+        tabelaPreco: 'varejo',
+        ativo: true,
+      }),
+    );
+
+    await useCase.execute({
+      nome: 'Esposa',
+      whatsapp: '85988887777',
+      origemContato: 'whatsapp',
+      email: 'casa@email.com',
+    });
+
+    expect(repo.criarComPerfil).toHaveBeenCalledTimes(1);
+  });
+
+  // O WhatsApp e o unico que continua unico: e por ele que a Anastasia decide
+  // de quem e a mensagem que chegou. Ate 20/08/2026 a duplicata escapava para o
+  // banco e voltava como 500 cru — o comentario no use case prometia esta
+  // checagem desde o inicio e ela nunca tinha sido escrita.
+  it('lanca ConflictException se o whatsapp ja pertence a outro cliente', async () => {
+    perfilRepo.buscarPorWhatsappHash.mockResolvedValue({
+      clienteId: 'uuid-existente',
+    } as never);
+
     await expect(
       useCase.execute({
         nome: 'Maria',
         whatsapp: '85988887777',
         origemContato: 'whatsapp',
-        telefone1: '85988887777',
       }),
     ).rejects.toThrow(ConflictException);
     expect(repo.criarComPerfil).not.toHaveBeenCalled();
   });
 
-  it('lanca ConflictException se email ja existe', async () => {
-    repo.buscarPorEmailHash.mockResolvedValue(
-      Cliente.create({
-        id: 'existente',
-        nome: 'Outro',
-        tipoPessoa: 'fisica',
-        tabelaPreco: 'varejo',
-        ativo: true,
-      }),
-    );
+  it('reconhece o whatsapp duplicado em outro formato (nono digito, DDI)', async () => {
+    perfilRepo.buscarPorWhatsappHash
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue({ clienteId: 'uuid-existente' } as never);
 
     await expect(
       useCase.execute({
         nome: 'Maria',
-        whatsapp: '85988887777',
+        whatsapp: '+55 85 98888-7777',
         origemContato: 'whatsapp',
-        email: 'maria@email.com',
       }),
     ).rejects.toThrow(ConflictException);
     expect(repo.criarComPerfil).not.toHaveBeenCalled();
@@ -210,13 +257,15 @@ describe('CriarClienteUseCase', () => {
       expect(cliente.emailHash).toEqual(expect.any(String));
     });
 
-    it('continua barrando telefone duplicado', async () => {
+    // Era exatamente aqui que a integracao travava: o 409 de telefone
+    // duplicado impedia o registro do Safira de entrar. Ver migracao 36.
+    it('aceita telefone duplicado vindo do ERP', async () => {
+      repo.criar.mockResolvedValue({} as Cliente);
       repo.buscarPorTelefone1Hash.mockResolvedValue({ id: 'existente' } as Cliente);
 
-      await expect(
-        useCase.execute({ nome: 'Cliente do ERP', telefone1: '85988887777' }),
-      ).rejects.toThrow(ConflictException);
-      expect(repo.criar).not.toHaveBeenCalled();
+      await useCase.execute({ nome: 'Cliente do ERP', telefone1: '85988887777' });
+
+      expect(repo.criar).toHaveBeenCalledTimes(1);
     });
 
     it('volta a criar perfil assim que o whatsapp e informado', async () => {

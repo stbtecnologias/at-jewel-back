@@ -41,7 +41,9 @@ export class ClienteOrmEntity {
   @Column({ name: 'telefone_1', type: 'text', nullable: true, transformer: encryptedTransformer })
   telefone1: string | null;
 
-  @Column({ name: 'telefone_1_hash', type: 'varchar', length: 64, unique: true, nullable: true })
+  // Sem `unique`: a restricao caiu na migracao 36 — telefone e contato, nao
+  // identidade. O indice de busca continua no banco.
+  @Column({ name: 'telefone_1_hash', type: 'varchar', length: 64, nullable: true })
   telefone1Hash: string | null;
 
   @Column({ name: 'telefone_2', type: 'text', nullable: true, transformer: encryptedTransformer })
@@ -50,7 +52,8 @@ export class ClienteOrmEntity {
   @Column({ type: 'text', nullable: true, transformer: encryptedTransformer })
   email: string | null;
 
-  @Column({ name: 'email_hash', type: 'varchar', length: 64, unique: true, nullable: true })
+  // Sem `unique` pelo mesmo motivo do telefone (migracao 36).
+  @Column({ name: 'email_hash', type: 'varchar', length: 64, nullable: true })
   emailHash: string | null;
 
   @Column({ type: 'boolean', default: true })

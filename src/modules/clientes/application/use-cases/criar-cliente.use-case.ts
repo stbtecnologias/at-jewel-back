@@ -7,7 +7,11 @@ import {
   TabelaPreco,
   TipoPessoa,
 } from '../../domain/entities/enums';
-import { CLIENTE_REPOSITORY } from '../../domain/ports/injection-tokens';
+import {
+  CLIENTE_PERFIL_REPOSITORY,
+  CLIENTE_REPOSITORY,
+} from '../../domain/ports/injection-tokens';
+import type { IClientePerfilRepository } from '../../domain/ports/repositories/cliente-perfil-repository.port';
 import type { IClienteRepository } from '../../domain/ports/repositories/cliente-repository.port';
 import { normalizarTelefone, variantesTelefone } from '../utils/normalizadores';
 
@@ -46,6 +50,8 @@ export class CriarClienteUseCase {
   constructor(
     @Inject(CLIENTE_REPOSITORY)
     private readonly clienteRepo: IClienteRepository,
+    @Inject(CLIENTE_PERFIL_REPOSITORY)
+    private readonly perfilRepo: IClientePerfilRepository,
   ) {}
 
   async execute(input: CriarClienteInput): Promise<Cliente> {
@@ -65,37 +71,25 @@ export class CriarClienteUseCase {
       ? hashField(normalizarTelefone(input.whatsapp))
       : null;
 
-    // Idempotencia: se ja existe cliente com esse whatsapp_hash, conflito.
-    // (Quem quer o "ja existe? me devolve o atual" deve usar BuscarPorWhatsapp.)
-    // Verificacao via tabela clientes_perfil porque whatsapp_hash mora la.
     const telefone1Hash = input.telefone1
       ? hashField(normalizarTelefone(input.telefone1))
       : null;
     const emailHash = input.email ? hashField(input.email) : null;
 
-    // Checa TODAS as formas equivalentes do numero (nono digito, DDI): o mesmo
-    // telefone cadastrado em dois formatos gera dois clientes, e a duplicata
-    // so aparece semanas depois, quando o historico ja esta partido em dois.
-    if (input.telefone1) {
-      for (const variante of variantesTelefone(input.telefone1)) {
-        const duplicadoTel = await this.clienteRepo.buscarPorTelefone1Hash(
-          hashField(variante),
-        );
-        if (duplicadoTel) {
-          throw new ConflictException(
-            `Ja existe cliente com esse telefone (id: ${duplicadoTel.id})`,
-          );
-        }
-      }
-    }
-    if (emailHash) {
-      const duplicadoEmail = await this.clienteRepo.buscarPorEmailHash(emailHash);
-      if (duplicadoEmail) {
-        throw new ConflictException(
-          `Ja existe cliente com esse email (id: ${duplicadoEmail.id})`,
-        );
-      }
-    }
+    // NAO ha checagem de duplicidade por telefone ou e-mail — de proposito,
+    // desde 20/08/2026 (migracao 36).
+    //
+    // Ate aqui as duas colunas eram UNIQUE e este bloco devolvia 409 antes de
+    // o Postgres estourar. So que gente diferente compartilha numero e e-mail:
+    // mae e filha, marido e mulher, o fixo da empresa no cadastro do dono, o
+    // telefone da loja usado como placeholder. O ERP tem varios assim, e cada
+    // um deles ficava DE FORA do CRM — a criacao falhava e o registro nunca
+    // entrava.
+    //
+    // Telefone e e-mail sao dado de CONTATO, nao identidade. Quem identifica
+    // tem UNIQUE proprio: `id_erp` e `codigo_erp` acima, e o
+    // `clientes_perfil.whatsapp_hash` logo abaixo — este ultimo continua
+    // unico porque mensagem que chega precisa resolver para UM cliente.
 
     // Mesma checagem de telefone e email, agora para o codigo do ERP. A coluna
     // ja e UNIQUE desde a migracao 03, entao sem isto a duplicata viria como
@@ -110,6 +104,31 @@ export class CriarClienteUseCase {
         throw new ConflictException(
           `Ja existe cliente com esse codigo ERP (id: ${duplicadoErp.id})`,
         );
+      }
+    }
+
+    // Idempotencia pelo WhatsApp. Diferente do telefone de cadastro, ESTE
+    // continua unico: e por ele que a Anastasia decide de quem e a mensagem que
+    // chegou, e dois clientes com o mesmo numero deixariam o roteamento sem
+    // criterio. A restricao vive em clientes_perfil.whatsapp_hash.
+    //
+    // A checagem estava prometida em comentario desde o inicio e nunca tinha
+    // sido escrita: duplicata de WhatsApp estourava como violacao crua do
+    // Postgres, um 500 que nao diz o que aconteceu nem qual e o registro.
+    // Quem quer "ja existe? me devolve o atual" usa GET /clientes/lookup.
+    //
+    // Todas as formas equivalentes (nono digito, DDI) pelo mesmo motivo do
+    // lookup: o mesmo numero em outro formato e a mesma pessoa.
+    if (input.whatsapp) {
+      for (const variante of variantesTelefone(input.whatsapp)) {
+        const perfilExistente = await this.perfilRepo.buscarPorWhatsappHash(
+          hashField(variante),
+        );
+        if (perfilExistente) {
+          throw new ConflictException(
+            `Ja existe cliente com esse whatsapp (id: ${perfilExistente.clienteId})`,
+          );
+        }
       }
     }
 

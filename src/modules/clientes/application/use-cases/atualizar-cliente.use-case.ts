@@ -1,10 +1,10 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { hashField } from '../../../../shared/database/transformers/encrypted-column.transformer';
 import { Cliente } from '../../domain/entities/cliente.entity';
 import { TabelaPreco, TipoPessoa } from '../../domain/entities/enums';
 import { CLIENTE_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { IClienteRepository } from '../../domain/ports/repositories/cliente-repository.port';
-import { normalizarTelefone, variantesTelefone } from '../utils/normalizadores';
+import { normalizarTelefone } from '../utils/normalizadores';
 
 /**
  * Atualiza o CADASTRO do cliente — os dados operacionais/ERP da tabela
@@ -66,26 +66,9 @@ export class AtualizarClienteUseCase {
 
     const emailHash = emailMudou ? (email ? hashField(email) : null) : atual.emailHash;
 
-    // As colunas de hash sao UNIQUE. Checar antes devolve 409 com mensagem
-    // util, em vez de deixar estourar violacao crua do Postgres como 500.
-    if (telefoneMudou && telefone1 && telefone1Hash) {
-      // Todas as formas equivalentes (nono digito, DDI) — o mesmo numero em
-      // outro formato ja pertence a outro cliente.
-      for (const variante of variantesTelefone(telefone1)) {
-        const dup = await this.repo.buscarPorTelefone1Hash(hashField(variante));
-        if (dup && dup.id !== id) {
-          throw new ConflictException(
-            `Ja existe cliente com esse telefone (id: ${dup.id})`,
-          );
-        }
-      }
-    }
-    if (emailMudou && emailHash) {
-      const dup = await this.repo.buscarPorEmailHash(emailHash);
-      if (dup && dup.id !== id) {
-        throw new ConflictException(`Ja existe cliente com esse email (id: ${dup.id})`);
-      }
-    }
+    // Sem checagem de duplicidade: telefone e e-mail deixaram de ser UNIQUE na
+    // migracao 36 — o mesmo numero pode pertencer a mais de um cliente. Ver o
+    // comentario longo em CriarClienteUseCase.
 
     const atualizado = Cliente.create({
       id: atual.id,

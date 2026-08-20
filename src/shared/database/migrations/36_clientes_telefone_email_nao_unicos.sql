@@ -1,0 +1,47 @@
+-- ============================================================
+-- A.T. JEWEL — Migracao 36: telefone e e-mail do cliente deixam de ser UNIQUE
+--
+-- POR QUE: em 19/08/2026 a integracao com o Safira comecou a receber 409 ao
+-- criar clientes:
+--
+--   ConflictException: Ja existe cliente com esse telefone (id: b8c583da-...)
+--
+-- Nao era duplicata. Era gente diferente com o mesmo numero — mae e filha,
+-- marido e mulher, o fixo da empresa no cadastro do dono, o telefone da loja
+-- digitado como placeholder. O ERP tem varios assim, e cada um desses ficava
+-- de fora do CRM: a criacao falhava e o registro simplesmente nunca entrava.
+--
+-- A TROCA DE ENTENDIMENTO: telefone e e-mail nao sao IDENTIDADE do cliente,
+-- sao DADO DE CONTATO. Quem identifica ja tem UNIQUE proprio:
+--
+--   clientes.id_erp                   identidade no ERP (migracao 34)
+--   clientes.codigo_erp               codigo da loja (migracao 03)
+--   clientes_perfil.whatsapp_hash     identidade do CANAL
+--
+-- O `whatsapp_hash` CONTINUA UNIQUE de proposito, e a diferenca importa: uma
+-- mensagem que chega precisa resolver para exatamente UM cliente, senao o
+-- roteamento da Anastasia nao tem como decidir com quem esta falando. Ali a
+-- unicidade e o que faz o mecanismo funcionar. No cadastro do ERP ela so
+-- barra gente legitima.
+--
+-- O QUE SE PERDE: a checagem em criar-cliente foi escrita para o mesmo numero
+-- nao entrar em dois formatos e partir o historico em dois. So que a Anastasia
+-- nunca deduplicou por `telefone_1_hash` — ela deduplica por `whatsapp_hash`,
+-- em BuscarClientePorWhatsappUseCase. A trava nunca cobriu o caso que ela
+-- pretendia cobrir.
+--
+-- CONSEQUENCIA A SABER: o fallback do lookup por `telefone_1_hash`, que ficou
+-- registrado como "decisao a parte" no CriarClienteDto, passa a poder achar
+-- mais de um cliente. Quando for feito, tem que tratar N resultados como
+-- ambiguidade — o mesmo padrao de CLIENTE_AMBIGUO que a tool avisar_vendedora
+-- ja usa — e nunca escolher um por conta propria.
+--
+-- Os indices de busca (idx_clientes_telefone_1_hash, idx_clientes_email_hash)
+-- PERMANECEM: eles sao o caminho de consulta por hash, independente de
+-- unicidade. So a restricao sai.
+--
+-- DROP CONSTRAINT IF EXISTS: idempotente, re-executavel. Sem CREATE TYPE.
+-- ============================================================
+
+ALTER TABLE clientes DROP CONSTRAINT IF EXISTS clientes_telefone_1_hash_key;
+ALTER TABLE clientes DROP CONSTRAINT IF EXISTS clientes_email_hash_key;

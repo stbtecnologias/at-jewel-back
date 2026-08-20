@@ -158,13 +158,29 @@ export class ClienteRepository implements IClienteRepository {
     return row ? this.toDomain(row) : null;
   }
 
+  /**
+   * ATENCAO: desde a migracao 36 a coluna NAO e mais unica — o mesmo telefone
+   * pode pertencer a varios clientes (mae e filha, fixo da empresa, etc.).
+   * Este metodo devolve o MAIS ANTIGO, so para ser deterministico.
+   *
+   * Quem for usar isto para decidir "de quem e esta mensagem" NAO pode confiar
+   * no resultado: tem que buscar a lista e tratar N > 1 como ambiguidade,
+   * do mesmo jeito que a tool avisar_vendedora faz com CLIENTE_AMBIGUO.
+   */
   async buscarPorTelefone1Hash(hash: string): Promise<Cliente | null> {
-    const row = await this.repo.findOne({ where: { telefone1Hash: hash } });
+    const row = await this.repo.findOne({
+      where: { telefone1Hash: hash },
+      order: { criadoEm: 'ASC' },
+    });
     return row ? this.toDomain(row) : null;
   }
 
+  /** Mesma ressalva do telefone: nao e mais unico desde a migracao 36. */
   async buscarPorEmailHash(hash: string): Promise<Cliente | null> {
-    const row = await this.repo.findOne({ where: { emailHash: hash } });
+    const row = await this.repo.findOne({
+      where: { emailHash: hash },
+      order: { criadoEm: 'ASC' },
+    });
     return row ? this.toDomain(row) : null;
   }
 
