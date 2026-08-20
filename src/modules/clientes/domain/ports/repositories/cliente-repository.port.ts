@@ -2,6 +2,17 @@ import { Cliente } from '../../entities/cliente.entity';
 import { ClientePerfil } from '../../entities/cliente-perfil.entity';
 import { TabelaPreco } from '../../entities/enums';
 
+/** Uma linha de resposta sobre a carteira. Sem telefone e sem e-mail. */
+export interface ClienteDaCarteira {
+  id: string;
+  nome: string;
+  /** Nula quando o cliente nunca comprou. */
+  ultimaCompra: Date | null;
+  /** Quantidade de itens no recorte (ou de compras, quando sem categoria). */
+  quantidade: number;
+  valorTotal: number;
+}
+
 export interface FiltroCliente {
   ativo?: boolean;
   tabelaPreco?: TabelaPreco;
@@ -67,6 +78,36 @@ export interface IClienteRepository {
    * lembra. O limite existe para responder "achei varios" sem varrer a base.
    */
   buscarPorNomeParcial(termo: string, limite: number): Promise<Cliente[]>;
+
+  /**
+   * Clientes da carteira de UMA vendedora que estao ha `meses` sem comprar,
+   * do mais parado para o menos.
+   *
+   * A carteira sai de `clientes.vendedora_codigo_erp`. O codigo e parametro
+   * obrigatorio da consulta — nao existe versao sem recorte, entao nao existe
+   * caminho para a carteira de outra pessoa.
+   *
+   * Cliente que NUNCA comprou entra na lista, com `ultimaCompra` nula: para
+   * quem vai ligar, "nunca comprou" e tao relevante quanto "faz oito meses".
+   */
+  inativosDaCarteira(
+    vendedoraCodigoErp: string,
+    meses: number,
+    limite: number,
+  ): Promise<ClienteDaCarteira[]>;
+
+  /**
+   * Os maiores compradores da carteira, opcionalmente de uma categoria de
+   * produto ("Anel", "Colar").
+   *
+   * Conta TODAS as compras do cliente, nao so as vendas daquela vendedora: a
+   * pergunta e sobre o comportamento do cliente, e a carteira e o recorte
+   * (decisao do Lucas, 20/08/2026).
+   */
+  maioresCompradoresDaCarteira(
+    vendedoraCodigoErp: string,
+    opcoes: { categoria?: string; desde?: Date; limite: number },
+  ): Promise<ClienteDaCarteira[]>;
   buscarPorTelefone1Hash(hash: string): Promise<Cliente | null>;
   buscarPorEmailHash(hash: string): Promise<Cliente | null>;
 

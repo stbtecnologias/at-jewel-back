@@ -9,6 +9,7 @@ import { VendedorasModule } from '../vendedoras/vendedoras.module';
 import { LlmModule } from '../agentes/llm.module';
 import { ConsultarAgendaVendedoraUseCase } from './application/use-cases/consultar-agenda-vendedora.use-case';
 import { ConsultarDesempenhoVendedoraUseCase } from './application/use-cases/consultar-desempenho-vendedora.use-case';
+import { ConsultarCarteiraVendedoraUseCase } from './application/use-cases/consultar-carteira-vendedora.use-case';
 import { ConsultarProdutosVendedoraUseCase } from './application/use-cases/consultar-produtos-vendedora.use-case';
 import { DispararPendenciasUseCase } from './application/use-cases/disparar-pendencias.use-case';
 import { ProcessarMensagemInternaUseCase } from './application/use-cases/processar-mensagem-interna.use-case';
@@ -48,6 +49,7 @@ import { AtendimentoRepository } from './infrastructure/database/typeorm/reposit
     ConsultarAgendaVendedoraUseCase,
     ConsultarDesempenhoVendedoraUseCase,
     ConsultarProdutosVendedoraUseCase,
+    ConsultarCarteiraVendedoraUseCase,
     PendenciasScheduler,
     ProcessarRelatoVendedoraUseCase,
     ProcessarMensagemInternaUseCase,

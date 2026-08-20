@@ -150,6 +150,26 @@ export type ConsultarProdutosHandler = (
   input: ConsultarProdutosLlmInput,
 ) => Promise<ConsultarProdutosLlmResultado>;
 
+// Handlers das tools de CARTEIRA, do canal INTERNO. Mesma regra: sem "de
+// quem" no input — o codigo da vendedora entra por closure.
+export interface ClienteDaCarteiraLlm {
+  /** Uma linha pronta: nome, ultima compra, quanto/quantas vezes. */
+  linha: string;
+}
+
+export interface ConsultarCarteiraLlmResultado {
+  clientes: ClienteDaCarteiraLlm[];
+}
+
+export type ClientesSemComprarHandler = (input: {
+  meses: number;
+}) => Promise<ConsultarCarteiraLlmResultado>;
+
+export type MelhoresClientesHandler = (input: {
+  categoria?: string;
+  ultimosMeses?: number;
+}) => Promise<ConsultarCarteiraLlmResultado>;
+
 export interface ChatParams {
   model: string;
   system: string;
@@ -168,6 +188,9 @@ export interface ChatParams {
   consultarMetas?: ConsultarMetasHandler;
   // Idem para `consultar_produtos`.
   consultarProdutos?: ConsultarProdutosHandler;
+  // Idem para as duas de carteira.
+  clientesSemComprar?: ClientesSemComprarHandler;
+  melhoresClientes?: MelhoresClientesHandler;
   /**
    * Habilita `gerar_grafico`. Default true, que preserva o painel.
    *

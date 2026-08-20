@@ -13,13 +13,19 @@ import { ProcessarMensagemInternaUseCase } from './processar-mensagem-interna.us
  * usado e o da vendedora identificada, e nao um vindo de fora.
  */
 describe('ProcessarMensagemInternaUseCase', () => {
-  const VENDEDORA = { id: 'vd-1', nome: 'Marina Albuquerque', ativo: true };
+  const VENDEDORA = {
+    id: 'vd-1',
+    nome: 'Marina Albuquerque',
+    codigoErp: 'SEED-VD01',
+    ativo: true,
+  };
 
   let identificar: { execute: jest.Mock };
   let relato: { execute: jest.Mock };
   let agenda: { execute: jest.Mock };
   let desempenho: { vendas: jest.Mock; metas: jest.Mock };
   let produtos: { execute: jest.Mock };
+  let carteira: { semComprar: jest.Mock; maioresCompradores: jest.Mock };
   let atendimentos: { buscarCobrancaAguardando: jest.Mock };
   let clientes: { buscarPorId: jest.Mock };
   let llm: { chatComFerramentas: jest.Mock; chat: jest.Mock };
@@ -47,6 +53,10 @@ describe('ProcessarMensagemInternaUseCase', () => {
         },
       ]),
     };
+    carteira = {
+      semComprar: jest.fn().mockResolvedValue([]),
+      maioresCompradores: jest.fn().mockResolvedValue([]),
+    };
     atendimentos = { buscarCobrancaAguardando: jest.fn().mockResolvedValue(null) };
     clientes = { buscarPorId: jest.fn().mockResolvedValue({ nome: 'Helena Gomes' }) };
     llm = {
@@ -60,6 +70,7 @@ describe('ProcessarMensagemInternaUseCase', () => {
       agenda as never,
       desempenho as never,
       produtos as never,
+      carteira as never,
       atendimentos as never,
       clientes as never,
       llm as never,
@@ -131,6 +142,20 @@ describe('ProcessarMensagemInternaUseCase', () => {
       expect(linha).toContain('7.490,37');
       expect(linha).toContain('1 em estoque');
       expect(linha).not.toMatch(/custo|margem/i);
+    });
+
+    // A carteira e por `codigo_erp` — o mesmo campo do avisar_vendedora.
+    it('a carteira consultada e sempre a da vendedora identificada', async () => {
+      await useCase.execute({ de: '558586467241@c.us', texto: 'quem está parado?' });
+
+      await params().clientesSemComprar!({ meses: 6 });
+      await params().melhoresClientes!({ categoria: 'Anel' });
+
+      expect(carteira.semComprar).toHaveBeenCalledWith('SEED-VD01', 6);
+      expect(carteira.maioresCompradores).toHaveBeenCalledWith('SEED-VD01', {
+        categoria: 'Anel',
+        ultimosMeses: undefined,
+      });
     });
 
     it('o relato guarda a FRASE DELA, nao o que o modelo entendeu', async () => {

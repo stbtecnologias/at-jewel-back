@@ -11,6 +11,7 @@ import { ATENDIMENTO_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { IAtendimentoRepository } from '../../domain/ports/repositories/atendimento-repository.port';
 import { ConsultarAgendaVendedoraUseCase } from './consultar-agenda-vendedora.use-case';
 import { ConsultarDesempenhoVendedoraUseCase } from './consultar-desempenho-vendedora.use-case';
+import { ConsultarCarteiraVendedoraUseCase } from './consultar-carteira-vendedora.use-case';
 import { ConsultarProdutosVendedoraUseCase } from './consultar-produtos-vendedora.use-case';
 import { ProcessarRelatoVendedoraUseCase } from './processar-relato-vendedora.use-case';
 
@@ -70,6 +71,7 @@ export class ProcessarMensagemInternaUseCase {
     private readonly agenda: ConsultarAgendaVendedoraUseCase,
     private readonly desempenho: ConsultarDesempenhoVendedoraUseCase,
     private readonly produtos: ConsultarProdutosVendedoraUseCase,
+    private readonly carteira: ConsultarCarteiraVendedoraUseCase,
     @Inject(ATENDIMENTO_REPOSITORY)
     private readonly atendimentos: IAtendimentoRepository,
     @Inject(CLIENTE_REPOSITORY)
@@ -91,6 +93,10 @@ export class ProcessarMensagemInternaUseCase {
 
     const vendedoraId = vendedora.id;
     const primeiroNome = vendedora.nome.trim().split(/\s+/)[0];
+    // A carteira e por codigo do ERP, nao por id — e o mesmo campo que o
+    // avisar_vendedora usa. Vendedora sem codigo simplesmente nao tem
+    // carteira, e as ferramentas devolvem vazio.
+    const codigoErp = vendedora.codigoErp;
 
     // O que o agente precisa saber antes de decidir. Pre-carregado como DADO,
     // do mesmo jeito que a Anastasia do painel recebe o contexto da aba.
@@ -152,6 +158,28 @@ export class ProcessarMensagemInternaUseCase {
                 `${p.codigo ? ` — código ${p.codigo}` : ''}: ` +
                 `${moeda(p.precoVenda)}, ` +
                 `${p.emEstoque === 0 ? 'sem estoque' : `${p.emEstoque} em estoque`}`,
+            })),
+          };
+        },
+        clientesSemComprar: async ({ meses }) => {
+          const achados = await this.carteira.semComprar(codigoErp, meses);
+          return {
+            clientes: achados.map((c) => ({
+              linha: c.ultimaCompra
+                ? `${c.nome} — última compra em ${c.ultimaCompra.toLocaleDateString(`pt-BR`)}, ${c.quantidade} ${c.quantidade === 1 ? `compra` : `compras`} no total`
+                : `${c.nome} — nunca comprou`,
+            })),
+          };
+        },
+        melhoresClientes: async ({ categoria, ultimosMeses }) => {
+          const achados = await this.carteira.maioresCompradores(codigoErp, {
+            categoria,
+            ultimosMeses,
+          });
+          const unidade = categoria ? `peça` : `compra`;
+          return {
+            clientes: achados.map((c) => ({
+              linha: `${c.nome} — ${c.quantidade} ${c.quantidade === 1 ? unidade : unidade + `s`}, ${moeda(c.valorTotal)}`,
             })),
           };
         },

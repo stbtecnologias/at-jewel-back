@@ -144,6 +144,44 @@ const PRODUTOS_TOOL: Anthropic.Tool = {
   },
 };
 
+const SEM_COMPRAR_TOOL: Anthropic.Tool = {
+  name: 'clientes_sem_comprar',
+  description:
+    'Lista clientes DA CARTEIRA DELA que estao ha algum tempo sem comprar, do mais parado para o menos. Use quando ela perguntar quem esta sumido, parado, ha quanto tempo alguem nao compra, ou quem ela deveria procurar. Inclui quem nunca comprou. So enxerga a carteira dela.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      meses: {
+        type: 'integer',
+        description:
+          'Quantos meses sem comprar. Se ela nao disser um numero, use 6.',
+      },
+    },
+    required: ['meses'],
+  },
+};
+
+const MELHORES_TOOL: Anthropic.Tool = {
+  name: 'melhores_clientes',
+  description:
+    'Lista os clientes DA CARTEIRA DELA que mais compraram, do maior para o menor. Sem categoria conta COMPRAS ("quem mais compra de mim"); com categoria conta PECAS daquele tipo ("quem comprou mais aneis"). So enxerga a carteira dela.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      categoria: {
+        type: 'string',
+        description:
+          'Categoria da peca, no singular, como aparece no catalogo: "Anel", "Colar", "Brinco", "Pulseira", "Pingente", "Alianca". Omita para contar todas as compras.',
+      },
+      ultimos_meses: {
+        type: 'integer',
+        description:
+          'Recorte de periodo, em meses. Omita para considerar o historico inteiro.',
+      },
+    },
+  },
+};
+
 const RELATO_TOOL: Anthropic.Tool = {
   name: 'registrar_relato',
   description:
@@ -259,6 +297,8 @@ export class AnthropicClient implements ILlmClient {
     if (params.consultarVendas) tools.push(VENDAS_TOOL);
     if (params.consultarMetas) tools.push(METAS_TOOL);
     if (params.consultarProdutos) tools.push(PRODUTOS_TOOL);
+    if (params.clientesSemComprar) tools.push(SEM_COMPRAR_TOOL);
+    if (params.melhoresClientes) tools.push(MELHORES_TOOL);
 
     const first = await this.client.messages.create({
       model: params.model,
@@ -375,6 +415,42 @@ export class AnthropicClient implements ILlmClient {
             return (
               `Pecas encontradas:\n${produtos.map((p) => `- ${p.linha}`).join('\n')}\n\n` +
               'Repasse os precos e quantidades exatamente como estao. Se ela pedir custo ou margem, diga que voce nao consegue ver isso.'
+            );
+          }),
+        );
+      } else if (toolUse.name === 'clientes_sem_comprar' && params.clientesSemComprar) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const entrada = toolUse.input as { meses?: number };
+            const { clientes } = await params.clientesSemComprar!({
+              meses: Number(entrada.meses) > 0 ? Number(entrada.meses) : 6,
+            });
+            if (clientes.length === 0) {
+              return 'Nenhum cliente da carteira dela esta parado nesse periodo. Diga isso em uma frase.';
+            }
+            return (
+              `Clientes parados:\n${clientes.map((c) => `- ${c.linha}`).join(`\n`)}\n\n` +
+              'Repasse os nomes e as datas exatamente como estao.'
+            );
+          }),
+        );
+      } else if (toolUse.name === 'melhores_clientes' && params.melhoresClientes) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const entrada = toolUse.input as {
+              categoria?: string;
+              ultimos_meses?: number;
+            };
+            const { clientes } = await params.melhoresClientes!({
+              categoria: entrada.categoria,
+              ultimosMeses: entrada.ultimos_meses,
+            });
+            if (clientes.length === 0) {
+              return 'Nenhuma compra encontrada na carteira dela com esse recorte. Diga isso em uma frase.';
+            }
+            return (
+              `Maiores compradores:\n${clientes.map((c) => `- ${c.linha}`).join(`\n`)}\n\n` +
+              'Repasse os nomes e numeros exatamente como estao.'
             );
           }),
         );
