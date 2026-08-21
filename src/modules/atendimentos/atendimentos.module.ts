@@ -21,6 +21,7 @@ import { ResolverVendedoraPorNomeUseCase } from './application/use-cases/resolve
 import { RotearMensagemInternaUseCase } from './application/use-cases/rotear-mensagem-interna.use-case';
 import { ProcessarRelatoVendedoraUseCase } from './application/use-cases/processar-relato-vendedora.use-case';
 import { FerramentasGestaoService } from './application/ferramentas-gestao.service';
+import { FerramentasVendedoraService } from './application/ferramentas-vendedora.service';
 import { MemoriaConversaService } from './application/memoria-conversa.service';
 import { AgendarContatoGestaoUseCase } from './application/use-cases/agendar-contato-gestao.use-case';
 import { PendenciasScheduler } from './infrastructure/schedule/pendencias.scheduler';
@@ -70,6 +71,7 @@ import { AtendimentoRepository } from './infrastructure/database/typeorm/reposit
     // para o processo inteiro, que e onde o Map vive.
     MemoriaConversaService,
     FerramentasGestaoService,
+    FerramentasVendedoraService,
     PendenciasScheduler,
     ProcessarRelatoVendedoraUseCase,
     ProcessarMensagemInternaUseCase,
@@ -87,6 +89,7 @@ import { AtendimentoRepository } from './infrastructure/database/typeorm/reposit
     // O painel usa AS MESMAS ferramentas da gestao que o WhatsApp usa. Um
     // lugar so, para as duas portas nao divergirem na primeira correcao.
     FerramentasGestaoService,
+    FerramentasVendedoraService,
   ],
 })
 export class AtendimentosModule {}

@@ -38,6 +38,7 @@ import { AgentesController } from './infrastructure/http/controllers/agentes.con
     // VendasModule e folha (TypeORM + Auth): entra sem risco de ciclo, e traz
     // o repositorio que resolve login -> vendedora.
     VendasModule,
+    VendedorasModule,
     // Audio gravado no painel vira texto em POST /agentes/transcrever.
     TranscricaoModule,
     // Reusa o CriarDemandaUseCase na tool registrar_demanda da Anastasia (RF-24).
@@ -46,7 +47,6 @@ import { AgentesController } from './infrastructure/http/controllers/agentes.con
     // envia pelo WAHA e registra o evento. O gateway vem do modulo isolado
     // para nao fechar ciclo com o AtendimentoModule, que importa este aqui.
     ClientesModule,
-    VendedorasModule,
     WhatsappGatewayModule,
     AgenteEventosModule,
     AtendimentosModule,

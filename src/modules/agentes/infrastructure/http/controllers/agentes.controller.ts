@@ -123,8 +123,21 @@ export class AgentesController {
   @Post('elena/chat')
   @Permissions('agentes:elena')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
-  async elenaChat(@Body() dto: ChatDto) {
-    return this.chatElena.execute(dto.messages, dto.contexto);
+  async elenaChat(
+    @Body() dto: ChatDto,
+    @Req() req: { user?: { sub?: string; email?: string; role?: string } },
+  ) {
+    // O solicitante define o ESCOPO: as ferramentas dela sao montadas sobre a
+    // vendedora vinculada a este login. Sem login vinculado, sem ferramenta.
+    const solicitante =
+      req.user?.sub
+        ? {
+            userId: req.user.sub,
+            nomeFallback: req.user.email ?? req.user.sub,
+            role: req.user.role,
+          }
+        : undefined;
+    return this.chatElena.execute(dto.messages, dto.contexto, solicitante);
   }
 
   @Get('elena/produto/:produtoId')
