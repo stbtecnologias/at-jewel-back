@@ -65,7 +65,7 @@ export class CriarUsuarioUseCase {
       const digitos = normalizarTelefone(telefoneLimpo);
       if (digitos.length < 10 || digitos.length > 13) {
         throw new BadRequestException(
-          'Telefone inválido. Use DDD + número, ex.: (85) 98646-7241',
+          'Telefone inválido. Use DDD + número, ex.: (99) 99999-9999',
         );
       }
       for (const variante of variantesTelefone(telefoneLimpo)) {

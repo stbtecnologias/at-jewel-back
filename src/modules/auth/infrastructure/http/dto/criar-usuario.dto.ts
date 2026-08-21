@@ -38,7 +38,7 @@ export class CriarUsuarioDto {
   @IsString()
   @MaxLength(24)
   @Matches(/^\+?\s*(55)?[\s(-]*\d{2}[\s)-]*\d{4,5}[\s-]*\d{4}$/, {
-    message: 'Telefone inválido. Use DDD + número, ex.: (85) 98646-7241',
+    message: 'Telefone inválido. Use DDD + número, ex.: (99) 99999-9999',
   })
   telefone?: string;
 
