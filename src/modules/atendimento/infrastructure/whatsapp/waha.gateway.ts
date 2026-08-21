@@ -105,4 +105,72 @@ export class WahaGateway implements IWhatsappGateway {
       throw new Error(`WAHA sendText retornou ${resp.status}`);
     }
   }
+
+  async baixarMidia(
+    url: string,
+  ): Promise<{ conteudo: Buffer; mimetype: string } | null> {
+    const baseUrl = this.config.get<string>('WAHA_BASE_URL');
+    const apiKey = this.config.get<string>('WAHA_API_KEY');
+
+    if (!baseUrl || !apiKey) {
+      this.logger.warn('WAHA_BASE_URL/WAHA_API_KEY ausentes — midia nao baixada.');
+      return null;
+    }
+
+    const alvo = montarUrlDeArquivo(baseUrl, url);
+    if (!alvo) {
+      // Ver `montarUrlDeArquivo`: caminho fora de /api/files nao e nosso.
+      this.logger.warn('URL de midia com caminho inesperado — download recusado.');
+      return null;
+    }
+
+    try {
+      const resp = await fetch(alvo, {
+        headers: { 'X-Api-Key': apiKey },
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (!resp.ok) {
+        this.logger.error(`WAHA download de midia falhou: ${resp.status}`);
+        return null;
+      }
+      const conteudo = Buffer.from(await resp.arrayBuffer());
+      const mimetype =
+        resp.headers.get('content-type') ?? 'application/octet-stream';
+      return { conteudo, mimetype };
+    } catch (err) {
+      // Igual ao resolverRemetente: nunca derruba o webhook. Sem o audio, a
+      // mensagem so nao e entendida.
+      this.logger.error(
+        `Falha ao baixar midia do WAHA: ${err instanceof Error ? err.message : err}`,
+      );
+      return null;
+    }
+  }
+}
+
+/**
+ * Recompoe a URL do arquivo sobre o host que NOS alcancamos.
+ *
+ * O WAHA devolve `http://waha:3000/api/files/...` — hostname da rede Docker
+ * dele, que daqui nao resolve. Ficamos so com o caminho.
+ *
+ * E o caminho e conferido de proposito. O `url` chega de um payload externo;
+ * mesmo com o webhook protegido por token, aceitar qualquer caminho faria este
+ * metodo buscar o que mandassem, com a nossa `X-Api-Key` no cabecalho. Aceitar
+ * so `/api/files/` custa uma linha e fecha isso.
+ *
+ * @returns a URL a usar, ou `null` se o caminho nao for de arquivo do WAHA.
+ */
+function montarUrlDeArquivo(baseUrl: string, url: string): string | null {
+  let caminho: string;
+  try {
+    const u = new URL(url);
+    caminho = u.pathname + u.search;
+  } catch {
+    // Veio caminho relativo em vez de URL completa — tambem serve.
+    caminho = url.startsWith('/') ? url : `/${url}`;
+  }
+
+  if (!caminho.startsWith('/api/files/')) return null;
+  return `${baseUrl.replace(/\/$/, '')}${caminho}`;
 }

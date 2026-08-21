@@ -9,7 +9,7 @@ import { AvisarVendedoraUseCase } from './avisar-vendedora.use-case';
 function makeLlmMock(): jest.Mocked<ILlmClient> {
   return {
     chat: jest.fn(),
-    chatComGrafico: jest.fn().mockResolvedValue({ texto: 'ok', tokens: 1 }),
+    chatComFerramentas: jest.fn().mockResolvedValue({ texto: 'ok', tokens: 1 }),
   } as unknown as jest.Mocked<ILlmClient>;
 }
 
@@ -54,7 +54,7 @@ describe('ChatAnastasiaUseCase (tool registrar_demanda)', () => {
   it('nao habilita a tool quando nao ha solicitante identificado', async () => {
     await useCase.execute(mensagens, undefined, undefined);
 
-    const params = llm.chatComGrafico.mock.calls[0][0] as ChatParams;
+    const params = llm.chatComFerramentas.mock.calls[0][0] as ChatParams;
     expect(params.registrarDemanda).toBeUndefined();
   });
 
@@ -66,7 +66,7 @@ describe('ChatAnastasiaUseCase (tool registrar_demanda)', () => {
       nomeFallback: 'ana@atjewel.com',
     });
 
-    const params = llm.chatComGrafico.mock.calls[0][0] as ChatParams;
+    const params = llm.chatComFerramentas.mock.calls[0][0] as ChatParams;
     expect(params.registrarDemanda).toBeDefined();
 
     // Simula o dispatch da tool pelo cliente LLM.

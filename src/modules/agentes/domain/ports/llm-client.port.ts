@@ -59,15 +59,257 @@ export type AvisarVendedoraHandler = (
   input: AvisarVendedoraLlmInput,
 ) => Promise<AvisarVendedoraLlmResultado>;
 
+// Handler da tool `consultar_agenda`, do canal INTERNO de WhatsApp.
+//
+// REPARE NO QUE NAO EXISTE AQUI: nao ha `vendedoraId` no input. A identidade
+// vem do telefone resolvido na entrada do canal e fica fechada no handler, por
+// closure. O modelo escolhe o PERIODO e mais nada — nao existe parametro para
+// "a agenda da Beatriz", entao nenhuma frase alcanca outra vendedora.
+export type PeriodoAgendaLlm = 'HOJE' | 'AMANHA' | 'SEMANA';
+
+export interface ConsultarAgendaLlmInput {
+  periodo: PeriodoAgendaLlm;
+}
+
+export interface CompromissoLlm {
+  cliente: string;
+  /** Ja formatado ("hoje as 15:00", "sexta as 10:00"). */
+  quando: string;
+  ocasiao?: string;
+}
+
+export interface ConsultarAgendaLlmResultado {
+  compromissos: CompromissoLlm[];
+}
+
+export type ConsultarAgendaHandler = (
+  input: ConsultarAgendaLlmInput,
+) => Promise<ConsultarAgendaLlmResultado>;
+
+// Handler da tool `registrar_relato`, do canal INTERNO.
+//
+// SEM PARAMETROS, de proposito. O relato guardado tem que ser a FRASE DELA, e
+// nao o que o modelo entendeu dela — resumo alucina. O handler le a mensagem
+// original e entrega ao extrator de sempre. O modelo aqui decide apenas UMA
+// coisa: se a mensagem e sobre o contato pendente ou nao.
+export interface RegistrarRelatoLlmResultado {
+  status: 'SEM_PENDENCIA' | 'NAO_ENTENDI' | 'REGISTRADO';
+  /** Frase pronta para o modelo repassar, quando registrou. */
+  mensagem: string;
+}
+
+export type RegistrarRelatoHandler = () => Promise<RegistrarRelatoLlmResultado>;
+
+// Handlers das tools de desempenho, do canal INTERNO. Mesma regra das
+// outras: sem "de quem" no input. O periodo e a unica escolha do modelo.
+export type PeriodoVendasLlm = 'HOJE' | 'SEMANA' | 'MES';
+
+export interface ConsultarVendasLlmInput {
+  periodo: PeriodoVendasLlm;
+}
+
+export interface ConsultarVendasLlmResultado {
+  /** Ja formatado ("3 vendas, R$ 12.400,00, ticket medio R$ 4.133,33"). */
+  resumo: string;
+}
+
+export type ConsultarVendasHandler = (
+  input: ConsultarVendasLlmInput,
+) => Promise<ConsultarVendasLlmResultado>;
+
+export interface MetaLlm {
+  /** Uma linha pronta por meta, com alvo, realizado e quanto falta. */
+  linha: string;
+}
+
+export interface ConsultarMetasLlmResultado {
+  metas: MetaLlm[];
+}
+
+export type ConsultarMetasHandler = () => Promise<ConsultarMetasLlmResultado>;
+
+// Handler da tool `consultar_produtos`, do canal INTERNO.
+//
+// Unica ferramenta do canal que nao e restrita a pessoa: catalogo e da loja.
+// O corte aqui e por CAMPO — o resultado nao carrega custo nem margem, entao
+// nao ha o que revelar mesmo sob instrucao no meio da conversa.
+export interface ConsultarProdutosLlmInput {
+  busca: string;
+}
+
+export interface ProdutoLlm {
+  /** Uma linha pronta: descricao, preco e quantidade. */
+  linha: string;
+}
+
+export interface ConsultarProdutosLlmResultado {
+  produtos: ProdutoLlm[];
+}
+
+export type ConsultarProdutosHandler = (
+  input: ConsultarProdutosLlmInput,
+) => Promise<ConsultarProdutosLlmResultado>;
+
+// Handlers das tools de CARTEIRA, do canal INTERNO. Mesma regra: sem "de
+// quem" no input — o codigo da vendedora entra por closure.
+export interface ClienteDaCarteiraLlm {
+  /** Uma linha pronta: nome, ultima compra, quanto/quantas vezes. */
+  linha: string;
+}
+
+export interface ConsultarCarteiraLlmResultado {
+  clientes: ClienteDaCarteiraLlm[];
+}
+
+export type ClientesSemComprarHandler = (input: {
+  meses: number;
+}) => Promise<ConsultarCarteiraLlmResultado>;
+
+export type MelhoresClientesHandler = (input: {
+  categoria?: string;
+  ultimosMeses?: number;
+}) => Promise<ConsultarCarteiraLlmResultado>;
+
+// Handler da tool `agendar_contato`, do canal INTERNO. UNICA ferramenta do
+// canal que ESCREVE — por isso o resultado e fechado, com um status por
+// caminho, e a frase de volta e montada pelo servidor.
+export type StatusAgendamentoLlm =
+  | 'AGENDADO'
+  | 'CLIENTE_NAO_ENCONTRADO'
+  | 'CLIENTE_AMBIGUO'
+  | 'HORARIO_INVALIDO'
+  | 'ATENDIMENTO_DE_OUTRA_PESSOA';
+
+export interface AgendarContatoLlmInput {
+  cliente: string;
+  /** Horario em ISO 8601 com fuso, calculado a partir da data de hoje. */
+  quandoIso: string;
+}
+
+export interface AgendarContatoLlmResultado {
+  status: StatusAgendamentoLlm;
+  /** Frase pronta para o modelo repassar. Sem dado de terceiros. */
+  mensagem: string;
+}
+
+export type AgendarContatoHandler = (
+  input: AgendarContatoLlmInput,
+) => Promise<AgendarContatoLlmResultado>;
+
+
+// ===========================================================================
+// GESTAO — o espelho das ferramentas da vendedora, COM o parametro "de quem".
+//
+// SAO TIPOS SEPARADOS, e nao um parametro opcional nos handlers da vendedora.
+// A diferenca e a coisa toda: se `consultarAgenda` aceitasse um `vendedora?`,
+// bastaria o modelo preencher esse campo no canal dela para o escopo cair. Aqui
+// nao ha o que preencher — o canal da vendedora recebe handlers que nao tem o
+// parametro, e o da gestao recebe outros. A separacao e por AUSENCIA DE
+// CAMINHO, nao por regra de prompt.
+// ===========================================================================
+
+/**
+ * Resposta comum das leituras de gestao.
+ *
+ * Carrega o resultado da RESOLUCAO DO NOME junto com os dados, porque as duas
+ * coisas chegam ao modelo pelo mesmo caminho: "achei a Marina e a agenda dela e
+ * esta" ou "tem duas Marinas, pergunte qual". Sem isso o modelo teria que
+ * adivinhar o que aconteceu a partir de uma lista vazia.
+ */
+export interface GestaoLeituraResultado {
+  status: 'OK' | 'NAO_ENCONTRADA' | 'AMBIGUA';
+  /** Nome como esta cadastrado, quando resolveu. */
+  vendedora?: string;
+  /** Uma linha pronta por item. Vazio e resultado legitimo: nao ha nada. */
+  linhas: string[];
+  /** Nomes para desambiguar (AMBIGUA) ou sugerir (NAO_ENCONTRADA). */
+  nomes?: string[];
+}
+
+export type GestaoAgendaHandler = (input: {
+  vendedora: string;
+  periodo: PeriodoAgendaLlm;
+}) => Promise<GestaoLeituraResultado>;
+
+export type GestaoVendasHandler = (input: {
+  vendedora: string;
+  periodo: PeriodoVendasLlm;
+}) => Promise<GestaoLeituraResultado>;
+
+export type GestaoMetasHandler = (input: {
+  vendedora: string;
+}) => Promise<GestaoLeituraResultado>;
+
+/** Comparativo da equipe inteira — nao resolve nome, entao nao tem status. */
+export type GestaoPanoramaHandler = (input: {
+  periodo: PeriodoVendasLlm;
+}) => Promise<{ linhas: string[] }>;
+
+/**
+ * De quem e este cliente. EXCLUSIVA DA GESTAO — e literalmente a pergunta que
+ * a vendedora nao pode fazer (ver ELENA_INTERNA_SYSTEM).
+ */
+export type GestaoCarteiraDoClienteHandler = (input: {
+  cliente: string;
+}) => Promise<{
+  status: 'OK' | 'NAO_ENCONTRADO' | 'AMBIGUO';
+  linhas: string[];
+}>;
+
+/**
+ * Agendar pela gestao. Diferente do `AgendarContatoHandler` da vendedora em
+ * duas coisas: aceita PARA QUEM, e pode voltar SEM TER ESCRITO NADA quando o
+ * cliente e de outra carteira e ninguem decidiu o que fazer.
+ *
+ * O `modo` chega na SEGUNDA chamada, depois de a pessoa responder. Quem
+ * relembra os outros parametros e a memoria de conversa — por isso nao ha
+ * ferramenta separada de confirmacao, nem estado guardado no servidor.
+ */
+export type GestaoAgendarHandler = (input: {
+  cliente: string;
+  vendedora: string;
+  quandoIso: string;
+  modo?: 'OCASIONAL' | 'TRANSFERIR';
+}) => Promise<{ mensagem: string }>;
+
 export interface ChatParams {
   model: string;
   system: string;
   maxTokens: number;
   mensagens: MensagemAgente[];
-  // Quando presente, habilita a tool `registrar_demanda` no chatComGrafico.
+  // Quando presente, habilita a tool `registrar_demanda` no chatComFerramentas.
   registrarDemanda?: RegistrarDemandaHandler;
   // Idem para `avisar_vendedora`.
   avisarVendedora?: AvisarVendedoraHandler;
+  // Idem para `consultar_agenda` — canal interno da vendedora.
+  consultarAgenda?: ConsultarAgendaHandler;
+  // Idem para `registrar_relato` — canal interno da vendedora.
+  registrarRelato?: RegistrarRelatoHandler;
+  // Idem para `consultar_vendas` e `consultar_metas`.
+  consultarVendas?: ConsultarVendasHandler;
+  consultarMetas?: ConsultarMetasHandler;
+  // Idem para `consultar_produtos`.
+  consultarProdutos?: ConsultarProdutosHandler;
+  // Idem para as duas de carteira.
+  clientesSemComprar?: ClientesSemComprarHandler;
+  melhoresClientes?: MelhoresClientesHandler;
+  // Idem para `agendar_contato` — a unica que escreve.
+  agendarContato?: AgendarContatoHandler;
+  // Canal da GESTAO. Nunca convivem com os de cima: quem monta os handlers e o
+  // use case, e cada canal monta so o seu conjunto.
+  gestaoAgenda?: GestaoAgendaHandler;
+  gestaoVendas?: GestaoVendasHandler;
+  gestaoMetas?: GestaoMetasHandler;
+  gestaoPanorama?: GestaoPanoramaHandler;
+  gestaoCarteiraDoCliente?: GestaoCarteiraDoClienteHandler;
+  gestaoAgendar?: GestaoAgendarHandler;
+  /**
+   * Habilita `gerar_grafico`. Default true, que preserva o painel.
+   *
+   * O canal de WhatsApp passa `false`: nao ha onde renderizar grafico numa
+   * conversa, e oferecer a ferramenta so convida o modelo a tentar.
+   */
+  graficos?: boolean;
 }
 
 export interface ChatResultado {
@@ -75,7 +317,7 @@ export interface ChatResultado {
   tokens: number;
 }
 
-export interface ChatComGraficoResultado extends ChatResultado {
+export interface ChatComFerramentasResultado extends ChatResultado {
   grafico?: GraficoDinamico;
 }
 
@@ -85,5 +327,5 @@ export interface ILlmClient {
   chat(params: ChatParams): Promise<ChatResultado>;
   // Variante que habilita a ferramenta gerar_grafico e resolve o ciclo
   // tool_use -> tool_result -> continuacao internamente.
-  chatComGrafico(params: ChatParams): Promise<ChatComGraficoResultado>;
+  chatComFerramentas(params: ChatParams): Promise<ChatComFerramentasResultado>;
 }

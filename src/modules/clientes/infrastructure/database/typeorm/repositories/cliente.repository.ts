@@ -4,6 +4,7 @@ import { DataSource, FindOptionsWhere, Repository } from 'typeorm';
 import { Cliente } from '../../../../domain/entities/cliente.entity';
 import { ClientePerfil } from '../../../../domain/entities/cliente-perfil.entity';
 import {
+  ClienteDaCarteira,
   FiltroCliente,
   FiltroDemografico,
   IClienteRepository,
@@ -182,6 +183,149 @@ export class ClienteRepository implements IClienteRepository {
       order: { criadoEm: 'ASC' },
     });
     return row ? this.toDomain(row) : null;
+  }
+
+  async transferirCarteira(
+    clienteId: string,
+    vendedoraCodigoErp: string | null,
+  ): Promise<void> {
+    await this.repo.update(clienteId, { vendedoraCodigoErp });
+  }
+
+  async buscarNaCarteiraPorNome(
+    vendedoraCodigoErp: string,
+    termo: string,
+    limite: number,
+  ): Promise<Cliente[]> {
+    // Escapa os curingas do LIKE: "%" digitado nao pode virar "traga todo
+    // mundo" — mesmo cuidado do buscarPorNomeParcial.
+    const alvo = termo.replace(/[\\%_]/g, (c) => '\\' + c);
+    const rows = await this.repo
+      .createQueryBuilder('c')
+      .where('c.vendedora_codigo_erp = :codigo', { codigo: vendedoraCodigoErp })
+      .andWhere('c.nome ILIKE :alvo', { alvo: '%' + alvo + '%' })
+      .andWhere('c.ativo = true')
+      .orderBy('c.nome', 'ASC')
+      .limit(limite)
+      .getMany();
+    return rows.map((r) => this.toDomain(r));
+  }
+
+  async inativosDaCarteira(
+    vendedoraCodigoErp: string,
+    meses: number,
+    limite: number,
+  ): Promise<ClienteDaCarteira[]> {
+    // LEFT JOIN, e nao INNER: quem NUNCA comprou tambem e resposta para
+    // "quem esta parado". Com INNER ele sumiria justamente por estar mais
+    // parado que todo mundo.
+    const rows = await this.repo.manager.query<
+      {
+        id: string;
+        nome: string;
+        ultima_compra: Date | null;
+        quantidade: string;
+        valor_total: string;
+      }[]
+    >(
+      `
+      SELECT c.id,
+             c.nome,
+             MAX(v.data_venda)               AS ultima_compra,
+             COUNT(v.id)                     AS quantidade,
+             COALESCE(SUM(v.valor_total), 0) AS valor_total
+      FROM clientes c
+      LEFT JOIN vendas v
+             ON v.cliente_id = c.id
+            AND v.status = 'concluida'
+      WHERE c.vendedora_codigo_erp = $1
+        AND c.ativo = TRUE
+      GROUP BY c.id, c.nome
+      HAVING MAX(v.data_venda) IS NULL
+          OR MAX(v.data_venda) < now() - ($2 || ' months')::interval
+      ORDER BY MAX(v.data_venda) ASC NULLS FIRST
+      LIMIT $3
+      `,
+      [vendedoraCodigoErp, String(meses), limite],
+    );
+
+    return rows.map((r) => ({
+      id: r.id,
+      nome: r.nome,
+      ultimaCompra: r.ultima_compra,
+      quantidade: Number(r.quantidade),
+      valorTotal: Number(r.valor_total),
+    }));
+  }
+
+  async maioresCompradoresDaCarteira(
+    vendedoraCodigoErp: string,
+    opcoes: { categoria?: string; desde?: Date; limite: number },
+  ): Promise<ClienteDaCarteira[]> {
+    // Com categoria a contagem e de ITENS (quantos aneis); sem categoria, de
+    // COMPRAS. Sao perguntas diferentes: "quem comprou mais aneis" e "quem
+    // mais compra de mim".
+    const params: unknown[] = [vendedoraCodigoErp];
+    let joinItens = '';
+    let filtroCategoria = '';
+    let quantidade = 'COUNT(DISTINCT v.id)';
+    let valor = 'COALESCE(SUM(v.valor_total), 0)';
+
+    if (opcoes.categoria) {
+      params.push(opcoes.categoria);
+      joinItens =
+        ' JOIN itens_venda i ON i.venda_id = v.id' +
+        ' JOIN produtos p ON p.id = i.produto_id';
+      filtroCategoria =
+        "AND p.categoria ILIKE '%' || $" + params.length + " || '%'";
+      quantidade = 'COALESCE(SUM(i.quantidade), 0)';
+      valor = 'COALESCE(SUM(i.valor_total_item), 0)';
+    }
+
+    let filtroData = '';
+    if (opcoes.desde) {
+      params.push(opcoes.desde);
+      filtroData = 'AND v.data_venda >= $' + params.length;
+    }
+
+    params.push(opcoes.limite);
+    const limite = '$' + params.length;
+
+    const rows = await this.repo.manager.query<
+      {
+        id: string;
+        nome: string;
+        ultima_compra: Date | null;
+        quantidade: string;
+        valor_total: string;
+      }[]
+    >(
+      `
+      SELECT c.id,
+             c.nome,
+             MAX(v.data_venda) AS ultima_compra,
+             ${quantidade}     AS quantidade,
+             ${valor}          AS valor_total
+      FROM clientes c
+      JOIN vendas v ON v.cliente_id = c.id AND v.status = 'concluida'${joinItens}
+      WHERE c.vendedora_codigo_erp = $1
+        AND c.ativo = TRUE
+        ${filtroCategoria}
+        ${filtroData}
+      GROUP BY c.id, c.nome
+      ORDER BY quantidade DESC, valor_total DESC
+      LIMIT ${limite}
+      `,
+      params,
+    );
+
+    return rows.map((r) => ({
+      id: r.id,
+      nome: r.nome,
+      ultimaCompra: r.ultima_compra,
+      quantidade: Number(r.quantidade),
+      valorTotal: Number(r.valor_total),
+    }));
   }
 
   async listar(filtros: FiltroCliente): Promise<Cliente[]> {

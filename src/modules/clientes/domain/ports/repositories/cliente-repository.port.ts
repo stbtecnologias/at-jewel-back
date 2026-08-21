@@ -2,6 +2,17 @@ import { Cliente } from '../../entities/cliente.entity';
 import { ClientePerfil } from '../../entities/cliente-perfil.entity';
 import { TabelaPreco } from '../../entities/enums';
 
+/** Uma linha de resposta sobre a carteira. Sem telefone e sem e-mail. */
+export interface ClienteDaCarteira {
+  id: string;
+  nome: string;
+  /** Nula quando o cliente nunca comprou. */
+  ultimaCompra: Date | null;
+  /** Quantidade de itens no recorte (ou de compras, quando sem categoria). */
+  quantidade: number;
+  valorTotal: number;
+}
+
 export interface FiltroCliente {
   ativo?: boolean;
   tabelaPreco?: TabelaPreco;
@@ -67,6 +78,51 @@ export interface IClienteRepository {
    * lembra. O limite existe para responder "achei varios" sem varrer a base.
    */
   buscarPorNomeParcial(termo: string, limite: number): Promise<Cliente[]>;
+
+  /**
+   * Clientes da carteira de UMA vendedora que estao ha `meses` sem comprar,
+   * do mais parado para o menos.
+   *
+   * A carteira sai de `clientes.vendedora_codigo_erp`. O codigo e parametro
+   * obrigatorio da consulta — nao existe versao sem recorte, entao nao existe
+   * caminho para a carteira de outra pessoa.
+   *
+   * Cliente que NUNCA comprou entra na lista, com `ultimaCompra` nula: para
+   * quem vai ligar, "nunca comprou" e tao relevante quanto "faz oito meses".
+   */
+  /**
+   * Clientes da carteira de UMA vendedora cujo nome casa com o termo.
+   *
+   * NAO E `buscarPorNomeParcial` COM FILTRO DEPOIS. O recorte entra no
+   * `WHERE`: cliente de fora da carteira nao e recusado, ele nao existe para
+   * esta consulta. A diferenca importa porque a RECUSA tambem vaza — dizer
+   * "esse cliente e de outra vendedora" ja conta que ele existe e que tem
+   * dona. Aqui a resposta e a mesma de nome errado: lista vazia.
+   */
+  buscarNaCarteiraPorNome(
+    vendedoraCodigoErp: string,
+    termo: string,
+    limite: number,
+  ): Promise<Cliente[]>;
+
+  inativosDaCarteira(
+    vendedoraCodigoErp: string,
+    meses: number,
+    limite: number,
+  ): Promise<ClienteDaCarteira[]>;
+
+  /**
+   * Os maiores compradores da carteira, opcionalmente de uma categoria de
+   * produto ("Anel", "Colar").
+   *
+   * Conta TODAS as compras do cliente, nao so as vendas daquela vendedora: a
+   * pergunta e sobre o comportamento do cliente, e a carteira e o recorte
+   * (decisao do Lucas, 20/08/2026).
+   */
+  maioresCompradoresDaCarteira(
+    vendedoraCodigoErp: string,
+    opcoes: { categoria?: string; desde?: Date; limite: number },
+  ): Promise<ClienteDaCarteira[]>;
   buscarPorTelefone1Hash(hash: string): Promise<Cliente | null>;
   buscarPorEmailHash(hash: string): Promise<Cliente | null>;
 
@@ -77,6 +133,19 @@ export interface IClienteRepository {
   listar(filtros: FiltroCliente): Promise<Cliente[]>;
 
   atualizar(cliente: Cliente): Promise<Cliente>;
+
+  /**
+   * Move o cliente para a carteira de outra vendedora.
+   *
+   * UPDATE CIRURGICO de uma coluna so, e nao `atualizar(cliente)`, de
+   * proposito: a entidade e imutavel e reescreve-la faria a camada de
+   * infraestrutura RECIFRAR telefone e e-mail a cada transferencia. Ciframento
+   * com IV novo a cada gravacao muda os bytes sem mudar o dado — e um jeito
+   * silencioso de sujar o historico e desperdicar escrita.
+   *
+   * `null` desvincula (cliente sem carteira).
+   */
+  transferirCarteira(clienteId: string, vendedoraCodigoErp: string | null): Promise<void>;
 
   /**
    * Exclusao FISICA. Nao confundir com `ativo = false`, o desligamento suave.

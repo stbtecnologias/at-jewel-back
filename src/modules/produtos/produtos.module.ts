@@ -30,5 +30,7 @@ import { ProdutosController } from './infrastructure/http/controllers/produtos.c
     AlertasEstoqueUseCase,
     { provide: PRODUTO_REPOSITORY, useClass: ProdutoRepository },
   ],
+  // O canal interno de WhatsApp consulta catalogo pela vendedora.
+  exports: [ListarProdutosUseCase],
 })
 export class ProdutosModule {}

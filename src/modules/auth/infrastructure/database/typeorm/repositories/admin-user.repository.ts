@@ -36,12 +36,19 @@ export class AdminUserRepository implements IAdminUserRepository {
     return rows.map((r) => this.toDomain(r));
   }
 
+  async buscarPorTelefoneHash(hash: string): Promise<AdminUser | null> {
+    const row = await this.repo.findOne({ where: { telefoneHash: hash } });
+    return row ? this.toDomain(row) : null;
+  }
+
   async criarUsuario(input: CriarUsuarioInput): Promise<AdminUser> {
     const row = this.repo.create({
       email: input.email,
       nome: input.nome,
       role: input.role,
       passwordHash: input.passwordHash,
+      telefone: input.telefone,
+      telefoneHash: input.telefoneHash,
     });
     const saved = await this.repo.save(row);
     return this.toDomain(saved);
@@ -62,6 +69,18 @@ export class AdminUserRepository implements IAdminUserRepository {
     });
   }
 
+  async atualizarDados(
+    id: string,
+    dados: { nome?: string | null; telefone?: string | null; telefoneHash?: string | null },
+  ): Promise<AdminUser> {
+    // `update` com objeto parcial so escreve as chaves presentes — e por isso
+    // que "ausente = nao mexe" funciona sem SQL condicional.
+    await this.repo.update(id, dados);
+    const row = await this.repo.findOne({ where: { id } });
+    if (!row) throw new Error(`Usuario ${id} sumiu durante a atualizacao`);
+    return this.toDomain(row);
+  }
+
   async atualizarNome(id: string, nome: string): Promise<void> {
     await this.repo.update(id, { nome });
   }
@@ -80,6 +99,7 @@ export class AdminUserRepository implements IAdminUserRepository {
       row.createdAt,
       row.role,
       row.nome,
+      row.telefone,
     );
   }
 }

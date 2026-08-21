@@ -9,7 +9,7 @@ import {
 } from '../../domain/ports/injection-tokens';
 import type {
   AvisarVendedoraHandler,
-  ChatComGraficoResultado,
+  ChatComFerramentasResultado,
   ILlmClient,
   RegistrarDemandaHandler,
 } from '../../domain/ports/llm-client.port';
@@ -46,7 +46,7 @@ export class ChatAnastasiaUseCase {
     mensagens: MensagemAgente[],
     contexto?: ContextoAgente,
     solicitante?: SolicitanteChat,
-  ): Promise<ChatComGraficoResultado> {
+  ): Promise<ChatComFerramentasResultado> {
     const model =
       this.config.get<string>('ANTHROPIC_MODEL_ANASTASIA') ?? 'claude-opus-4-8';
 
@@ -63,7 +63,7 @@ Agora sao ${agoraLocal()} (fuso da loja). Use isto para interpretar "hoje", "ama
       ? `${comData}\n\nContexto da aba aberta: ${contexto.aba ?? 'não informada'}.\nDados disponíveis no momento: ${JSON.stringify(contexto.dados ?? {})}`
       : comData;
 
-    return this.llm.chatComGrafico({
+    return this.llm.chatComFerramentas({
       model,
       system,
       maxTokens: 2048,

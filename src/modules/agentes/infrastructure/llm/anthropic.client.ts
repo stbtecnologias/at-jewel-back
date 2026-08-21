@@ -2,11 +2,14 @@ import Anthropic from '@anthropic-ai/sdk';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type {
-  ChatComGraficoResultado,
+  ChatComFerramentasResultado,
   ChatParams,
+  GestaoLeituraResultado,
   ChatResultado,
   GraficoDinamico,
   ILlmClient,
+  PeriodoAgendaLlm,
+  PeriodoVendasLlm,
 } from '../../domain/ports/llm-client.port';
 
 // Ferramenta de geracao de grafico (Anthropic tool-use). Vive aqui porque o
@@ -80,6 +83,250 @@ const DEMANDA_TOOL: Anthropic.Tool = {
     },
     required: ['tipo', 'descricao'],
   },
+};
+
+const AGENDA_TOOL: Anthropic.Tool = {
+  name: 'consultar_agenda',
+  description:
+    'Consulta os compromissos JA AGENDADOS de quem esta falando com voce. Use quando ela perguntar sobre a agenda dela — "como esta minha agenda hoje", "tenho algum contato amanha", "o que tenho essa semana". Devolve com quem ela combinou de falar e a que horas. Voce NAO escolhe de quem e a agenda: e sempre a de quem esta na conversa, resolvida pelo telefone. Se ela perguntar pela agenda de outra pessoa, diga que voce so enxerga a dela.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'AMANHA', 'SEMANA'],
+        description:
+          'HOJE = o que ainda vem hoje; AMANHA = o dia seguinte inteiro; SEMANA = os proximos sete dias. Na duvida, use HOJE.',
+      },
+    },
+    required: ['periodo'],
+  },
+};
+
+const VENDAS_TOOL: Anthropic.Tool = {
+  name: 'consultar_vendas',
+  description:
+    'Consulta quantas vendas ELA fez e quanto faturou num periodo. Use quando ela perguntar sobre o proprio desempenho — "quantas vendas eu fiz hoje", "como foi minha semana", "quanto vendi no mes". Sao sempre as vendas DELA: voce nao escolhe de quem, o sistema resolve pelo telefone de quem esta falando.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'SEMANA', 'MES'],
+        description:
+          'HOJE = desde a meia-noite; SEMANA = os ultimos sete dias; MES = os ultimos trinta dias.',
+      },
+    },
+    required: ['periodo'],
+  },
+};
+
+const METAS_TOOL: Anthropic.Tool = {
+  name: 'consultar_metas',
+  description:
+    'Consulta as metas DELA: qual o alvo, quanto ja realizou, quanto falta e se ja bateu. Use quando ela perguntar sobre meta — "bati minha meta?", "quanto falta pra minha meta", "quais metas eu tenho". Nao precisa passar nada.',
+  input_schema: { type: 'object', properties: {} },
+};
+
+const PRODUTOS_TOOL: Anthropic.Tool = {
+  name: 'consultar_produtos',
+  description:
+    'Procura pecas no catalogo e devolve descricao, preco de venda e quantidade em estoque. Use quando ela perguntar sobre produto — "quanto custa o brinco de esmeralda", "tem alianca de ouro 18k", "quantos pingentes de zirconia temos". Devolve no maximo seis pecas. Voce nao tem acesso a custo nem margem: se ela perguntar isso, diga que nao consegue ver.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      busca: {
+        type: 'string',
+        description:
+          'O que procurar, nas palavras dela: nome da peca, categoria, familia, colecao, pedra, cor ou codigo do ERP. Ex.: "esmeralda", "alianca ouro 18k", "SEED-P0002".',
+      },
+    },
+    required: ['busca'],
+  },
+};
+
+const SEM_COMPRAR_TOOL: Anthropic.Tool = {
+  name: 'clientes_sem_comprar',
+  description:
+    'Lista clientes DA CARTEIRA DELA que estao ha algum tempo sem comprar, do mais parado para o menos. Use quando ela perguntar quem esta sumido, parado, ha quanto tempo alguem nao compra, ou quem ela deveria procurar. Inclui quem nunca comprou. So enxerga a carteira dela.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      meses: {
+        type: 'integer',
+        description:
+          'Quantos meses sem comprar. Se ela nao disser um numero, use 6.',
+      },
+    },
+    required: ['meses'],
+  },
+};
+
+const MELHORES_TOOL: Anthropic.Tool = {
+  name: 'melhores_clientes',
+  description:
+    'Lista os clientes DA CARTEIRA DELA que mais compraram, do maior para o menor. Sem categoria conta COMPRAS ("quem mais compra de mim"); com categoria conta PECAS daquele tipo ("quem comprou mais aneis"). So enxerga a carteira dela.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      categoria: {
+        type: 'string',
+        description:
+          'Categoria da peca, no singular, como aparece no catalogo: "Anel", "Colar", "Brinco", "Pulseira", "Pingente", "Alianca". Omita para contar todas as compras.',
+      },
+      ultimos_meses: {
+        type: 'integer',
+        description:
+          'Recorte de periodo, em meses. Omita para considerar o historico inteiro.',
+      },
+    },
+  },
+};
+
+
+// ===========================================================================
+// GESTAO. Espelham as de cima, mas pedem DE QUEM — e por isso sao ferramentas
+// distintas, e nao as mesmas com um parametro a mais. Um canal recebe um
+// conjunto, o outro recebe o outro; nunca os dois.
+// ===========================================================================
+
+const GESTAO_AGENDA_TOOL: Anthropic.Tool = {
+  name: 'agenda_de_vendedora',
+  description:
+    'Consulta os compromissos ja agendados de UMA vendedora da equipe. Use quando perguntarem pela agenda de alguem — "como esta o dia da Marina", "a Beatriz tem contato amanha". CHAME MESMO SEM SABER O PERIODO: a ferramenta tambem e quem confirma se a vendedora existe, e perguntar o periodo antes daria a entender que ela existe. Passe o nome como veio na conversa; se houver mais de uma com aquele nome, ou nenhuma, a ferramenta avisa e ai voce pergunta.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      vendedora: { type: 'string', description: 'Nome da vendedora, como falado.' },
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'AMANHA', 'SEMANA'],
+        description:
+          'HOJE = o que ainda vem hoje; AMANHA = o dia seguinte inteiro; SEMANA = os proximos sete dias. Omita se nao souber — assume HOJE, e voce diz na resposta que olhou o dia de hoje.',
+      },
+    },
+    required: ['vendedora'],
+  },
+};
+
+const GESTAO_VENDAS_TOOL: Anthropic.Tool = {
+  name: 'vendas_de_vendedora',
+  description:
+    'Consulta quantas vendas UMA vendedora fez e quanto faturou num periodo. Use para "quanto a Marina vendeu essa semana", "como foi o mes da Beatriz". CHAME MESMO SEM SABER O PERIODO: e tambem esta ferramenta que confirma se a vendedora existe. Para comparar a equipe inteira, use panorama_da_equipe.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      vendedora: { type: 'string', description: 'Nome da vendedora, como falado.' },
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'SEMANA', 'MES'],
+        description:
+          'HOJE = desde a meia-noite; SEMANA = os ultimos sete dias; MES = os ultimos trinta dias. Omita se nao souber — assume SEMANA, e voce diz na resposta qual recorte usou.',
+      },
+    },
+    required: ['vendedora'],
+  },
+};
+
+const GESTAO_METAS_TOOL: Anthropic.Tool = {
+  name: 'metas_de_vendedora',
+  description:
+    'Consulta as metas de UMA vendedora: alvo, quanto realizou, quanto falta e se bateu. Use para "a Marina bateu a meta?", "quanto falta pra meta da Beatriz".',
+  input_schema: {
+    type: 'object',
+    properties: {
+      vendedora: { type: 'string', description: 'Nome da vendedora, como falado.' },
+    },
+    required: ['vendedora'],
+  },
+};
+
+const GESTAO_PANORAMA_TOOL: Anthropic.Tool = {
+  name: 'panorama_da_equipe',
+  description:
+    'Compara as vendas de TODAS as vendedoras ativas num periodo, da maior para a menor. Use quando a pergunta for sobre a equipe e nao sobre uma pessoa — "como foi a semana da equipe", "quem vendeu mais esse mes", "quem esta atras".',
+  input_schema: {
+    type: 'object',
+    properties: {
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'SEMANA', 'MES'],
+        description: 'HOJE, SEMANA (sete dias) ou MES (trinta dias).',
+      },
+    },
+    required: ['periodo'],
+  },
+};
+
+const GESTAO_CARTEIRA_CLIENTE_TOOL: Anthropic.Tool = {
+  name: 'de_quem_e_o_cliente',
+  description:
+    'Diz em qual carteira um cliente esta, ou seja, de qual vendedora ele e. Use para "de quem e a Helena Gomes", "quem atende esse cliente". Esta informacao e exclusiva da administracao.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      cliente: { type: 'string', description: 'Nome do cliente, como falado.' },
+    },
+    required: ['cliente'],
+  },
+};
+
+const GESTAO_AGENDAR_TOOL: Anthropic.Tool = {
+  name: 'agendar_para_vendedora',
+  description:
+    'Marca um contato na agenda de uma vendedora, com um cliente. Use quando pedirem para agendar alguem — "agenda a Luana com a Cintia amanha as 15h". Se o cliente for da carteira de OUTRA vendedora, a ferramenta NAO agenda: devolve a pergunta a ser feita, voce repassa e espera a escolha. Depois que a pessoa responder, chame de novo com os MESMOS cliente, vendedora e horario, agora com o `modo`. NUNCA escolha o modo por conta propria — transferir muda a carteira do cliente para sempre.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      cliente: {
+        type: 'string',
+        description:
+          'Nome do cliente, como falado — ou o CODIGO dele, quando a ferramenta ja tiver pedido para desempatar homonimos.',
+      },
+      vendedora: { type: 'string', description: 'Nome da vendedora que vai atender.' },
+      quandoIso: {
+        type: 'string',
+        description:
+          'Data e hora combinadas, em ISO 8601 com fuso (ex.: 2026-08-22T15:00:00-03:00). Se nao disserem o horario, PERGUNTE antes de chamar — nunca escolha um.',
+      },
+      modo: {
+        type: 'string',
+        enum: ['OCASIONAL', 'TRANSFERIR'],
+        description:
+          'So na SEGUNDA chamada, depois de a pessoa responder sobre a carteira. OCASIONAL = marca o contato e o cliente CONTINUA na carteira de origem. TRANSFERIR = marca e MOVE o cliente para a carteira da nova vendedora, valendo dali em diante para tudo. Omita na primeira chamada.',
+      },
+    },
+    required: ['cliente', 'vendedora', 'quandoIso'],
+  },
+};
+
+const AGENDAR_TOOL: Anthropic.Tool = {
+  name: 'agendar_contato',
+  description:
+    'Coloca um contato com um cliente na agenda DELA, e agenda o lembrete. Use quando ela pedir para marcar, lembrar ou agendar — "me lembra de ligar pra Helena amanha as 10", "marca a Carla pra sexta as 15h". So funciona com cliente da carteira dela. Preencha quandoIso SEMPRE em ISO 8601 com fuso, calculado a partir da data de hoje informada acima. Se ela nao disser um horario, PERGUNTE antes de chamar — nao invente.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      cliente: {
+        type: 'string',
+        description:
+          'Nome do cliente como ela escreveu. Nao complete nem corrija o sobrenome.',
+      },
+      quandoIso: {
+        type: 'string',
+        description:
+          'O horario combinado em ISO 8601 com fuso, ex.: "2026-08-21T10:00:00-03:00".',
+      },
+    },
+    required: ['cliente', 'quandoIso'],
+  },
+};
+
+const RELATO_TOOL: Anthropic.Tool = {
+  name: 'registrar_relato',
+  description:
+    'Registra o que a vendedora acabou de contar sobre o contato dela com o cliente que esta pendente. Use quando a mensagem dela responder "como foi com o cliente" — se falou, se nao conseguiu falar, se o cliente pediu para remarcar, se fechou venda ou desistiu. NAO use para outros assuntos: pergunta sobre agenda, sobre numeros, ou conversa solta nao sao relato. Voce nao precisa passar nada: o sistema le a mensagem original dela.',
+  input_schema: { type: 'object', properties: {} },
 };
 
 const AVISAR_TOOL: Anthropic.Tool = {
@@ -175,13 +422,30 @@ export class AnthropicClient implements ILlmClient {
     return { texto: this.extrairTexto(resp), tokens: resp.usage.output_tokens };
   }
 
-  async chatComGrafico(params: ChatParams): Promise<ChatComGraficoResultado> {
+  async chatComFerramentas(params: ChatParams): Promise<ChatComFerramentasResultado> {
     const apiMessages = this.toApiMessages(params.mensagens);
 
-    // registrar_demanda so entra quando a aplicacao fornece o handler.
-    const tools: Anthropic.Tool[] = [CHART_TOOL];
+    // Cada ferramenta so entra quando a aplicacao fornece o handler. O
+    // grafico e a excecao historica: nasceu antes dos handlers e vale por
+    // padrao, mas o canal de WhatsApp desliga (ver ChatParams.graficos).
+    const tools: Anthropic.Tool[] = [];
+    if (params.graficos ?? true) tools.push(CHART_TOOL);
     if (params.registrarDemanda) tools.push(DEMANDA_TOOL);
     if (params.avisarVendedora) tools.push(AVISAR_TOOL);
+    if (params.consultarAgenda) tools.push(AGENDA_TOOL);
+    if (params.gestaoAgenda) tools.push(GESTAO_AGENDA_TOOL);
+    if (params.gestaoVendas) tools.push(GESTAO_VENDAS_TOOL);
+    if (params.gestaoMetas) tools.push(GESTAO_METAS_TOOL);
+    if (params.gestaoPanorama) tools.push(GESTAO_PANORAMA_TOOL);
+    if (params.gestaoCarteiraDoCliente) tools.push(GESTAO_CARTEIRA_CLIENTE_TOOL);
+    if (params.gestaoAgendar) tools.push(GESTAO_AGENDAR_TOOL);
+    if (params.registrarRelato) tools.push(RELATO_TOOL);
+    if (params.consultarVendas) tools.push(VENDAS_TOOL);
+    if (params.consultarMetas) tools.push(METAS_TOOL);
+    if (params.consultarProdutos) tools.push(PRODUTOS_TOOL);
+    if (params.clientesSemComprar) tools.push(SEM_COMPRAR_TOOL);
+    if (params.melhoresClientes) tools.push(MELHORES_TOOL);
+    if (params.agendarContato) tools.push(AGENDAR_TOOL);
 
     const first = await this.client.messages.create({
       model: params.model,
@@ -210,6 +474,10 @@ export class AnthropicClient implements ILlmClient {
     let demandaRegistrada = false;
     // Mesmo teto para o aviso: um WhatsApp disparado por turno, no maximo.
     let avisoEnviado = false;
+    // E para o agendamento: uma escrita por mensagem, como no aviso.
+    let contatoAgendado = false;
+    // E para o relato: uma gravacao por mensagem dela.
+    let relatoGravado = false;
 
     for (const toolUse of toolUses) {
       if (toolUse.name === 'gerar_grafico') {
@@ -245,6 +513,210 @@ export class AnthropicClient implements ILlmClient {
         toolResults.push(
           await this.executarRegistrarDemanda(toolUse, params.registrarDemanda),
         );
+      } else if (toolUse.name === 'registrar_relato' && params.registrarRelato) {
+        if (relatoGravado) {
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: toolUse.id,
+            content: 'Ignorado: o relato desta mensagem ja foi registrado.',
+            is_error: true,
+          });
+          continue;
+        }
+        relatoGravado = true;
+        toolResults.push(
+          await this.executarRegistrarRelato(toolUse, params.registrarRelato),
+        );
+      } else if (toolUse.name === 'agendar_para_vendedora' && params.gestaoAgendar) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as {
+              cliente?: string;
+              vendedora?: string;
+              quandoIso?: string;
+              modo?: 'OCASIONAL' | 'TRANSFERIR';
+            };
+            const r = await params.gestaoAgendar!({
+              cliente: String(e.cliente ?? '').slice(0, 120),
+              vendedora: String(e.vendedora ?? '').slice(0, 80),
+              quandoIso: String(e.quandoIso ?? ''),
+              modo: e.modo,
+            });
+            return `${r.mensagem}\n\nResponda com isso, sem alterar nomes nem horarios.`;
+          }),
+        );
+      } else if (toolUse.name === 'agenda_de_vendedora' && params.gestaoAgenda) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as { vendedora?: string; periodo?: PeriodoAgendaLlm };
+            return textoDaLeituraDeGestao(
+              await params.gestaoAgenda!({
+                vendedora: String(e.vendedora ?? '').slice(0, 80),
+                periodo: e.periodo ?? 'HOJE',
+              }),
+              'compromisso',
+            );
+          }),
+        );
+      } else if (toolUse.name === 'vendas_de_vendedora' && params.gestaoVendas) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as { vendedora?: string; periodo?: PeriodoVendasLlm };
+            return textoDaLeituraDeGestao(
+              await params.gestaoVendas!({
+                vendedora: String(e.vendedora ?? '').slice(0, 80),
+                periodo: e.periodo ?? 'SEMANA',
+              }),
+              'venda',
+            );
+          }),
+        );
+      } else if (toolUse.name === 'metas_de_vendedora' && params.gestaoMetas) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as { vendedora?: string };
+            return textoDaLeituraDeGestao(
+              await params.gestaoMetas!({ vendedora: String(e.vendedora ?? '').slice(0, 80) }),
+              'meta',
+            );
+          }),
+        );
+      } else if (toolUse.name === 'panorama_da_equipe' && params.gestaoPanorama) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as { periodo?: PeriodoVendasLlm };
+            const { linhas } = await params.gestaoPanorama!({ periodo: e.periodo ?? 'SEMANA' });
+            if (linhas.length === 0) {
+              return 'Nenhuma vendedora ativa com venda nesse periodo. Diga isso em uma frase.';
+            }
+            return (
+              `Equipe no periodo:\n${linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+              'Repasse os numeros exatamente como estao.'
+            );
+          }),
+        );
+      } else if (toolUse.name === 'de_quem_e_o_cliente' && params.gestaoCarteiraDoCliente) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as { cliente?: string };
+            const r = await params.gestaoCarteiraDoCliente!({
+              cliente: String(e.cliente ?? '').slice(0, 120),
+            });
+            if (r.status === 'NAO_ENCONTRADO') {
+              return 'Nenhum cliente com esse nome. Diga isso e pergunte se o nome esta completo.';
+            }
+            if (r.status === 'AMBIGUO') {
+              return (
+                `Mais de um cliente com esse nome:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+                'Mostre as opcoes e pergunte de qual se trata.'
+              );
+            }
+            return `${r.linhas.join('\n')}\n\nRepasse exatamente assim.`;
+          }),
+        );
+      } else if (toolUse.name === 'consultar_vendas' && params.consultarVendas) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const { resumo } = await params.consultarVendas!({
+              periodo: (toolUse.input as { periodo?: PeriodoVendasLlm }).periodo ?? 'HOJE',
+            });
+            return (
+              `Vendas dela no periodo: ${resumo}. Repasse estes numeros exatamente ` +
+              'como estao, em uma ou duas frases naturais.'
+            );
+          }),
+        );
+      } else if (toolUse.name === 'consultar_metas' && params.consultarMetas) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const { metas } = await params.consultarMetas!();
+            if (metas.length === 0) {
+              return 'Ela nao tem meta cadastrada no momento. Diga isso em uma frase, sem inventar numero.';
+            }
+            return (
+              `Metas dela:\n${metas.map((m) => `- ${m.linha}`).join('\n')}\n\n` +
+              'Repasse os numeros exatamente como estao.'
+            );
+          }),
+        );
+      } else if (toolUse.name === 'consultar_produtos' && params.consultarProdutos) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const { produtos } = await params.consultarProdutos!({
+              busca: String((toolUse.input as { busca?: string }).busca ?? '').slice(0, 120),
+            });
+            if (produtos.length === 0) {
+              return 'Nenhuma peca encontrada com esse termo. Diga isso a ela e pergunte se quer procurar de outro jeito.';
+            }
+            return (
+              `Pecas encontradas:\n${produtos.map((p) => `- ${p.linha}`).join('\n')}\n\n` +
+              'Repasse os precos e quantidades exatamente como estao. Se ela pedir custo ou margem, diga que voce nao consegue ver isso.'
+            );
+          }),
+        );
+      } else if (toolUse.name === 'agendar_contato' && params.agendarContato) {
+        if (contatoAgendado) {
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: toolUse.id,
+            content: 'Ignorado: um agendamento por mensagem. Peca para ela tratar um cliente de cada vez.',
+            is_error: true,
+          });
+          continue;
+        }
+        contatoAgendado = true;
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const entrada = toolUse.input as { cliente?: string; quandoIso?: string };
+            const r = await params.agendarContato!({
+              cliente: String(entrada.cliente ?? '').slice(0, 120),
+              quandoIso: String(entrada.quandoIso ?? ''),
+            });
+            return (
+              `${r.mensagem}\n\nResponda a ela com isso, sem alterar nomes nem horarios.`
+            );
+          }),
+        );
+      } else if (toolUse.name === 'clientes_sem_comprar' && params.clientesSemComprar) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const entrada = toolUse.input as { meses?: number };
+            const { clientes } = await params.clientesSemComprar!({
+              meses: Number(entrada.meses) > 0 ? Number(entrada.meses) : 6,
+            });
+            if (clientes.length === 0) {
+              return 'Nenhum cliente da carteira dela esta parado nesse periodo. Diga isso em uma frase.';
+            }
+            return (
+              `Clientes parados:\n${clientes.map((c) => `- ${c.linha}`).join(`\n`)}\n\n` +
+              'Repasse os nomes e as datas exatamente como estao.'
+            );
+          }),
+        );
+      } else if (toolUse.name === 'melhores_clientes' && params.melhoresClientes) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const entrada = toolUse.input as {
+              categoria?: string;
+              ultimos_meses?: number;
+            };
+            const { clientes } = await params.melhoresClientes!({
+              categoria: entrada.categoria,
+              ultimosMeses: entrada.ultimos_meses,
+            });
+            if (clientes.length === 0) {
+              return 'Nenhuma compra encontrada na carteira dela com esse recorte. Diga isso em uma frase.';
+            }
+            return (
+              `Maiores compradores:\n${clientes.map((c) => `- ${c.linha}`).join(`\n`)}\n\n` +
+              'Repasse os nomes e numeros exatamente como estao.'
+            );
+          }),
+        );
+      } else if (toolUse.name === 'consultar_agenda' && params.consultarAgenda) {
+        toolResults.push(
+          await this.executarConsultarAgenda(toolUse, params.consultarAgenda),
+        );
       } else if (toolUse.name === 'avisar_vendedora' && params.avisarVendedora) {
         if (avisoEnviado) {
           toolResults.push({
@@ -278,6 +750,136 @@ export class AnthropicClient implements ILlmClient {
 
     tokens += cont.usage.output_tokens;
     return { texto: this.extrairTexto(cont), tokens, grafico };
+  }
+
+  /**
+   * Envelope comum das ferramentas de LEITURA do canal interno.
+   *
+   * Sem teto de chamadas: ler duas vezes na mesma mensagem ("e amanha? e a
+   * meta?") e uso legitimo. Falha vira tool_result de erro, e o modelo se
+   * recupera na conversa em vez de derrubar a resposta inteira.
+   */
+  private async executarLeitura(
+    toolUse: Anthropic.ToolUseBlock,
+    corpo: () => Promise<string>,
+  ): Promise<Anthropic.ToolResultBlockParam> {
+    try {
+      return { type: 'tool_result', tool_use_id: toolUse.id, content: await corpo() };
+    } catch (err) {
+      this.logger.error(
+        `Falha na ferramenta ${toolUse.name}: ${err instanceof Error ? err.message : err}`,
+      );
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUse.id,
+        content:
+          'Nao consegui consultar isso agora. Peca desculpa e diga que ela pode tentar de novo em instantes.',
+        is_error: true,
+      };
+    }
+  }
+
+  /**
+   * Executa `registrar_relato`. O texto de volta ja vem pronto do servidor —
+   * o modelo repassa, nao reescreve, porque a frase carrega horario remarcado
+   * e desfecho, que sao exatamente o que ele inventaria.
+   */
+  private async executarRegistrarRelato(
+    toolUse: Anthropic.ToolUseBlock,
+    handler: NonNullable<ChatParams['registrarRelato']>,
+  ): Promise<Anthropic.ToolResultBlockParam> {
+    try {
+      const r = await handler();
+
+      if (r.status === 'SEM_PENDENCIA') {
+        return {
+          type: 'tool_result',
+          tool_use_id: toolUse.id,
+          content:
+            'Nao ha retorno pendente dela. Diga que nao ha acompanhamento aberto no momento e que, quando voce encaminhar um cliente, ela conta por aqui como foi.',
+        };
+      }
+
+      if (r.status === 'NAO_ENTENDI') {
+        return {
+          type: 'tool_result',
+          tool_use_id: toolUse.id,
+          content:
+            'Nao deu para entender o relato. Pergunte a ela, em uma frase, se chegou a falar com o cliente e, se ficou de retornar, qual o horario.',
+        };
+      }
+
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUse.id,
+        content: `Relato registrado. Responda a ela exatamente isto, sem alterar horarios nem nomes: "${r.mensagem}"`,
+      };
+    } catch (err) {
+      this.logger.error(
+        `Falha ao registrar o relato: ${err instanceof Error ? err.message : err}`,
+      );
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUse.id,
+        content:
+          'Nao consegui registrar agora. Peca desculpa e diga que ela pode repetir em instantes.',
+        is_error: true,
+      };
+    }
+  }
+
+  /**
+   * Executa `consultar_agenda`. Sem teto de chamadas: e leitura, e perguntar
+   * "e amanha?" na mesma mensagem e uso legitimo.
+   *
+   * O tool_result ja vai FORMATADO. O modelo repassa o que esta escrito em vez
+   * de recalcular horario — data e hora sao exatamente onde ele inventa.
+   */
+  private async executarConsultarAgenda(
+    toolUse: Anthropic.ToolUseBlock,
+    handler: NonNullable<ChatParams['consultarAgenda']>,
+  ): Promise<Anthropic.ToolResultBlockParam> {
+    const input = toolUse.input as { periodo?: PeriodoAgendaLlm };
+    try {
+      const { compromissos } = await handler({
+        periodo: input.periodo ?? 'HOJE',
+      });
+
+      if (compromissos.length === 0) {
+        return {
+          type: 'tool_result',
+          tool_use_id: toolUse.id,
+          content:
+            'Nenhum compromisso agendado nesse periodo. Diga isso a ela em uma frase, sem inventar nada.',
+        };
+      }
+
+      const linhas = compromissos
+        .map(
+          (c) =>
+            `- ${c.cliente}, ${c.quando}${c.ocasiao ? ` (${c.ocasiao.toLowerCase()})` : ''}`,
+        )
+        .join('\n');
+
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUse.id,
+        content:
+          `Compromissos dela:\n${linhas}\n\nRepasse exatamente estes nomes e horarios, ` +
+          'sem alterar nem completar. Escreva em uma ou duas frases naturais.',
+      };
+    } catch (err) {
+      this.logger.error(
+        `Falha ao consultar a agenda: ${err instanceof Error ? err.message : err}`,
+      );
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUse.id,
+        content:
+          'Nao consegui consultar a agenda agora. Peca desculpa e diga que ela pode tentar de novo em instantes.',
+        is_error: true,
+      };
+    }
   }
 
   // Executa a tool registrar_demanda e monta o tool_result. Nunca loga a
@@ -376,4 +978,38 @@ export class AnthropicClient implements ILlmClient {
     const bloco = resp.content.find((b): b is Anthropic.TextBlock => b.type === 'text');
     return bloco?.text ?? '';
   }
+}
+
+/**
+ * Traduz o resultado de uma leitura de gestao no texto que volta ao modelo.
+ *
+ * As tres leituras (agenda, vendas, metas) tem a MESMA forma porque compartilham
+ * o mesmo problema: antes de responder qualquer coisa, e preciso resolver de
+ * quem se esta falando. Um so lugar decide o que dizer em cada desfecho, entao
+ * as tres se comportam igual — inclusive na ambiguidade, que e onde um palpite
+ * sairia caro.
+ */
+function textoDaLeituraDeGestao(
+  r: GestaoLeituraResultado,
+  substantivo: string,
+): string {
+  if (r.status === 'AMBIGUA') {
+    return (
+      `Mais de uma vendedora com esse nome: ${(r.nomes ?? []).join(', ')}. ` +
+      'Pergunte de qual se trata. NAO escolha uma.'
+    );
+  }
+  if (r.status === 'NAO_ENCONTRADA') {
+    const equipe = (r.nomes ?? []).join(', ');
+    return equipe
+      ? `Nao ha vendedora com esse nome. A equipe ativa e: ${equipe}. Diga isso e pergunte qual delas.`
+      : 'Nao ha vendedora com esse nome. Diga isso em uma frase.';
+  }
+  if (r.linhas.length === 0) {
+    return `${r.vendedora} nao tem nenhum(a) ${substantivo} nesse recorte. Diga isso em uma frase, sem inventar numero.`;
+  }
+  return (
+    `${r.vendedora}:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+    'Repasse os nomes, horarios e numeros exatamente como estao.'
+  );
 }

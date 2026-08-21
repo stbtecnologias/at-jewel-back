@@ -22,5 +22,10 @@ export class AdminUser {
     public readonly createdAt: Date,
     public readonly role: AdminRole = 'ADMIN',
     public readonly nome: string | null = null,
+    /**
+     * Celular, ja decifrado. Guardado desde a migracao 37 para o ADM poder
+     * ser reconhecido no WhatsApp interno — hoje ninguem le, so grava.
+     */
+    public readonly telefone: string | null = null,
   ) {}
 }

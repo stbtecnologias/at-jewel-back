@@ -27,6 +27,14 @@ export interface Interacao {
   criadoEm: Date;
 }
 
+/** Um compromisso da vendedora: o horario combinado com aquele cliente. */
+export interface CompromissoAgenda {
+  atendimentoId: string;
+  clienteId: string;
+  combinadoEm: Date;
+  ocasiao: OcasiaoAtendimento | null;
+}
+
 export interface AbrirAtendimentoInput {
   clienteId: string;
   vendedoraId: string;
@@ -99,6 +107,19 @@ export interface IAtendimentoRepository {
   buscarCobrancaAguardando(
     vendedoraId: string,
   ): Promise<{ interacao: Interacao; atendimento: Atendimento } | null>;
+
+  /**
+   * Os compromissos de UMA vendedora numa janela de tempo.
+   *
+   * O `vendedoraId` vem do telefone resolvido na entrada do canal, NUNCA do
+   * texto da conversa. Nao existe parametro para pedir a agenda de outra
+   * pessoa — e por isso que nenhuma frase consegue chegar nela.
+   *
+   * Le `combinado_em` (quando ela fala com o cliente), nao `notificar_em`
+   * (quando o sistema manda a mensagem): a agenda dela e feita dos
+   * compromissos, nao dos nossos lembretes.
+   */
+  listarAgenda(vendedoraId: string, de: Date, ate: Date): Promise<CompromissoAgenda[]>;
 
   /** Fecha o episodio. O CHECK do banco exige desfecho junto. */
   fechar(atendimentoId: string, desfecho: DesfechoAtendimento): Promise<void>;
