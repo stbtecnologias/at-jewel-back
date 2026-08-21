@@ -13,6 +13,8 @@ import type {
   ILlmClient,
   RegistrarDemandaHandler,
 } from '../../domain/ports/llm-client.port';
+import { FerramentasGestaoService } from '../../../atendimentos/application/ferramentas-gestao.service';
+import { PermissionsService } from '../../../auth/application/permissions.service';
 import { AvisarVendedoraUseCase } from './avisar-vendedora.use-case';
 import type { IAgentePromptsRepository } from '../../domain/ports/repositories/agente-prompts-repository.port';
 import { ANASTASIA_SYSTEM } from '../personas';
@@ -28,6 +30,12 @@ export interface SolicitanteChat {
   userId: string;
   // Rotulo de fallback (email do token) quando o staff nao tem nome cadastrado.
   nomeFallback: string;
+  /**
+   * Papel do token. Decide se as ferramentas de GESTAO entram — pelo mesmo
+   * criterio do WhatsApp (`vendas:read_all`), para nao existir uma segunda
+   * lista de regras que alguem esqueceria de atualizar.
+   */
+  role?: string;
 }
 
 @Injectable()
@@ -40,6 +48,8 @@ export class ChatAnastasiaUseCase {
     private readonly prompts: IAgentePromptsRepository,
     private readonly criarDemanda: CriarDemandaUseCase,
     private readonly avisarVendedora: AvisarVendedoraUseCase,
+    private readonly ferramentasGestao: FerramentasGestaoService,
+    private readonly permissoes: PermissionsService,
   ) {}
 
   async execute(
@@ -63,11 +73,28 @@ Agora sao ${agoraLocal()} (fuso da loja). Use isto para interpretar "hoje", "ama
       ? `${comData}\n\nContexto da aba aberta: ${contexto.aba ?? 'não informada'}.\nDados disponíveis no momento: ${JSON.stringify(contexto.dados ?? {})}`
       : comData;
 
+    // AS MESMAS FERRAMENTAS DO WHATSAPP, quando o papel permite.
+    //
+    // Ate 21/08 a mesma pessoa recebia respostas diferentes conforme a porta:
+    // pelo WhatsApp a Anastasia consultava agenda e desempenho de qualquer
+    // vendedora, e no painel nao sabia nada disso. Nao foi decisao, foi ordem
+    // dos acontecimentos — as ferramentas nasceram para resolver o problema de
+    // quem esta na rua.
+    //
+    // O criterio e o MESMO dos dois lados: `vendas:read_all`. Mexer nas
+    // permissoes de um papel muda painel e WhatsApp juntos.
+    const podeGerir = solicitante?.role
+      ? await this.permissoes.possui(solicitante.role, 'vendas:read_all')
+      : false;
+
     return this.llm.chatComFerramentas({
       model,
       system,
       maxTokens: 2048,
       mensagens: sanitizarMensagens(mensagens),
+      // Grafico CONTINUA ligado aqui: e a diferenca que deve existir entre as
+      // portas — a tela renderiza, a conversa de WhatsApp nao.
+      ...(podeGerir ? this.ferramentasGestao.montar() : {}),
       // So habilita a tool registrar_demanda quando conhecemos quem conversa.
       registrarDemanda: solicitante
         ? this.montarHandlerDemanda(solicitante)

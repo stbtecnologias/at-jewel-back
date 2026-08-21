@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
+import { VendasModule } from '../vendas/vendas.module';
 import { AgenteEventosModule } from '../agente-eventos/agente-eventos.module';
 import { LlmModule } from './llm.module';
 import { WhatsappGatewayModule } from '../atendimento/whatsapp-gateway.module';
@@ -34,6 +35,9 @@ import { AgentesController } from './infrastructure/http/controllers/agentes.con
   imports: [
     TypeOrmModule.forFeature([ConversaOrmEntity, AgentePromptOrmEntity]),
     AuthModule,
+    // VendasModule e folha (TypeORM + Auth): entra sem risco de ciclo, e traz
+    // o repositorio que resolve login -> vendedora.
+    VendasModule,
     // Audio gravado no painel vira texto em POST /agentes/transcrever.
     TranscricaoModule,
     // Reusa o CriarDemandaUseCase na tool registrar_demanda da Anastasia (RF-24).
