@@ -69,6 +69,18 @@ export class AdminUserRepository implements IAdminUserRepository {
     });
   }
 
+  async atualizarDados(
+    id: string,
+    dados: { nome?: string | null; telefone?: string | null; telefoneHash?: string | null },
+  ): Promise<AdminUser> {
+    // `update` com objeto parcial so escreve as chaves presentes — e por isso
+    // que "ausente = nao mexe" funciona sem SQL condicional.
+    await this.repo.update(id, dados);
+    const row = await this.repo.findOne({ where: { id } });
+    if (!row) throw new Error(`Usuario ${id} sumiu durante a atualizacao`);
+    return this.toDomain(row);
+  }
+
   async atualizarNome(id: string, nome: string): Promise<void> {
     await this.repo.update(id, { nome });
   }

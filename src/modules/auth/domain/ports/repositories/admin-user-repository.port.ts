@@ -38,5 +38,16 @@ export interface IAdminUserRepository {
     expiresAt: Date | null,
   ): Promise<void>;
   atualizarNome(id: string, nome: string): Promise<void>;
+  /**
+   * Atualiza os campos informados e devolve o usuario ja salvo.
+   *
+   * Campo AUSENTE do objeto nao e tocado; campo com `null` e apagado. A
+   * distincao importa: sem ela nao haveria como diferenciar "nao mexe no
+   * telefone" de "apaga o telefone".
+   */
+  atualizarDados(
+    id: string,
+    dados: { nome?: string | null; telefone?: string | null; telefoneHash?: string | null },
+  ): Promise<AdminUser>;
   atualizarSenha(id: string, passwordHash: string): Promise<void>;
 }
