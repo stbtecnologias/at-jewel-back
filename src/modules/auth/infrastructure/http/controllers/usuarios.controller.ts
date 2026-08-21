@@ -45,6 +45,7 @@ export class UsuariosController {
       nome: dto.nome ?? null,
       role: dto.role,
       senha: dto.senha ?? null,
+      telefone: dto.telefone ?? null,
     });
   }
 

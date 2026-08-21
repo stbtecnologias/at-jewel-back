@@ -36,12 +36,19 @@ export class AdminUserRepository implements IAdminUserRepository {
     return rows.map((r) => this.toDomain(r));
   }
 
+  async buscarPorTelefoneHash(hash: string): Promise<AdminUser | null> {
+    const row = await this.repo.findOne({ where: { telefoneHash: hash } });
+    return row ? this.toDomain(row) : null;
+  }
+
   async criarUsuario(input: CriarUsuarioInput): Promise<AdminUser> {
     const row = this.repo.create({
       email: input.email,
       nome: input.nome,
       role: input.role,
       passwordHash: input.passwordHash,
+      telefone: input.telefone,
+      telefoneHash: input.telefoneHash,
     });
     const saved = await this.repo.save(row);
     return this.toDomain(saved);
@@ -80,6 +87,7 @@ export class AdminUserRepository implements IAdminUserRepository {
       row.createdAt,
       row.role,
       row.nome,
+      row.telefone,
     );
   }
 }

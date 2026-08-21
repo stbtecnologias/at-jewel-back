@@ -5,10 +5,21 @@ export interface CriarUsuarioInput {
   nome: string | null;
   role: AdminRole;
   passwordHash: string | null; // null = usuario "so Google" (sem login por senha)
+  /** Celular em claro; o repositorio cifra ao gravar. */
+  telefone: string | null;
+  /** HMAC do telefone so com digitos — e por ele que se busca. */
+  telefoneHash: string | null;
 }
 
 export interface IAdminUserRepository {
   findByEmail(email: string): Promise<AdminUser | null>;
+  /**
+   * Acha pelo HMAC do telefone. Existe para barrar duplicata no cadastro, e e
+   * o mesmo caminho que o canal interno vai usar quando o ADM entrar no
+   * WhatsApp. Buscar pelo valor cifrado nao funciona: o mesmo numero gera
+   * bytes diferentes a cada gravacao.
+   */
+  buscarPorTelefoneHash(hash: string): Promise<AdminUser | null>;
   findById(id: string): Promise<AdminUser | null>;
   create(email: string, passwordHash: string): Promise<AdminUser>;
   /** Lista todos os usuarios. */
