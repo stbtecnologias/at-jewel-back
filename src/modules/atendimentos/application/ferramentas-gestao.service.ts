@@ -1,5 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type {
+  GestaoCarteiraHandler,
+  GestaoMelhoresHandler,
   GestaoAgendarHandler,
   GestaoCarteiraDoClienteHandler,
   GestaoLeituraResultado,
@@ -17,6 +19,7 @@ import {
   type ResultadoAgendamentoGestao,
 } from './use-cases/agendar-contato-gestao.use-case';
 import { ConsultarAgendaVendedoraUseCase } from './use-cases/consultar-agenda-vendedora.use-case';
+import { ConsultarCarteiraVendedoraUseCase } from './use-cases/consultar-carteira-vendedora.use-case';
 import { ConsultarDesempenhoVendedoraUseCase } from './use-cases/consultar-desempenho-vendedora.use-case';
 import { ResolverVendedoraPorNomeUseCase } from './use-cases/resolver-vendedora-por-nome.use-case';
 
@@ -30,6 +33,8 @@ export interface FerramentasGestao {
   gestaoPanorama: GestaoPanoramaHandler;
   gestaoAgendar: GestaoAgendarHandler;
   gestaoCarteiraDoCliente: GestaoCarteiraDoClienteHandler;
+  gestaoCarteira: GestaoCarteiraHandler;
+  gestaoMelhores: GestaoMelhoresHandler;
 }
 
 /**
@@ -57,6 +62,7 @@ export class FerramentasGestaoService {
     private readonly resolverVendedora: ResolverVendedoraPorNomeUseCase,
     private readonly agenda: ConsultarAgendaVendedoraUseCase,
     private readonly desempenho: ConsultarDesempenhoVendedoraUseCase,
+    private readonly carteira: ConsultarCarteiraVendedoraUseCase,
     private readonly agendarGestao: AgendarContatoGestaoUseCase,
     @Inject(VENDEDORA_REPOSITORY)
     private readonly vendedoras: IVendedoraRepository,
@@ -95,6 +101,39 @@ export class FerramentasGestaoService {
               : `${m.descricao}: alvo ${moeda(m.alvo)}, realizado ${moeda(m.realizado)} (${m.percentual}%), faltam ${moeda(m.restante)} até ${m.prazo.toLocaleDateString('pt-BR')}`,
           );
         }),
+
+      gestaoCarteira: async ({ vendedora, meses }) => {
+        // A carteira e por CODIGO DO ERP, e nao por id. Vendedora sem codigo
+        // simplesmente nao tem carteira — o use case devolve vazio.
+        let total = 0;
+        const r = await this.comVendedora(vendedora, async (_id, codigoErp) => {
+          const pagina = await this.carteira.semComprar(codigoErp, meses ?? 6);
+          total = pagina.total;
+          return pagina.clientes.map((c) =>
+            c.ultimaCompra
+              ? `${c.nome} — última compra em ${c.ultimaCompra.toLocaleDateString('pt-BR')}, ${c.quantidade} ${c.quantidade === 1 ? 'compra' : 'compras'} no total`
+              : `${c.nome} — nunca comprou`,
+          );
+        });
+        return { ...r, total };
+      },
+
+      gestaoMelhores: async ({ vendedora, categoria, ultimosMeses }) => {
+        let total = 0;
+        const r = await this.comVendedora(vendedora, async (_id, codigoErp) => {
+          const pagina = await this.carteira.maioresCompradores(codigoErp, {
+            categoria,
+            ultimosMeses,
+          });
+          total = pagina.total;
+          const unidade = categoria ? 'peça' : 'compra';
+          return pagina.clientes.map(
+            (c) =>
+              `${c.nome} — ${c.quantidade} ${c.quantidade === 1 ? unidade : unidade + 's'}, ${moeda(c.valorTotal)}`,
+          );
+        });
+        return { ...r, total };
+      },
 
       gestaoPanorama: async ({ periodo }) => {
         const ativas = await this.vendedoras.listar({ ativo: true });
@@ -184,14 +223,18 @@ export class FerramentasGestaoService {
    */
   private async comVendedora(
     nome: string,
-    consulta: (vendedoraId: string) => Promise<string[]>,
+    consulta: (vendedoraId: string, codigoErp: string | null) => Promise<string[]>,
   ): Promise<GestaoLeituraResultado> {
     const r = await this.resolverVendedora.execute(nome);
     if (r.status === 'AMBIGUA') return { status: 'AMBIGUA', linhas: [], nomes: r.nomes };
     if (r.status === 'NAO_ENCONTRADA') {
       return { status: 'NAO_ENCONTRADA', linhas: [], nomes: r.sugestoes };
     }
-    return { status: 'OK', vendedora: r.nome, linhas: await consulta(r.id) };
+    return {
+      status: 'OK',
+      vendedora: r.nome,
+      linhas: await consulta(r.id, r.codigoErp),
+    };
   }
 }
 

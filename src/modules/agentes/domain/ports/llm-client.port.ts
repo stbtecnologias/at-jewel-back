@@ -158,7 +158,16 @@ export interface ClienteDaCarteiraLlm {
 }
 
 export interface ConsultarCarteiraLlmResultado {
+  /** A AMOSTRA — no maximo dez. Carteira grande nao cabe em mensagem. */
   clientes: ClienteDaCarteiraLlm[];
+  /**
+   * QUANTOS atendem ao criterio, e nao quantos vieram na amostra.
+   *
+   * Sem este numero o teto MENTE POR OMISSAO: dez de trezentos parecem os
+   * trezentos, e quem le vai embora com a impressao errada. Com ele, a
+   * agente diz "dez dos trezentos" e oferece refinar.
+   */
+  total: number;
 }
 
 export type ClientesSemComprarHandler = (input: {
@@ -241,6 +250,26 @@ export type GestaoMetasHandler = (input: {
 }) => Promise<GestaoLeituraResultado>;
 
 /** Comparativo da equipe inteira — nao resolve nome, entao nao tem status. */
+/**
+ * A carteira de UMA vendedora, vista pela gestao.
+ *
+ * Reusa o `GestaoLeituraResultado` das outras leituras — mesma forma, mesmo
+ * tratamento de nome ambiguo. O `total` entra porque carteira e a consulta que
+ * mais estoura: mil clientes nao cabem numa mensagem, e dez sem o total
+ * pareceriam os mil.
+ */
+export type GestaoCarteiraHandler = (input: {
+  vendedora: string;
+  /** Meses sem comprar. Default 6. */
+  meses?: number;
+}) => Promise<GestaoLeituraResultado & { total?: number }>;
+
+export type GestaoMelhoresHandler = (input: {
+  vendedora: string;
+  categoria?: string;
+  ultimosMeses?: number;
+}) => Promise<GestaoLeituraResultado & { total?: number }>;
+
 export type GestaoPanoramaHandler = (input: {
   periodo: PeriodoVendasLlm;
 }) => Promise<{ linhas: string[] }>;
@@ -302,6 +331,8 @@ export interface ChatParams {
   gestaoMetas?: GestaoMetasHandler;
   gestaoPanorama?: GestaoPanoramaHandler;
   gestaoCarteiraDoCliente?: GestaoCarteiraDoClienteHandler;
+  gestaoCarteira?: GestaoCarteiraHandler;
+  gestaoMelhores?: GestaoMelhoresHandler;
   gestaoAgendar?: GestaoAgendarHandler;
   /**
    * Habilita `gerar_grafico`. Default true, que preserva o painel.

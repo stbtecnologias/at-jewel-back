@@ -59,8 +59,10 @@ describe('ProcessarMensagemInternaUseCase', () => {
       ]),
     };
     carteira = {
-      semComprar: jest.fn().mockResolvedValue([]),
-      maioresCompradores: jest.fn().mockResolvedValue([]),
+      // Desde 21/08 a carteira devolve AMOSTRA + TOTAL, e nao um array solto:
+      // o teto so e honesto se vier acompanhado de quantos existem.
+      semComprar: jest.fn().mockResolvedValue({ clientes: [], total: 0 }),
+      maioresCompradores: jest.fn().mockResolvedValue({ clientes: [], total: 0 }),
     };
     agendar = {
       execute: jest.fn().mockResolvedValue({

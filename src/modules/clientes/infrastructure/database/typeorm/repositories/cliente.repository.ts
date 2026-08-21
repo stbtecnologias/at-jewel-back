@@ -258,6 +258,77 @@ export class ClienteRepository implements IClienteRepository {
     }));
   }
 
+
+  /**
+   * QUANTOS estao parados. Mesma condicao do `inativosDaCarteira`, sem LIMIT
+   * e sem trazer coluna nenhuma alem da contagem.
+   *
+   * O COUNT vem de fora do agrupamento de proposito: a condicao esta no
+   * HAVING, entao o que se conta sao os GRUPOS (clientes), e nao as linhas do
+   * join com vendas — que traria o numero de compras.
+   */
+  async contarInativosDaCarteira(
+    vendedoraCodigoErp: string,
+    meses: number,
+  ): Promise<number> {
+    const rows = await this.repo.manager.query<{ total: string }[]>(
+      `
+      SELECT COUNT(*) AS total FROM (
+        SELECT c.id
+        FROM clientes c
+        LEFT JOIN vendas v
+               ON v.cliente_id = c.id
+              AND v.status = 'concluida'
+        WHERE c.vendedora_codigo_erp = $1
+          AND c.ativo = TRUE
+        GROUP BY c.id
+        HAVING MAX(v.data_venda) IS NULL
+            OR MAX(v.data_venda) < now() - ($2 || ' months')::interval
+      ) AS parados
+      `,
+      [vendedoraCodigoErp, String(meses)],
+    );
+    return Number(rows[0]?.total ?? 0);
+  }
+
+  async contarCompradoresDaCarteira(
+    vendedoraCodigoErp: string,
+    opcoes: { categoria?: string; desde?: Date },
+  ): Promise<number> {
+    const params: unknown[] = [vendedoraCodigoErp];
+    let joinItens = '';
+    let filtroCategoria = '';
+
+    if (opcoes.categoria) {
+      params.push(opcoes.categoria);
+      joinItens =
+        ' JOIN itens_venda i ON i.venda_id = v.id' +
+        ' JOIN produtos p ON p.id = i.produto_id';
+      filtroCategoria =
+        "AND p.categoria ILIKE '%' || $" + params.length + " || '%'";
+    }
+
+    let filtroData = '';
+    if (opcoes.desde) {
+      params.push(opcoes.desde);
+      filtroData = 'AND v.data_venda >= $' + params.length;
+    }
+
+    const rows = await this.repo.manager.query<{ total: string }[]>(
+      `
+      SELECT COUNT(DISTINCT c.id) AS total
+      FROM clientes c
+      JOIN vendas v ON v.cliente_id = c.id AND v.status = 'concluida'${joinItens}
+      WHERE c.vendedora_codigo_erp = $1
+        AND c.ativo = TRUE
+        ${filtroCategoria}
+        ${filtroData}
+      `,
+      params,
+    );
+    return Number(rows[0]?.total ?? 0);
+  }
+
   async maioresCompradoresDaCarteira(
     vendedoraCodigoErp: string,
     opcoes: { categoria?: string; desde?: Date; limite: number },

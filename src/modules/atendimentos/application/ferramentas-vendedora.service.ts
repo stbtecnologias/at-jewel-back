@@ -144,26 +144,28 @@ export class FerramentasVendedoraService {
       },
 
       clientesSemComprar: async ({ meses }) => {
-        const achados = await this.carteira.semComprar(codigoErp, meses);
+        const { clientes, total } = await this.carteira.semComprar(codigoErp, meses);
         return {
-          clientes: achados.map((c) => ({
+          clientes: clientes.map((c) => ({
             linha: c.ultimaCompra
               ? `${c.nome} — última compra em ${c.ultimaCompra.toLocaleDateString('pt-BR')}, ${c.quantidade} ${c.quantidade === 1 ? 'compra' : 'compras'} no total`
               : `${c.nome} — nunca comprou`,
           })),
+          total,
         };
       },
 
       melhoresClientes: async ({ categoria, ultimosMeses }) => {
-        const achados = await this.carteira.maioresCompradores(codigoErp, {
+        const { clientes, total } = await this.carteira.maioresCompradores(codigoErp, {
           categoria,
           ultimosMeses,
         });
         const unidade = categoria ? 'peça' : 'compra';
         return {
-          clientes: achados.map((c) => ({
+          clientes: clientes.map((c) => ({
             linha: `${c.nome} — ${c.quantidade} ${c.quantidade === 1 ? unidade : unidade + 's'}, ${moeda(c.valorTotal)}`,
           })),
+          total,
         };
       },
 
