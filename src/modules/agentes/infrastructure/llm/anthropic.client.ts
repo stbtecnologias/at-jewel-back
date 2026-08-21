@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import type {
   ChatComFerramentasResultado,
   ChatParams,
+  GestaoLeituraResultado,
   ChatResultado,
   GraficoDinamico,
   ILlmClient,
@@ -182,6 +183,94 @@ const MELHORES_TOOL: Anthropic.Tool = {
   },
 };
 
+
+// ===========================================================================
+// GESTAO. Espelham as de cima, mas pedem DE QUEM — e por isso sao ferramentas
+// distintas, e nao as mesmas com um parametro a mais. Um canal recebe um
+// conjunto, o outro recebe o outro; nunca os dois.
+// ===========================================================================
+
+const GESTAO_AGENDA_TOOL: Anthropic.Tool = {
+  name: 'agenda_de_vendedora',
+  description:
+    'Consulta os compromissos ja agendados de UMA vendedora da equipe. Use quando perguntarem pela agenda de alguem — "como esta o dia da Marina", "a Beatriz tem contato amanha". CHAME MESMO SEM SABER O PERIODO: a ferramenta tambem e quem confirma se a vendedora existe, e perguntar o periodo antes daria a entender que ela existe. Passe o nome como veio na conversa; se houver mais de uma com aquele nome, ou nenhuma, a ferramenta avisa e ai voce pergunta.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      vendedora: { type: 'string', description: 'Nome da vendedora, como falado.' },
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'AMANHA', 'SEMANA'],
+        description:
+          'HOJE = o que ainda vem hoje; AMANHA = o dia seguinte inteiro; SEMANA = os proximos sete dias. Omita se nao souber — assume HOJE, e voce diz na resposta que olhou o dia de hoje.',
+      },
+    },
+    required: ['vendedora'],
+  },
+};
+
+const GESTAO_VENDAS_TOOL: Anthropic.Tool = {
+  name: 'vendas_de_vendedora',
+  description:
+    'Consulta quantas vendas UMA vendedora fez e quanto faturou num periodo. Use para "quanto a Marina vendeu essa semana", "como foi o mes da Beatriz". CHAME MESMO SEM SABER O PERIODO: e tambem esta ferramenta que confirma se a vendedora existe. Para comparar a equipe inteira, use panorama_da_equipe.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      vendedora: { type: 'string', description: 'Nome da vendedora, como falado.' },
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'SEMANA', 'MES'],
+        description:
+          'HOJE = desde a meia-noite; SEMANA = os ultimos sete dias; MES = os ultimos trinta dias. Omita se nao souber — assume SEMANA, e voce diz na resposta qual recorte usou.',
+      },
+    },
+    required: ['vendedora'],
+  },
+};
+
+const GESTAO_METAS_TOOL: Anthropic.Tool = {
+  name: 'metas_de_vendedora',
+  description:
+    'Consulta as metas de UMA vendedora: alvo, quanto realizou, quanto falta e se bateu. Use para "a Marina bateu a meta?", "quanto falta pra meta da Beatriz".',
+  input_schema: {
+    type: 'object',
+    properties: {
+      vendedora: { type: 'string', description: 'Nome da vendedora, como falado.' },
+    },
+    required: ['vendedora'],
+  },
+};
+
+const GESTAO_PANORAMA_TOOL: Anthropic.Tool = {
+  name: 'panorama_da_equipe',
+  description:
+    'Compara as vendas de TODAS as vendedoras ativas num periodo, da maior para a menor. Use quando a pergunta for sobre a equipe e nao sobre uma pessoa — "como foi a semana da equipe", "quem vendeu mais esse mes", "quem esta atras".',
+  input_schema: {
+    type: 'object',
+    properties: {
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'SEMANA', 'MES'],
+        description: 'HOJE, SEMANA (sete dias) ou MES (trinta dias).',
+      },
+    },
+    required: ['periodo'],
+  },
+};
+
+const GESTAO_CARTEIRA_CLIENTE_TOOL: Anthropic.Tool = {
+  name: 'de_quem_e_o_cliente',
+  description:
+    'Diz em qual carteira um cliente esta, ou seja, de qual vendedora ele e. Use para "de quem e a Helena Gomes", "quem atende esse cliente". Esta informacao e exclusiva da administracao.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      cliente: { type: 'string', description: 'Nome do cliente, como falado.' },
+    },
+    required: ['cliente'],
+  },
+};
+
 const AGENDAR_TOOL: Anthropic.Tool = {
   name: 'agendar_contato',
   description:
@@ -315,6 +404,11 @@ export class AnthropicClient implements ILlmClient {
     if (params.registrarDemanda) tools.push(DEMANDA_TOOL);
     if (params.avisarVendedora) tools.push(AVISAR_TOOL);
     if (params.consultarAgenda) tools.push(AGENDA_TOOL);
+    if (params.gestaoAgenda) tools.push(GESTAO_AGENDA_TOOL);
+    if (params.gestaoVendas) tools.push(GESTAO_VENDAS_TOOL);
+    if (params.gestaoMetas) tools.push(GESTAO_METAS_TOOL);
+    if (params.gestaoPanorama) tools.push(GESTAO_PANORAMA_TOOL);
+    if (params.gestaoCarteiraDoCliente) tools.push(GESTAO_CARTEIRA_CLIENTE_TOOL);
     if (params.registrarRelato) tools.push(RELATO_TOOL);
     if (params.consultarVendas) tools.push(VENDAS_TOOL);
     if (params.consultarMetas) tools.push(METAS_TOOL);
@@ -402,6 +496,75 @@ export class AnthropicClient implements ILlmClient {
         relatoGravado = true;
         toolResults.push(
           await this.executarRegistrarRelato(toolUse, params.registrarRelato),
+        );
+      } else if (toolUse.name === 'agenda_de_vendedora' && params.gestaoAgenda) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as { vendedora?: string; periodo?: PeriodoAgendaLlm };
+            return textoDaLeituraDeGestao(
+              await params.gestaoAgenda!({
+                vendedora: String(e.vendedora ?? '').slice(0, 80),
+                periodo: e.periodo ?? 'HOJE',
+              }),
+              'compromisso',
+            );
+          }),
+        );
+      } else if (toolUse.name === 'vendas_de_vendedora' && params.gestaoVendas) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as { vendedora?: string; periodo?: PeriodoVendasLlm };
+            return textoDaLeituraDeGestao(
+              await params.gestaoVendas!({
+                vendedora: String(e.vendedora ?? '').slice(0, 80),
+                periodo: e.periodo ?? 'SEMANA',
+              }),
+              'venda',
+            );
+          }),
+        );
+      } else if (toolUse.name === 'metas_de_vendedora' && params.gestaoMetas) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as { vendedora?: string };
+            return textoDaLeituraDeGestao(
+              await params.gestaoMetas!({ vendedora: String(e.vendedora ?? '').slice(0, 80) }),
+              'meta',
+            );
+          }),
+        );
+      } else if (toolUse.name === 'panorama_da_equipe' && params.gestaoPanorama) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as { periodo?: PeriodoVendasLlm };
+            const { linhas } = await params.gestaoPanorama!({ periodo: e.periodo ?? 'SEMANA' });
+            if (linhas.length === 0) {
+              return 'Nenhuma vendedora ativa com venda nesse periodo. Diga isso em uma frase.';
+            }
+            return (
+              `Equipe no periodo:\n${linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+              'Repasse os numeros exatamente como estao.'
+            );
+          }),
+        );
+      } else if (toolUse.name === 'de_quem_e_o_cliente' && params.gestaoCarteiraDoCliente) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as { cliente?: string };
+            const r = await params.gestaoCarteiraDoCliente!({
+              cliente: String(e.cliente ?? '').slice(0, 120),
+            });
+            if (r.status === 'NAO_ENCONTRADO') {
+              return 'Nenhum cliente com esse nome. Diga isso e pergunte se o nome esta completo.';
+            }
+            if (r.status === 'AMBIGUO') {
+              return (
+                `Mais de um cliente com esse nome:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+                'Mostre as opcoes e pergunte de qual se trata.'
+              );
+            }
+            return `${r.linhas.join('\n')}\n\nRepasse exatamente assim.`;
+          }),
         );
       } else if (toolUse.name === 'consultar_vendas' && params.consultarVendas) {
         toolResults.push(
@@ -767,4 +930,38 @@ export class AnthropicClient implements ILlmClient {
     const bloco = resp.content.find((b): b is Anthropic.TextBlock => b.type === 'text');
     return bloco?.text ?? '';
   }
+}
+
+/**
+ * Traduz o resultado de uma leitura de gestao no texto que volta ao modelo.
+ *
+ * As tres leituras (agenda, vendas, metas) tem a MESMA forma porque compartilham
+ * o mesmo problema: antes de responder qualquer coisa, e preciso resolver de
+ * quem se esta falando. Um so lugar decide o que dizer em cada desfecho, entao
+ * as tres se comportam igual — inclusive na ambiguidade, que e onde um palpite
+ * sairia caro.
+ */
+function textoDaLeituraDeGestao(
+  r: GestaoLeituraResultado,
+  substantivo: string,
+): string {
+  if (r.status === 'AMBIGUA') {
+    return (
+      `Mais de uma vendedora com esse nome: ${(r.nomes ?? []).join(', ')}. ` +
+      'Pergunte de qual se trata. NAO escolha uma.'
+    );
+  }
+  if (r.status === 'NAO_ENCONTRADA') {
+    const equipe = (r.nomes ?? []).join(', ');
+    return equipe
+      ? `Nao ha vendedora com esse nome. A equipe ativa e: ${equipe}. Diga isso e pergunte qual delas.`
+      : 'Nao ha vendedora com esse nome. Diga isso em uma frase.';
+  }
+  if (r.linhas.length === 0) {
+    return `${r.vendedora} nao tem nenhum(a) ${substantivo} nesse recorte. Diga isso em uma frase, sem inventar numero.`;
+  }
+  return (
+    `${r.vendedora}:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+    'Repasse os nomes, horarios e numeros exatamente como estao.'
+  );
 }

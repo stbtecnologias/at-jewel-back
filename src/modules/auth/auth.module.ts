@@ -12,6 +12,7 @@ import { BuscarPerfilUseCase } from './application/use-cases/buscar-perfil.use-c
 import { AtualizarNomeUseCase } from './application/use-cases/atualizar-nome.use-case';
 import { AlterarSenhaUseCase } from './application/use-cases/alterar-senha.use-case';
 import { AtualizarUsuarioUseCase } from './application/use-cases/atualizar-usuario.use-case';
+import { BuscarAdminPorTelefoneUseCase } from './application/use-cases/buscar-admin-por-telefone.use-case';
 import { CriarUsuarioUseCase } from './application/use-cases/criar-usuario.use-case';
 import { ListarUsuariosUseCase } from './application/use-cases/listar-usuarios.use-case';
 import { RemoverUsuarioUseCase } from './application/use-cases/remover-usuario.use-case';
@@ -83,6 +84,7 @@ import { ScopesGuard } from './infrastructure/http/guards/scopes.guard';
     RefreshTokenUseCase,
     CriarUsuarioUseCase,
     AtualizarUsuarioUseCase,
+    BuscarAdminPorTelefoneUseCase,
     ListarUsuariosUseCase,
     RemoverUsuarioUseCase,
     BuscarPerfilUseCase,
@@ -110,6 +112,8 @@ import { ScopesGuard } from './infrastructure/http/guards/scopes.guard';
     { provide: GOOGLE_TOKEN_VERIFIER, useClass: GoogleTokenVerifier },
   ],
   exports: [
+    // O canal interno de WhatsApp reconhece o ADM por aqui.
+    BuscarAdminPorTelefoneUseCase,
     // JwtModule exportado para o JwtOrApiKeyGuard resolver o JwtService quando
     // instanciado no contexto de outro modulo (ex.: ProdutosModule).
     JwtModule,

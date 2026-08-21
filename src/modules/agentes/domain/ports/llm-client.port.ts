@@ -196,6 +196,66 @@ export type AgendarContatoHandler = (
   input: AgendarContatoLlmInput,
 ) => Promise<AgendarContatoLlmResultado>;
 
+
+// ===========================================================================
+// GESTAO — o espelho das ferramentas da vendedora, COM o parametro "de quem".
+//
+// SAO TIPOS SEPARADOS, e nao um parametro opcional nos handlers da vendedora.
+// A diferenca e a coisa toda: se `consultarAgenda` aceitasse um `vendedora?`,
+// bastaria o modelo preencher esse campo no canal dela para o escopo cair. Aqui
+// nao ha o que preencher — o canal da vendedora recebe handlers que nao tem o
+// parametro, e o da gestao recebe outros. A separacao e por AUSENCIA DE
+// CAMINHO, nao por regra de prompt.
+// ===========================================================================
+
+/**
+ * Resposta comum das leituras de gestao.
+ *
+ * Carrega o resultado da RESOLUCAO DO NOME junto com os dados, porque as duas
+ * coisas chegam ao modelo pelo mesmo caminho: "achei a Marina e a agenda dela e
+ * esta" ou "tem duas Marinas, pergunte qual". Sem isso o modelo teria que
+ * adivinhar o que aconteceu a partir de uma lista vazia.
+ */
+export interface GestaoLeituraResultado {
+  status: 'OK' | 'NAO_ENCONTRADA' | 'AMBIGUA';
+  /** Nome como esta cadastrado, quando resolveu. */
+  vendedora?: string;
+  /** Uma linha pronta por item. Vazio e resultado legitimo: nao ha nada. */
+  linhas: string[];
+  /** Nomes para desambiguar (AMBIGUA) ou sugerir (NAO_ENCONTRADA). */
+  nomes?: string[];
+}
+
+export type GestaoAgendaHandler = (input: {
+  vendedora: string;
+  periodo: PeriodoAgendaLlm;
+}) => Promise<GestaoLeituraResultado>;
+
+export type GestaoVendasHandler = (input: {
+  vendedora: string;
+  periodo: PeriodoVendasLlm;
+}) => Promise<GestaoLeituraResultado>;
+
+export type GestaoMetasHandler = (input: {
+  vendedora: string;
+}) => Promise<GestaoLeituraResultado>;
+
+/** Comparativo da equipe inteira — nao resolve nome, entao nao tem status. */
+export type GestaoPanoramaHandler = (input: {
+  periodo: PeriodoVendasLlm;
+}) => Promise<{ linhas: string[] }>;
+
+/**
+ * De quem e este cliente. EXCLUSIVA DA GESTAO — e literalmente a pergunta que
+ * a vendedora nao pode fazer (ver ELENA_INTERNA_SYSTEM).
+ */
+export type GestaoCarteiraDoClienteHandler = (input: {
+  cliente: string;
+}) => Promise<{
+  status: 'OK' | 'NAO_ENCONTRADO' | 'AMBIGUO';
+  linhas: string[];
+}>;
+
 export interface ChatParams {
   model: string;
   system: string;
@@ -219,6 +279,13 @@ export interface ChatParams {
   melhoresClientes?: MelhoresClientesHandler;
   // Idem para `agendar_contato` — a unica que escreve.
   agendarContato?: AgendarContatoHandler;
+  // Canal da GESTAO. Nunca convivem com os de cima: quem monta os handlers e o
+  // use case, e cada canal monta so o seu conjunto.
+  gestaoAgenda?: GestaoAgendaHandler;
+  gestaoVendas?: GestaoVendasHandler;
+  gestaoMetas?: GestaoMetasHandler;
+  gestaoPanorama?: GestaoPanoramaHandler;
+  gestaoCarteiraDoCliente?: GestaoCarteiraDoClienteHandler;
   /**
    * Habilita `gerar_grafico`. Default true, que preserva o painel.
    *

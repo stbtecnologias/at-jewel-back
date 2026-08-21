@@ -8,7 +8,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ProcessarMensagemInternaUseCase } from '../../../../atendimentos/application/use-cases/processar-mensagem-interna.use-case';
+import { RotearMensagemInternaUseCase } from '../../../../atendimentos/application/use-cases/rotear-mensagem-interna.use-case';
 import { WHATSAPP_GATEWAY } from '../../../domain/ports/injection-tokens';
 import type { IWhatsappGateway } from '../../../domain/ports/whatsapp-gateway.port';
 import { extrairMensagemRecebida } from '../waha-webhook';
@@ -27,7 +27,7 @@ export class WhatsappWebhookController {
   private readonly logger = new Logger(WhatsappWebhookController.name);
 
   constructor(
-    private readonly processar: ProcessarMensagemInternaUseCase,
+    private readonly processar: RotearMensagemInternaUseCase,
     private readonly config: ConfigService,
     @Inject(WHATSAPP_GATEWAY)
     private readonly whatsapp: IWhatsappGateway,
@@ -48,9 +48,12 @@ export class WhatsappWebhookController {
 
     try {
       // O audio, quando ha, segue DESCRITO e nao baixado: so a referencia do
-      // arquivo viaja daqui. Quem baixa e transcreve e o use case, depois de
-      // reconhecer a vendedora — transcrever custa dinheiro, e aqui na borda
-      // ainda nao se sabe se o remetente merece um centavo. Ver `resolverTexto`.
+      // arquivo viaja daqui. Quem baixa e transcreve e o ROTEADOR, depois de
+      // reconhecer quem escreveu — transcrever custa dinheiro, e aqui na borda
+      // ainda nao se sabe se o remetente merece um centavo.
+      //
+      // O roteador tambem decide QUAL agente responde: Elena para a vendedora,
+      // Anastasia para a gestao, silencio para o resto.
       const resultado = await this.processar.execute({ ...msg, de });
       // Remetente nao reconhecido: nem resposta, nem envio. Ver o default-deny
       // em ProcessarMensagemInternaUseCase.

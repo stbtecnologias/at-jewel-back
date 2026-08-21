@@ -6,6 +6,7 @@ import { MetasModule } from '../metas/metas.module';
 import { ProdutosModule } from '../produtos/produtos.module';
 import { VendasModule } from '../vendas/vendas.module';
 import { VendedorasModule } from '../vendedoras/vendedoras.module';
+import { AuthModule } from '../auth/auth.module';
 import { LlmModule } from '../agentes/llm.module';
 import { TranscricaoModule } from '../transcricao/transcricao.module';
 import { ConsultarAgendaVendedoraUseCase } from './application/use-cases/consultar-agenda-vendedora.use-case';
@@ -14,7 +15,10 @@ import { AgendarContatoVendedoraUseCase } from './application/use-cases/agendar-
 import { ConsultarCarteiraVendedoraUseCase } from './application/use-cases/consultar-carteira-vendedora.use-case';
 import { ConsultarProdutosVendedoraUseCase } from './application/use-cases/consultar-produtos-vendedora.use-case';
 import { DispararPendenciasUseCase } from './application/use-cases/disparar-pendencias.use-case';
+import { ProcessarMensagemGestaoUseCase } from './application/use-cases/processar-mensagem-gestao.use-case';
 import { ProcessarMensagemInternaUseCase } from './application/use-cases/processar-mensagem-interna.use-case';
+import { ResolverVendedoraPorNomeUseCase } from './application/use-cases/resolver-vendedora-por-nome.use-case';
+import { RotearMensagemInternaUseCase } from './application/use-cases/rotear-mensagem-interna.use-case';
 import { ProcessarRelatoVendedoraUseCase } from './application/use-cases/processar-relato-vendedora.use-case';
 import { PendenciasScheduler } from './infrastructure/schedule/pendencias.scheduler';
 import { ATENDIMENTO_REPOSITORY } from './domain/ports/injection-tokens';
@@ -47,6 +51,8 @@ import { AtendimentoRepository } from './infrastructure/database/typeorm/reposit
     // Audio da vendedora vira texto no ProcessarMensagemInterna. Modulo folha,
     // nao importa nada — sem risco de ciclo.
     TranscricaoModule,
+    // Reconhecimento do ADM pelo telefone (BuscarAdminPorTelefoneUseCase).
+    AuthModule,
   ],
   providers: [
     { provide: ATENDIMENTO_REPOSITORY, useClass: AtendimentoRepository },
@@ -59,8 +65,17 @@ import { AtendimentoRepository } from './infrastructure/database/typeorm/reposit
     PendenciasScheduler,
     ProcessarRelatoVendedoraUseCase,
     ProcessarMensagemInternaUseCase,
+    ResolverVendedoraPorNomeUseCase,
+    ProcessarMensagemGestaoUseCase,
+    RotearMensagemInternaUseCase,
   ],
   // O controller do webhook interno vive no modulo atendimento (singular).
-  exports: [ATENDIMENTO_REPOSITORY, ProcessarMensagemInternaUseCase],
+  // O webhook usa o ROTEADOR, nao os canais direto: e ele que decide se quem
+  // escreveu e vendedora, gestao ou ninguem.
+  exports: [
+    ATENDIMENTO_REPOSITORY,
+    ProcessarMensagemInternaUseCase,
+    RotearMensagemInternaUseCase,
+  ],
 })
 export class AtendimentosModule {}
