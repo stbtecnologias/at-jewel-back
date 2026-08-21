@@ -32,6 +32,7 @@ describe('ProcessarMensagemInternaUseCase', () => {
   let llm: { chatComFerramentas: jest.Mock; chat: jest.Mock };
   let whatsapp: { baixarMidia: jest.Mock };
   let transcricao: { transcrever: jest.Mock; disponivel: jest.Mock };
+  let memoria: { carregar: jest.Mock; registrar: jest.Mock };
   let useCase: ProcessarMensagemInternaUseCase;
 
   beforeEach(() => {
@@ -76,6 +77,9 @@ describe('ProcessarMensagemInternaUseCase', () => {
     // Audio: por padrao os testes mandam texto, entao nada disso e chamado.
     whatsapp = { baixarMidia: jest.fn() };
     transcricao = { transcrever: jest.fn(), disponivel: jest.fn(() => true) };
+    // Sem memoria nos testes: cada caso e uma conversa nova, que e o que
+    // isola o comportamento de uma mensagem so.
+    memoria = { carregar: jest.fn(() => []), registrar: jest.fn() };
 
     useCase = new ProcessarMensagemInternaUseCase(
       identificar as never,
@@ -90,6 +94,7 @@ describe('ProcessarMensagemInternaUseCase', () => {
       llm as never,
       whatsapp as never,
       transcricao as never,
+      memoria as never,
       { get: jest.fn(() => undefined) } as unknown as ConfigService,
     );
   });

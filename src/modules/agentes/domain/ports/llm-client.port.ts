@@ -256,6 +256,22 @@ export type GestaoCarteiraDoClienteHandler = (input: {
   linhas: string[];
 }>;
 
+/**
+ * Agendar pela gestao. Diferente do `AgendarContatoHandler` da vendedora em
+ * duas coisas: aceita PARA QUEM, e pode voltar SEM TER ESCRITO NADA quando o
+ * cliente e de outra carteira e ninguem decidiu o que fazer.
+ *
+ * O `modo` chega na SEGUNDA chamada, depois de a pessoa responder. Quem
+ * relembra os outros parametros e a memoria de conversa — por isso nao ha
+ * ferramenta separada de confirmacao, nem estado guardado no servidor.
+ */
+export type GestaoAgendarHandler = (input: {
+  cliente: string;
+  vendedora: string;
+  quandoIso: string;
+  modo?: 'OCASIONAL' | 'TRANSFERIR';
+}) => Promise<{ mensagem: string }>;
+
 export interface ChatParams {
   model: string;
   system: string;
@@ -286,6 +302,7 @@ export interface ChatParams {
   gestaoMetas?: GestaoMetasHandler;
   gestaoPanorama?: GestaoPanoramaHandler;
   gestaoCarteiraDoCliente?: GestaoCarteiraDoClienteHandler;
+  gestaoAgendar?: GestaoAgendarHandler;
   /**
    * Habilita `gerar_grafico`. Default true, que preserva o painel.
    *

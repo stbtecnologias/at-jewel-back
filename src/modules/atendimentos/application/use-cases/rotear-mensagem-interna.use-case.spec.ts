@@ -86,6 +86,7 @@ describe('RotearMensagemInternaUseCase', () => {
 
     expect(r.resposta).toBe('da anastasia');
     expect(canalGestao.execute).toHaveBeenCalledWith({
+      usuarioId: 'ad-1',
       nome: 'Lucas Barbosa',
       texto: 'agenda da Marina?',
     });
@@ -124,6 +125,7 @@ describe('RotearMensagemInternaUseCase', () => {
     await useCase.execute({ de: '558586467241@c.us', texto: '', audio: AUDIO });
 
     expect(canalGestao.execute).toHaveBeenCalledWith({
+      usuarioId: 'ad-1',
       nome: 'Lucas Barbosa',
       texto: 'como foi a semana da equipe?',
     });

@@ -103,7 +103,13 @@ export class RotearMensagemInternaUseCase {
       return this.canalVendedora.execute({ de: msg.de, texto });
     }
 
-    return this.canalGestao.execute({ nome: admin!.nome, texto });
+    // O ID vai junto: e a chave da memoria de conversa dele. Telefone nao
+    // serve — numero muda de dono, e a conversa nao pode ir junto.
+    return this.canalGestao.execute({
+      usuarioId: admin!.id,
+      nome: admin!.nome,
+      texto,
+    });
   }
 
   /** Igual ao do canal da vendedora: null = tinha audio e nao deu para ouvir. */

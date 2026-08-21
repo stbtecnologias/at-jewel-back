@@ -271,6 +271,35 @@ const GESTAO_CARTEIRA_CLIENTE_TOOL: Anthropic.Tool = {
   },
 };
 
+const GESTAO_AGENDAR_TOOL: Anthropic.Tool = {
+  name: 'agendar_para_vendedora',
+  description:
+    'Marca um contato na agenda de uma vendedora, com um cliente. Use quando pedirem para agendar alguem — "agenda a Luana com a Cintia amanha as 15h". Se o cliente for da carteira de OUTRA vendedora, a ferramenta NAO agenda: devolve a pergunta a ser feita, voce repassa e espera a escolha. Depois que a pessoa responder, chame de novo com os MESMOS cliente, vendedora e horario, agora com o `modo`. NUNCA escolha o modo por conta propria — transferir muda a carteira do cliente para sempre.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      cliente: {
+        type: 'string',
+        description:
+          'Nome do cliente, como falado — ou o CODIGO dele, quando a ferramenta ja tiver pedido para desempatar homonimos.',
+      },
+      vendedora: { type: 'string', description: 'Nome da vendedora que vai atender.' },
+      quandoIso: {
+        type: 'string',
+        description:
+          'Data e hora combinadas, em ISO 8601 com fuso (ex.: 2026-08-22T15:00:00-03:00). Se nao disserem o horario, PERGUNTE antes de chamar — nunca escolha um.',
+      },
+      modo: {
+        type: 'string',
+        enum: ['OCASIONAL', 'TRANSFERIR'],
+        description:
+          'So na SEGUNDA chamada, depois de a pessoa responder sobre a carteira. OCASIONAL = marca o contato e o cliente CONTINUA na carteira de origem. TRANSFERIR = marca e MOVE o cliente para a carteira da nova vendedora, valendo dali em diante para tudo. Omita na primeira chamada.',
+      },
+    },
+    required: ['cliente', 'vendedora', 'quandoIso'],
+  },
+};
+
 const AGENDAR_TOOL: Anthropic.Tool = {
   name: 'agendar_contato',
   description:
@@ -409,6 +438,7 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoMetas) tools.push(GESTAO_METAS_TOOL);
     if (params.gestaoPanorama) tools.push(GESTAO_PANORAMA_TOOL);
     if (params.gestaoCarteiraDoCliente) tools.push(GESTAO_CARTEIRA_CLIENTE_TOOL);
+    if (params.gestaoAgendar) tools.push(GESTAO_AGENDAR_TOOL);
     if (params.registrarRelato) tools.push(RELATO_TOOL);
     if (params.consultarVendas) tools.push(VENDAS_TOOL);
     if (params.consultarMetas) tools.push(METAS_TOOL);
@@ -496,6 +526,24 @@ export class AnthropicClient implements ILlmClient {
         relatoGravado = true;
         toolResults.push(
           await this.executarRegistrarRelato(toolUse, params.registrarRelato),
+        );
+      } else if (toolUse.name === 'agendar_para_vendedora' && params.gestaoAgendar) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as {
+              cliente?: string;
+              vendedora?: string;
+              quandoIso?: string;
+              modo?: 'OCASIONAL' | 'TRANSFERIR';
+            };
+            const r = await params.gestaoAgendar!({
+              cliente: String(e.cliente ?? '').slice(0, 120),
+              vendedora: String(e.vendedora ?? '').slice(0, 80),
+              quandoIso: String(e.quandoIso ?? ''),
+              modo: e.modo,
+            });
+            return `${r.mensagem}\n\nResponda com isso, sem alterar nomes nem horarios.`;
+          }),
         );
       } else if (toolUse.name === 'agenda_de_vendedora' && params.gestaoAgenda) {
         toolResults.push(

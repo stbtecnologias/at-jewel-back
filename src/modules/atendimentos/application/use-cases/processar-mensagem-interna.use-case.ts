@@ -16,6 +16,7 @@ import {
 import { BuscarVendedoraPorWhatsappUseCase } from '../../../vendedoras/application/use-cases/buscar-vendedora-por-whatsapp.use-case';
 import { ATENDIMENTO_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { IAtendimentoRepository } from '../../domain/ports/repositories/atendimento-repository.port';
+import { MemoriaConversaService } from '../memoria-conversa.service';
 import { ConsultarAgendaVendedoraUseCase } from './consultar-agenda-vendedora.use-case';
 import { ConsultarDesempenhoVendedoraUseCase } from './consultar-desempenho-vendedora.use-case';
 import { AgendarContatoVendedoraUseCase } from './agendar-contato-vendedora.use-case';
@@ -106,6 +107,7 @@ export class ProcessarMensagemInternaUseCase {
     private readonly whatsapp: IWhatsappGateway,
     @Inject(TRANSCRICAO_SERVICE)
     private readonly transcricao: ITranscricao,
+    private readonly memoria: MemoriaConversaService,
     private readonly config: ConfigService,
   ) {}
 
@@ -163,12 +165,18 @@ export class ProcessarMensagemInternaUseCase {
 
     let relatoRegistrado = false;
 
+    // A conversa anterior dela, se houver. Sem isso "e amanha?" chegaria como
+    // frase solta. A chave e o ID — nunca o telefone. Ver MemoriaConversaService.
+    const chave = MemoriaConversaService.chaveVendedora(vendedoraId);
+    const historico = this.memoria.carregar(chave);
+    const pergunta = limparEHigienizar(textoDaMensagem);
+
     try {
       const { texto } = await this.llm.chatComFerramentas({
         model: this.config.get<string>('ANTHROPIC_MODEL_INTERNO') ?? 'claude-opus-4-8',
         system,
         maxTokens: 700,
-        mensagens: [{ role: 'user', content: limparEHigienizar(textoDaMensagem) }],
+        mensagens: [...historico, { role: 'user', content: pergunta }],
         // WhatsApp nao renderiza grafico. Oferecer a ferramenta so convida o
         // modelo a tentar e depois se desculpar.
         graficos: false,
@@ -288,6 +296,10 @@ export class ProcessarMensagemInternaUseCase {
           };
         },
       });
+
+      // So guarda o que deu certo. Turno com falha na memoria faria a proxima
+      // resposta se apoiar num erro.
+      this.memoria.registrar(chave, pergunta, texto);
 
       return {
         resposta: texto,

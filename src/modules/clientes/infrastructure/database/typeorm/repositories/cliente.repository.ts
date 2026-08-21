@@ -185,6 +185,13 @@ export class ClienteRepository implements IClienteRepository {
     return row ? this.toDomain(row) : null;
   }
 
+  async transferirCarteira(
+    clienteId: string,
+    vendedoraCodigoErp: string | null,
+  ): Promise<void> {
+    await this.repo.update(clienteId, { vendedoraCodigoErp });
+  }
+
   async buscarNaCarteiraPorNome(
     vendedoraCodigoErp: string,
     termo: string,

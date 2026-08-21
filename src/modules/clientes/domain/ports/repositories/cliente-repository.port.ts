@@ -135,6 +135,19 @@ export interface IClienteRepository {
   atualizar(cliente: Cliente): Promise<Cliente>;
 
   /**
+   * Move o cliente para a carteira de outra vendedora.
+   *
+   * UPDATE CIRURGICO de uma coluna so, e nao `atualizar(cliente)`, de
+   * proposito: a entidade e imutavel e reescreve-la faria a camada de
+   * infraestrutura RECIFRAR telefone e e-mail a cada transferencia. Ciframento
+   * com IV novo a cada gravacao muda os bytes sem mudar o dado — e um jeito
+   * silencioso de sujar o historico e desperdicar escrita.
+   *
+   * `null` desvincula (cliente sem carteira).
+   */
+  transferirCarteira(clienteId: string, vendedoraCodigoErp: string | null): Promise<void>;
+
+  /**
    * Exclusao FISICA. Nao confundir com `ativo = false`, o desligamento suave.
    *
    * `clientes_perfil` cai por CASCADE — some todo o dado da triagem — e as
