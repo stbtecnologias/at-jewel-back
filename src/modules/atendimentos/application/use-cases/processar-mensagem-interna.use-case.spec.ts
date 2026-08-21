@@ -30,6 +30,8 @@ describe('ProcessarMensagemInternaUseCase', () => {
   let atendimentos: { buscarCobrancaAguardando: jest.Mock };
   let clientes: { buscarPorId: jest.Mock };
   let llm: { chatComFerramentas: jest.Mock; chat: jest.Mock };
+  let whatsapp: { baixarMidia: jest.Mock };
+  let transcricao: { transcrever: jest.Mock; disponivel: jest.Mock };
   let useCase: ProcessarMensagemInternaUseCase;
 
   beforeEach(() => {
@@ -71,6 +73,9 @@ describe('ProcessarMensagemInternaUseCase', () => {
       chatComFerramentas: jest.fn().mockResolvedValue({ texto: 'ok', tokens: 1 }),
       chat: jest.fn(),
     };
+    // Audio: por padrao os testes mandam texto, entao nada disso e chamado.
+    whatsapp = { baixarMidia: jest.fn() };
+    transcricao = { transcrever: jest.fn(), disponivel: jest.fn(() => true) };
 
     useCase = new ProcessarMensagemInternaUseCase(
       identificar as never,
@@ -83,6 +88,8 @@ describe('ProcessarMensagemInternaUseCase', () => {
       atendimentos as never,
       clientes as never,
       llm as never,
+      whatsapp as never,
+      transcricao as never,
       { get: jest.fn(() => undefined) } as unknown as ConfigService,
     );
   });
@@ -248,6 +255,80 @@ describe('ProcessarMensagemInternaUseCase', () => {
     expect(params().graficos).toBe(false);
   });
 
+
+  /**
+   * AUDIO — acrescentado em 21/08/2026.
+   *
+   * O QUE ESTES TESTES PROTEGEM e a ORDEM. Transcrever e chamada PAGA; se ela
+   * acontecesse antes do default-deny, qualquer pessoa mandando audio para o
+   * numero queimaria credito da OpenAI. O primeiro teste e o que fecha isso, e
+   * ele falha no dia em que alguem mover a transcricao para a borda HTTP
+   * "porque fica mais limpo".
+   */
+  describe('audio', () => {
+    const AUDIO = {
+      url: 'http://waha:3000/api/files/default/abc.oga',
+      mimetype: 'audio/ogg; codecs=opus',
+      segundos: 5,
+    };
+
+    it('audio de quem NAO e vendedora nao baixa nem transcreve — custo zero', async () => {
+      identificar.execute.mockResolvedValue(null);
+
+      const r = await useCase.execute({ de: '5585999999999@c.us', texto: '', audio: AUDIO });
+
+      expect(r.resposta).toBeNull();
+      expect(r.motivo).toBe('ignorado_remetente_desconhecido');
+      expect(whatsapp.baixarMidia).not.toHaveBeenCalled();
+      expect(transcricao.transcrever).not.toHaveBeenCalled();
+      expect(llm.chatComFerramentas).not.toHaveBeenCalled();
+    });
+
+    it('audio da vendedora vira texto e segue como mensagem digitada', async () => {
+      whatsapp.baixarMidia.mockResolvedValue({
+        conteudo: Buffer.from('ogg'),
+        mimetype: 'audio/ogg',
+      });
+      transcricao.transcrever.mockResolvedValue('quais são meus clientes de hoje?');
+
+      await useCase.execute({ de: '558586467241@c.us', texto: '', audio: AUDIO });
+
+      expect(whatsapp.baixarMidia).toHaveBeenCalledWith(AUDIO.url);
+      // O agente recebe o TEXTO; daqui para baixo ninguem sabe que houve audio.
+      expect(params().mensagens[0].content).toContain('quais são meus clientes de hoje?');
+    });
+
+    it('audio longo demais e recusado ANTES de baixar', async () => {
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: '',
+        audio: { ...AUDIO, segundos: 600 },
+      });
+
+      expect(whatsapp.baixarMidia).not.toHaveBeenCalled();
+      expect(r.motivo).toBe('audio_nao_entendido');
+    });
+
+    it('transcricao falhou: avisa em vez de ficar mudo', async () => {
+      whatsapp.baixarMidia.mockResolvedValue({
+        conteudo: Buffer.from('ogg'),
+        mimetype: 'audio/ogg',
+      });
+      transcricao.transcrever.mockResolvedValue(null);
+
+      const r = await useCase.execute({ de: '558586467241@c.us', texto: '', audio: AUDIO });
+
+      expect(r.motivo).toBe('audio_nao_entendido');
+      expect(r.resposta).toContain('escrito');
+      expect(llm.chatComFerramentas).not.toHaveBeenCalled();
+    });
+
+    it('texto digitado tem precedencia — nao transcreve a toa', async () => {
+      await useCase.execute({ de: '558586467241@c.us', texto: 'oi', audio: AUDIO });
+
+      expect(transcricao.transcrever).not.toHaveBeenCalled();
+    });
+  });
   it('falha do agente vira desculpa, nao silencio nem stack', async () => {
     llm.chatComFerramentas.mockRejectedValue(new Error('timeout'));
 

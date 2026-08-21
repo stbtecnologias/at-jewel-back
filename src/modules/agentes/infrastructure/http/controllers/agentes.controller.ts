@@ -1,17 +1,28 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
   HttpCode,
   HttpStatus,
+  Inject,
   Param,
   ParseUUIDPipe,
   Post,
   Put,
   Req,
+  UnprocessableEntityException,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
+import { TRANSCRICAO_SERVICE } from '../../../../transcricao/domain/ports/injection-tokens';
+import {
+  LIMITE_BYTES,
+  type ITranscricao,
+} from '../../../../transcricao/domain/ports/transcricao.port';
 import { Permissions } from '../../../../auth/infrastructure/http/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../../../auth/infrastructure/http/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../../../auth/infrastructure/http/guards/permissions.guard';
@@ -42,6 +53,8 @@ export class AgentesController {
     private readonly salvarConversa: SalvarConversaUseCase,
     private readonly listarPrompts: ListarPromptsUseCase,
     private readonly atualizarPrompt: AtualizarPromptUseCase,
+    @Inject(TRANSCRICAO_SERVICE)
+    private readonly transcricaoService: ITranscricao,
   ) {}
 
   // --- Prompts das agentes (configuraveis) — somente ADMIN (RF-USU-03/04) ---
@@ -129,4 +142,66 @@ export class AgentesController {
       vendedoraId: dto.vendedora_id ?? null,
     });
   }
+
+  // --- Audio (qualquer staff que fale com alguma agente) ---
+
+  /**
+   * Recebe um audio gravado no painel e devolve so o texto.
+   *
+   * NAO CONVERSA COM AGENTE NENHUMA. Devolver o texto em vez de ja responder e
+   * deliberado: a tela poe a transcricao no campo e quem gravou revisa antes de
+   * enviar. Vocabulario de joalheria erra facil — "meia aliança", "ródio" — e
+   * uma palavra trocada vira uma pergunta diferente, respondida com conviccao.
+   *
+   * No WhatsApp nao ha essa chance: o audio ja foi, entao la transcreve e
+   * processa direto.
+   *
+   * Nada e gravado: o arquivo fica em memoria (`memoryStorage`), vira texto e
+   * o buffer e descartado com a requisicao.
+   */
+  @Post('transcrever')
+  @Permissions('agentes:elena', 'agentes:anastasia')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  // Sem `storage` nem `dest`, o multer guarda em MEMORIA (node_modules/multer/
+  // index.js:13-17) — que e exatamente o que queremos. Passar `memoryStorage()`
+  // explicito obrigaria a instalar `@types/multer` so para tipar o import.
+  @UseInterceptors(
+    FileInterceptor('audio', { limits: { fileSize: LIMITE_BYTES, files: 1 } }),
+  )
+  async transcrever(@UploadedFile() arquivo?: ArquivoEnviado) {
+    if (!arquivo?.buffer?.length) {
+      throw new BadRequestException('Envie um arquivo de áudio no campo "audio".');
+    }
+    const tipo = (arquivo.mimetype ?? '').split(';')[0].trim();
+    if (!tipo.startsWith('audio/') && !tipo.startsWith('video/')) {
+      // `video/webm` entra porque o MediaRecorder de alguns navegadores rotula
+      // assim mesmo uma gravacao so de audio.
+      throw new BadRequestException('Formato não suportado — envie áudio.');
+    }
+
+    const texto = await this.transcricaoService.transcrever({
+      conteudo: arquivo.buffer,
+      mimetype: tipo,
+      nomeArquivo: arquivo.originalname,
+    });
+
+    if (!texto) {
+      throw new UnprocessableEntityException(
+        'Não consegui entender o áudio. Tente gravar de novo.',
+      );
+    }
+    return { texto };
+  }
+}
+
+/**
+ * O minimo do arquivo que o multer entrega. Declarado aqui em vez de instalar
+ * `@types/multer` so por causa de um tipo — o pacote `multer` ja vem junto do
+ * `@nestjs/platform-express`, entao o runtime nunca foi o problema.
+ */
+interface ArquivoEnviado {
+  buffer: Buffer;
+  mimetype?: string;
+  originalname?: string;
+  size?: number;
 }

@@ -15,6 +15,7 @@ function make() {
     // Nao usados neste fluxo: quem resolve LID e chatId e a borda HTTP.
     resolverChatId: jest.fn(),
     resolverRemetente: jest.fn(async (de: string) => de),
+    baixarMidia: jest.fn(),
   };
 
   const config = {

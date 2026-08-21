@@ -47,6 +47,10 @@ export class WhatsappWebhookController {
     const de = await this.whatsapp.resolverRemetente(msg.de);
 
     try {
+      // O audio, quando ha, segue DESCRITO e nao baixado: so a referencia do
+      // arquivo viaja daqui. Quem baixa e transcreve e o use case, depois de
+      // reconhecer a vendedora — transcrever custa dinheiro, e aqui na borda
+      // ainda nao se sabe se o remetente merece um centavo. Ver `resolverTexto`.
       const resultado = await this.processar.execute({ ...msg, de });
       // Remetente nao reconhecido: nem resposta, nem envio. Ver o default-deny
       // em ProcessarMensagemInternaUseCase.

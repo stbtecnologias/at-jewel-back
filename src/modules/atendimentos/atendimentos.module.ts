@@ -7,6 +7,7 @@ import { ProdutosModule } from '../produtos/produtos.module';
 import { VendasModule } from '../vendas/vendas.module';
 import { VendedorasModule } from '../vendedoras/vendedoras.module';
 import { LlmModule } from '../agentes/llm.module';
+import { TranscricaoModule } from '../transcricao/transcricao.module';
 import { ConsultarAgendaVendedoraUseCase } from './application/use-cases/consultar-agenda-vendedora.use-case';
 import { ConsultarDesempenhoVendedoraUseCase } from './application/use-cases/consultar-desempenho-vendedora.use-case';
 import { AgendarContatoVendedoraUseCase } from './application/use-cases/agendar-contato-vendedora.use-case';
@@ -43,6 +44,9 @@ import { AtendimentoRepository } from './infrastructure/database/typeorm/reposit
     // So o LLM, nao o AgentesModule inteiro: aquele importa ESTE modulo (a
     // tool avisar_vendedora abre atendimento), e o Nest recusa o ciclo.
     LlmModule,
+    // Audio da vendedora vira texto no ProcessarMensagemInterna. Modulo folha,
+    // nao importa nada — sem risco de ciclo.
+    TranscricaoModule,
   ],
   providers: [
     { provide: ATENDIMENTO_REPOSITORY, useClass: AtendimentoRepository },

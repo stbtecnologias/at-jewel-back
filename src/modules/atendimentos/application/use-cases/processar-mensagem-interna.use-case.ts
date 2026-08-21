@@ -4,8 +4,15 @@ import { limparEHigienizar } from '../../../../shared/http/sanitize/sanitize-tex
 import { ELENA_INTERNA_SYSTEM } from '../../../agentes/application/personas';
 import { LLM_CLIENT } from '../../../agentes/domain/ports/injection-tokens';
 import type { ILlmClient } from '../../../agentes/domain/ports/llm-client.port';
+import { WHATSAPP_GATEWAY } from '../../../atendimento/domain/ports/injection-tokens';
+import type { IWhatsappGateway } from '../../../atendimento/domain/ports/whatsapp-gateway.port';
 import { CLIENTE_REPOSITORY } from '../../../clientes/domain/ports/injection-tokens';
 import type { IClienteRepository } from '../../../clientes/domain/ports/repositories/cliente-repository.port';
+import { TRANSCRICAO_SERVICE } from '../../../transcricao/domain/ports/injection-tokens';
+import {
+  LIMITE_SEGUNDOS,
+  type ITranscricao,
+} from '../../../transcricao/domain/ports/transcricao.port';
 import { BuscarVendedoraPorWhatsappUseCase } from '../../../vendedoras/application/use-cases/buscar-vendedora-por-whatsapp.use-case';
 import { ATENDIMENTO_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { IAtendimentoRepository } from '../../domain/ports/repositories/atendimento-repository.port';
@@ -16,10 +23,23 @@ import { ConsultarCarteiraVendedoraUseCase } from './consultar-carteira-vendedor
 import { ConsultarProdutosVendedoraUseCase } from './consultar-produtos-vendedora.use-case';
 import { ProcessarRelatoVendedoraUseCase } from './processar-relato-vendedora.use-case';
 
+/**
+ * Audio que acompanhou a mensagem. Descrito aqui, na camada de aplicacao, para
+ * o use case nao depender do tipo que o parser do WAHA exporta na infra.
+ */
+export interface AudioInterno {
+  /** Arquivo ja descriptografado pelo provedor; `null` se ele nao entregou. */
+  url: string | null;
+  mimetype: string;
+  segundos: number | null;
+}
+
 export interface MensagemInterna {
   /** Chat de origem, ja traduzido de LID para telefone na borda HTTP. */
   de: string;
+  /** Vazio quando a vendedora mandou audio puro — ver `audio`. */
   texto: string;
+  audio?: AudioInterno;
 }
 
 export interface RespostaInterna {
@@ -28,8 +48,10 @@ export interface RespostaInterna {
   /** Rotulo do que aconteceu, para o log. Nunca contem PII. */
   motivo:
     | 'ignorado_remetente_desconhecido'
+    | 'ignorado_sem_conteudo'
     | 'relato_registrado'
     | 'conversa'
+    | 'audio_nao_entendido'
     | 'falha_agente';
 }
 
@@ -80,6 +102,10 @@ export class ProcessarMensagemInternaUseCase {
     private readonly clientes: IClienteRepository,
     @Inject(LLM_CLIENT)
     private readonly llm: ILlmClient,
+    @Inject(WHATSAPP_GATEWAY)
+    private readonly whatsapp: IWhatsappGateway,
+    @Inject(TRANSCRICAO_SERVICE)
+    private readonly transcricao: ITranscricao,
     private readonly config: ConfigService,
   ) {}
 
@@ -95,6 +121,32 @@ export class ProcessarMensagemInternaUseCase {
 
     const vendedoraId = vendedora.id;
     const primeiroNome = vendedora.nome.trim().split(/\s+/)[0];
+
+    // AUDIO VIRA TEXTO AQUI, E SO AQUI — depois do default-deny, de proposito.
+    //
+    // Transcrever e chamada PAGA. Se acontecesse na borda HTTP, qualquer pessoa
+    // que mandasse audio para o numero queimaria credito, inclusive quem nunca
+    // sera atendido. Atras do reconhecimento da vendedora, audio de estranho
+    // sai tao barato quanto texto de estranho: nao sai do lugar.
+    //
+    // Daqui para baixo nada sabe que houve audio. O texto segue exatamente o
+    // caminho de uma mensagem digitada.
+    const textoDaMensagem = await this.resolverTexto(msg);
+    if (textoDaMensagem === null) {
+      return {
+        resposta:
+          `${primeiroNome}, chegou seu áudio mas não consegui ouvir. ` +
+          `Pode mandar por escrito?`,
+        motivo: 'audio_nao_entendido',
+      };
+    }
+    if (!textoDaMensagem) {
+      // Nao deveria acontecer: o parser do webhook so entrega mensagem com
+      // texto ou com audio. Se acontecer, silencio — e melhor que mandar
+      // string vazia para o LLM e receber um 400.
+      return { resposta: null, motivo: 'ignorado_sem_conteudo' };
+    }
+
     // A carteira e por codigo do ERP, nao por id — e o mesmo campo que o
     // avisar_vendedora usa. Vendedora sem codigo simplesmente nao tem
     // carteira, e as ferramentas devolvem vazio.
@@ -116,7 +168,7 @@ export class ProcessarMensagemInternaUseCase {
         model: this.config.get<string>('ANTHROPIC_MODEL_INTERNO') ?? 'claude-opus-4-8',
         system,
         maxTokens: 700,
-        mensagens: [{ role: 'user', content: limparEHigienizar(msg.texto) }],
+        mensagens: [{ role: 'user', content: limparEHigienizar(textoDaMensagem) }],
         // WhatsApp nao renderiza grafico. Oferecer a ferramenta so convida o
         // modelo a tentar e depois se desculpar.
         graficos: false,
@@ -228,7 +280,7 @@ export class ProcessarMensagemInternaUseCase {
         registrarRelato: async () => {
           // O texto ORIGINAL, nao o que o modelo entendeu: o relato guardado
           // tem que ser a frase dela.
-          const r = await this.relato.execute(vendedoraId, msg.texto);
+          const r = await this.relato.execute(vendedoraId, textoDaMensagem);
           if (r.status === 'REGISTRADO') relatoRegistrado = true;
           return {
             status: r.status,
@@ -251,6 +303,53 @@ export class ProcessarMensagemInternaUseCase {
         motivo: 'falha_agente',
       };
     }
+  }
+
+  /**
+   * Devolve o texto da mensagem, transcrevendo o audio quando for o caso.
+   *
+   * @returns o texto; ou `null` quando havia audio e nao deu para transformar
+   *          em texto — caso em que quem chama avisa a vendedora, em vez de
+   *          ficar mudo.
+   */
+  private async resolverTexto(msg: MensagemInterna): Promise<string | null> {
+    const digitado = msg.texto?.trim() ?? '';
+    if (digitado) return digitado;
+    if (!msg.audio) return '';
+
+    const { url, mimetype, segundos } = msg.audio;
+
+    // Recusa ANTES de baixar quando o proprio payload ja diz que e longo
+    // demais. Barato, e evita pagar por uma transcricao que sairia ruim.
+    if (segundos !== null && segundos > LIMITE_SEGUNDOS) {
+      this.logger.warn(`Audio de ${segundos}s acima do teto — nao transcrito.`);
+      return null;
+    }
+    if (!url) {
+      // O WAHA reconheceu o audio mas nao entregou o arquivo. Quase sempre e
+      // download de midia desligado no WAHA — configuracao dele, nao nossa.
+      this.logger.warn('Audio sem URL de arquivo — o WAHA nao baixou a midia.');
+      return null;
+    }
+    if (!this.transcricao.disponivel()) {
+      this.logger.warn('Transcricao indisponivel (sem OPENAI_API_KEY).');
+      return null;
+    }
+
+    const arquivo = await this.whatsapp.baixarMidia(url);
+    if (!arquivo) return null;
+
+    const texto = await this.transcricao.transcrever({
+      conteudo: arquivo.conteudo,
+      // O content-type do download e mais confiavel que o do payload, mas se
+      // vier generico o do payload vale mais.
+      mimetype: arquivo.mimetype.startsWith('audio') ? arquivo.mimetype : mimetype,
+    });
+
+    if (!texto) return null;
+    // So o tamanho no log: o conteudo e do mesmo nivel de sigilo da mensagem.
+    this.logger.debug(`Audio transcrito (${texto.length} caracteres).`);
+    return texto;
   }
 
   /**

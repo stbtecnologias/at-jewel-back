@@ -48,4 +48,26 @@ export interface IWhatsappGateway {
    * de errar num canal com default-deny.
    */
   resolverRemetente(de: string): Promise<string>;
+
+  /**
+   * Baixa um arquivo de midia que o provedor ja descriptografou.
+   *
+   * POR QUE PRECISA DE UM METODO: o arquivo que chega no webhook NAO e
+   * baixavel por quem so tem a URL. O WhatsApp entrega midia cifrada ponta a
+   * ponta — o payload traz `URL`, `directPath`, `mediaKey` e `fileEncSHA256`,
+   * e buscar aquela URL direto devolve bytes cifrados. Quem descriptografa e o
+   * WAHA, que republica o arquivo em claro num endereco proprio.
+   *
+   * E ESSE ENDERECO E UMA ARMADILHA. Ele vem como
+   *
+   *     http://waha:3000/api/files/default/AC50....oga
+   *
+   * onde `waha` e o nome do container DENTRO da rede Docker do WAHA. O back
+   * roda em OUTRA maquina (WAHA na `.151`, nos na `.137`), entao esse hostname
+   * nao resolve aqui e o download falharia sempre. A implementacao aproveita
+   * apenas o CAMINHO e o recompoe sobre o `WAHA_BASE_URL`.
+   *
+   * @returns bytes e mimetype, ou `null` se nao deu para baixar.
+   */
+  baixarMidia(url: string): Promise<{ conteudo: Buffer; mimetype: string } | null>;
 }

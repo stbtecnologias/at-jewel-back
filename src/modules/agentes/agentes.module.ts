@@ -7,6 +7,7 @@ import { WhatsappGatewayModule } from '../atendimento/whatsapp-gateway.module';
 import { AtendimentosModule } from '../atendimentos/atendimentos.module';
 import { ClientesModule } from '../clientes/clientes.module';
 import { DemandasModule } from '../demandas/demandas.module';
+import { TranscricaoModule } from '../transcricao/transcricao.module';
 import { VendedorasModule } from '../vendedoras/vendedoras.module';
 import { AvisarVendedoraUseCase } from './application/use-cases/avisar-vendedora.use-case';
 import { AnalisarProdutoUseCase } from './application/use-cases/analisar-produto.use-case';
@@ -33,6 +34,8 @@ import { AgentesController } from './infrastructure/http/controllers/agentes.con
   imports: [
     TypeOrmModule.forFeature([ConversaOrmEntity, AgentePromptOrmEntity]),
     AuthModule,
+    // Audio gravado no painel vira texto em POST /agentes/transcrever.
+    TranscricaoModule,
     // Reusa o CriarDemandaUseCase na tool registrar_demanda da Anastasia (RF-24).
     DemandasModule,
     // Tool avisar_vendedora: le a carteira do cliente, resolve a vendedora,
