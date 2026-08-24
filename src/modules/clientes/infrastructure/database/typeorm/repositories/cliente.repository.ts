@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, FindOptionsWhere, Repository } from 'typeorm';
+import { DataSource, FindOptionsWhere, ILike, Repository } from 'typeorm';
 import { Cliente } from '../../../../domain/entities/cliente.entity';
 import { ClientePerfil } from '../../../../domain/entities/cliente-perfil.entity';
 import {
@@ -143,7 +143,7 @@ export class ClienteRepository implements IClienteRepository {
     // unaccent nao esta instalado no banco; ILIKE resolve maiuscula/minuscula,
     // e o acento fica por conta de quem digita. Escapamos os curingas do LIKE
     // para que "%" digitado pelo ADM nao vire "traga todo mundo".
-    const alvo = termo.replace(/[\\%_]/g, (c) => '\\' + c);
+    const alvo = escaparCuringas(termo);
     const rows = await this.repo
       .createQueryBuilder('c')
       .where('c.nome ILIKE :alvo', { alvo: '%' + alvo + '%' })
@@ -199,7 +199,7 @@ export class ClienteRepository implements IClienteRepository {
   ): Promise<Cliente[]> {
     // Escapa os curingas do LIKE: "%" digitado nao pode virar "traga todo
     // mundo" — mesmo cuidado do buscarPorNomeParcial.
-    const alvo = termo.replace(/[\\%_]/g, (c) => '\\' + c);
+    const alvo = escaparCuringas(termo);
     const rows = await this.repo
       .createQueryBuilder('c')
       .where('c.vendedora_codigo_erp = :codigo', { codigo: vendedoraCodigoErp })
@@ -408,7 +408,17 @@ export class ClienteRepository implements IClienteRepository {
       where.vendedoraCodigoErp = filtros.vendedoraCodigoErp;
     }
 
-    const rows = await this.repo.find({ where, order: { criadoEm: 'DESC' } });
+    if (filtros.nome !== undefined) {
+      where.nome = ILike('%' + escaparCuringas(filtros.nome) + '%');
+    }
+
+    // Buscando POR NOME a ordem util e alfabetica — quem digita "mar" quer
+    // varrer Maria, Mariana, Marina, e nao a ordem de cadastro.
+    const rows = await this.repo.find({
+      where,
+      order: filtros.nome !== undefined ? { nome: 'ASC' } : { criadoEm: 'DESC' },
+      ...(filtros.limit !== undefined ? { take: filtros.limit } : {}),
+    });
     return rows.map((r) => this.toDomain(r));
   }
 
@@ -536,4 +546,12 @@ export class ClienteRepository implements IClienteRepository {
       atualizadoEm: p.atualizadoEm,
     });
   }
+}
+
+/**
+ * Neutraliza os curingas do LIKE. Sem isto um "%" digitado por quem busca
+ * viraria "traga todo mundo", e um "_" casaria com qualquer caractere.
+ */
+function escaparCuringas(termo: string): string {
+  return termo.replace(/[\\%_]/g, (c) => '\\' + c);
 }

@@ -18,6 +18,10 @@ export interface FiltroCliente {
   tabelaPreco?: TabelaPreco;
   codigoErp?: string;
   vendedoraCodigoErp?: string;
+  /** Parte do nome (ILIKE). Combina com os demais filtros em AND. */
+  nome?: string;
+  /** Teto de linhas. Sem ele a listagem devolve a base inteira. */
+  limit?: number;
 }
 
 export interface TierCliente {
