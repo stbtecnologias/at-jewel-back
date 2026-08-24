@@ -1,5 +1,13 @@
-import { Transform } from 'class-transformer';
-import { IsBoolean, IsOptional, IsString } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import {
+  IsBoolean,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export class FiltroProdutoDto {
   @IsOptional()
@@ -18,4 +26,21 @@ export class FiltroProdutoDto {
   })
   @IsBoolean()
   ativo?: boolean;
+
+  /**
+   * Texto livre. O repositorio ja sabia buscar assim desde o catalogo da
+   * vendedora — o que faltava era a porta HTTP deixar passar.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  busca?: string;
+
+  /** Sem teto, uma busca vaga devolve o catalogo inteiro. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  limit?: number;
 }
