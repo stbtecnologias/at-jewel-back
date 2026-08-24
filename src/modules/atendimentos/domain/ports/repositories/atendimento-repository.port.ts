@@ -51,6 +51,94 @@ export interface CriarInteracaoInput {
   relato?: string | null;
 }
 
+
+// ------------------------------------------------------------------
+// AUDITORIA — a leitura de gestao sobre os atendimentos da equipe
+// ------------------------------------------------------------------
+
+/**
+ * Em que pe esta o episodio. NAO E COLUNA: sai da view
+ * `vw_atendimentos_auditoria`, calculada a partir da linha do tempo. A regra
+ * e o porque de nao ser armazenada estao no cabecalho da migracao 38.
+ */
+export type EtapaAtendimento =
+  | 'PRIMEIRO_CONTATO'
+  | 'EM_NEGOCIACAO'
+  | 'REMARCADO'
+  | 'SEM_CONTATO'
+  | 'CONCLUIDO'
+  | 'NAO_AVANCOU';
+
+export const ETAPAS_ATENDIMENTO: readonly EtapaAtendimento[] = [
+  'PRIMEIRO_CONTATO',
+  'EM_NEGOCIACAO',
+  'REMARCADO',
+  'SEM_CONTATO',
+  'CONCLUIDO',
+  'NAO_AVANCOU',
+] as const;
+
+export interface FiltroAuditoria {
+  /** Um atendimento so. E como o detalhe pega a etapa da MESMA view da lista. */
+  id?: string;
+  vendedoraId?: string;
+  /** Parte do nome do cliente — e como se procura "o Thiago falou com a Luana?". */
+  clienteNome?: string;
+  etapa?: EtapaAtendimento;
+  /** Janela sobre `aberto_em`. */
+  de?: Date;
+  ate?: Date;
+  limit: number;
+  offset: number;
+}
+
+export interface AtendimentoAuditoria {
+  id: string;
+  clienteId: string;
+  clienteNome: string;
+  vendedoraId: string;
+  vendedoraNome: string;
+  ocasiao: OcasiaoAtendimento | null;
+  etapa: EtapaAtendimento;
+  abertoEm: Date;
+  fechadoEm: Date | null;
+  desfecho: DesfechoAtendimento | null;
+  ultimaAtividadeEm: Date | null;
+
+  /** A FILA DO QUE ESTA DEVENDO — e nao a etapa — responde "quem nao respondeu". */
+  aguardandoRelato: boolean;
+  interacoesExpiradas: number;
+  retomadas: number;
+
+  /** Proximo compromisso com o CLIENTE, nao o proximo disparo nosso. */
+  proximoContatoEm: Date | null;
+
+  /**
+   * A ultima coisa que a vendedora contou, nas palavras dela. Vem DECIFRADO
+   * — a coluna e cifrada, entao esta leitura passa pelo ORM e nunca por SQL
+   * cru, que devolveria o texto embaralhado.
+   */
+  ultimoRelato: string | null;
+}
+
+export type ContagemPorEtapa = Record<EtapaAtendimento, number>;
+
+export interface LinhaResumoVendedora {
+  vendedoraId: string;
+  nome: string;
+  total: number;
+  porEtapa: ContagemPorEtapa;
+  /** Quantos atendimentos dela estao esperando um relato agora. */
+  aguardandoRelato: number;
+  ultimaAtividadeEm: Date | null;
+}
+
+export interface ResumoAuditoria {
+  total: number;
+  porEtapa: ContagemPorEtapa;
+  vendedoras: LinhaResumoVendedora[];
+}
+
 export interface IAtendimentoRepository {
   /**
    * O atendimento EM CURSO do cliente, se houver. O banco garante no maximo um
@@ -140,4 +228,23 @@ export interface IAtendimentoRepository {
     status: StatusInteracao,
     ocorridoEm?: Date | null,
   ): Promise<void>;
+
+  /**
+   * A LEITURA DE AUDITORIA. Le a view `vw_atendimentos_auditoria`, entao a
+   * etapa vem calculada pelo banco e nao reimplementada aqui.
+   *
+   * Devolve `total` junto da pagina porque teto silencioso mente por omissao:
+   * vinte de trezentos parecem os trezentos.
+   */
+  listarAuditoria(
+    filtros: FiltroAuditoria,
+  ): Promise<{ itens: AtendimentoAuditoria[]; total: number }>;
+
+  /**
+   * Os numeros do topo da tela e a coluna de vendedoras, numa consulta so.
+   * Sem `limit`: e agregacao, e o resultado tem o tamanho da equipe.
+   */
+  resumoAuditoria(
+    filtros: Pick<FiltroAuditoria, 'de' | 'ate' | 'etapa'>,
+  ): Promise<ResumoAuditoria>;
 }

@@ -19,6 +19,8 @@ import { ProcessarMensagemGestaoUseCase } from './application/use-cases/processa
 import { ProcessarMensagemInternaUseCase } from './application/use-cases/processar-mensagem-interna.use-case';
 import { ResolverVendedoraPorNomeUseCase } from './application/use-cases/resolver-vendedora-por-nome.use-case';
 import { RotearMensagemInternaUseCase } from './application/use-cases/rotear-mensagem-interna.use-case';
+import { ConsultarAuditoriaUseCase } from './application/use-cases/consultar-auditoria.use-case';
+import { AtendimentosController } from './infrastructure/http/controllers/atendimentos.controller';
 import { ProcessarRelatoVendedoraUseCase } from './application/use-cases/processar-relato-vendedora.use-case';
 import { FerramentasGestaoService } from './application/ferramentas-gestao.service';
 import { FerramentasVendedoraService } from './application/ferramentas-vendedora.service';
@@ -78,7 +80,11 @@ import { AtendimentoRepository } from './infrastructure/database/typeorm/reposit
     ResolverVendedoraPorNomeUseCase,
     ProcessarMensagemGestaoUseCase,
     RotearMensagemInternaUseCase,
+    ConsultarAuditoriaUseCase,
   ],
+  // A leitura de gestao sobre os atendimentos. So JWT: o que sai daqui e o
+  // relato da vendedora, e nao ha integracao que precise dele.
+  controllers: [AtendimentosController],
   // O controller do webhook interno vive no modulo atendimento (singular).
   // O webhook usa o ROTEADOR, nao os canais direto: e ele que decide se quem
   // escreveu e vendedora, gestao ou ninguem.

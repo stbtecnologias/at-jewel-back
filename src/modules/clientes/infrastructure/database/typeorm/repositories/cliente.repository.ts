@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, FindOptionsWhere, ILike, Repository } from 'typeorm';
+import { escaparCuringas } from '../../../../../../shared/database/sql/escapar-curingas';
 import { Cliente } from '../../../../domain/entities/cliente.entity';
 import { ClientePerfil } from '../../../../domain/entities/cliente-perfil.entity';
 import {
@@ -546,12 +547,4 @@ export class ClienteRepository implements IClienteRepository {
       atualizadoEm: p.atualizadoEm,
     });
   }
-}
-
-/**
- * Neutraliza os curingas do LIKE. Sem isto um "%" digitado por quem busca
- * viraria "traga todo mundo", e um "_" casaria com qualquer caractere.
- */
-function escaparCuringas(termo: string): string {
-  return termo.replace(/[\\%_]/g, (c) => '\\' + c);
 }
