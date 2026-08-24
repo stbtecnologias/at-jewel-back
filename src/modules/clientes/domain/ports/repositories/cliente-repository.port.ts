@@ -112,6 +112,19 @@ export interface IClienteRepository {
   ): Promise<ClienteDaCarteira[]>;
 
   /**
+   * QUANTOS estao parados, sem trazer a lista.
+   *
+   * Existe para a resposta nao mentir por omissao. Uma carteira de mil
+   * clientes devolve dez, e sem o total a frase "estes estao parados" soa
+   * completa — quem le vai embora achando que sao dez. Com o numero, a agente
+   * pode dizer "dez dos cento e quarenta e tres" e oferecer refinar.
+   */
+  contarInativosDaCarteira(
+    vendedoraCodigoErp: string,
+    meses: number,
+  ): Promise<number>;
+
+  /**
    * Os maiores compradores da carteira, opcionalmente de uma categoria de
    * produto ("Anel", "Colar").
    *
@@ -123,6 +136,12 @@ export interface IClienteRepository {
     vendedoraCodigoErp: string,
     opcoes: { categoria?: string; desde?: Date; limite: number },
   ): Promise<ClienteDaCarteira[]>;
+
+  /** Quantos clientes da carteira compraram, no mesmo recorte. */
+  contarCompradoresDaCarteira(
+    vendedoraCodigoErp: string,
+    opcoes: { categoria?: string; desde?: Date },
+  ): Promise<number>;
   buscarPorTelefone1Hash(hash: string): Promise<Cliente | null>;
   buscarPorEmailHash(hash: string): Promise<Cliente | null>;
 

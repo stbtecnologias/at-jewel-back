@@ -6,7 +6,17 @@ import type {
 } from '../../../clientes/domain/ports/repositories/cliente-repository.port';
 
 /** Teto de resultados. Lista longa nao ajuda numa conversa de WhatsApp. */
-const MAXIMO = 8;
+/**
+ * Quantos clientes cabem numa resposta.
+ *
+ * DEZ, e o numero e a coisa toda. Carteira de mil clientes nao cabe em
+ * mensagem de WhatsApp, e listar tudo nao ajuda ninguem — vira parede de
+ * texto que ninguem le. Dez da uma amostra util e deixa espaco para a
+ * pergunta seguinte: "procurando alguem especifico?".
+ *
+ * O teto SO funciona acompanhado do total. Ver `contarInativosDaCarteira`.
+ */
+const MAXIMO = 10;
 
 /**
  * A carteira da vendedora: quem esta parado e quem mais compra.
@@ -23,6 +33,13 @@ const MAXIMO = 8;
  * Vendedora sem `codigo_erp` nao tem carteira — devolve vazio em vez de
  * explodir, e o agente diz que nao encontrou clientes.
  */
+/** Uma amostra da carteira, com quantos existem no total. */
+export interface PaginaDaCarteira {
+  clientes: ClienteDaCarteira[];
+  /** Quantos atendem ao criterio — nao quantos vieram na amostra. */
+  total: number;
+}
+
 @Injectable()
 export class ConsultarCarteiraVendedoraUseCase {
   constructor(
@@ -30,13 +47,24 @@ export class ConsultarCarteiraVendedoraUseCase {
     private readonly clientes: IClienteRepository,
   ) {}
 
-  /** Quem esta ha `meses` sem comprar — inclui quem nunca comprou. */
+  /**
+   * Quem esta ha `meses` sem comprar — inclui quem nunca comprou.
+   *
+   * Devolve a amostra E o total. Sem o total, "estes estao parados" soa
+   * completo com dez de trezentos, e quem le vai embora com a impressao
+   * errada. O teto so e honesto se vier acompanhado do numero.
+   */
   async semComprar(
     vendedoraCodigoErp: string | null,
     meses: number,
-  ): Promise<ClienteDaCarteira[]> {
-    if (!vendedoraCodigoErp) return [];
-    return this.clientes.inativosDaCarteira(vendedoraCodigoErp, meses, MAXIMO);
+  ): Promise<PaginaDaCarteira> {
+    if (!vendedoraCodigoErp) return { clientes: [], total: 0 };
+
+    const [clientes, total] = await Promise.all([
+      this.clientes.inativosDaCarteira(vendedoraCodigoErp, meses, MAXIMO),
+      this.clientes.contarInativosDaCarteira(vendedoraCodigoErp, meses),
+    ]);
+    return { clientes, total };
   }
 
   /**
@@ -47,8 +75,8 @@ export class ConsultarCarteiraVendedoraUseCase {
   async maioresCompradores(
     vendedoraCodigoErp: string | null,
     opcoes: { categoria?: string; ultimosMeses?: number },
-  ): Promise<ClienteDaCarteira[]> {
-    if (!vendedoraCodigoErp) return [];
+  ): Promise<PaginaDaCarteira> {
+    if (!vendedoraCodigoErp) return { clientes: [], total: 0 };
 
     let desde: Date | undefined;
     if (opcoes.ultimosMeses && opcoes.ultimosMeses > 0) {
@@ -56,10 +84,17 @@ export class ConsultarCarteiraVendedoraUseCase {
       desde.setMonth(desde.getMonth() - opcoes.ultimosMeses);
     }
 
-    return this.clientes.maioresCompradoresDaCarteira(vendedoraCodigoErp, {
-      categoria: opcoes.categoria,
-      desde,
-      limite: MAXIMO,
-    });
+    const [clientes, total] = await Promise.all([
+      this.clientes.maioresCompradoresDaCarteira(vendedoraCodigoErp, {
+        categoria: opcoes.categoria,
+        desde,
+        limite: MAXIMO,
+      }),
+      this.clientes.contarCompradoresDaCarteira(vendedoraCodigoErp, {
+        categoria: opcoes.categoria,
+        desde,
+      }),
+    ]);
+    return { clientes, total };
   }
 }

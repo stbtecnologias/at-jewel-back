@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import type { ChatParams } from '../../../agentes/domain/ports/llm-client.port';
+import { FerramentasVendedoraService } from '../ferramentas-vendedora.service';
 import { ProcessarMensagemInternaUseCase } from './processar-mensagem-interna.use-case';
 
 /**
@@ -58,8 +59,10 @@ describe('ProcessarMensagemInternaUseCase', () => {
       ]),
     };
     carteira = {
-      semComprar: jest.fn().mockResolvedValue([]),
-      maioresCompradores: jest.fn().mockResolvedValue([]),
+      // Desde 21/08 a carteira devolve AMOSTRA + TOTAL, e nao um array solto:
+      // o teto so e honesto se vier acompanhado de quantos existem.
+      semComprar: jest.fn().mockResolvedValue({ clientes: [], total: 0 }),
+      maioresCompradores: jest.fn().mockResolvedValue({ clientes: [], total: 0 }),
     };
     agendar = {
       execute: jest.fn().mockResolvedValue({
@@ -81,14 +84,22 @@ describe('ProcessarMensagemInternaUseCase', () => {
     // isola o comportamento de uma mensagem so.
     memoria = { carregar: jest.fn(() => []), registrar: jest.fn() };
 
-    useCase = new ProcessarMensagemInternaUseCase(
-      identificar as never,
-      relato as never,
+    // O servico de ferramentas entra DE VERDADE, montado sobre os mesmos
+    // mocks. Assim as asseroes destes testes continuam valendo o que valiam:
+    // elas verificam que a consulta recebeu o `vendedoraId` certo, e isso
+    // agora acontece uma camada abaixo.
+    const ferramentas = new FerramentasVendedoraService(
       agenda as never,
       desempenho as never,
       produtos as never,
       carteira as never,
       agendar as never,
+      relato as never,
+    );
+
+    useCase = new ProcessarMensagemInternaUseCase(
+      identificar as never,
+      ferramentas,
       atendimentos as never,
       clientes as never,
       llm as never,

@@ -258,6 +258,45 @@ const GESTAO_PANORAMA_TOOL: Anthropic.Tool = {
   },
 };
 
+const GESTAO_CARTEIRA_TOOL: Anthropic.Tool = {
+  name: 'carteira_de_vendedora',
+  description:
+    'Lista os clientes DA CARTEIRA de uma vendedora que estao ha tempo sem comprar, do mais parado para o menos, e diz QUANTOS existem no total. Use para "quem esta parado na carteira do Thiago", "quem a Marina deveria procurar". Inclui quem nunca comprou. A lista vem CURTA de proposito — se houver mais, diga o total e ofereca refinar ou procurar um cliente especifico.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      vendedora: { type: 'string', description: 'Nome da vendedora, como falado.' },
+      meses: {
+        type: 'integer',
+        description: 'Quantos meses sem comprar. Omita para usar 6.',
+      },
+    },
+    required: ['vendedora'],
+  },
+};
+
+const GESTAO_MELHORES_TOOL: Anthropic.Tool = {
+  name: 'melhores_da_vendedora',
+  description:
+    'Lista os clientes DA CARTEIRA de uma vendedora que mais compraram, do maior para o menor, e diz quantos compraram no total. Sem categoria conta COMPRAS; com categoria conta PECAS daquele tipo ("quem comprou mais aneis com a Marina"). A lista vem curta — havendo mais, diga o total e ofereca refinar.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      vendedora: { type: 'string', description: 'Nome da vendedora, como falado.' },
+      categoria: {
+        type: 'string',
+        description:
+          'Categoria da peca, no singular: "Anel", "Colar", "Brinco", "Pulseira", "Pingente", "Alianca". Omita para contar todas as compras.',
+      },
+      ultimos_meses: {
+        type: 'integer',
+        description: 'Recorte de periodo, em meses. Omita para o historico inteiro.',
+      },
+    },
+    required: ['vendedora'],
+  },
+};
+
 const GESTAO_CARTEIRA_CLIENTE_TOOL: Anthropic.Tool = {
   name: 'de_quem_e_o_cliente',
   description:
@@ -438,6 +477,8 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoMetas) tools.push(GESTAO_METAS_TOOL);
     if (params.gestaoPanorama) tools.push(GESTAO_PANORAMA_TOOL);
     if (params.gestaoCarteiraDoCliente) tools.push(GESTAO_CARTEIRA_CLIENTE_TOOL);
+    if (params.gestaoCarteira) tools.push(GESTAO_CARTEIRA_TOOL);
+    if (params.gestaoMelhores) tools.push(GESTAO_MELHORES_TOOL);
     if (params.gestaoAgendar) tools.push(GESTAO_AGENDAR_TOOL);
     if (params.registrarRelato) tools.push(RELATO_TOOL);
     if (params.consultarVendas) tools.push(VENDAS_TOOL);
@@ -526,6 +567,37 @@ export class AnthropicClient implements ILlmClient {
         relatoGravado = true;
         toolResults.push(
           await this.executarRegistrarRelato(toolUse, params.registrarRelato),
+        );
+      } else if (toolUse.name === 'carteira_de_vendedora' && params.gestaoCarteira) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as { vendedora?: string; meses?: number };
+            return textoDaLeituraDeGestao(
+              await params.gestaoCarteira!({
+                vendedora: String(e.vendedora ?? '').slice(0, 80),
+                meses: Number(e.meses) > 0 ? Number(e.meses) : undefined,
+              }),
+              'cliente parado',
+            );
+          }),
+        );
+      } else if (toolUse.name === 'melhores_da_vendedora' && params.gestaoMelhores) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as {
+              vendedora?: string;
+              categoria?: string;
+              ultimos_meses?: number;
+            };
+            return textoDaLeituraDeGestao(
+              await params.gestaoMelhores!({
+                vendedora: String(e.vendedora ?? '').slice(0, 80),
+                categoria: e.categoria,
+                ultimosMeses: e.ultimos_meses,
+              }),
+              'comprador',
+            );
+          }),
         );
       } else if (toolUse.name === 'agendar_para_vendedora' && params.gestaoAgendar) {
         toolResults.push(
@@ -1008,8 +1080,21 @@ function textoDaLeituraDeGestao(
   if (r.linhas.length === 0) {
     return `${r.vendedora} nao tem nenhum(a) ${substantivo} nesse recorte. Diga isso em uma frase, sem inventar numero.`;
   }
+
+  // O TETO PRECISA SER DITO. Mostrar dez de trezentos sem falar dos trezentos
+  // faz a resposta parecer completa — e quem le vai embora com o numero
+  // errado na cabeca.
+  const total = (r as { total?: number }).total;
+  const truncou = typeof total === 'number' && total > r.linhas.length;
+
   return (
     `${r.vendedora}:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+    (truncou
+      ? `SAO ${total} NO TOTAL — estes sao os ${r.linhas.length} primeiros. ` +
+        'DIGA o total na resposta e ofereca ajudar a filtrar: perguntar se ' +
+        'procuram algum cliente especifico, ou se querem outro recorte de ' +
+        'periodo. Nunca deixe parecer que a lista e completa.\n\n'
+      : '') +
     'Repasse os nomes, horarios e numeros exatamente como estao.'
   );
 }

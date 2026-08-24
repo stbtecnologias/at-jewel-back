@@ -16,13 +16,8 @@ import {
 import { BuscarVendedoraPorWhatsappUseCase } from '../../../vendedoras/application/use-cases/buscar-vendedora-por-whatsapp.use-case';
 import { ATENDIMENTO_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { IAtendimentoRepository } from '../../domain/ports/repositories/atendimento-repository.port';
+import { FerramentasVendedoraService } from '../ferramentas-vendedora.service';
 import { MemoriaConversaService } from '../memoria-conversa.service';
-import { ConsultarAgendaVendedoraUseCase } from './consultar-agenda-vendedora.use-case';
-import { ConsultarDesempenhoVendedoraUseCase } from './consultar-desempenho-vendedora.use-case';
-import { AgendarContatoVendedoraUseCase } from './agendar-contato-vendedora.use-case';
-import { ConsultarCarteiraVendedoraUseCase } from './consultar-carteira-vendedora.use-case';
-import { ConsultarProdutosVendedoraUseCase } from './consultar-produtos-vendedora.use-case';
-import { ProcessarRelatoVendedoraUseCase } from './processar-relato-vendedora.use-case';
 
 /**
  * Audio que acompanhou a mensagem. Descrito aqui, na camada de aplicacao, para
@@ -91,12 +86,7 @@ export class ProcessarMensagemInternaUseCase {
 
   constructor(
     private readonly identificarVendedora: BuscarVendedoraPorWhatsappUseCase,
-    private readonly relato: ProcessarRelatoVendedoraUseCase,
-    private readonly agenda: ConsultarAgendaVendedoraUseCase,
-    private readonly desempenho: ConsultarDesempenhoVendedoraUseCase,
-    private readonly produtos: ConsultarProdutosVendedoraUseCase,
-    private readonly carteira: ConsultarCarteiraVendedoraUseCase,
-    private readonly agendarContato: AgendarContatoVendedoraUseCase,
+    private readonly ferramentas: FerramentasVendedoraService,
     @Inject(ATENDIMENTO_REPOSITORY)
     private readonly atendimentos: IAtendimentoRepository,
     @Inject(CLIENTE_REPOSITORY)
@@ -180,121 +170,18 @@ export class ProcessarMensagemInternaUseCase {
         // WhatsApp nao renderiza grafico. Oferecer a ferramenta so convida o
         // modelo a tentar e depois se desculpar.
         graficos: false,
-        consultarAgenda: async ({ periodo }) => {
-          const compromissos = await this.agenda.execute(vendedoraId, periodo);
-          return {
-            compromissos: compromissos.map((c) => ({
-              cliente: c.cliente,
-              quando: formatarQuando(c.quando),
-              ocasiao: c.ocasiao ?? undefined,
-            })),
-          };
-        },
-        consultarVendas: async ({ periodo }) => {
-          const v = await this.desempenho.vendas(vendedoraId, periodo);
-          if (v.quantidade === 0) {
-            return { resumo: 'nenhuma venda concluída nesse período' };
-          }
-          return {
-            resumo:
-              `${v.quantidade} ${v.quantidade === 1 ? 'venda' : 'vendas'}, ` +
-              `${moeda(v.receita)} em receita, ticket médio ${moeda(v.ticketMedio)}`,
-          };
-        },
-        consultarMetas: async () => {
-          const metas = await this.desempenho.metas(vendedoraId);
-          return {
-            metas: metas.map((m) => ({
-              linha: m.batida
-                ? `${m.descricao}: alvo ${moeda(m.alvo)}, já batida — realizado ${moeda(m.realizado)} (${m.percentual}%)`
-                : `${m.descricao}: alvo ${moeda(m.alvo)}, realizado ${moeda(m.realizado)} (${m.percentual}%), faltam ${moeda(m.restante)} até ${m.prazo.toLocaleDateString('pt-BR')}`,
-            })),
-          };
-        },
-        consultarProdutos: async ({ busca }) => {
-          const achados = await this.produtos.execute(busca);
-          return {
-            produtos: achados.map((p) => ({
-              linha:
-                `${p.descricao} (${p.categoria} / ${p.familia})` +
-                `${p.codigo ? ` — código ${p.codigo}` : ''}: ` +
-                `${moeda(p.precoVenda)}, ` +
-                `${p.emEstoque === 0 ? 'sem estoque' : `${p.emEstoque} em estoque`}`,
-            })),
-          };
-        },
-        clientesSemComprar: async ({ meses }) => {
-          const achados = await this.carteira.semComprar(codigoErp, meses);
-          return {
-            clientes: achados.map((c) => ({
-              linha: c.ultimaCompra
-                ? `${c.nome} — última compra em ${c.ultimaCompra.toLocaleDateString(`pt-BR`)}, ${c.quantidade} ${c.quantidade === 1 ? `compra` : `compras`} no total`
-                : `${c.nome} — nunca comprou`,
-            })),
-          };
-        },
-        melhoresClientes: async ({ categoria, ultimosMeses }) => {
-          const achados = await this.carteira.maioresCompradores(codigoErp, {
-            categoria,
-            ultimosMeses,
-          });
-          const unidade = categoria ? `peça` : `compra`;
-          return {
-            clientes: achados.map((c) => ({
-              linha: `${c.nome} — ${c.quantidade} ${c.quantidade === 1 ? unidade : unidade + `s`}, ${moeda(c.valorTotal)}`,
-            })),
-          };
-        },
-        agendarContato: async ({ cliente, quandoIso }) => {
-          const r = await this.agendarContato.execute(
-            vendedoraId,
-            codigoErp,
-            cliente,
-            quandoIso,
-          );
-
-          // A frase de volta e montada AQUI, no servidor, e nao pelo
-          // modelo: ela carrega nome e horario, que sao exatamente o que
-          // ele inventaria.
-          switch (r.status) {
-            case 'AGENDADO':
-              return {
-                status: r.status,
-                mensagem: `Marcado: contato com ${r.cliente} em ${formatarQuando(r.quando)}. Te lembro perto da hora.`,
-              };
-            case 'CLIENTE_AMBIGUO':
-              return {
-                status: r.status,
-                mensagem: `Tem mais de um cliente com esse nome na carteira dela: ${r.nomes.join(`, `)}. Pergunte qual e antes de marcar.`,
-              };
-            case 'HORARIO_INVALIDO':
-              return {
-                status: r.status,
-                mensagem:
-                  `O horário não serve — precisa ser no futuro e dentro dos próximos seis meses. Peça o horário de novo.`,
-              };
-            case 'ATENDIMENTO_DE_OUTRA_PESSOA':
-              return {
-                status: r.status,
-                mensagem: `${r.cliente} já tem um atendimento em andamento que não é dela. Diga que a administração precisa resolver isso antes.`,
-              };
-            default:
-              return {
-                status: r.status,
-                mensagem: `Não encontrei esse cliente na carteira dela. Diga isso, sem sugerir que ele exista em outro lugar.`,
-              };
-          }
-        },
-        registrarRelato: async () => {
-          // O texto ORIGINAL, nao o que o modelo entendeu: o relato guardado
-          // tem que ser a frase dela.
-          const r = await this.relato.execute(vendedoraId, textoDaMensagem);
-          if (r.status === 'REGISTRADO') relatoRegistrado = true;
-          return {
-            status: r.status,
-            mensagem: r.status === 'REGISTRADO' ? r.resposta : '',
-          };
-        },
+        // AS FERRAMENTAS VEM DO SERVICO — o MESMO que a Elena do painel usa.
+        // Aqui fica so o que e proprio do WhatsApp: quem esta falando (por
+        // closure, do telefone resolvido), a memoria e a ausencia de grafico.
+        ...this.ferramentas.montar({
+          vendedoraId,
+          codigoErp,
+          // A frase ORIGINAL habilita o relato — ver ContextoVendedora.
+          textoOriginal: textoDaMensagem,
+          aoRegistrarRelato: () => {
+            relatoRegistrado = true;
+          },
+        }),
       });
 
       // So guarda o que deu certo. Turno com falha na memoria faria a proxima
