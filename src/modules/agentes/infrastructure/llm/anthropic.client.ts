@@ -310,6 +310,29 @@ const GESTAO_CARTEIRA_CLIENTE_TOOL: Anthropic.Tool = {
   },
 };
 
+const GESTAO_FEEDBACKS_TOOL: Anthropic.Tool = {
+  name: 'feedbacks_de_vendedora',
+  description:
+    'Mostra O QUE A VENDEDORA CONTOU sobre os atendimentos dela, nas palavras dela. Use para "qual foi o feedback do Thiago hoje", "o que a Marina disse do atendimento", "como foi com a Luana". Passando o nome do CLIENTE, traz o episodio daquele cliente; sem ele, traz os ultimos feedbacks dela no periodo. Esta informacao e exclusiva da administracao.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      vendedora: { type: 'string', description: 'Nome da vendedora, como falado.' },
+      cliente: {
+        type: 'string',
+        description:
+          'Nome do cliente, quando a pergunta for sobre UM atendimento especifico. Omita para ver os ultimos feedbacks dela.',
+      },
+      dias: {
+        type: 'number',
+        description:
+          'Janela em dias. Hoje = 1, esta semana = 7. Omita para os ultimos sete dias.',
+      },
+    },
+    required: ['vendedora'],
+  },
+};
+
 const GESTAO_AGENDAR_TOOL: Anthropic.Tool = {
   name: 'agendar_para_vendedora',
   description:
@@ -480,6 +503,7 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoCarteira) tools.push(GESTAO_CARTEIRA_TOOL);
     if (params.gestaoMelhores) tools.push(GESTAO_MELHORES_TOOL);
     if (params.gestaoAgendar) tools.push(GESTAO_AGENDAR_TOOL);
+    if (params.gestaoFeedbacks) tools.push(GESTAO_FEEDBACKS_TOOL);
     if (params.registrarRelato) tools.push(RELATO_TOOL);
     if (params.consultarVendas) tools.push(VENDAS_TOOL);
     if (params.consultarMetas) tools.push(METAS_TOOL);
@@ -665,6 +689,22 @@ export class AnthropicClient implements ILlmClient {
               `Equipe no periodo:\n${linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
               'Repasse os numeros exatamente como estao.'
             );
+          }),
+        );
+      } else if (toolUse.name === 'feedbacks_de_vendedora' && params.gestaoFeedbacks) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as {
+              vendedora?: string;
+              cliente?: string;
+              dias?: number;
+            };
+            const r = await params.gestaoFeedbacks!({
+              vendedora: String(e.vendedora ?? '').slice(0, 80),
+              cliente: e.cliente ? String(e.cliente).slice(0, 120) : undefined,
+              dias: typeof e.dias === "number" ? e.dias : undefined,
+            });
+            return textoDaLeituraDeGestao(r, "feedback");
           }),
         );
       } else if (toolUse.name === 'de_quem_e_o_cliente' && params.gestaoCarteiraDoCliente) {
