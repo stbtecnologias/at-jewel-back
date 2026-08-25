@@ -94,7 +94,9 @@ Agora sao ${agoraLocal()} (fuso da loja). Use isto para interpretar "hoje", "ama
       mensagens: sanitizarMensagens(mensagens),
       // Grafico CONTINUA ligado aqui: e a diferenca que deve existir entre as
       // portas — a tela renderiza, a conversa de WhatsApp nao.
-      ...(podeGerir ? this.ferramentasGestao.montar() : {}),
+      // O nome vai junto porque o agendamento agora AVISA a vendedora, e ela
+      // precisa saber de quem veio o compromisso. Nao muda escopo nenhum.
+      ...(podeGerir ? this.ferramentasGestao.montar(solicitante?.nomeFallback) : {}),
       // So habilita a tool registrar_demanda quando conhecemos quem conversa.
       registrarDemanda: solicitante
         ? this.montarHandlerDemanda(solicitante)

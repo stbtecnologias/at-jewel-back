@@ -17,6 +17,7 @@ import { VENDEDORA_REPOSITORY } from '../../vendedoras/domain/ports/injection-to
 import type { IVendedoraRepository } from '../../vendedoras/domain/ports/repositories/vendedora-repository.port';
 import {
   AgendarContatoGestaoUseCase,
+  MINUTOS_LEMBRETE,
   type ResultadoAgendamentoGestao,
 } from './use-cases/agendar-contato-gestao.use-case';
 import { ConsultarAgendaVendedoraUseCase } from './use-cases/consultar-agenda-vendedora.use-case';
@@ -78,7 +79,13 @@ export class FerramentasGestaoService {
     private readonly clientes: IClienteRepository,
   ) {}
 
-  montar(): FerramentasGestao {
+  /**
+   * @param solicitante nome de quem esta do outro lado. Entra apenas no AVISO
+   *   que a vendedora recebe — "A Fernanda agendou o cliente..." —, para ela
+   *   saber de quem veio o compromisso. Nao muda o que a ferramenta pode ver:
+   *   o escopo da gestao ja e o mesmo para toda a administracao.
+   */
+  montar(solicitante?: string | null): FerramentasGestao {
     return {
       gestaoAgenda: async ({ vendedora, periodo }) =>
         this.comVendedora(vendedora, async (id) => {
@@ -189,6 +196,7 @@ export class FerramentasGestaoService {
           nomeCliente: cliente,
           quandoIso,
           modo,
+          solicitanteNome: solicitante ?? null,
         });
 
         return { mensagem: mensagemDoAgendamento(r) };
@@ -315,10 +323,42 @@ export class FerramentasGestaoService {
  */
 export function mensagemDoAgendamento(r: ResultadoAgendamentoGestao): string {
   switch (r.status) {
-    case 'AGENDADO':
-      return r.transferido
+    case 'AGENDADO': {
+      const base = r.transferido
         ? `Pronto: ${r.cliente} foi transferido para a carteira de ${r.vendedora} e o contato ficou marcado para ${formatarQuando(r.quando)}.`
         : `Pronto: contato com ${r.cliente} marcado na agenda de ${r.vendedora} para ${formatarQuando(r.quando)}.`;
+
+      // O QUE ACONTECE COM A VENDEDORA, dito de saida. Quem marca precisa saber
+      // se ela ja foi avisada — senao pergunta de novo, ou pior, avisa por
+      // fora e ela recebe a mesma coisa duas vezes.
+      const lembrete = r.temLembrete
+        ? ` Ela recebe um lembrete ${MINUTOS_LEMBRETE} minutos antes e eu pergunto como foi depois.`
+        : ' Eu pergunto como foi depois.';
+
+      switch (r.aviso) {
+        case 'ENVIADO':
+          return `${base} Avisei ${primeiroNome(r.vendedora)} agora.${lembrete}`;
+        case 'REMARCADO':
+          return `${base} Avisei ${primeiroNome(r.vendedora)} da mudança de horário.${lembrete}`;
+        case 'JA_SABIA':
+          return `${base} Ela já tinha sido avisada desse mesmo horário, então não mandei de novo.${lembrete}`;
+        case 'FALHOU':
+          return (
+            `${base} ATENÇÃO: não consegui avisar ${primeiroNome(r.vendedora)} agora — o WhatsApp não saiu. ` +
+            (r.temLembrete
+              ? `Ela ainda recebe o lembrete ${MINUTOS_LEMBRETE} minutos antes, mas avise por fora se for importante.`
+              : 'Avise por fora, porque não dá tempo de o lembrete alcançá-la.')
+          );
+      }
+      return base;
+    }
+
+    case 'VENDEDORA_SEM_WHATSAPP':
+      return (
+        `NÃO AGENDADO. ${r.vendedora} não tem WhatsApp interno cadastrado, então ela ` +
+        `não receberia nem o aviso nem o lembrete — e o contato ficaria marcado só ` +
+        `no sistema. Peça para cadastrarem o número dela antes de marcar.`
+      );
 
     case 'CARTEIRA_DE_OUTRA':
       return (
@@ -364,6 +404,11 @@ export function moeda(v: number): string {
     currency: 'BRL',
     maximumFractionDigits: 0,
   });
+}
+
+/** "Maria Eduarda Lima" -> "Maria". Nome inteiro na frase soa a formulario. */
+function primeiroNome(nome: string): string {
+  return nome.trim().split(/\s+/)[0];
 }
 
 export function formatarQuando(d: Date): string {
