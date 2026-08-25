@@ -5,6 +5,7 @@ import { ItemVenda } from '../../../../domain/entities/item-venda.entity';
 import { PagamentoVenda } from '../../../../domain/entities/pagamento-venda.entity';
 import { Venda } from '../../../../domain/entities/venda.entity';
 import {
+  BucketVendas,
   ComparativoVendedora,
   FiltroVenda,
   HistoricoCliente,
@@ -17,6 +18,9 @@ import type { FormaPagamento, StatusVenda } from '../../../../domain/entities/en
 import { ItemVendaOrmEntity } from '../entities/item-venda.orm-entity';
 import { PagamentoVendaOrmEntity } from '../entities/pagamento-venda.orm-entity';
 import { VendaOrmEntity } from '../entities/venda.orm-entity';
+
+/** O fuso da operacao — o mesmo da auditoria. */
+const FUSO_DA_LOJA = 'America/Sao_Paulo';
 
 // Limites de paginacao para conter abuso e custo de query.
 const LIMIT_PADRAO = 50;
@@ -428,6 +432,65 @@ export class VendaRepository implements IVendaRepository {
       totalItens,
       porStatus,
     };
+  }
+
+  async serieAgregada(
+    filtros: Pick<FiltroVenda, 'dataDe' | 'dataAte' | 'vendedoraId'>,
+    granularidade: 'DIA' | 'SEMANA',
+  ): Promise<BucketVendas[]> {
+    // SQL cru e posicional, como o `listar()` deste mesmo repositorio. O
+    // agrupamento e por posicao (`GROUP BY 1`), e o construtor de query nao
+    // garante que o `1` chegue como expressao em vez de nome de coluna.
+    const params: unknown[] = ['concluida' satisfies StatusVenda];
+    const conds: string[] = ['v.ativo = true', 'v.status = $1'];
+
+    if (filtros.dataDe !== undefined) {
+      params.push(filtros.dataDe);
+      conds.push(`v.data_venda >= $${params.length}`);
+    }
+    if (filtros.dataAte !== undefined) {
+      params.push(filtros.dataAte);
+      conds.push(`v.data_venda <= $${params.length}`);
+    }
+    if (filtros.vendedoraId !== undefined) {
+      params.push(filtros.vendedoraId);
+      conds.push(`v.vendedora_id = $${params.length}`);
+    }
+
+    // O dia e o da loja. `data_venda` e timestamptz: truncar sem dizer o fuso
+    // usaria o do servidor, que roda em UTC — e uma venda das 22h de sexta
+    // cairia no sabado.
+    params.push(granularidade === 'DIA' ? 'day' : 'week');
+    const iUnidade = params.length;
+    params.push(FUSO_DA_LOJA);
+    const iFuso = params.length;
+
+    const linhas = await this.dataSource.query<
+      { inicio: Date; vendas: string; receita: string }[]
+    >(
+      `
+      SELECT (date_trunc($${iUnidade}::text, v.data_venda AT TIME ZONE $${iFuso}::text)
+                AT TIME ZONE $${iFuso}::text) AS inicio,
+             COUNT(v.id) AS vendas,
+             COALESCE(SUM(v.valor_total), 0) AS receita
+      FROM vendas v
+      WHERE ${conds.join(' AND ')}
+      GROUP BY 1
+      ORDER BY 1 DESC
+      `,
+      params,
+    );
+
+    return linhas.map((l) => {
+      const vendas = Number(l.vendas);
+      const receita = Number(l.receita);
+      return {
+        inicio: new Date(l.inicio),
+        vendas,
+        receita,
+        ticketMedio: vendas > 0 ? receita / vendas : 0,
+      };
+    });
   }
 
   async listarHistoricoPorCliente(

@@ -4,6 +4,7 @@ import type {
   GestaoMelhoresHandler,
   GestaoAgendarHandler,
   GestaoCarteiraDoClienteHandler,
+  GestaoFeedbacksHandler,
   GestaoLeituraResultado,
   GestaoMetasHandler,
   GestaoPanoramaHandler,
@@ -16,14 +17,20 @@ import { VENDEDORA_REPOSITORY } from '../../vendedoras/domain/ports/injection-to
 import type { IVendedoraRepository } from '../../vendedoras/domain/ports/repositories/vendedora-repository.port';
 import {
   AgendarContatoGestaoUseCase,
+  MINUTOS_LEMBRETE,
   type ResultadoAgendamentoGestao,
 } from './use-cases/agendar-contato-gestao.use-case';
 import { ConsultarAgendaVendedoraUseCase } from './use-cases/consultar-agenda-vendedora.use-case';
 import { ConsultarCarteiraVendedoraUseCase } from './use-cases/consultar-carteira-vendedora.use-case';
 import { ConsultarDesempenhoVendedoraUseCase } from './use-cases/consultar-desempenho-vendedora.use-case';
 import { ResolverVendedoraPorNomeUseCase } from './use-cases/resolver-vendedora-por-nome.use-case';
+import { ConsultarAuditoriaUseCase } from './use-cases/consultar-auditoria.use-case';
 
 const MAXIMO_CLIENTES_HOMONIMOS = 5;
+/** Feedbacks por resposta. Acima disso a mensagem deixa de ser lida. */
+const MAXIMO_FEEDBACKS = 10;
+/** Janela padrao quando nao dizem "hoje" nem "esta semana". */
+const DIAS_PADRAO_FEEDBACK = 7;
 
 /** O conjunto de handlers da gestao, pronto para entrar no `chatComFerramentas`. */
 export interface FerramentasGestao {
@@ -35,6 +42,7 @@ export interface FerramentasGestao {
   gestaoCarteiraDoCliente: GestaoCarteiraDoClienteHandler;
   gestaoCarteira: GestaoCarteiraHandler;
   gestaoMelhores: GestaoMelhoresHandler;
+  gestaoFeedbacks: GestaoFeedbacksHandler;
 }
 
 /**
@@ -64,13 +72,20 @@ export class FerramentasGestaoService {
     private readonly desempenho: ConsultarDesempenhoVendedoraUseCase,
     private readonly carteira: ConsultarCarteiraVendedoraUseCase,
     private readonly agendarGestao: AgendarContatoGestaoUseCase,
+    private readonly auditoria: ConsultarAuditoriaUseCase,
     @Inject(VENDEDORA_REPOSITORY)
     private readonly vendedoras: IVendedoraRepository,
     @Inject(CLIENTE_REPOSITORY)
     private readonly clientes: IClienteRepository,
   ) {}
 
-  montar(): FerramentasGestao {
+  /**
+   * @param solicitante nome de quem esta do outro lado. Entra apenas no AVISO
+   *   que a vendedora recebe — "A Fernanda agendou o cliente..." —, para ela
+   *   saber de quem veio o compromisso. Nao muda o que a ferramenta pode ver:
+   *   o escopo da gestao ja e o mesmo para toda a administracao.
+   */
+  montar(solicitante?: string | null): FerramentasGestao {
     return {
       gestaoAgenda: async ({ vendedora, periodo }) =>
         this.comVendedora(vendedora, async (id) => {
@@ -181,9 +196,70 @@ export class FerramentasGestaoService {
           nomeCliente: cliente,
           quandoIso,
           modo,
+          solicitanteNome: solicitante ?? null,
         });
 
         return { mensagem: mensagemDoAgendamento(r) };
+      },
+
+      gestaoFeedbacks: async ({ vendedora, cliente, dias }) => {
+        let total = 0;
+        const r = await this.comVendedora(vendedora, async (id) => {
+          const desde = new Date();
+          desde.setDate(desde.getDate() - (dias ?? DIAS_PADRAO_FEEDBACK) + 1);
+          desde.setHours(0, 0, 0, 0);
+
+          const pagina = await this.auditoria.listar({
+            vendedoraId: id,
+            clienteNome: cliente,
+            de: desde,
+            limit: MAXIMO_FEEDBACKS,
+          });
+          total = pagina.total;
+
+          // UM cliente nomeado, UM episodio: vale abrir a linha do tempo
+          // inteira. O que ela contou em duas conversas diferentes sao dois
+          // relatos, e mostrar so o ultimo esconderia metade da historia.
+          if (cliente && pagina.itens.length === 1) {
+            const d = await this.auditoria.detalhe(pagina.itens[0].id);
+            const falas = d.interacoes.filter((i) => i.relato);
+            total = falas.length;
+            if (falas.length === 0) {
+              return [
+                d.clienteNome + ' — ' + rotuloEtapa(d.etapa) + ', sem feedback registrado ainda',
+              ];
+            }
+            return falas.map(
+              (i) =>
+                d.clienteNome +
+                ', ' +
+                formatarQuando(i.ocorridoEm ?? i.criadoEm) +
+                ' (' +
+                rotuloEtapa(d.etapa) +
+                '): "' +
+                i.relato +
+                '"',
+            );
+          }
+
+          return pagina.itens.map((i) =>
+            i.ultimoRelato
+              ? i.clienteNome +
+                ', ' +
+                formatarQuando(i.ultimaAtividadeEm ?? i.abertoEm) +
+                ' (' +
+                rotuloEtapa(i.etapa) +
+                '): "' +
+                i.ultimoRelato +
+                '"'
+              : i.clienteNome +
+                ' — ' +
+                rotuloEtapa(i.etapa) +
+                ', ainda sem feedback' +
+                (i.aguardandoRelato ? ' (cobranca enviada, aguardando resposta)' : ''),
+          );
+        });
+        return { ...r, total };
       },
 
       gestaoCarteiraDoCliente: async ({ cliente }) => {
@@ -247,10 +323,42 @@ export class FerramentasGestaoService {
  */
 export function mensagemDoAgendamento(r: ResultadoAgendamentoGestao): string {
   switch (r.status) {
-    case 'AGENDADO':
-      return r.transferido
+    case 'AGENDADO': {
+      const base = r.transferido
         ? `Pronto: ${r.cliente} foi transferido para a carteira de ${r.vendedora} e o contato ficou marcado para ${formatarQuando(r.quando)}.`
         : `Pronto: contato com ${r.cliente} marcado na agenda de ${r.vendedora} para ${formatarQuando(r.quando)}.`;
+
+      // O QUE ACONTECE COM A VENDEDORA, dito de saida. Quem marca precisa saber
+      // se ela ja foi avisada — senao pergunta de novo, ou pior, avisa por
+      // fora e ela recebe a mesma coisa duas vezes.
+      const lembrete = r.temLembrete
+        ? ` Ela recebe um lembrete ${MINUTOS_LEMBRETE} minutos antes e eu pergunto como foi depois.`
+        : ' Eu pergunto como foi depois.';
+
+      switch (r.aviso) {
+        case 'ENVIADO':
+          return `${base} Avisei ${primeiroNome(r.vendedora)} agora.${lembrete}`;
+        case 'REMARCADO':
+          return `${base} Avisei ${primeiroNome(r.vendedora)} da mudança de horário.${lembrete}`;
+        case 'JA_SABIA':
+          return `${base} Ela já tinha sido avisada desse mesmo horário, então não mandei de novo.${lembrete}`;
+        case 'FALHOU':
+          return (
+            `${base} ATENÇÃO: não consegui avisar ${primeiroNome(r.vendedora)} agora — o WhatsApp não saiu. ` +
+            (r.temLembrete
+              ? `Ela ainda recebe o lembrete ${MINUTOS_LEMBRETE} minutos antes, mas avise por fora se for importante.`
+              : 'Avise por fora, porque não dá tempo de o lembrete alcançá-la.')
+          );
+      }
+      return base;
+    }
+
+    case 'VENDEDORA_SEM_WHATSAPP':
+      return (
+        `NÃO AGENDADO. ${r.vendedora} não tem WhatsApp interno cadastrado, então ela ` +
+        `não receberia nem o aviso nem o lembrete — e o contato ficaria marcado só ` +
+        `no sistema. Peça para cadastrarem o número dela antes de marcar.`
+      );
 
     case 'CARTEIRA_DE_OUTRA':
       return (
@@ -298,6 +406,11 @@ export function moeda(v: number): string {
   });
 }
 
+/** "Maria Eduarda Lima" -> "Maria". Nome inteiro na frase soa a formulario. */
+function primeiroNome(nome: string): string {
+  return nome.trim().split(/\s+/)[0];
+}
+
 export function formatarQuando(d: Date): string {
   return d.toLocaleString('pt-BR', {
     timeZone: 'America/Sao_Paulo',
@@ -306,4 +419,17 @@ export function formatarQuando(d: Date): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+/** A etapa em portugues de gente, para caber na frase da agente. */
+function rotuloEtapa(etapa: string): string {
+  const mapa: Record<string, string> = {
+    PRIMEIRO_CONTATO: 'primeiro contato',
+    EM_NEGOCIACAO: 'em negociacao',
+    REMARCADO: 'remarcado',
+    SEM_CONTATO: 'nao conseguiu falar',
+    CONCLUIDO: 'concluido',
+    NAO_AVANCOU: 'nao avancou',
+  };
+  return mapa[etapa] ?? etapa.toLowerCase();
 }

@@ -286,6 +286,26 @@ export type GestaoCarteiraDoClienteHandler = (input: {
 }>;
 
 /**
+ * O QUE A VENDEDORA CONTOU sobre os atendimentos dela. EXCLUSIVA DA GESTAO.
+ *
+ * Devolve o texto INTEGRAL do relato — decisao do Lucas em 24/08/2026: o
+ * relato E o feedback, e quem escreve responde pelo que escreve. Isso
+ * significa que a frase dela viaja para a API do modelo a cada pergunta, e a
+ * ferramenta so existe no canal da gestao por causa disso.
+ *
+ * Com `cliente`, traz o episodio daquele cliente inteiro. Sem, traz os
+ * ultimos feedbacks dela no periodo, com teto — e o `total` junto, porque dez
+ * de trinta pareceriam os trinta.
+ */
+export type GestaoFeedbacksHandler = (input: {
+  vendedora: string;
+  /** Nome (ou parte) do cliente. Restringe a UM episodio. */
+  cliente?: string;
+  /** Janela em dias sobre a abertura do atendimento. Default 7. */
+  dias?: number;
+}) => Promise<GestaoLeituraResultado & { total?: number }>;
+
+/**
  * Agendar pela gestao. Diferente do `AgendarContatoHandler` da vendedora em
  * duas coisas: aceita PARA QUEM, e pode voltar SEM TER ESCRITO NADA quando o
  * cliente e de outra carteira e ninguem decidiu o que fazer.
@@ -334,6 +354,7 @@ export interface ChatParams {
   gestaoCarteira?: GestaoCarteiraHandler;
   gestaoMelhores?: GestaoMelhoresHandler;
   gestaoAgendar?: GestaoAgendarHandler;
+  gestaoFeedbacks?: GestaoFeedbacksHandler;
   /**
    * Habilita `gerar_grafico`. Default true, que preserva o painel.
    *

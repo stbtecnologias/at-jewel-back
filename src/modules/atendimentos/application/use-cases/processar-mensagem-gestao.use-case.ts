@@ -79,7 +79,9 @@ export class ProcessarMensagemGestaoUseCase {
         mensagens: [...historico, { role: 'user', content: pergunta }],
         // Mesmo motivo do canal da vendedora: WhatsApp nao renderiza grafico.
         graficos: false,
-        ...this.ferramentas.montar(),
+        // O nome de quem fala vai junto: quando ele agenda, a vendedora recebe
+        // um aviso dizendo de quem veio o compromisso.
+        ...this.ferramentas.montar(msg.nome),
       });
 
       // So guarda o que deu certo. Turno com falha na memoria faria a proxima

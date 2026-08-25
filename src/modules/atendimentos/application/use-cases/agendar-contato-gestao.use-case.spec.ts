@@ -31,6 +31,7 @@ describe('AgendarContatoGestaoUseCase', () => {
     abrir: jest.Mock;
     reagendar: jest.Mock;
     criarInteracao: jest.Mock;
+    ultimaInteracao: jest.Mock;
   };
   let clientes: {
     buscarPorCodigoErp: jest.Mock;
@@ -38,7 +39,11 @@ describe('AgendarContatoGestaoUseCase', () => {
     transferirCarteira: jest.Mock;
   };
   let vendedoras: { buscarPorCodigoErp: jest.Mock; buscarPorId: jest.Mock };
+  let whatsapp: { resolverChatId: jest.Mock; enviarTexto: jest.Mock };
   let useCase: AgendarContatoGestaoUseCase;
+
+  /** O texto que foi parar no WhatsApp da vendedora nesta chamada. */
+  const avisoEnviado = () => whatsapp.enviarTexto.mock.calls[0]?.[1] as string;
 
   beforeEach(() => {
     atendimentos = {
@@ -46,6 +51,7 @@ describe('AgendarContatoGestaoUseCase', () => {
       abrir: jest.fn().mockResolvedValue({ id: 'at-1' }),
       reagendar: jest.fn(),
       criarInteracao: jest.fn(),
+      ultimaInteracao: jest.fn().mockResolvedValue(null),
     };
     clientes = {
       buscarPorCodigoErp: jest.fn().mockResolvedValue(null),
@@ -54,13 +60,21 @@ describe('AgendarContatoGestaoUseCase', () => {
     };
     vendedoras = {
       buscarPorCodigoErp: jest.fn().mockResolvedValue({ nome: 'Marina Albuquerque' }),
-      buscarPorId: jest.fn().mockResolvedValue({ nome: 'Marina Albuquerque' }),
+      buscarPorId: jest.fn().mockResolvedValue({
+        nome: 'Marina Albuquerque',
+        whatsappInterno: '5585988887777',
+      }),
+    };
+    whatsapp = {
+      resolverChatId: jest.fn().mockResolvedValue('558588887777@c.us'),
+      enviarTexto: jest.fn(),
     };
 
     useCase = new AgendarContatoGestaoUseCase(
       atendimentos as never,
       clientes as never,
       vendedoras as never,
+      whatsapp as never,
     );
   });
 
@@ -208,5 +222,195 @@ describe('AgendarContatoGestaoUseCase', () => {
 
     expect(r.status).toBe('HORARIO_INVALIDO');
     expect(clientes.buscarPorNomeParcial).not.toHaveBeenCalled();
+  });
+
+  /**
+   * O AVISO NA HORA DO AGENDAMENTO (25/08).
+   *
+   * Antes disto so existia o lembrete de 15 minutos antes: marcado para 30/09,
+   * a vendedora descobria em 30/09. Um mes de agenda ocupada sem ela saber.
+   */
+  describe('aviso da vendedora', () => {
+    it('avisa na hora, dizendo quem marcou e quando', async () => {
+      const r = await useCase.execute({
+        ...DESTINO,
+        nomeCliente: 'Carla Oliveira',
+        quandoIso: DAQUI_A_UMA_HORA,
+        modo: 'OCASIONAL',
+        solicitanteNome: 'Fernanda Melo',
+      });
+
+      expect(r.status).toBe('AGENDADO');
+      if (r.status === 'AGENDADO') expect(r.aviso).toBe('ENVIADO');
+
+      const texto = avisoEnviado();
+      expect(texto).toContain('Camila'); // primeiro nome de quem recebe
+      expect(texto).toContain('Fernanda Melo'); // quem marcou
+      expect(texto).toContain('Carla Oliveira'); // o cliente
+      expect(texto).toContain('15 minutos antes'); // o lembrete que vem depois
+    });
+
+    /**
+     * `nomeFallback` vira o e-mail do token quando o staff nao tem nome. Mandar
+     * "l.barbosa@stbtecnologias.com.br agendou" vazaria e-mail interno para fora.
+     */
+    it('e-mail no lugar do nome vira "A administração"', async () => {
+      await useCase.execute({
+        ...DESTINO,
+        nomeCliente: 'Carla Oliveira',
+        quandoIso: DAQUI_A_UMA_HORA,
+        modo: 'OCASIONAL',
+        solicitanteNome: 'l.barbosa@stbtecnologias.com.br',
+      });
+
+      expect(avisoEnviado()).toContain('A administração');
+      expect(avisoEnviado()).not.toContain('@');
+    });
+
+    it('remarcacao avisa da MUDANCA, e nao de um contato novo', async () => {
+      atendimentos.ultimaInteracao.mockResolvedValue({
+        status: 'PENDENTE',
+        combinadoEm: new Date(Date.now() + 30 * 60_000),
+      });
+
+      const r = await useCase.execute({
+        ...DESTINO,
+        nomeCliente: 'Carla Oliveira',
+        quandoIso: DAQUI_A_UMA_HORA,
+        modo: 'OCASIONAL',
+        solicitanteNome: 'Fernanda Melo',
+      });
+
+      if (r.status === 'AGENDADO') expect(r.aviso).toBe('REMARCADO');
+      expect(avisoEnviado()).toContain('remarcou');
+    });
+
+    it('mesmo horario que ela ja conhece nao reenvia nada', async () => {
+      const quando = new Date(Date.now() + 60 * 60_000);
+      atendimentos.ultimaInteracao.mockResolvedValue({
+        status: 'PENDENTE',
+        combinadoEm: quando,
+      });
+
+      const r = await useCase.execute({
+        ...DESTINO,
+        nomeCliente: 'Carla Oliveira',
+        quandoIso: quando.toISOString(),
+        modo: 'OCASIONAL',
+      });
+
+      if (r.status === 'AGENDADO') expect(r.aviso).toBe('JA_SABIA');
+      expect(whatsapp.enviarTexto).not.toHaveBeenCalled();
+    });
+
+    /** Falha de WhatsApp nao pode desfazer um agendamento ja decidido. */
+    it('envio que falha nao derruba o agendamento — e a agenda continua', async () => {
+      whatsapp.enviarTexto.mockRejectedValue(new Error('WAHA fora do ar'));
+
+      const r = await useCase.execute({
+        ...DESTINO,
+        nomeCliente: 'Carla Oliveira',
+        quandoIso: DAQUI_A_UMA_HORA,
+        modo: 'OCASIONAL',
+      });
+
+      expect(r.status).toBe('AGENDADO');
+      if (r.status === 'AGENDADO') expect(r.aviso).toBe('FALHOU');
+      expect(atendimentos.reagendar).toHaveBeenCalledWith(
+        'at-1',
+        'COBRANCA',
+        expect.any(Date),
+        expect.any(Date),
+      );
+    });
+
+    it('numero sem WhatsApp no provedor tambem e FALHOU, nao excecao', async () => {
+      whatsapp.resolverChatId.mockResolvedValue(null);
+
+      const r = await useCase.execute({
+        ...DESTINO,
+        nomeCliente: 'Carla Oliveira',
+        quandoIso: DAQUI_A_UMA_HORA,
+        modo: 'OCASIONAL',
+      });
+
+      if (r.status === 'AGENDADO') expect(r.aviso).toBe('FALHOU');
+      expect(whatsapp.enviarTexto).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('lembrete', () => {
+    const tipos = () => atendimentos.reagendar.mock.calls.map((c) => c[1] as string);
+
+    it('combinado perto do aviso NAO gera lembrete — seriam duas mensagens juntas', async () => {
+      const r = await useCase.execute({
+        ...DESTINO,
+        nomeCliente: 'Carla Oliveira',
+        quandoIso: new Date(Date.now() + 20 * 60_000).toISOString(),
+        modo: 'OCASIONAL',
+      });
+
+      if (r.status === 'AGENDADO') expect(r.temLembrete).toBe(false);
+      expect(tipos()).not.toContain('LEMBRETE');
+      expect(tipos()).toContain('COBRANCA');
+      // E a mensagem nao promete um lembrete que nao existe.
+      expect(avisoEnviado()).not.toContain('minutos antes');
+    });
+
+    it('mas se o aviso NAO saiu, o lembrete fica — e a unica chance dela saber', async () => {
+      whatsapp.enviarTexto.mockRejectedValue(new Error('WAHA fora do ar'));
+
+      const r = await useCase.execute({
+        ...DESTINO,
+        nomeCliente: 'Carla Oliveira',
+        quandoIso: new Date(Date.now() + 20 * 60_000).toISOString(),
+        modo: 'OCASIONAL',
+      });
+
+      if (r.status === 'AGENDADO') expect(r.temLembrete).toBe(true);
+      expect(tipos()).toContain('LEMBRETE');
+    });
+  });
+
+  /**
+   * A TRAVA DO NUMERO. Ate 25/08 o agendamento dava sucesso, e a falta do
+   * numero so aparecia horas depois, num `logger.warn` que ninguem le: a
+   * pendencia voltava a cada rodada e expirava sozinha em 6h.
+   */
+  describe('vendedora sem WhatsApp interno', () => {
+    beforeEach(() => {
+      vendedoras.buscarPorId.mockResolvedValue({
+        nome: 'Camila Rezende',
+        whatsappInterno: null,
+      });
+    });
+
+    it('recusa na hora, dizendo o motivo', async () => {
+      const r = await useCase.execute({
+        ...DESTINO,
+        nomeCliente: 'Carla Oliveira',
+        quandoIso: DAQUI_A_UMA_HORA,
+        modo: 'OCASIONAL',
+      });
+
+      expect(r.status).toBe('VENDEDORA_SEM_WHATSAPP');
+      expect(atendimentos.abrir).not.toHaveBeenCalled();
+      expect(atendimentos.reagendar).not.toHaveBeenCalled();
+    });
+
+    /**
+     * A ORDEM IMPORTA: a recusa vem ANTES da transferencia de carteira. Recusar
+     * depois deixaria o cliente na carteira nova e o contato sem marcar.
+     */
+    it('nao transfere a carteira antes de recusar', async () => {
+      await useCase.execute({
+        ...DESTINO,
+        nomeCliente: 'Carla Oliveira',
+        quandoIso: DAQUI_A_UMA_HORA,
+        modo: 'TRANSFERIR',
+      });
+
+      expect(clientes.transferirCarteira).not.toHaveBeenCalled();
+    });
   });
 });

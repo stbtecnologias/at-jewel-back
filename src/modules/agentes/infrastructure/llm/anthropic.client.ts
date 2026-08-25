@@ -24,7 +24,8 @@ const CHART_TOOL: Anthropic.Tool = {
       tipo: {
         type: 'string',
         enum: ['bar', 'line', 'pie', 'composed'],
-        description: 'bar = barras; line = linha; pie = pizza; composed = barras + linha',
+        description:
+          'bar = barras; line = linha; pie = pizza; composed = barras + linha',
       },
       titulo: { type: 'string', description: 'Título descritivo do gráfico' },
       dados: {
@@ -183,7 +184,6 @@ const MELHORES_TOOL: Anthropic.Tool = {
   },
 };
 
-
 // ===========================================================================
 // GESTAO. Espelham as de cima, mas pedem DE QUEM — e por isso sao ferramentas
 // distintas, e nao as mesmas com um parametro a mais. Um canal recebe um
@@ -197,7 +197,10 @@ const GESTAO_AGENDA_TOOL: Anthropic.Tool = {
   input_schema: {
     type: 'object',
     properties: {
-      vendedora: { type: 'string', description: 'Nome da vendedora, como falado.' },
+      vendedora: {
+        type: 'string',
+        description: 'Nome da vendedora, como falado.',
+      },
       periodo: {
         type: 'string',
         enum: ['HOJE', 'AMANHA', 'SEMANA'],
@@ -216,7 +219,10 @@ const GESTAO_VENDAS_TOOL: Anthropic.Tool = {
   input_schema: {
     type: 'object',
     properties: {
-      vendedora: { type: 'string', description: 'Nome da vendedora, como falado.' },
+      vendedora: {
+        type: 'string',
+        description: 'Nome da vendedora, como falado.',
+      },
       periodo: {
         type: 'string',
         enum: ['HOJE', 'SEMANA', 'MES'],
@@ -235,7 +241,10 @@ const GESTAO_METAS_TOOL: Anthropic.Tool = {
   input_schema: {
     type: 'object',
     properties: {
-      vendedora: { type: 'string', description: 'Nome da vendedora, como falado.' },
+      vendedora: {
+        type: 'string',
+        description: 'Nome da vendedora, como falado.',
+      },
     },
     required: ['vendedora'],
   },
@@ -265,7 +274,10 @@ const GESTAO_CARTEIRA_TOOL: Anthropic.Tool = {
   input_schema: {
     type: 'object',
     properties: {
-      vendedora: { type: 'string', description: 'Nome da vendedora, como falado.' },
+      vendedora: {
+        type: 'string',
+        description: 'Nome da vendedora, como falado.',
+      },
       meses: {
         type: 'integer',
         description: 'Quantos meses sem comprar. Omita para usar 6.',
@@ -282,7 +294,10 @@ const GESTAO_MELHORES_TOOL: Anthropic.Tool = {
   input_schema: {
     type: 'object',
     properties: {
-      vendedora: { type: 'string', description: 'Nome da vendedora, como falado.' },
+      vendedora: {
+        type: 'string',
+        description: 'Nome da vendedora, como falado.',
+      },
       categoria: {
         type: 'string',
         description:
@@ -290,7 +305,8 @@ const GESTAO_MELHORES_TOOL: Anthropic.Tool = {
       },
       ultimos_meses: {
         type: 'integer',
-        description: 'Recorte de periodo, em meses. Omita para o historico inteiro.',
+        description:
+          'Recorte de periodo, em meses. Omita para o historico inteiro.',
       },
     },
     required: ['vendedora'],
@@ -310,6 +326,32 @@ const GESTAO_CARTEIRA_CLIENTE_TOOL: Anthropic.Tool = {
   },
 };
 
+const GESTAO_FEEDBACKS_TOOL: Anthropic.Tool = {
+  name: 'feedbacks_de_vendedora',
+  description:
+    'Mostra O QUE A VENDEDORA CONTOU sobre os atendimentos dela, nas palavras dela. Use para "qual foi o feedback do Thiago hoje", "o que a Marina disse do atendimento", "como foi com a Luana". Passando o nome do CLIENTE, traz o episodio daquele cliente; sem ele, traz os ultimos feedbacks dela no periodo. Esta informacao e exclusiva da administracao.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      vendedora: {
+        type: 'string',
+        description: 'Nome da vendedora, como falado.',
+      },
+      cliente: {
+        type: 'string',
+        description:
+          'Nome do cliente, quando a pergunta for sobre UM atendimento especifico. Omita para ver os ultimos feedbacks dela.',
+      },
+      dias: {
+        type: 'number',
+        description:
+          'Janela em dias. Hoje = 1, esta semana = 7. Omita para os ultimos sete dias.',
+      },
+    },
+    required: ['vendedora'],
+  },
+};
+
 const GESTAO_AGENDAR_TOOL: Anthropic.Tool = {
   name: 'agendar_para_vendedora',
   description:
@@ -322,7 +364,10 @@ const GESTAO_AGENDAR_TOOL: Anthropic.Tool = {
         description:
           'Nome do cliente, como falado — ou o CODIGO dele, quando a ferramenta ja tiver pedido para desempatar homonimos.',
       },
-      vendedora: { type: 'string', description: 'Nome da vendedora que vai atender.' },
+      vendedora: {
+        type: 'string',
+        description: 'Nome da vendedora que vai atender.',
+      },
       quandoIso: {
         type: 'string',
         description:
@@ -446,7 +491,9 @@ export class AnthropicClient implements ILlmClient {
     // O SDK aceita apiKey vazia na construcao; falha so no request. Logamos
     // para deixar claro em ambiente sem chave (dev) que os agentes nao operam.
     if (!apiKey) {
-      this.logger.warn('ANTHROPIC_API_KEY ausente — agentes nao conseguirao responder.');
+      this.logger.warn(
+        'ANTHROPIC_API_KEY ausente — agentes nao conseguirao responder.',
+      );
     }
     this.client = new Anthropic({ apiKey: apiKey ?? '' });
   }
@@ -461,7 +508,9 @@ export class AnthropicClient implements ILlmClient {
     return { texto: this.extrairTexto(resp), tokens: resp.usage.output_tokens };
   }
 
-  async chatComFerramentas(params: ChatParams): Promise<ChatComFerramentasResultado> {
+  async chatComFerramentas(
+    params: ChatParams,
+  ): Promise<ChatComFerramentasResultado> {
     const apiMessages = this.toApiMessages(params.mensagens);
 
     // Cada ferramenta so entra quando a aplicacao fornece o handler. O
@@ -476,10 +525,12 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoVendas) tools.push(GESTAO_VENDAS_TOOL);
     if (params.gestaoMetas) tools.push(GESTAO_METAS_TOOL);
     if (params.gestaoPanorama) tools.push(GESTAO_PANORAMA_TOOL);
-    if (params.gestaoCarteiraDoCliente) tools.push(GESTAO_CARTEIRA_CLIENTE_TOOL);
+    if (params.gestaoCarteiraDoCliente)
+      tools.push(GESTAO_CARTEIRA_CLIENTE_TOOL);
     if (params.gestaoCarteira) tools.push(GESTAO_CARTEIRA_TOOL);
     if (params.gestaoMelhores) tools.push(GESTAO_MELHORES_TOOL);
     if (params.gestaoAgendar) tools.push(GESTAO_AGENDAR_TOOL);
+    if (params.gestaoFeedbacks) tools.push(GESTAO_FEEDBACKS_TOOL);
     if (params.registrarRelato) tools.push(RELATO_TOOL);
     if (params.consultarVendas) tools.push(VENDAS_TOOL);
     if (params.consultarMetas) tools.push(METAS_TOOL);
@@ -537,9 +588,13 @@ export class AnthropicClient implements ILlmClient {
         toolResults.push({
           type: 'tool_result',
           tool_use_id: toolUse.id,
-          content: 'Gráfico gerado com sucesso e já apareceu no painel de Analytics.',
+          content:
+            'Gráfico gerado com sucesso e já apareceu no painel de Analytics.',
         });
-      } else if (toolUse.name === 'registrar_demanda' && params.registrarDemanda) {
+      } else if (
+        toolUse.name === 'registrar_demanda' &&
+        params.registrarDemanda
+      ) {
         if (demandaRegistrada) {
           toolResults.push({
             type: 'tool_result',
@@ -554,7 +609,10 @@ export class AnthropicClient implements ILlmClient {
         toolResults.push(
           await this.executarRegistrarDemanda(toolUse, params.registrarDemanda),
         );
-      } else if (toolUse.name === 'registrar_relato' && params.registrarRelato) {
+      } else if (
+        toolUse.name === 'registrar_relato' &&
+        params.registrarRelato
+      ) {
         if (relatoGravado) {
           toolResults.push({
             type: 'tool_result',
@@ -568,7 +626,10 @@ export class AnthropicClient implements ILlmClient {
         toolResults.push(
           await this.executarRegistrarRelato(toolUse, params.registrarRelato),
         );
-      } else if (toolUse.name === 'carteira_de_vendedora' && params.gestaoCarteira) {
+      } else if (
+        toolUse.name === 'carteira_de_vendedora' &&
+        params.gestaoCarteira
+      ) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
             const e = toolUse.input as { vendedora?: string; meses?: number };
@@ -581,7 +642,10 @@ export class AnthropicClient implements ILlmClient {
             );
           }),
         );
-      } else if (toolUse.name === 'melhores_da_vendedora' && params.gestaoMelhores) {
+      } else if (
+        toolUse.name === 'melhores_da_vendedora' &&
+        params.gestaoMelhores
+      ) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
             const e = toolUse.input as {
@@ -599,7 +663,10 @@ export class AnthropicClient implements ILlmClient {
             );
           }),
         );
-      } else if (toolUse.name === 'agendar_para_vendedora' && params.gestaoAgendar) {
+      } else if (
+        toolUse.name === 'agendar_para_vendedora' &&
+        params.gestaoAgendar
+      ) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
             const e = toolUse.input as {
@@ -617,10 +684,16 @@ export class AnthropicClient implements ILlmClient {
             return `${r.mensagem}\n\nResponda com isso, sem alterar nomes nem horarios.`;
           }),
         );
-      } else if (toolUse.name === 'agenda_de_vendedora' && params.gestaoAgenda) {
+      } else if (
+        toolUse.name === 'agenda_de_vendedora' &&
+        params.gestaoAgenda
+      ) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as { vendedora?: string; periodo?: PeriodoAgendaLlm };
+            const e = toolUse.input as {
+              vendedora?: string;
+              periodo?: PeriodoAgendaLlm;
+            };
             return textoDaLeituraDeGestao(
               await params.gestaoAgenda!({
                 vendedora: String(e.vendedora ?? '').slice(0, 80),
@@ -630,10 +703,16 @@ export class AnthropicClient implements ILlmClient {
             );
           }),
         );
-      } else if (toolUse.name === 'vendas_de_vendedora' && params.gestaoVendas) {
+      } else if (
+        toolUse.name === 'vendas_de_vendedora' &&
+        params.gestaoVendas
+      ) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as { vendedora?: string; periodo?: PeriodoVendasLlm };
+            const e = toolUse.input as {
+              vendedora?: string;
+              periodo?: PeriodoVendasLlm;
+            };
             return textoDaLeituraDeGestao(
               await params.gestaoVendas!({
                 vendedora: String(e.vendedora ?? '').slice(0, 80),
@@ -648,16 +727,23 @@ export class AnthropicClient implements ILlmClient {
           await this.executarLeitura(toolUse, async () => {
             const e = toolUse.input as { vendedora?: string };
             return textoDaLeituraDeGestao(
-              await params.gestaoMetas!({ vendedora: String(e.vendedora ?? '').slice(0, 80) }),
+              await params.gestaoMetas!({
+                vendedora: String(e.vendedora ?? '').slice(0, 80),
+              }),
               'meta',
             );
           }),
         );
-      } else if (toolUse.name === 'panorama_da_equipe' && params.gestaoPanorama) {
+      } else if (
+        toolUse.name === 'panorama_da_equipe' &&
+        params.gestaoPanorama
+      ) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
             const e = toolUse.input as { periodo?: PeriodoVendasLlm };
-            const { linhas } = await params.gestaoPanorama!({ periodo: e.periodo ?? 'SEMANA' });
+            const { linhas } = await params.gestaoPanorama!({
+              periodo: e.periodo ?? 'SEMANA',
+            });
             if (linhas.length === 0) {
               return 'Nenhuma vendedora ativa com venda nesse periodo. Diga isso em uma frase.';
             }
@@ -667,7 +753,29 @@ export class AnthropicClient implements ILlmClient {
             );
           }),
         );
-      } else if (toolUse.name === 'de_quem_e_o_cliente' && params.gestaoCarteiraDoCliente) {
+      } else if (
+        toolUse.name === 'feedbacks_de_vendedora' &&
+        params.gestaoFeedbacks
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as {
+              vendedora?: string;
+              cliente?: string;
+              dias?: number;
+            };
+            const r = await params.gestaoFeedbacks!({
+              vendedora: String(e.vendedora ?? '').slice(0, 80),
+              cliente: e.cliente ? String(e.cliente).slice(0, 120) : undefined,
+              dias: typeof e.dias === 'number' ? e.dias : undefined,
+            });
+            return textoDosFeedbacks(r, Boolean(e.cliente));
+          }),
+        );
+      } else if (
+        toolUse.name === 'de_quem_e_o_cliente' &&
+        params.gestaoCarteiraDoCliente
+      ) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
             const e = toolUse.input as { cliente?: string };
@@ -686,11 +794,16 @@ export class AnthropicClient implements ILlmClient {
             return `${r.linhas.join('\n')}\n\nRepasse exatamente assim.`;
           }),
         );
-      } else if (toolUse.name === 'consultar_vendas' && params.consultarVendas) {
+      } else if (
+        toolUse.name === 'consultar_vendas' &&
+        params.consultarVendas
+      ) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
             const { resumo } = await params.consultarVendas!({
-              periodo: (toolUse.input as { periodo?: PeriodoVendasLlm }).periodo ?? 'HOJE',
+              periodo:
+                (toolUse.input as { periodo?: PeriodoVendasLlm }).periodo ??
+                'HOJE',
             });
             return (
               `Vendas dela no periodo: ${resumo}. Repasse estes numeros exatamente ` +
@@ -711,11 +824,16 @@ export class AnthropicClient implements ILlmClient {
             );
           }),
         );
-      } else if (toolUse.name === 'consultar_produtos' && params.consultarProdutos) {
+      } else if (
+        toolUse.name === 'consultar_produtos' &&
+        params.consultarProdutos
+      ) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
             const { produtos } = await params.consultarProdutos!({
-              busca: String((toolUse.input as { busca?: string }).busca ?? '').slice(0, 120),
+              busca: String(
+                (toolUse.input as { busca?: string }).busca ?? '',
+              ).slice(0, 120),
             });
             if (produtos.length === 0) {
               return 'Nenhuma peca encontrada com esse termo. Diga isso a ela e pergunte se quer procurar de outro jeito.';
@@ -731,7 +849,8 @@ export class AnthropicClient implements ILlmClient {
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolUse.id,
-            content: 'Ignorado: um agendamento por mensagem. Peca para ela tratar um cliente de cada vez.',
+            content:
+              'Ignorado: um agendamento por mensagem. Peca para ela tratar um cliente de cada vez.',
             is_error: true,
           });
           continue;
@@ -739,17 +858,21 @@ export class AnthropicClient implements ILlmClient {
         contatoAgendado = true;
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
-            const entrada = toolUse.input as { cliente?: string; quandoIso?: string };
+            const entrada = toolUse.input as {
+              cliente?: string;
+              quandoIso?: string;
+            };
             const r = await params.agendarContato!({
               cliente: String(entrada.cliente ?? '').slice(0, 120),
               quandoIso: String(entrada.quandoIso ?? ''),
             });
-            return (
-              `${r.mensagem}\n\nResponda a ela com isso, sem alterar nomes nem horarios.`
-            );
+            return `${r.mensagem}\n\nResponda a ela com isso, sem alterar nomes nem horarios.`;
           }),
         );
-      } else if (toolUse.name === 'clientes_sem_comprar' && params.clientesSemComprar) {
+      } else if (
+        toolUse.name === 'clientes_sem_comprar' &&
+        params.clientesSemComprar
+      ) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
             const entrada = toolUse.input as { meses?: number };
@@ -765,7 +888,10 @@ export class AnthropicClient implements ILlmClient {
             );
           }),
         );
-      } else if (toolUse.name === 'melhores_clientes' && params.melhoresClientes) {
+      } else if (
+        toolUse.name === 'melhores_clientes' &&
+        params.melhoresClientes
+      ) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
             const entrada = toolUse.input as {
@@ -785,11 +911,17 @@ export class AnthropicClient implements ILlmClient {
             );
           }),
         );
-      } else if (toolUse.name === 'consultar_agenda' && params.consultarAgenda) {
+      } else if (
+        toolUse.name === 'consultar_agenda' &&
+        params.consultarAgenda
+      ) {
         toolResults.push(
           await this.executarConsultarAgenda(toolUse, params.consultarAgenda),
         );
-      } else if (toolUse.name === 'avisar_vendedora' && params.avisarVendedora) {
+      } else if (
+        toolUse.name === 'avisar_vendedora' &&
+        params.avisarVendedora
+      ) {
         if (avisoEnviado) {
           toolResults.push({
             type: 'tool_result',
@@ -836,7 +968,11 @@ export class AnthropicClient implements ILlmClient {
     corpo: () => Promise<string>,
   ): Promise<Anthropic.ToolResultBlockParam> {
     try {
-      return { type: 'tool_result', tool_use_id: toolUse.id, content: await corpo() };
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUse.id,
+        content: await corpo(),
+      };
     } catch (err) {
       this.logger.error(
         `Falha na ferramenta ${toolUse.name}: ${err instanceof Error ? err.message : err}`,
@@ -1047,7 +1183,9 @@ export class AnthropicClient implements ILlmClient {
   }
 
   private extrairTexto(resp: Anthropic.Message): string {
-    const bloco = resp.content.find((b): b is Anthropic.TextBlock => b.type === 'text');
+    const bloco = resp.content.find(
+      (b): b is Anthropic.TextBlock => b.type === 'text',
+    );
     return bloco?.text ?? '';
   }
 }
@@ -1061,6 +1199,61 @@ export class AnthropicClient implements ILlmClient {
  * as tres se comportam igual — inclusive na ambiguidade, que e onde um palpite
  * sairia caro.
  */
+/**
+ * O envelope dos FEEDBACKS.
+ *
+ * Separado do `textoDaLeituraDeGestao` por uma razao so: aqui o formato da
+ * resposta importa tanto quanto o conteudo. Numeros de venda cabem numa
+ * frase; tres relatos de clientes diferentes viram um paragrafo em que
+ * ninguem acha nada. Quem le quer localizar UM cliente de relance.
+ *
+ * Nada de markdown: o chat do painel mostra o asterisco cru.
+ */
+function textoDosFeedbacks(
+  r: GestaoLeituraResultado & { total?: number },
+  umClienteSo: boolean,
+): string {
+  if (r.status === 'AMBIGUA') {
+    return (
+      `Mais de uma vendedora com esse nome: ${(r.nomes ?? []).join(', ')}. ` +
+      'Pergunte de qual se trata. NAO escolha uma.'
+    );
+  }
+  if (r.status === 'NAO_ENCONTRADA') {
+    const equipe = (r.nomes ?? []).join(', ');
+    return equipe
+      ? `Nao ha vendedora com esse nome. A equipe ativa e: ${equipe}. Diga isso e pergunte qual delas.`
+      : 'Nao ha vendedora com esse nome. Diga isso em uma frase.';
+  }
+  if (r.linhas.length === 0) {
+    return (
+      `${r.vendedora} nao tem feedback registrado nesse recorte. ` +
+      'Diga isso em uma frase e ofereca outro periodo. Nao invente conteudo.'
+    );
+  }
+
+  const total = r.total;
+  const truncou = typeof total === 'number' && total > r.linhas.length;
+
+  return [
+    `Feedbacks de ${r.vendedora}:`,
+    r.linhas.map((l) => `- ${l}`).join('\n'),
+    '',
+    'COMO RESPONDER:',
+    umClienteSo
+      ? '- este e UM atendimento: liste as falas em ordem, uma linha cada, dizendo a hora de cada uma'
+      : '- UMA LINHA POR ATENDIMENTO, comecando pelo nome do cliente. NAO junte em paragrafo: quem le precisa achar um cliente de relance',
+    '- repasse a frase da vendedora entre aspas, sem reescrever nem resumir',
+    '- nao use asterisco, cerquilha nem markdown: o chat mostra os simbolos crus',
+    '- uma frase curta de fechamento no fim, se houver o que dizer',
+    truncou
+      ? `- SAO ${total} NO TOTAL e voce recebeu ${r.linhas.length}. DIGA o total e ofereca filtrar por cliente ou por periodo.`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
 function textoDaLeituraDeGestao(
   r: GestaoLeituraResultado,
   substantivo: string,
