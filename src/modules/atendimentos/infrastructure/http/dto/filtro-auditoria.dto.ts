@@ -11,7 +11,10 @@ import {
   Min,
 } from 'class-validator';
 import { ETAPAS_ATENDIMENTO } from '../../../domain/ports/repositories/atendimento-repository.port';
-import type { EtapaAtendimento } from '../../../domain/ports/repositories/atendimento-repository.port';
+import type {
+  EtapaAtendimento,
+  GranularidadeSerie,
+} from '../../../domain/ports/repositories/atendimento-repository.port';
 import { MAXIMO_POR_PAGINA } from '../../../application/use-cases/consultar-auditoria.use-case';
 
 export class FiltroAuditoriaDto {
@@ -53,4 +56,11 @@ export class FiltroAuditoriaDto {
   @IsInt()
   @Min(0)
   offset?: number;
+
+  /**
+   * Tamanho do balde da serie. So a rota `/serie` usa; nas outras e ignorado.
+   */
+  @IsOptional()
+  @IsIn(['DIA', 'SEMANA'])
+  granularidade?: GranularidadeSerie;
 }

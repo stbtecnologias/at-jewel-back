@@ -16,8 +16,10 @@ describe('ConsultarAuditoriaUseCase', () => {
   let repo: {
     listarAuditoria: jest.Mock;
     resumoAuditoria: jest.Mock;
+    serieAuditoria: jest.Mock;
     listarInteracoes: jest.Mock;
   };
+  let vendas: { serieAgregada: jest.Mock };
   let uc: ConsultarAuditoriaUseCase;
 
   const PAGINA_VAZIA = { itens: [], total: 0 };
@@ -30,9 +32,11 @@ describe('ConsultarAuditoriaUseCase', () => {
         porEtapa: {},
         vendedoras: [],
       }),
+      serieAuditoria: jest.fn().mockResolvedValue([]),
       listarInteracoes: jest.fn().mockResolvedValue([]),
     };
-    uc = new ConsultarAuditoriaUseCase(repo as never);
+    vendas = { serieAgregada: jest.fn().mockResolvedValue([]) };
+    uc = new ConsultarAuditoriaUseCase(repo as never, vendas as never);
   });
 
   describe('teto de pagina', () => {
@@ -114,6 +118,70 @@ describe('ConsultarAuditoriaUseCase', () => {
 
       await expect(uc.detalhe('at-inexistente')).rejects.toBeInstanceOf(
         NotFoundException,
+      );
+    });
+  });
+
+  /**
+   * A SERIE junta duas consultas que nao se conhecem: atendimentos por
+   * `aberto_em` e vendas por `data_venda`. O que as casa e o comeco do balde —
+   * e e ai que da para errar sem ninguem perceber, porque o resultado continua
+   * parecendo certo.
+   */
+  describe('serie', () => {
+    const SEG = new Date('2026-08-17T03:00:00Z'); // 00h de 17/08 em Fortaleza
+    const TER = new Date('2026-08-18T03:00:00Z');
+
+    function balde(inicio: Date, total: number) {
+      return {
+        inicio,
+        fim: new Date(inicio.getTime() + 86_400_000 - 1),
+        total,
+        porEtapa: { CONCLUIDO: total },
+        aguardandoRelato: 0,
+      };
+    }
+
+    it('casa a receita do dia com o balde do dia', async () => {
+      repo.serieAuditoria.mockResolvedValue([balde(TER, 5), balde(SEG, 8)]);
+      vendas.serieAgregada.mockResolvedValue([
+        { inicio: SEG, vendas: 3, receita: 11_730, ticketMedio: 3_910 },
+      ]);
+
+      const r = await uc.serie({}, 'DIA');
+
+      expect(r[1].vendido).toEqual({
+        vendas: 3,
+        receita: 11_730,
+        ticketMedio: 3_910,
+      });
+    });
+
+    /** Zero vendido e um fato — a tela precisa poder mostrar o zero. */
+    it('balde sem venda vem zerado, e nao nulo', async () => {
+      repo.serieAuditoria.mockResolvedValue([balde(TER, 5)]);
+      vendas.serieAgregada.mockResolvedValue([]);
+
+      const r = await uc.serie({}, 'DIA');
+
+      expect(r[0].vendido).toEqual({ vendas: 0, receita: 0, ticketMedio: 0 });
+    });
+
+    it('a vendedora escolhida recorta as DUAS consultas', async () => {
+      const de = new Date('2026-08-01T03:00:00Z');
+      const ate = new Date('2026-08-31T02:59:59Z');
+
+      await uc.serie({ vendedoraId: 'vd-1', de, ate }, 'SEMANA');
+
+      expect(repo.serieAuditoria).toHaveBeenCalledWith(
+        expect.objectContaining({ vendedoraId: 'vd-1', de, ate }),
+        'SEMANA',
+      );
+      // Sem isto a tela mostraria os atendimentos de UMA vendedora ao lado da
+      // receita da EQUIPE inteira, e o numero pareceria dela.
+      expect(vendas.serieAgregada).toHaveBeenCalledWith(
+        { vendedoraId: 'vd-1', dataDe: de, dataAte: ate },
+        'SEMANA',
       );
     });
   });

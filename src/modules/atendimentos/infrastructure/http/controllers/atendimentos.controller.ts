@@ -46,6 +46,27 @@ export class AtendimentosController {
     });
   }
 
+  /**
+   * A mesma contagem do resumo, quebrada no tempo. Tambem ANTES de `:id`.
+   *
+   * Sem granularidade nao ha resposta possivel — "a serie de agosto" pode ser
+   * por dia ou por semana, e escolher por conta propria devolveria trinta e um
+   * baldes onde a tela esperava cinco.
+   */
+  @Get('serie')
+  @Permissions('atendimentos:read')
+  async serie(@Query() f: FiltroAuditoriaDto) {
+    return this.auditoria.serie(
+      {
+        vendedoraId: f.vendedora_id,
+        etapa: f.etapa,
+        de: f.de ? new Date(f.de) : undefined,
+        ate: f.ate ? new Date(f.ate) : undefined,
+      },
+      f.granularidade ?? 'DIA',
+    );
+  }
+
   @Get()
   @Permissions('atendimentos:read')
   async listar(@Query() f: FiltroAuditoriaDto) {

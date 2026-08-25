@@ -5,11 +5,13 @@ import type {
   AbrirAtendimentoInput,
   Atendimento,
   AtendimentoAuditoria,
+  BucketAuditoria,
   CompromissoAgenda,
   ContagemPorEtapa,
   CriarInteracaoInput,
   EtapaAtendimento,
   FiltroAuditoria,
+  GranularidadeSerie,
   IAtendimentoRepository,
   Interacao,
   LinhaResumoVendedora,
@@ -326,6 +328,68 @@ export class AtendimentoRepository implements IAtendimentoRepository {
     };
   }
 
+  async serieAuditoria(
+    filtros: Pick<FiltroAuditoria, 'de' | 'ate' | 'etapa' | 'vendedoraId'>,
+    granularidade: GranularidadeSerie,
+  ): Promise<BucketAuditoria[]> {
+    const { where, params } = montarFiltro(filtros);
+
+    // Os parametros do filtro ja ocuparam $1..$n; os meus entram DEPOIS, senao
+    // os indices que o `where` montou apontariam para o lugar errado.
+    params.push(granularidade === 'DIA' ? 'day' : 'week');
+    const iUnidade = params.length;
+    params.push(FUSO_DA_LOJA);
+    const iFuso = params.length;
+
+    // O DIA E O DA LOJA, e nao o do servidor. `aberto_em` e timestamptz: sem
+    // converter para o fuso antes de truncar, um atendimento das 22h de sexta
+    // cairia no sabado quando o processo roda em UTC. Converte, trunca, e
+    // volta para timestamptz — assim o driver entrega um Date certo.
+    const linhas: LinhaSerieSql[] = await this.repo.manager.query(
+      `
+      SELECT (date_trunc($${iUnidade}::text, v.aberto_em AT TIME ZONE $${iFuso}::text)
+                AT TIME ZONE $${iFuso}::text) AS inicio,
+             v.etapa,
+             COUNT(*)::int AS quantos,
+             COUNT(*) FILTER (WHERE v.aguardando_relato)::int AS aguardando
+      FROM vw_atendimentos_auditoria v
+      ${where}
+      GROUP BY 1, 2
+      ORDER BY 1
+      `,
+      params,
+    );
+
+    const baldes = new Map<number, BucketAuditoria>();
+    for (const l of linhas) {
+      const inicio = new Date(l.inicio);
+      const chave = inicio.getTime();
+      let balde = baldes.get(chave);
+      if (!balde) {
+        balde = {
+          inicio,
+          fim: fimDoBalde(inicio, granularidade),
+          total: 0,
+          porEtapa: zerado(),
+          aguardandoRelato: 0,
+        };
+        baldes.set(chave, balde);
+      }
+      balde.porEtapa[l.etapa] += l.quantos;
+      balde.total += l.quantos;
+      balde.aguardandoRelato += l.aguardando;
+    }
+
+    // O BALDE VAI INTEIRO, sem recorte pela janela. A semana que abre o mes
+    // comeca em julho, e a tela precisa saber disso para rotular — mas o
+    // recorte e decisao de ROTULO, e feito la. Aqui, cortar o `inicio` faria a
+    // serie de vendas (que casa por esse instante) nunca encontrar a semana de
+    // virada.
+
+    // Mais recente primeiro: e a ordem da linha do tempo na tela.
+    return [...baldes.values()].sort((a, b) => b.inicio.getTime() - a.inicio.getTime());
+  }
+
   /** O relato mais recente de cada atendimento, decifrado pelo ORM. */
   private async ultimosRelatos(ids: string[]): Promise<Map<string, string>> {
     const linhas = await this.interacoes.find({
@@ -368,6 +432,27 @@ interface LinhaResumoSql {
   quantos: number;
   aguardando: number;
   ultima_em: Date | null;
+}
+
+interface LinhaSerieSql {
+  inicio: Date;
+  etapa: EtapaAtendimento;
+  quantos: number;
+  aguardando: number;
+}
+
+/**
+ * O fuso da operacao. A loja e em Fortaleza e o banco guarda timestamptz —
+ * truncar o dia sem dizer o fuso usaria o do servidor, que roda em UTC.
+ */
+const FUSO_DA_LOJA = 'America/Sao_Paulo';
+
+/** O ultimo instante do balde: vespera do proximo comeco. */
+function fimDoBalde(inicio: Date, granularidade: GranularidadeSerie): Date {
+  const proximo = new Date(inicio);
+  if (granularidade === 'DIA') proximo.setDate(proximo.getDate() + 1);
+  else proximo.setDate(proximo.getDate() + 7);
+  return new Date(proximo.getTime() - 1);
 }
 
 function zerado(): ContagemPorEtapa {

@@ -139,6 +139,37 @@ export interface ResumoAuditoria {
   vendedoras: LinhaResumoVendedora[];
 }
 
+/** O tamanho do balde na serie: um dia, ou uma semana. */
+export type GranularidadeSerie = 'DIA' | 'SEMANA';
+
+/**
+ * Um balde da linha do tempo agregada.
+ *
+ * ==========================================================================
+ * O QUE ESTE NUMERO SIGNIFICA — e nao e obvio.
+ *
+ * O balde e por `aberto_em`, o MESMO campo que o filtro `de/ate` usa. Sem
+ * isso os baldes nao somariam o total do cabecalho, e a tela mostraria duas
+ * contas diferentes da mesma coisa na mesma pagina.
+ *
+ * Ja a ETAPA e o estado de AGORA, porque ela sai da view e a view olha a
+ * linha do tempo ate hoje. Entao "sexta: 8 atendimentos, 3 concluidos" quer
+ * dizer *dos 8 abertos na sexta, 3 estao concluidos hoje* — uma coorte, e nao
+ * uma fotografia daquele dia. Nao ha historico de etapa no banco para
+ * responder "como estava na sexta"; inventar um numero com essa cara seria
+ * pior do que a leitura de coorte, que pelo menos e verdadeira.
+ * ==========================================================================
+ */
+export interface BucketAuditoria {
+  /** Comeco do balde no fuso da loja, ja recortado pela janela consultada. */
+  inicio: Date;
+  /** Fim do balde, tambem recortado — ver o comentario do rotulo na tela. */
+  fim: Date;
+  total: number;
+  porEtapa: ContagemPorEtapa;
+  aguardandoRelato: number;
+}
+
 export interface IAtendimentoRepository {
   /**
    * O atendimento EM CURSO do cliente, se houver. O banco garante no maximo um
@@ -247,4 +278,17 @@ export interface IAtendimentoRepository {
   resumoAuditoria(
     filtros: Pick<FiltroAuditoria, 'de' | 'ate' | 'etapa'>,
   ): Promise<ResumoAuditoria>;
+
+  /**
+   * A mesma contagem do resumo, quebrada no tempo: um balde por dia, ou por
+   * semana. E o que a linha do tempo mostra quando o periodo e maior que um
+   * dia — 42 atendimentos em lista viram rolagem, e em seis baldes viram
+   * leitura.
+   *
+   * Sem `limit` pelo mesmo motivo do resumo: um mes tem cinco semanas.
+   */
+  serieAuditoria(
+    filtros: Pick<FiltroAuditoria, 'de' | 'ate' | 'etapa' | 'vendedoraId'>,
+    granularidade: GranularidadeSerie,
+  ): Promise<BucketAuditoria[]>;
 }

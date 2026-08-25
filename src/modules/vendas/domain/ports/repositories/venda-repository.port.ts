@@ -51,6 +51,22 @@ export interface VendaResumo {
  * Resumo agregado de vendas. Calculado via SQL (sem carregar linhas na
  * memoria). Contem apenas agregados — nenhum dado de PII trafega aqui.
  */
+/**
+ * Um balde de receita no tempo.
+ *
+ * ATENCAO AO QUE ISTO NAO E: sao as vendas do periodo, e nao as vendas
+ * ORIGINADAS pelos atendimentos daquele periodo. Nao existe vinculo entre
+ * venda e atendimento no banco — quando existir, este numero pode virar
+ * atribuicao de verdade. Ate la, quem exibe precisa dizer "vendido no
+ * periodo", nunca "gerado por estes atendimentos".
+ */
+export interface BucketVendas {
+  inicio: Date;
+  vendas: number;
+  receita: number;
+  ticketMedio: number;
+}
+
 export interface ResumoVendas {
   /** Total de vendas concluidas no recorte (base de receita/ticket). */
   totalVendas: number;
@@ -169,6 +185,18 @@ export interface IVendaRepository {
    * receita) e limitado aquele status.
    */
   resumoAgregado(filtros: FiltroVenda): Promise<ResumoVendas>;
+
+  /**
+   * Receita quebrada no tempo — um balde por dia ou por semana, numa consulta
+   * so. Existe para a linha do tempo da auditoria: chamar `resumoAgregado` uma
+   * vez por balde daria mais de vinte consultas para desenhar uma tela.
+   *
+   * Mesmo recorte do `resumoAgregado`: vendas ATIVAS e CONCLUIDAS.
+   */
+  serieAgregada(
+    filtros: Pick<FiltroVenda, 'dataDe' | 'dataAte' | 'vendedoraId'>,
+    granularidade: 'DIA' | 'SEMANA',
+  ): Promise<BucketVendas[]>;
 
   /**
    * Resolve o ID da vendedora vinculada a um usuario admin (RF-USU-02), via

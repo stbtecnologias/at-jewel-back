@@ -1,8 +1,12 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { VENDA_REPOSITORY } from '../../../vendas/domain/ports/injection-tokens';
+import type { IVendaRepository } from '../../../vendas/domain/ports/repositories/venda-repository.port';
 import { ATENDIMENTO_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type {
   AtendimentoAuditoria,
+  BucketAuditoria,
   FiltroAuditoria,
+  GranularidadeSerie,
   IAtendimentoRepository,
   Interacao,
   ResumoAuditoria,
@@ -14,6 +18,26 @@ const PADRAO_POR_PAGINA = 25;
 
 export interface DetalheAtendimento extends AtendimentoAuditoria {
   interacoes: Interacao[];
+}
+
+/**
+ * Um balde da linha do tempo com o que foi vendido no mesmo intervalo.
+ *
+ * ==========================================================================
+ * `vendido` NAO E ATRIBUICAO, E CONTEXTO.
+ *
+ * Sao as vendas fechadas naquele dia/semana pela mesma vendedora (ou pela
+ * equipe, quando nao ha uma escolhida) — e NAO o que estes atendimentos
+ * geraram. Nao existe vinculo entre venda e atendimento no banco; enquanto
+ * nao existir, ninguem pode dizer que a venda saiu daquele contato.
+ *
+ * A tela precisa dizer "vendido no periodo" com essas palavras. Chamar de
+ * "gerado por estes atendimentos" seria uma afirmacao que o dado nao sustenta,
+ * e ninguem perceberia o erro olhando o numero.
+ * ==========================================================================
+ */
+export interface BucketSerie extends BucketAuditoria {
+  vendido: { vendas: number; receita: number; ticketMedio: number } | null;
 }
 
 /**
@@ -38,6 +62,8 @@ export class ConsultarAuditoriaUseCase {
   constructor(
     @Inject(ATENDIMENTO_REPOSITORY)
     private readonly atendimentos: IAtendimentoRepository,
+    @Inject(VENDA_REPOSITORY)
+    private readonly vendas: IVendaRepository,
   ) {}
 
   async listar(
@@ -54,6 +80,43 @@ export class ConsultarAuditoriaUseCase {
     filtros: Pick<FiltroAuditoria, 'de' | 'ate' | 'etapa'>,
   ): Promise<ResumoAuditoria> {
     return this.atendimentos.resumoAuditoria(filtros);
+  }
+
+  /**
+   * A linha do tempo agregada: um balde por dia, ou por semana.
+   *
+   * As duas consultas sao INDEPENDENTES — atendimentos vem de `aberto_em`,
+   * vendas de `data_venda` — e casam pelo comeco do balde. Balde sem venda
+   * nenhuma fica com `vendido` zerado, e nao nulo: zero vendido e um fato, e
+   * a tela precisa poder mostra-lo.
+   */
+  async serie(
+    filtros: Pick<FiltroAuditoria, 'de' | 'ate' | 'etapa' | 'vendedoraId'>,
+    granularidade: GranularidadeSerie,
+  ): Promise<BucketSerie[]> {
+    const [baldes, vendas] = await Promise.all([
+      this.atendimentos.serieAuditoria(filtros, granularidade),
+      this.vendas.serieAgregada(
+        {
+          dataDe: filtros.de,
+          dataAte: filtros.ate,
+          vendedoraId: filtros.vendedoraId,
+        },
+        granularidade,
+      ),
+    ]);
+
+    const porInicio = new Map(vendas.map((v) => [v.inicio.getTime(), v]));
+
+    return baldes.map((b) => {
+      const v = porInicio.get(b.inicio.getTime());
+      return {
+        ...b,
+        vendido: v
+          ? { vendas: v.vendas, receita: v.receita, ticketMedio: v.ticketMedio }
+          : { vendas: 0, receita: 0, ticketMedio: 0 },
+      };
+    });
   }
 
   /**
