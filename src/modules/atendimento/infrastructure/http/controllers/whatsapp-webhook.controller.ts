@@ -13,6 +13,7 @@ import { WHATSAPP_GATEWAY } from '../../../domain/ports/injection-tokens';
 import type { IWhatsappGateway } from '../../../domain/ports/whatsapp-gateway.port';
 import { extrairMensagemRecebida } from '../waha-webhook';
 import { WahaAuthGuard } from '../guards/waha-auth.guard';
+import { TriagemClient } from '../../whatsapp/triagem.client';
 
 /**
  * Webhook que o WAHA chama a cada evento de WhatsApp. Rota PUBLICA (sem JWT),
@@ -27,6 +28,7 @@ export class WhatsappWebhookController {
   private readonly logger = new Logger(WhatsappWebhookController.name);
 
   constructor(
+    private readonly triagem: TriagemClient,
     private readonly processar: RotearMensagemInternaUseCase,
     private readonly config: ConfigService,
     @Inject(WHATSAPP_GATEWAY)
@@ -55,8 +57,28 @@ export class WhatsappWebhookController {
       // O roteador tambem decide QUAL agente responde: Elena para a vendedora,
       // Anastasia para a gestao, silencio para o resto.
       const resultado = await this.processar.execute({ ...msg, de });
-      // Remetente nao reconhecido: nem resposta, nem envio. Ver o default-deny
-      // em ProcessarMensagemInternaUseCase.
+
+      // QUEM NAO E DA CASA E CLIENTE — e cliente tem dono: a triagem.
+      //
+      // Este era o ramo do silencio, e era ele que obrigava a escolher entre
+      // atender a equipe OU atender o cliente, porque os dois publicos chegam
+      // pelo MESMO numero. O default-deny continua valendo para o canal
+      // interno: nada aqui responde em nome da Elena ou da Anastasia da
+      // gestao. O que muda e que a mensagem deixa de morrer — ela segue para o
+      // servico que sabe atender quem esta chegando agora.
+      //
+      // SEM `await`: o `atwpp` chama o LLM antes de devolver o HTTP, e segurar
+      // o webhook por esse tempo faria o WAHA reenviar o evento. A cliente
+      // receberia a mesma pergunta duas vezes.
+      if (resultado.motivo === 'ignorado_remetente_desconhecido') {
+        if (this.triagem.disponivel()) {
+          void this.triagem.encaminhar(body);
+          return { ok: true, encaminhado: 'triagem' };
+        }
+        return { ok: true, ignorado: true, motivo: resultado.motivo };
+      }
+
+      // Reconhecido, mas sem o que responder (audio vazio, mensagem em branco).
       if (!resultado.resposta) {
         return { ok: true, ignorado: true, motivo: resultado.motivo };
       }

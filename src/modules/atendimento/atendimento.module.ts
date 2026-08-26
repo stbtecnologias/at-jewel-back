@@ -6,6 +6,7 @@ import { WhatsappWebhookController } from './infrastructure/http/controllers/wha
 import { WhatsappAdminController } from './infrastructure/http/controllers/whatsapp-admin.controller';
 import { WahaAuthGuard } from './infrastructure/http/guards/waha-auth.guard';
 import { WahaAdminClient } from './infrastructure/whatsapp/waha-admin.client';
+import { TriagemClient } from './infrastructure/whatsapp/triagem.client';
 import { WhatsappGatewayModule } from './whatsapp-gateway.module';
 
 /**
@@ -21,6 +22,9 @@ import { WhatsappGatewayModule } from './whatsapp-gateway.module';
   providers: [
     WahaAuthGuard,
     WahaAdminClient,
+    // O repasse para a triagem: quem o canal interno nao reconhece e cliente,
+    // e cliente e do `atwpp`. Ver o comentario da classe.
+    TriagemClient,
   ],
 })
 export class AtendimentoModule {}
