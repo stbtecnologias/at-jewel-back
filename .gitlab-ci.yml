@@ -12,6 +12,19 @@ deploy:
     url: https://atjewel.stbdesenvolvimento.com
   script:
     - docker build -t atjewel_api:$CI_COMMIT_SHORT_SHA -t atjewel_api:latest .
+    # Migração ANTES de trocar o container em produção — se ela falhar,
+    # `docker run --rm` sai com código != 0, o job para aqui e o container
+    # antigo (ainda rodando, não tocado até agora) segue no ar. Usa o script
+    # scripts/migrate.js (o mesmo `npm run db:migrate` de sempre) contra o
+    # atjewel_postgres já rodando na instância; a tabela schema_migrations
+    # registra o quê/quando, igual já registrava no terminal do Proxmox — só
+    # que agora o "terminal" é o log deste job, com histórico permanente.
+    - >
+      docker run --rm
+      --network atjewel_network
+      --env-file "$BACK_ENV_FILE"
+      atjewel_api:$CI_COMMIT_SHORT_SHA
+      npm run db:migrate
     - docker stop atjewel_api || true
     - docker rm atjewel_api || true
     - >
