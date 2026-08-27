@@ -1,0 +1,13 @@
+# O Dockerfile faz `npm ci` e DEPOIS `COPY . .`. Sem esta lista, o segundo
+# passo copia o node_modules do host por cima do que foi instalado no Alpine.
+node_modules
+dist
+.git
+.env
+.env.*
+!.env.example
+*.log
+test
+coverage
+Dockerfile*
+.dockerignore

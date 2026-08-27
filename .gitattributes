@@ -1,0 +1,5 @@
+# core.autocrlf=true grava CRLF ao editar. Num bloco de script do YAML cada
+# \r entra no comando e o job quebra — foi o que aconteceu no front.
+* text=auto eol=lf
+*.yml text eol=lf
+*.sql text eol=lf
