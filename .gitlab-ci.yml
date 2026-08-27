@@ -12,6 +12,12 @@ deploy:
     url: https://atjewel.stbdesenvolvimento.com
   script:
     - docker build -t atjewel_api:$CI_COMMIT_SHORT_SHA -t atjewel_api:latest .
+    - >
+      docker run --rm
+      --network atjewel_network
+      --env-file "$BACK_ENV_FILE"
+      atjewel_api:$CI_COMMIT_SHORT_SHA
+      npm run db:migrate
     - docker stop atjewel_api || true
     - docker rm atjewel_api || true
     - >
