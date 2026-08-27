@@ -1,0 +1,24 @@
+stages:
+  - deploy
+
+deploy:
+  stage: deploy
+  tags:
+    - at-jewel
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  environment:
+    name: production
+    url: https://atjewel.stbdesenvolvimento.com
+  script:
+    - docker build -t atjewel_api:$CI_COMMIT_SHORT_SHA -t atjewel_api:latest .
+    - docker stop atjewel_api || true
+    - docker rm atjewel_api || true
+    - >
+      docker run -d
+      --name atjewel_api
+      --restart unless-stopped
+      --network atjewel_network
+      --env-file "$BACK_ENV_FILE"
+      atjewel_api:$CI_COMMIT_SHORT_SHA
+    - docker image prune -f
