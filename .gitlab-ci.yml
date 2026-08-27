@@ -20,11 +20,17 @@ deploy:
       npm run db:migrate
     - docker stop atjewel_api || true
     - docker rm atjewel_api || true
+    # NODE_ENV e TZ como -e: o --env-file sobrescreve o ENV da imagem, e o -e ganha dos dois.
     - >
       docker run -d
       --name atjewel_api
       --restart unless-stopped
       --network atjewel_network
       --env-file "$BACK_ENV_FILE"
+      -e NODE_ENV=production
+      -e TZ=America/Fortaleza
       atjewel_api:$CI_COMMIT_SHORT_SHA
+    - sleep 10
+    # `docker run -d` volta OK so por iniciar. Testa de DENTRO: o runner nao tem curl.
+    - docker exec atjewel_api node -e "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" || (docker logs --tail 50 atjewel_api; exit 1)
     - docker image prune -f
