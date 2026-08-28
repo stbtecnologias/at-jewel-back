@@ -28,6 +28,7 @@ describe('RotearMensagemInternaUseCase', () => {
   let identificarAdmin: { execute: jest.Mock };
   let canalVendedora: { execute: jest.Mock };
   let canalGestao: { execute: jest.Mock };
+  let canalCatalogo: { foto: jest.Mock; resposta: jest.Mock; temFotoEsperando: jest.Mock };
   let whatsapp: { baixarMidia: jest.Mock };
   let transcricao: { transcrever: jest.Mock; disponivel: jest.Mock };
   let useCase: RotearMensagemInternaUseCase;
@@ -41,6 +42,13 @@ describe('RotearMensagemInternaUseCase', () => {
     canalGestao = {
       execute: jest.fn().mockResolvedValue({ resposta: 'da anastasia', motivo: 'conversa' }),
     };
+    // Sem foto esperando por padrao: o fluxo de texto continua indo para os
+    // dois agentes de sempre, que e o que os testes daqui verificam.
+    canalCatalogo = {
+      foto: jest.fn().mockResolvedValue({ resposta: 'foto guardada', motivo: 'foto_guardada' }),
+      resposta: jest.fn().mockResolvedValue({ resposta: 'classificada', motivo: 'fotos_classificadas' }),
+      temFotoEsperando: jest.fn(() => false),
+    };
     whatsapp = { baixarMidia: jest.fn() };
     transcricao = { transcrever: jest.fn(), disponivel: jest.fn(() => true) };
 
@@ -49,6 +57,7 @@ describe('RotearMensagemInternaUseCase', () => {
       identificarAdmin as never,
       canalVendedora as never,
       canalGestao as never,
+      canalCatalogo as never,
       whatsapp as never,
       transcricao as never,
     );
