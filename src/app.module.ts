@@ -39,6 +39,7 @@ import { ConversaOrmEntity } from './modules/agentes/infrastructure/database/typ
 import { AgentePromptOrmEntity } from './modules/agentes/infrastructure/database/typeorm/entities/agente-prompt.orm-entity';
 import { AgenteEventoOrmEntity } from './modules/agente-eventos/infrastructure/database/typeorm/entities/agente-evento.orm-entity';
 import { ClientesModule } from './modules/clientes/clientes.module';
+import { LeadsModule } from './modules/leads/leads.module';
 import { ClienteOrmEntity } from './modules/clientes/infrastructure/database/typeorm/entities/cliente.orm-entity';
 import { ClientePerfilOrmEntity } from './modules/clientes/infrastructure/database/typeorm/entities/cliente-perfil.orm-entity';
 import { ErpModule } from './modules/erp/erp.module';
@@ -124,6 +125,7 @@ import { HealthController } from './health.controller';
     ErpModule,
     ProdutosModule,
     ClientesModule,
+    LeadsModule,
     VendedorasModule,
     VendasModule,
     AgenteEventosModule,

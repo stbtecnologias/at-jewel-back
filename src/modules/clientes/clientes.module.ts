@@ -49,6 +49,6 @@ import { ClientesController } from './infrastructure/http/controllers/clientes.c
   // AtualizarPerfilClienteUseCase sai para o canal interno do WhatsApp: e ele
   // que marca primeiro_contato_em quando a vendedora confirma que falou com o
   // cliente — o relogio do SLA que nunca era parado por ninguem.
-  exports: [CLIENTE_REPOSITORY, AtualizarPerfilClienteUseCase],
+  exports: [CLIENTE_REPOSITORY, AtualizarPerfilClienteUseCase, BuscarClientePorWhatsappUseCase],
 })
 export class ClientesModule {}

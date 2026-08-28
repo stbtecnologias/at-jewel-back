@@ -23,6 +23,9 @@ export const SCOPES_VALIDOS = [
   'estoque:read',
   'estoque:write',
   'agente_eventos:write',
+  // A triagem da Anastasia: o `atwpp` nao tem banco, e grava por aqui.
+  'leads:read',
+  'leads:write',
 ] as const;
 
 export type ApiKeyScope = (typeof SCOPES_VALIDOS)[number];
@@ -68,6 +71,8 @@ export const SCOPE_DESCRICAO: Record<ApiKeyScope, string> = {
   'estoque:write':
     'Sincronizar saldo de estoque e manter grupos e locais (integracao do ERP)',
   'agente_eventos:write': 'Registrar eventos da Anastasia/Elena/Sofia',
+  'leads:read': 'Ler leads da triagem (fila do admin)',
+  'leads:write': 'Registrar e atualizar a triagem do cliente (consumido pelo atwpp)',
 };
 
 export interface ScopeDef {
