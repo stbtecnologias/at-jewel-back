@@ -22,6 +22,7 @@ import { EmpresasModule } from './modules/empresas/empresas.module';
 import { GruposEstoqueModule } from './modules/grupos-estoque/grupos-estoque.module';
 import { LocaisEstoqueModule } from './modules/locais-estoque/locais-estoque.module';
 import { EstoqueModule } from './modules/estoque/estoque.module';
+import { CatalogosModule } from './modules/catalogos/catalogos.module';
 import { GrupoEstoqueOrmEntity } from './modules/grupos-estoque/infrastructure/database/typeorm/entities/grupo-estoque.orm-entity';
 import { LocalEstoqueOrmEntity } from './modules/locais-estoque/infrastructure/database/typeorm/entities/local-estoque.orm-entity';
 import { EstoqueOrmEntity } from './modules/estoque/infrastructure/database/typeorm/entities/estoque.orm-entity';
@@ -139,6 +140,7 @@ import { HealthController } from './health.controller';
     GruposEstoqueModule,
     LocaisEstoqueModule,
     EstoqueModule,
+    CatalogosModule,
     AnalyticsModule,
     AgentesModule,
     AtendimentoModule,

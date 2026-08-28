@@ -1,7 +1,8 @@
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
-import { json, urlencoded } from 'express';
+import { join, resolve } from 'node:path';
+import { json, static as serveStatic, urlencoded } from 'express';
 import helmet from 'helmet';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
@@ -29,6 +30,23 @@ async function bootstrap() {
   // (ex.: imagens de catalogo na S9) devem sobrescrever localmente.
   app.use(json({ limit: '100kb' }));
   app.use(urlencoded({ extended: true, limit: '100kb' }));
+
+  // -------------------------------------------------------------------------
+  // Midia do catalogo (referencias criativas, fotos das pecas, peca final).
+  //
+  // Servida como ARQUIVO ESTATICO, sem passar pelo guard de JWT. E deliberado:
+  // a imagem e consumida por <img src>, que nao manda cabecalho Authorization,
+  // e transformar cada foto numa chamada autenticada obrigaria o front a baixar
+  // tudo como blob. A protecao e a chave ser um UUID — nao se adivinha, e nao ha
+  // listagem de diretorio. E o mesmo modelo do S3 com objeto de leitura direta,
+  // que e para onde isto vai.
+  //
+  // O front chama /api/midia/... e o rewrite do Next entrega aqui.
+  // -------------------------------------------------------------------------
+  const dirMidia = resolve(
+    config.get<string>('ARMAZENAMENTO_DIR') ?? join(process.cwd(), 'armazenamento'),
+  );
+  app.use('/midia', serveStatic(dirMidia, { index: false, maxAge: '7d' }));
 
   // CORS com allowlist explicita por env. Lista separada por virgula sem espacos.
   // Default em dev: localhost:3000 (este backend) e localhost:5173 (vite default).
