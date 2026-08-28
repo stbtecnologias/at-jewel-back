@@ -65,19 +65,43 @@ describe('extrairMensagemRecebida', () => {
     expect(r?.audio?.segundos).toBe(5);
   });
 
-  it('ignora foto e documento — nao sao para transcrever', () => {
+  it('extrai a foto — com a legenda no mesmo campo do texto', () => {
+    // Ate 28/08/2026 este teste garantia o contrario: foto era descartada.
+    // Mudou junto com o catalogo, que precisa da peca fotografada. A LEGENDA
+    // vem no mesmo campo body do texto comum — e por isso que a legenda
+    // "0002 BR26252" chega como se fosse uma mensagem escrita.
     const foto = {
       event: 'message',
       payload: {
         from: '558586467241@c.us',
+        body: '0002 BR26252',
         hasMedia: true,
         media: { url: 'http://waha:3000/api/files/default/x.jpg', mimetype: 'image/jpeg' },
         _data: { Info: { Type: 'media', MediaType: 'image' } },
       },
     };
-    expect(extrairMensagemRecebida(foto)).toBeNull();
+
+    const r = extrairMensagemRecebida(foto);
+    expect(r?.imagem?.url).toBe('http://waha:3000/api/files/default/x.jpg');
+    expect(r?.imagem?.mimetype).toBe('image/jpeg');
+    expect(r?.texto).toBe('0002 BR26252');
+    expect(r?.audio).toBeUndefined();
   });
 
+  it('documento e sticker continuam ignorados', () => {
+    // Documento nao e foto de peca, e sticker nunca vai para catalogo.
+    expect(
+      extrairMensagemRecebida({
+        event: 'message',
+        payload: {
+          from: '558586467241@c.us',
+          hasMedia: true,
+          media: { url: 'http://waha:3000/api/files/default/x.pdf', mimetype: 'application/pdf' },
+          _data: { Info: { Type: 'media', MediaType: 'document' } },
+        },
+      }),
+    ).toBeNull();
+  });
   it('ignora o que ja ignorava: nossas mensagens, grupos e outros eventos', () => {
     expect(
       extrairMensagemRecebida({

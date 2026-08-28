@@ -13,12 +13,22 @@ import {
   type AudioInterno,
 } from './processar-mensagem-interna.use-case';
 import { ProcessarMensagemGestaoUseCase } from './processar-mensagem-gestao.use-case';
+import {
+  PERMISSAO_CATALOGO,
+  ProcessarFotoCatalogoUseCase,
+  type ImagemInterna,
+} from './processar-foto-catalogo.use-case';
 
 export interface MensagemDoCanal {
   /** Chat de origem, ja traduzido de LID para telefone na borda HTTP. */
   de: string;
   texto: string;
   audio?: AudioInterno;
+  /**
+   * Presente so quando chegou foto. Quando ha imagem, o `texto` e a LEGENDA —
+   * o WhatsApp manda as duas coisas no mesmo campo do payload.
+   */
+  imagem?: ImagemInterna;
 }
 
 export interface RespostaDoCanal {
@@ -64,6 +74,7 @@ export class RotearMensagemInternaUseCase {
     private readonly identificarAdmin: BuscarAdminPorTelefoneUseCase,
     private readonly canalVendedora: ProcessarMensagemInternaUseCase,
     private readonly canalGestao: ProcessarMensagemGestaoUseCase,
+    private readonly canalCatalogo: ProcessarFotoCatalogoUseCase,
     @Inject(WHATSAPP_GATEWAY)
     private readonly whatsapp: IWhatsappGateway,
     @Inject(TRANSCRICAO_SERVICE)
@@ -72,6 +83,46 @@ export class RotearMensagemInternaUseCase {
 
   async execute(msg: MensagemDoCanal): Promise<RespostaDoCanal> {
     const telefone = msg.de.replace(/@.*$/, '');
+
+    // ---------------------------------------------------------------------
+    // CATALOGO — a terceira ramificacao, decidida pela MENSAGEM e nao pelo
+    // telefone.
+    //
+    // Amarrar o assunto ao numero tiraria a Anastasia de quem fotografa: a
+    // mesma pessoa manda foto de peca e pergunta sobre a equipe. Entao quem
+    // decide e o conteudo — imagem e assunto de catalogo, texto continua
+    // sendo dos dois agentes de sempre.
+    //
+    // A permissao tambem e outra: catalogo:write, e nao a de gestao. Quem
+    // fotografa e estoque e marketing, que nao enxergam (nem devem enxergar)
+    // dado de venda.
+    // ---------------------------------------------------------------------
+    if (msg.imagem) {
+      const quem = await this.identificarAdmin.execute(telefone, PERMISSAO_CATALOGO);
+      if (!quem) {
+        this.logger.debug('Foto de remetente sem permissao de catalogo — ignorada.');
+        return { resposta: null, motivo: 'ignorado_foto_sem_permissao' };
+      }
+      return this.canalCatalogo.foto({
+        de: msg.de,
+        nomeRemetente: quem.nome ?? '',
+        legenda: msg.texto ?? '',
+        imagem: msg.imagem,
+      });
+    }
+
+    // Texto com foto esperando classificacao e a RESPOSTA do "de qual
+    // catalogo e?". Precede os dois agentes: se caisse na Anastasia, ela
+    // responderia "0002" como se fosse pergunta sobre vendas.
+    if (this.canalCatalogo.temFotoEsperando(msg.de)) {
+      const quem = await this.identificarAdmin.execute(telefone, PERMISSAO_CATALOGO);
+      if (quem) {
+        const respostaTexto = await this.resolverTexto(msg);
+        if (respostaTexto) {
+          return this.canalCatalogo.resposta(msg.de, quem.nome ?? '', respostaTexto);
+        }
+      }
+    }
 
     const vendedora = await this.identificarVendedora.execute(telefone);
     const admin = vendedora ? null : await this.identificarAdmin.execute(telefone);

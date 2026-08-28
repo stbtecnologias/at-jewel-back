@@ -31,6 +31,10 @@ import { ProdutosController } from './infrastructure/http/controllers/produtos.c
     { provide: PRODUTO_REPOSITORY, useClass: ProdutoRepository },
   ],
   // O canal interno de WhatsApp consulta catalogo pela vendedora.
-  exports: [ListarProdutosUseCase],
+  // O REPOSITORIO tambem sai: a foto que chega pelo WhatsApp traz o codigo da
+  // peca, e o descritivo e preenchido por busca EXATA nele. A busca textual do
+  // ListarProdutos serve para gente, nao para casar uma chave — e aqui errar a
+  // peca significa publicar o preco de outra.
+  exports: [ListarProdutosUseCase, PRODUTO_REPOSITORY],
 })
 export class ProdutosModule {}

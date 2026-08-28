@@ -101,6 +101,10 @@ const MANIFESTO = {
   '33_permissoes_estoque.sql':            { tipo: 'permissao',  alvo: 'ESTOQUISTA|estoque:write' },
   '34_id_erp_cadastros.sql':              { tipo: 'coluna',     alvo: 'produtos.id_erp' },
   '35_atendimentos.sql':                  { tipo: 'tabela',     alvo: 'atendimentos' },
+  // 36 a 41 ainda nao foram levantadas para o manifesto — verify as ignora.
+  // 42 cria TRES tabelas. O marcador e catalogo_fotos porque ela referencia
+  // catalogos: se ela existe, as outras duas existem.
+  '42_catalogos.sql':                     { tipo: 'tabela',     alvo: 'catalogo_fotos' },
 };
 
 // ---------------------------------------------------------------------------

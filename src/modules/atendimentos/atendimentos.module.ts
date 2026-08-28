@@ -4,6 +4,7 @@ import { WhatsappGatewayModule } from '../atendimento/whatsapp-gateway.module';
 import { ClientesModule } from '../clientes/clientes.module';
 import { MetasModule } from '../metas/metas.module';
 import { ProdutosModule } from '../produtos/produtos.module';
+import { CatalogosModule } from '../catalogos/catalogos.module';
 import { VendasModule } from '../vendas/vendas.module';
 import { VendedorasModule } from '../vendedoras/vendedoras.module';
 import { AuthModule } from '../auth/auth.module';
@@ -17,6 +18,7 @@ import { ConsultarProdutosVendedoraUseCase } from './application/use-cases/consu
 import { DispararPendenciasUseCase } from './application/use-cases/disparar-pendencias.use-case';
 import { ProcessarMensagemGestaoUseCase } from './application/use-cases/processar-mensagem-gestao.use-case';
 import { ProcessarMensagemInternaUseCase } from './application/use-cases/processar-mensagem-interna.use-case';
+import { ProcessarFotoCatalogoUseCase } from './application/use-cases/processar-foto-catalogo.use-case';
 import { ResolverVendedoraPorNomeUseCase } from './application/use-cases/resolver-vendedora-por-nome.use-case';
 import { RotearMensagemInternaUseCase } from './application/use-cases/rotear-mensagem-interna.use-case';
 import { ConsultarAuditoriaUseCase } from './application/use-cases/consultar-auditoria.use-case';
@@ -25,6 +27,7 @@ import { ProcessarRelatoVendedoraUseCase } from './application/use-cases/process
 import { FerramentasGestaoService } from './application/ferramentas-gestao.service';
 import { FerramentasVendedoraService } from './application/ferramentas-vendedora.service';
 import { MemoriaConversaService } from './application/memoria-conversa.service';
+import { SessaoCatalogoService } from './application/sessao-catalogo.service';
 import { AgendarContatoGestaoUseCase } from './application/use-cases/agendar-contato-gestao.use-case';
 import { PendenciasScheduler } from './infrastructure/schedule/pendencias.scheduler';
 import { ATENDIMENTO_REPOSITORY } from './domain/ports/injection-tokens';
@@ -50,6 +53,10 @@ import { AtendimentoRepository } from './infrastructure/database/typeorm/reposit
     VendasModule,
     MetasModule,
     ProdutosModule,
+    // Catalogo: o repositorio e o armazenamento vem de la. A foto chega por
+    // este modulo, mas o agregado e do catalogo — nao ha segundo repositorio.
+    // CatalogosModule nao importa este, entao nao ha ciclo.
+    CatalogosModule,
     WhatsappGatewayModule,
     // So o LLM, nao o AgentesModule inteiro: aquele importa ESTE modulo (a
     // tool avisar_vendedora abre atendimento), e o Nest recusa o ciclo.
@@ -77,6 +84,10 @@ import { AtendimentoRepository } from './infrastructure/database/typeorm/reposit
     PendenciasScheduler,
     ProcessarRelatoVendedoraUseCase,
     ProcessarMensagemInternaUseCase,
+    // Memoria curta de "de qual catalogo e essa foto". Singleton, como a
+    // MemoriaConversaService — o Map vive no processo.
+    SessaoCatalogoService,
+    ProcessarFotoCatalogoUseCase,
     ResolverVendedoraPorNomeUseCase,
     ProcessarMensagemGestaoUseCase,
     RotearMensagemInternaUseCase,

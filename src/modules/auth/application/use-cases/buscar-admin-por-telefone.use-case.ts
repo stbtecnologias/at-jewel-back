@@ -46,12 +46,27 @@ export class BuscarAdminPorTelefoneUseCase {
     private readonly permissoes: PermissionsService,
   ) {}
 
-  async execute(telefone: string): Promise<AdminUser | null> {
+  /**
+   * @param permissaoExigida qual permissao o dono do telefone precisa ter. O
+   *   padrao e a de gestao — quem chama sem informar recebe exatamente o
+   *   comportamento de antes.
+   *
+   *   O parametro existe porque o canal interno passou a ter mais de um
+   *   assunto: o catalogo e atendido por estoque e marketing, que NAO tem
+   *   permissao de gestao e nem deveriam ter. Sem ele seria preciso um
+   *   segundo use case repetindo a mesma busca por variantes de telefone —
+   *   duas implementacoes do mesmo reconhecimento, para divergirem na
+   *   primeira correcao.
+   */
+  async execute(
+    telefone: string,
+    permissaoExigida: string = PERMISSAO_GESTAO,
+  ): Promise<AdminUser | null> {
     for (const variante of variantesTelefone(telefone)) {
       const achado = await this.repo.buscarPorTelefoneHash(hashField(variante));
       if (!achado) continue;
 
-      const podeGerir = await this.permissoes.possui(achado.role, PERMISSAO_GESTAO);
+      const podeGerir = await this.permissoes.possui(achado.role, permissaoExigida);
       // Reconhecido, mas sem permissao: devolve null, e nao um erro. Quem chama
       // trata como "nao reconhecido" e fica em silencio — mesma resposta de um
       // numero desconhecido, para nao confirmar que o cadastro existe.

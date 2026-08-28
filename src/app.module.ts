@@ -22,6 +22,7 @@ import { EmpresasModule } from './modules/empresas/empresas.module';
 import { GruposEstoqueModule } from './modules/grupos-estoque/grupos-estoque.module';
 import { LocaisEstoqueModule } from './modules/locais-estoque/locais-estoque.module';
 import { EstoqueModule } from './modules/estoque/estoque.module';
+import { CatalogosModule } from './modules/catalogos/catalogos.module';
 import { GrupoEstoqueOrmEntity } from './modules/grupos-estoque/infrastructure/database/typeorm/entities/grupo-estoque.orm-entity';
 import { LocalEstoqueOrmEntity } from './modules/locais-estoque/infrastructure/database/typeorm/entities/local-estoque.orm-entity';
 import { EstoqueOrmEntity } from './modules/estoque/infrastructure/database/typeorm/entities/estoque.orm-entity';
@@ -39,6 +40,7 @@ import { ConversaOrmEntity } from './modules/agentes/infrastructure/database/typ
 import { AgentePromptOrmEntity } from './modules/agentes/infrastructure/database/typeorm/entities/agente-prompt.orm-entity';
 import { AgenteEventoOrmEntity } from './modules/agente-eventos/infrastructure/database/typeorm/entities/agente-evento.orm-entity';
 import { ClientesModule } from './modules/clientes/clientes.module';
+import { LeadsModule } from './modules/leads/leads.module';
 import { ClienteOrmEntity } from './modules/clientes/infrastructure/database/typeorm/entities/cliente.orm-entity';
 import { ClientePerfilOrmEntity } from './modules/clientes/infrastructure/database/typeorm/entities/cliente-perfil.orm-entity';
 import { ErpModule } from './modules/erp/erp.module';
@@ -124,6 +126,7 @@ import { HealthController } from './health.controller';
     ErpModule,
     ProdutosModule,
     ClientesModule,
+    LeadsModule,
     VendedorasModule,
     VendasModule,
     AgenteEventosModule,
@@ -137,6 +140,7 @@ import { HealthController } from './health.controller';
     GruposEstoqueModule,
     LocaisEstoqueModule,
     EstoqueModule,
+    CatalogosModule,
     AnalyticsModule,
     AgentesModule,
     AtendimentoModule,

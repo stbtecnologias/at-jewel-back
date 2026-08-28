@@ -29,6 +29,7 @@ deploy:
       --env-file "$BACK_ENV_FILE"
       -e NODE_ENV=production
       -e TZ=America/Fortaleza
+      -v atjewel_midia:/app/armazenamento
       atjewel_api:$CI_COMMIT_SHORT_SHA
     - sleep 10
     # `docker run -d` volta OK so por iniciar. Testa de DENTRO: o runner nao tem curl.
