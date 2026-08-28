@@ -24,6 +24,8 @@ function leadFake(over: Partial<Lead> = {}): Lead {
     clienteId: null,
     vinculadoEm: null,
     direcionadoGestaoEm: null,
+    vendedoraAprovadaCodigo: null,
+    direcionadoVendedoraEm: null,
     fechadoEm: null,
     criadoEm: new Date(),
     ...over,
@@ -40,7 +42,9 @@ function makeLeadRepo(): jest.Mocked<ILeadRepository> {
       .fn()
       .mockImplementation((id, i) => Promise.resolve(leadFake({ id, ...i }))),
     vincularCliente: jest.fn(),
-  };
+    encaminhar: jest.fn(),
+    listarAguardandoGestao: jest.fn().mockResolvedValue([]),
+  } as unknown as jest.Mocked<ILeadRepository>;
 }
 
 describe('RegistrarLeadUseCase', () => {
