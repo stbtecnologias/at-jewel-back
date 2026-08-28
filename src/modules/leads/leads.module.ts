@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { ClientesModule } from '../clientes/clientes.module';
+import { WhatsappGatewayModule } from '../atendimento/whatsapp-gateway.module';
+import { AvisarGestaoDeLeadUseCase } from './application/use-cases/avisar-gestao-de-lead.use-case';
 import { RegistrarLeadUseCase } from './application/use-cases/registrar-lead.use-case';
 import { LEAD_REPOSITORY } from './domain/ports/injection-tokens';
 import { LeadOrmEntity } from './infrastructure/database/typeorm/entities/lead.orm-entity';
@@ -20,10 +22,13 @@ import { LeadsController } from './infrastructure/http/controllers/leads.control
     TypeOrmModule.forFeature([LeadOrmEntity]),
     AuthModule,
     ClientesModule,
+    // Para avisar a gestao no WhatsApp quando a triagem termina.
+    WhatsappGatewayModule,
   ],
   controllers: [LeadsController],
   providers: [
     RegistrarLeadUseCase,
+    AvisarGestaoDeLeadUseCase,
     { provide: LEAD_REPOSITORY, useClass: LeadRepository },
   ],
   exports: [LEAD_REPOSITORY, RegistrarLeadUseCase],

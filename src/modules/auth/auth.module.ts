@@ -114,6 +114,9 @@ import { ScopesGuard } from './infrastructure/http/guards/scopes.guard';
   exports: [
     // O canal interno de WhatsApp reconhece o ADM por aqui.
     BuscarAdminPorTelefoneUseCase,
+    // E o aviso de lead novo precisa saber PARA QUEM mandar: todo usuario com
+    // telefone cadastrado e permissao de gestao.
+    ADMIN_USER_REPOSITORY,
     // JwtModule exportado para o JwtOrApiKeyGuard resolver o JwtService quando
     // instanciado no contexto de outro modulo (ex.: ProdutosModule).
     JwtModule,

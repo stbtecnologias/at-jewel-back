@@ -5,6 +5,7 @@ import type {
   ILeadRepository,
   Lead,
 } from '../../domain/ports/repositories/lead-repository.port';
+import { AvisarGestaoDeLeadUseCase } from './avisar-gestao-de-lead.use-case';
 import { RegistrarLeadUseCase } from './registrar-lead.use-case';
 
 function leadFake(over: Partial<Lead> = {}): Lead {
@@ -48,6 +49,7 @@ describe('RegistrarLeadUseCase', () => {
   let leads: jest.Mocked<ILeadRepository>;
   let clientes: jest.Mocked<IClienteRepository>;
   let buscarCliente: jest.Mocked<BuscarClientePorWhatsappUseCase>;
+  let avisarGestao: jest.Mocked<AvisarGestaoDeLeadUseCase>;
 
   beforeEach(() => {
     process.env = { ...ORIGINAL_ENV };
@@ -62,7 +64,16 @@ describe('RegistrarLeadUseCase', () => {
       execute: jest.fn().mockResolvedValue(null),
     } as unknown as jest.Mocked<BuscarClientePorWhatsappUseCase>;
 
-    useCase = new RegistrarLeadUseCase(leads, clientes, buscarCliente);
+    avisarGestao = {
+      execute: jest.fn().mockResolvedValue(1),
+    } as unknown as jest.Mocked<AvisarGestaoDeLeadUseCase>;
+
+    useCase = new RegistrarLeadUseCase(
+      leads,
+      clientes,
+      buscarCliente,
+      avisarGestao,
+    );
   });
 
   afterAll(() => {
@@ -172,5 +183,62 @@ describe('RegistrarLeadUseCase', () => {
     // Nono digito e DDI fazem o mesmo numero chegar de varias formas; um falso
     // negativo aqui cria lead duplicado em silencio.
     expect(leads.buscarAbertoPorHash.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  describe('subida para a gestao', () => {
+    it('avisa a gestao quando a triagem termina, e carimba o horario', async () => {
+      leads.buscarAbertoPorHash.mockResolvedValue(leadFake({ nome: 'Marina' }));
+
+      await useCase.execute({
+        whatsapp: '85999990001',
+        prontoParaEncaminhar: true,
+      });
+
+      expect(leads.atualizar).toHaveBeenCalledWith(
+        'lead-1',
+        expect.objectContaining({
+          estado: 'READY_FOR_ROUTING',
+          direcionadoGestaoEm: expect.any(Date),
+        }),
+      );
+      expect(avisarGestao.execute).toHaveBeenCalledTimes(1);
+    });
+
+    it('NAO avisa de novo se o lead ja subiu — o atwpp repete o sinal a cada mensagem', async () => {
+      leads.buscarAbertoPorHash.mockResolvedValue(
+        leadFake({ estado: 'READY_FOR_ROUTING' }),
+      );
+      leads.atualizar.mockResolvedValue(
+        leadFake({ estado: 'READY_FOR_ROUTING' }),
+      );
+
+      await useCase.execute({
+        whatsapp: '85999990001',
+        prontoParaEncaminhar: true,
+      });
+
+      expect(avisarGestao.execute).not.toHaveBeenCalled();
+    });
+
+    it('sem o sinal, nao mexe no estado nem avisa ninguem', async () => {
+      leads.buscarAbertoPorHash.mockResolvedValue(leadFake());
+
+      await useCase.execute({ whatsapp: '85999990001', nome: 'Marina' });
+
+      expect(avisarGestao.execute).not.toHaveBeenCalled();
+    });
+
+    it('falha no aviso nao derruba o registro do lead', async () => {
+      leads.buscarAbertoPorHash.mockResolvedValue(leadFake());
+      avisarGestao.execute.mockRejectedValue(new Error('WAHA fora do ar'));
+
+      const r = await useCase.execute({
+        whatsapp: '85999990001',
+        prontoParaEncaminhar: true,
+      });
+
+      // Perder a notificacao e ruim; perder o lead seria pior.
+      expect(r.lead).toBeDefined();
+    });
   });
 });

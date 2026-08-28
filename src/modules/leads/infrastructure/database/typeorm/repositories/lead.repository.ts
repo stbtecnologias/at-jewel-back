@@ -97,6 +97,31 @@ export class LeadRepository implements ILeadRepository {
     row.vinculadoEm = new Date();
     return paraDominio(await this.repo.save(row));
   }
+
+  async encaminhar(id: string, vendedoraCodigo: string): Promise<Lead> {
+    const row = await this.repo.findOne({ where: { id } });
+    if (!row) throw new NotFoundException('Lead nao encontrado: ' + id);
+
+    const agora = new Date();
+    row.vendedoraAprovadaCodigo = vendedoraCodigo;
+    row.direcionadoVendedoraEm = agora;
+    row.estado = 'IN_HUMAN_SERVICE';
+    row.estadoAtualizadoEm = agora;
+    // Encaminhar encerra a triagem: o numero fica livre para um proximo
+    // atendimento, e este vira historico.
+    row.fechadoEm = agora;
+
+    return paraDominio(await this.repo.save(row));
+  }
+
+  async listarAguardandoGestao(limite: number): Promise<Lead[]> {
+    const rows = await this.repo.find({
+      where: { estado: 'READY_FOR_ROUTING', fechadoEm: IsNull() },
+      order: { criadoEm: 'ASC' },
+      take: limite,
+    });
+    return rows.map(paraDominio);
+  }
 }
 
 function paraDominio(row: LeadOrmEntity): Lead {
@@ -115,6 +140,8 @@ function paraDominio(row: LeadOrmEntity): Lead {
     clienteId: row.clienteId,
     vinculadoEm: row.vinculadoEm,
     direcionadoGestaoEm: row.direcionadoGestaoEm,
+    vendedoraAprovadaCodigo: row.vendedoraAprovadaCodigo,
+    direcionadoVendedoraEm: row.direcionadoVendedoraEm,
     fechadoEm: row.fechadoEm,
     criadoEm: row.criadoEm,
   };

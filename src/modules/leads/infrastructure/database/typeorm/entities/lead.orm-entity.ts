@@ -108,6 +108,21 @@ export class LeadOrmEntity {
   })
   direcionadoGestaoEm: Date | null;
 
+  @Column({
+    name: 'vendedora_aprovada_codigo',
+    type: 'varchar',
+    length: 50,
+    nullable: true,
+  })
+  vendedoraAprovadaCodigo: string | null;
+
+  @Column({
+    name: 'direcionado_vendedora_em',
+    type: 'timestamptz',
+    nullable: true,
+  })
+  direcionadoVendedoraEm: Date | null;
+
   @Column({ name: 'fechado_em', type: 'timestamptz', nullable: true })
   fechadoEm: Date | null;
 

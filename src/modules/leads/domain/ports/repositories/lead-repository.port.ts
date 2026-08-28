@@ -35,6 +35,8 @@ export interface Lead {
   clienteId: string | null;
   vinculadoEm: Date | null;
   direcionadoGestaoEm: Date | null;
+  vendedoraAprovadaCodigo: string | null;
+  direcionadoVendedoraEm: Date | null;
   fechadoEm: Date | null;
   criadoEm: Date;
 }
@@ -92,4 +94,14 @@ export interface ILeadRepository {
 
   /** Preenche a ponte com o ERP. Grava `vinculado_em` junto, sempre. */
   vincularCliente(id: string, clienteId: string): Promise<Lead>;
+
+  /**
+   * O ADM escolheu a vendedora. Grava codigo e carimbo juntos (exigencia do
+   * `chk_lead_encaminhamento`) e FECHA o lead — o que libera o numero para um
+   * proximo atendimento, pelo indice parcial da migracao 40.
+   */
+  encaminhar(id: string, vendedoraCodigo: string): Promise<Lead>;
+
+  /** Os leads que subiram para a gestao e ainda ninguem encaminhou. */
+  listarAguardandoGestao(limite: number): Promise<Lead[]>;
 }

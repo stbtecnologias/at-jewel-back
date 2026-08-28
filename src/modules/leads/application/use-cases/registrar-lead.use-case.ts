@@ -8,6 +8,7 @@ import {
 import { CLIENTE_REPOSITORY } from '../../../clientes/domain/ports/injection-tokens';
 import type { IClienteRepository } from '../../../clientes/domain/ports/repositories/cliente-repository.port';
 import { LEAD_REPOSITORY } from '../../domain/ports/injection-tokens';
+import { AvisarGestaoDeLeadUseCase } from './avisar-gestao-de-lead.use-case';
 import type {
   ILeadRepository,
   Lead,
@@ -38,6 +39,11 @@ export interface RegistrarLeadInput {
   produtosDesejados?: string | null;
   resumoTriagem?: string | null;
   vendedoraSugeridaCodigo?: string | null;
+  /**
+   * A triagem terminou — quem leu a conversa inteira diz que ja ha o essencial.
+   * Faz o lead subir para a gestao e dispara o aviso no WhatsApp do ADM.
+   */
+  prontoParaEncaminhar?: boolean;
 }
 
 export interface RegistrarLeadOutput {
@@ -77,6 +83,7 @@ export class RegistrarLeadUseCase {
     @Inject(CLIENTE_REPOSITORY)
     private readonly clientes: IClienteRepository,
     private readonly buscarClientePorWhatsapp: BuscarClientePorWhatsappUseCase,
+    private readonly avisarGestao: AvisarGestaoDeLeadUseCase,
   ) {}
 
   async execute(entrada: RegistrarLeadInput): Promise<RegistrarLeadOutput> {
@@ -97,7 +104,11 @@ export class RegistrarLeadUseCase {
         resumoTriagem: entrada.resumoTriagem ?? undefined,
         vendedoraSugeridaCodigo: entrada.vendedoraSugeridaCodigo ?? undefined,
       });
-      return { lead, reconhecimento: 'CONVERSA_EM_ANDAMENTO', conhecido: true };
+      return {
+        lead: await this.subirParaGestaoSePronto(lead, entrada),
+        reconhecimento: 'CONVERSA_EM_ANDAMENTO',
+        conhecido: true,
+      };
     }
 
     // 2. Ja passou por aqui.
@@ -120,7 +131,11 @@ export class RegistrarLeadUseCase {
         vendedoraSugeridaCodigo: entrada.vendedoraSugeridaCodigo ?? null,
         clienteId: anterior.clienteId,
       });
-      return { lead, reconhecimento: 'LEAD_ANTERIOR', conhecido: true };
+      return {
+        lead: await this.subirParaGestaoSePronto(lead, entrada),
+        reconhecimento: 'LEAD_ANTERIOR',
+        conhecido: true,
+      };
     }
 
     // 3. Cliente do ERP que nunca passou pela triagem.
@@ -138,9 +153,47 @@ export class RegistrarLeadUseCase {
       clienteId: cliente?.id ?? null,
     });
 
+    const final = await this.subirParaGestaoSePronto(lead, entrada);
     return cliente
-      ? { lead, reconhecimento: 'CLIENTE_ERP', conhecido: true }
-      : { lead, reconhecimento: 'NOVO', conhecido: false };
+      ? { lead: final, reconhecimento: 'CLIENTE_ERP', conhecido: true }
+      : { lead: final, reconhecimento: 'NOVO', conhecido: false };
+  }
+
+  /**
+   * A triagem acabou: sobe o lead para a gestao e avisa o ADM no WhatsApp.
+   *
+   * ACONTECE UMA VEZ SO, e a guarda e o proprio estado. A cada mensagem o
+   * `atwpp` reavalia se ja ha o essencial, entao `prontoParaEncaminhar` chega
+   * `true` de novo nos turnos seguintes — sem a checagem de
+   * `TRIAGE_IN_PROGRESS`, o ADM receberia o mesmo aviso a cada frase.
+   *
+   * O aviso NAO participa da transacao: se o WhatsApp falhar, o lead fica em
+   * READY_FOR_ROUTING do mesmo jeito, e o aviso pode ser reenviado depois.
+   * Perder a notificacao e ruim; perder o lead seria pior.
+   */
+  private async subirParaGestaoSePronto(
+    lead: Lead,
+    entrada: RegistrarLeadInput,
+  ): Promise<Lead> {
+    if (!entrada.prontoParaEncaminhar) return lead;
+    if (lead.estado !== 'TRIAGE_IN_PROGRESS') return lead;
+
+    const promovido = await this.leads.atualizar(lead.id, {
+      estado: 'READY_FOR_ROUTING',
+      direcionadoGestaoEm: new Date(),
+    });
+
+    try {
+      const enviados = await this.avisarGestao.execute(promovido);
+      this.logger.log(
+        `Lead ${promovido.id} pronto para encaminhar — ${enviados} aviso(s) enviado(s).`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Lead ${promovido.id} subiu para a gestao, mas o aviso falhou: ${String(err)}`,
+      );
+    }
+    return promovido;
   }
 
   /**

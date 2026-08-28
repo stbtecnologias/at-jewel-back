@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsIn,
   IsOptional,
   IsString,
@@ -87,4 +88,12 @@ export class RegistrarLeadDto {
   @MaxLength(50)
   @SanitizeText()
   vendedoraSugeridaCodigo?: string;
+
+  /**
+   * A triagem terminou. Quem leu a conversa inteira e quem sabe — melhor que
+   * uma regra do tipo "se ocasiao e produto estiverem preenchidos".
+   */
+  @IsOptional()
+  @IsBoolean()
+  prontoParaEncaminhar?: boolean;
 }
