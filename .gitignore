@@ -23,4 +23,8 @@ Thumbs.db
 
 # Midia do catalogo (referencias, fotos das pecas, peca final). Binario nao
 # vai para o repositorio — o destino combinado e o S3.
-armazenamento/
+# So a pasta de midia da RAIZ. Sem a barra inicial, o padrao casa em
+# qualquer nivel — e engoliu src/modules/catalogos/infrastructure/armazenamento/,
+# que e CODIGO. O build local passava (o arquivo esta no disco) e o runner
+# falhava, porque ele clona do git.
+/armazenamento/
