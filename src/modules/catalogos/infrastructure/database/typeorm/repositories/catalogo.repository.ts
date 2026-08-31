@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, Repository } from 'typeorm';
+import { Brackets, In, Repository } from 'typeorm';
 import type {
   AtualizarCatalogoData,
   AtualizarFotoData,
@@ -94,6 +94,12 @@ export class CatalogoRepository implements ICatalogoRepository {
       .select('f.catalogo_id', 'catalogoId')
       .addSelect('COUNT(*)', 'total')
       .where('f.catalogo_id IN (:...ids)', { ids })
+      // O MESMO FILTRO DO DETALHE. Sem ele, a listagem contaria fotos que a
+      // tela do catalogo nao mostra, e o numero do card nunca bateria com o
+      // que a pessoa ve ao abrir.
+      .andWhere('f.status IN (:...status)', {
+        status: ['APROVADA', 'REPROVADA'],
+      })
       .groupBy('f.catalogo_id')
       .getRawMany<{ catalogoId: string; total: string }>();
 
@@ -218,6 +224,10 @@ export class CatalogoRepository implements ICatalogoRepository {
     return linhas.map((l) => this.paraFoto(l));
   }
 
+  async removerFoto(id: string): Promise<void> {
+    await this.repoFotos.delete({ id });
+  }
+
   async buscarNomeUsuario(userId: string): Promise<string | null> {
     const linhas = await this.repo.manager.query<{ nome: string | null }[]>(
       `SELECT nome FROM admin_users WHERE id = $1 LIMIT 1`,
@@ -275,7 +285,19 @@ export class CatalogoRepository implements ICatalogoRepository {
         order: { ordem: 'ASC' },
       }),
       this.repoFotos.find({
-        where: { catalogoId: linha.id },
+        // SO O QUE JA PASSOU PELA APROVACAO.
+        //
+        // Enquanto a foto esta a caminho — RECEBIDA, PROCESSANDO,
+        // EM_APROVACAO — ela vive na CONVERSA, e nao no catalogo. Quem
+        // fotografou ainda pode refazer ou jogar fora, e mostrar isso na tela
+        // faria a colecao parecer conter peca que ninguem aprovou. Foi
+        // exatamente o que aconteceu em 31/08/2026, quando a tela deu a
+        // entender que uma foto em EM_APROVACAO ja compunha o catalogo.
+        //
+        // REPROVADA fica porque ela ESTEVE no catalogo: e a peca que a
+        // curadoria tirou, e sem ela na lista o botao de devolver nao teria
+        // como ser alcancado.
+        where: { catalogoId: linha.id, status: In(['APROVADA', 'REPROVADA']) },
         order: { posicao: 'ASC' },
       }),
     ]);
