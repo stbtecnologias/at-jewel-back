@@ -301,6 +301,7 @@ export class ProcessarFotoCatalogoUseCase {
   // ---------------------------------------------------------------------------
   async foto(msg: FotoDoCanal): Promise<RespostaFoto> {
     await this.varrerExpiradas();
+    await this.rearmarAprovacao(msg.de, msg.nomeRemetente);
 
     const abertos = await this.catalogos.listarAbertos();
     if (abertos.length === 0) {
@@ -708,6 +709,26 @@ export class ProcessarFotoCatalogoUseCase {
       style: 'currency',
       currency: 'BRL',
     });
+  }
+
+  /**
+   * Levanta de volta a catraca da aprovacao a partir do banco.
+   *
+   * POR QUE EXISTE: a catraca vive em memoria, e um restart do container a
+   * perde. As fotos continuam EM_APROVACAO — o trabalho esta salvo —, mas o
+   * "aprovo" dela deixaria de ser reconhecido, e a tela nao aprova de
+   * proposito. A pessoa ficaria sem saida nenhuma.
+   *
+   * Entao a proxima foto reconstroi: quem manda foto quase sempre tem outras
+   * esperando resposta, e este e o unico caminho em que ja pagamos uma ida ao
+   * banco de qualquer forma. So consulta com a catraca BAIXA — com ela
+   * levantada nao ha nada a reconstruir.
+   */
+  private async rearmarAprovacao(de: string, remetente: string): Promise<void> {
+    if (this.sessao.temEmAprovacao(de)) return;
+
+    const fila = await this.catalogos.listarEmAprovacao(remetente.trim());
+    if (fila.length > 0) this.sessao.marcarEmAprovacao(de);
   }
 
   /** Apaga do disco o que expirou sem ninguem dizer a que catalogo pertencia. */

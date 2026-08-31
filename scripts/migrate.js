@@ -105,6 +105,10 @@ const MANIFESTO = {
   // 42 cria TRES tabelas. O marcador e catalogo_fotos porque ela referencia
   // catalogos: se ela existe, as outras duas existem.
   '42_catalogos.sql':                     { tipo: 'tabela',     alvo: 'catalogo_fotos' },
+  // 43 nao cria objeto nenhum: so troca o DEFAULT de uma coluna. Nenhum dos
+  // tipos de marcador serve, e inventar um 'default' para uma migracao unica
+  // seria mais maquinario do que ela merece. `verify` a ignora, como ja ignora
+  // 36 a 41.
 };
 
 // ---------------------------------------------------------------------------

@@ -171,7 +171,13 @@ export class CatalogoRepository implements ICatalogoRepository {
         arquivoId: dados.arquivoId,
         mime: dados.mime,
         status: dados.status,
-        versoes: 1,
+        // ZERO, e nao um: `versoes` conta GERACOES DA IA, e nada que passa por
+        // aqui foi tratado ainda — venha do WhatsApp ou de upload.
+        //
+        // Nasceu em 1 e custou duas coisas: o selo da tela dizia "2 geracoes"
+        // depois de uma so, e o teto de `MAX_GERACOES = 3` batia na SEGUNDA
+        // tentativa (1 + 1 + 1 = 3), entregando duas das tres.
+        versoes: 0,
       }),
     );
 

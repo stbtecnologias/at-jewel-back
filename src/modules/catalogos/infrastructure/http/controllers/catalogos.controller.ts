@@ -25,6 +25,7 @@ import {
   AtualizarCatalogoUseCase,
   BuscarCatalogoUseCase,
   CriarCatalogoUseCase,
+  CurarFotoUseCase,
   ListarCatalogosUseCase,
   RemoverCatalogoUseCase,
   RemoverReferenciaUseCase,
@@ -59,6 +60,7 @@ export class CatalogosController {
     private readonly removerCatalogo: RemoverCatalogoUseCase,
     private readonly anexarReferencia: AnexarReferenciaUseCase,
     private readonly removerReferencia: RemoverReferenciaUseCase,
+    private readonly curarFoto: CurarFotoUseCase,
   ) {}
 
   @Get()
@@ -117,6 +119,36 @@ export class CatalogosController {
   @Permissions('catalogo:write')
   async remover(@Param('id', ParseUUIDPipe) id: string) {
     await this.removerCatalogo.execute(id);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Curadoria das fotos
+  //
+  // NAO HA ROTA DE APROVAR AQUI, e a ausencia e a regra: a qualidade da foto e
+  // julgada por quem fotografou, na conversa do WhatsApp. Esta tela decide
+  // outra coisa — se a peca entra nesta edicao. Ver `CurarFotoUseCase`.
+  //
+  // Sao duas rotas explicitas em vez de um PATCH com `status` no corpo: assim
+  // a tela nao TEM como gravar APROVADA, nem por engano nem por quem montar a
+  // requisicao a mao.
+  // ---------------------------------------------------------------------------
+
+  @Patch(':id/fotos/:fotoId/tirar')
+  @Permissions('catalogo:write')
+  async tirarFoto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('fotoId', ParseUUIDPipe) fotoId: string,
+  ) {
+    return this.curarFoto.tirar(id, fotoId);
+  }
+
+  @Patch(':id/fotos/:fotoId/devolver')
+  @Permissions('catalogo:write')
+  async devolverFoto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('fotoId', ParseUUIDPipe) fotoId: string,
+  ) {
+    return this.curarFoto.devolver(id, fotoId);
   }
 
   // ---------------------------------------------------------------------------
