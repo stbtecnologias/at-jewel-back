@@ -21,11 +21,14 @@ deploy:
     - docker stop atjewel_api || true
     - docker rm atjewel_api || true
     # NODE_ENV e TZ como -e: o --env-file sobrescreve o ENV da imagem, e o -e ganha dos dois.
+    # O alias existe porque o WAHA recusa hostname com underscore (RFC 1123) e o
+    # container se chama atjewel_api — sem ele o webhook nao pode apontar para ca.
     - >
       docker run -d
       --name atjewel_api
       --restart unless-stopped
       --network atjewel_network
+      --network-alias atjewelapi
       --env-file "$BACK_ENV_FILE"
       -e NODE_ENV=production
       -e TZ=America/Fortaleza
