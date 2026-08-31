@@ -70,6 +70,8 @@ interface Sessao {
    * aprovada pela tela. Perde-se o atalho, nunca o trabalho.
    */
   aguardandoAprovacao: boolean;
+  /** Perguntei "o que quer que eu mude?" e ainda não recebi a resposta. */
+  aguardandoPedido: boolean;
   atualizadoEm: number;
 }
 
@@ -147,6 +149,35 @@ export class SessaoCatalogoService {
     this.sessoes.set(chave, s);
   }
 
+  /**
+   * Acabei de perguntar "o que você quer que eu mude?" — então a PRÓXIMA
+   * mensagem desta pessoa é a resposta, e não precisa começar com `ajusta`.
+   *
+   * SEM ISTO A CONVERSA NÃO FECHA. Aconteceu em 31/08: eu perguntei, o Lucas
+   * respondeu "apenas a pedra que foi acrescentada e não tem", e a resposta
+   * caiu na Anastasia — porque não abria com a palavra de comando. Exigir a
+   * palavra numa resposta a uma pergunta minha é cobrar senha de quem eu
+   * mesmo chamei.
+   *
+   * É de um uso só: a marca cai assim que a resposta chega, seja ela pedido de
+   * ajuste ou outra coisa qualquer.
+   */
+  pedirOAjuste(chave: string): void {
+    const s = this.viva(chave) ?? this.nova();
+    s.aguardandoPedido = true;
+    s.atualizadoEm = Date.now();
+    this.sessoes.set(chave, s);
+  }
+
+  /** Consome a marca: devolve se estava esperando, e já baixa. */
+  eraRespostaDeAjuste(chave: string): boolean {
+    const s = this.viva(chave);
+    if (!s?.aguardandoPedido) return false;
+    s.aguardandoPedido = false;
+    this.sessoes.set(chave, s);
+    return true;
+  }
+
   /** Retira e devolve tudo que estava esperando. */
   recolherPendentes(chave: string): FotoPendente[] {
     const s = this.viva(chave);
@@ -197,6 +228,7 @@ export class SessaoCatalogoService {
       catalogoNome: null,
       pendentes: [],
       aguardandoAprovacao: false,
+      aguardandoPedido: false,
       atualizadoEm: Date.now(),
     };
   }

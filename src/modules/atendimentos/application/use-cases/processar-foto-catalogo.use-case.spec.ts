@@ -174,9 +174,11 @@ describe('ProcessarFotoCatalogoUseCase — aprovacao da foto tratada', () => {
     expect(id).toBe('f-1');
     expect(dados.status).toBe('APROVADA');
     expect(dados.aprovadoPor).toBe(QUEM);
-    // A que sobrou tem de ser dita, senao ela fica esperando sem ninguem saber.
+    // A QUE SOBROU TEM DE VIR NOMEADA. Dizer so "ainda tenho 1 esperando"
+    // provoca um "qual?" — que nao e veredito, cai nos agentes e mata a
+    // conversa. Aconteceu em 31/08.
     expect(r?.resposta).toContain('BR26252');
-    expect(r?.resposta).toContain('1 esperando');
+    expect(r?.resposta).toContain('CO26185');
   });
 
   it('"aprovo todas" pega a fila inteira', async () => {
@@ -204,6 +206,34 @@ describe('ProcessarFotoCatalogoUseCase — aprovacao da foto tratada', () => {
 
     expect(tratar.execute).not.toHaveBeenCalled();
     expect(r?.motivo).toBe('ajuste_sem_pedido');
+  });
+
+  it('a resposta a "o que quer que eu mude?" NAO precisa da palavra de comando', async () => {
+    // O caso real de 31/08: perguntei, o Lucas respondeu em texto livre, e a
+    // resposta caiu na Anastasia porque nao abria com "ajusta".
+    await useCase.aprovacao(DE, QUEM, 'ajusta');
+    const r = await useCase.aprovacao(DE, QUEM, 'tirar a pedra que não existe');
+
+    expect(tratar.execute).toHaveBeenCalledWith(
+      'f-1',
+      'tirar a pedra que não existe',
+    );
+    expect(r?.motivo).toBe('foto_em_ajuste');
+  });
+
+  it('a marca e de um uso so — a mensagem seguinte volta a cair nos agentes', async () => {
+    await useCase.aprovacao(DE, QUEM, 'ajusta');
+    await useCase.aprovacao(DE, QUEM, 'fundo branco');
+
+    expect(await useCase.aprovacao(DE, QUEM, 'quanto vendi hoje?')).toBeNull();
+  });
+
+  it('"aprovo" logo apos a pergunta continua sendo aprovacao', async () => {
+    await useCase.aprovacao(DE, QUEM, 'ajusta');
+    const r = await useCase.aprovacao(DE, QUEM, 'aprovo');
+
+    expect(r?.motivo).toBe('foto_aprovada');
+    expect(tratar.execute).not.toHaveBeenCalled();
   });
 
   it('pergunta de venda NAO vira pedido de ajuste — devolve null e segue', async () => {
