@@ -200,6 +200,18 @@ export class CatalogoRepository implements ICatalogoRepository {
     return linha ? this.paraFoto(linha) : null;
   }
 
+  async listarEmAprovacao(remetente: string): Promise<FotoItem[]> {
+    // Remetente vazio nao filtra nada: seria "todas as fotos sem dono", e um
+    // "aprovo" carimbaria a fila alheia. Melhor devolver nada.
+    if (!remetente.trim()) return [];
+
+    const linhas = await this.repoFotos.find({
+      where: { status: 'EM_APROVACAO', remetente },
+      order: { updatedAt: 'ASC' },
+    });
+    return linhas.map((l) => this.paraFoto(l));
+  }
+
   async buscarNomeUsuario(userId: string): Promise<string | null> {
     const linhas = await this.repo.manager.query<{ nome: string | null }[]>(
       `SELECT nome FROM admin_users WHERE id = $1 LIMIT 1`,

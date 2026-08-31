@@ -167,6 +167,19 @@ export interface ICatalogoRepository {
 
   buscarFotoPorId(id: string): Promise<FotoItem | null>;
 
+  /**
+   * As fotos que esperam o sim de quem as mandou, da mais antiga para a mais
+   * nova.
+   *
+   * FILTRA PELO REMETENTE, e nao so pelo status: quem aprova e quem
+   * fotografou. Sem o filtro, um "aprovo" no WhatsApp carimbaria a foto de
+   * outra pessoa que estivesse na fila no mesmo minuto.
+   *
+   * A ordem e a da ultima alteracao, que e a ordem em que as versoes tratadas
+   * chegaram no celular — assim "aprovo" atinge a que ela viu primeiro.
+   */
+  listarEmAprovacao(remetente: string): Promise<FotoItem[]>;
+
   criarReferencia(dados: CriarReferenciaData): Promise<ReferenciaItem>;
   /** Devolve a chave do arquivo removido, para o use case apagar o binario. */
   removerReferencia(

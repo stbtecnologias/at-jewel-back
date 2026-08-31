@@ -4,7 +4,7 @@ import { Injectable, Logger } from '@nestjs/common';
  * Memoria curta da conversa de catalogo no WhatsApp.
  *
  * ==========================================================================
- * DUAS COISAS VIVEM AQUI, E POR MOTIVOS DIFERENTES.
+ * TRES COISAS VIVEM AQUI, E POR MOTIVOS DIFERENTES.
  *
  * 1. O CATALOGO ESCOLHIDO. Quem fotografa 20 pecas de uma colecao nao vai
  *    dizer "e do 0002" vinte vezes. A primeira resposta vale para as fotos
@@ -19,6 +19,10 @@ import { Injectable, Logger } from '@nestjs/common';
  *    no disco. E o preco de nao ter, ainda, a tela de "nao classificadas" que
  *    justificaria tornar `catalogo_id` nulavel. Quando essa tela existir, esta
  *    metade do servico sai e vira linha no banco.
+ *
+ * 3. A CATRACA DA APROVACAO. Um booleano dizendo se ja saiu foto tratada
+ *    esperando o "aprovo" daquele remetente. Aqui a memoria e so um ATALHO —
+ *    a fila de verdade esta no banco, em EM_APROVACAO. Ver `aguardandoAprovacao`.
  * ==========================================================================
  *
  * Map em memoria, como o `MemoriaConversaService` dos outros dois canais: o
@@ -52,6 +56,20 @@ interface Sessao {
   catalogoNumero: string | null;
   catalogoNome: string | null;
   pendentes: FotoPendente[];
+  /**
+   * Ja mandei para este remetente alguma foto tratada esperando o "aprovo"?
+   *
+   * E UMA CATRACA DE ROTEAMENTO, e nao a verdade. A verdade e o status
+   * EM_APROVACAO no banco; isto existe para o roteador saber, SEM ir ao banco,
+   * se vale tratar o texto como resposta de aprovacao. Sem a catraca, toda
+   * mensagem de texto do canal interno pagaria uma consulta a mais — e, pior,
+   * um lookup de admin ANTES do de vendedora, invertendo a ordem que protege
+   * o canal restrito.
+   *
+   * Reiniciar o processo perde a marca: a foto continua EM_APROVACAO e sera
+   * aprovada pela tela. Perde-se o atalho, nunca o trabalho.
+   */
+  aguardandoAprovacao: boolean;
   atualizadoEm: number;
 }
 
@@ -100,6 +118,33 @@ export class SessaoCatalogoService {
 
   temPendentes(chave: string): boolean {
     return (this.viva(chave)?.pendentes.length ?? 0) > 0;
+  }
+
+  /**
+   * Marca que ha foto tratada esperando o "aprovo" deste remetente. Chamado
+   * depois de a versao tratada sair para o WhatsApp — antes disso nao ha o que
+   * aprovar.
+   */
+  marcarEmAprovacao(chave: string): void {
+    const s = this.viva(chave) ?? this.nova();
+    s.aguardandoAprovacao = true;
+    s.atualizadoEm = Date.now();
+    this.sessoes.set(chave, s);
+  }
+
+  temEmAprovacao(chave: string): boolean {
+    return this.viva(chave)?.aguardandoAprovacao ?? false;
+  }
+
+  /**
+   * Baixa a catraca quando a fila do banco esvaziou. Nao apaga a sessao: o
+   * catalogo lembrado continua valendo para as proximas fotos.
+   */
+  esquecerAprovacao(chave: string): void {
+    const s = this.viva(chave);
+    if (!s) return;
+    s.aguardandoAprovacao = false;
+    this.sessoes.set(chave, s);
   }
 
   /** Retira e devolve tudo que estava esperando. */
@@ -151,6 +196,7 @@ export class SessaoCatalogoService {
       catalogoNumero: null,
       catalogoNome: null,
       pendentes: [],
+      aguardandoAprovacao: false,
       atualizadoEm: Date.now(),
     };
   }

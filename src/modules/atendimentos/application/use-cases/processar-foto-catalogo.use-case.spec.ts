@@ -99,3 +99,132 @@ describe('ProcessarFotoCatalogoUseCase — leitura da legenda', () => {
     expect(ler('0099 BR26252').catalogo).toBeNull();
   });
 });
+
+/**
+ * A OUTRA PONTA DO FLUXO: a resposta ao "ficou assim?".
+ *
+ * O que se protege aqui e a fronteira do vocabulario. Ela e a unica coisa que
+ * separa "aprovo" de "quanto vendi hoje?" num canal onde as duas frases chegam
+ * pelo mesmo campo de texto — e errar para o lado errado manda a pergunta da
+ * pessoa para um modelo de imagem, cobrado e sem responder nada.
+ */
+describe('ProcessarFotoCatalogoUseCase — aprovacao da foto tratada', () => {
+  const DE = '558586467241@c.us';
+  const QUEM = 'Faby Rocha';
+
+  const FOTO = (id: string, codigo: string | null) =>
+    ({
+      id,
+      catalogoId: 'uuid-2',
+      posicao: 1,
+      codigoErp: codigo,
+      descricao: null,
+      precoAVista: null,
+      parcelas: null,
+      origem: 'WHATSAPP',
+      remetente: QUEM,
+      arquivoOriginalId: 'catalogo/0002/originais/a.jpg',
+      arquivoId: 'catalogo/0002/fotos/a.png',
+      status: 'EM_APROVACAO',
+      versoes: 1,
+      aprovadoPor: null,
+      aprovadoEm: null,
+    }) as never;
+
+  let catalogos: { listarEmAprovacao: jest.Mock; atualizarFoto: jest.Mock };
+  let tratar: { execute: jest.Mock };
+  let sessao: SessaoCatalogoService;
+  let useCase: ProcessarFotoCatalogoUseCase;
+
+  beforeEach(() => {
+    catalogos = {
+      listarEmAprovacao: jest
+        .fn()
+        .mockResolvedValue([FOTO('f-1', 'BR26252'), FOTO('f-2', 'CO26185')]),
+      atualizarFoto: jest.fn().mockResolvedValue(undefined),
+    };
+    tratar = { execute: jest.fn().mockResolvedValue(null) };
+    sessao = new SessaoCatalogoService();
+
+    useCase = new ProcessarFotoCatalogoUseCase(
+      catalogos as never,
+      {} as never,
+      {} as never,
+      { enviarTexto: jest.fn(), enviarImagem: jest.fn() } as never,
+      sessao,
+      tratar as never,
+    );
+  });
+
+  it('"aprovo" carimba a mais antiga da fila, e so ela', async () => {
+    const r = await useCase.aprovacao(DE, QUEM, 'aprovo');
+
+    expect(catalogos.atualizarFoto).toHaveBeenCalledTimes(1);
+    const [id, dados] = catalogos.atualizarFoto.mock.calls[0] as [
+      string,
+      { status: string; aprovadoPor: string },
+    ];
+    expect(id).toBe('f-1');
+    expect(dados.status).toBe('APROVADA');
+    expect(dados.aprovadoPor).toBe(QUEM);
+    // A que sobrou tem de ser dita, senao ela fica esperando sem ninguem saber.
+    expect(r?.resposta).toContain('BR26252');
+    expect(r?.resposta).toContain('1 esperando');
+  });
+
+  it('"aprovo todas" pega a fila inteira', async () => {
+    const r = await useCase.aprovacao(DE, QUEM, 'Aprovo todas!');
+
+    expect(catalogos.atualizarFoto).toHaveBeenCalledTimes(2);
+    expect(r?.resposta).toContain('2 fotos aprovadas');
+  });
+
+  it('acento e pontuacao nao atrapalham', async () => {
+    expect(await useCase.aprovacao(DE, QUEM, 'Tá bom!')).not.toBeNull();
+    expect(catalogos.atualizarFoto).toHaveBeenCalledTimes(1);
+  });
+
+  it('"ajusta ..." manda refazer a mais antiga, com o pedido', async () => {
+    const r = await useCase.aprovacao(DE, QUEM, 'ajusta fundo branco');
+
+    expect(catalogos.atualizarFoto).not.toHaveBeenCalled();
+    expect(tratar.execute).toHaveBeenCalledWith('f-1', 'fundo branco');
+    expect(r?.motivo).toBe('foto_em_ajuste');
+  });
+
+  it('"ajusta" sem dizer o que nao queima uma geracao', async () => {
+    const r = await useCase.aprovacao(DE, QUEM, 'ajusta');
+
+    expect(tratar.execute).not.toHaveBeenCalled();
+    expect(r?.motivo).toBe('ajuste_sem_pedido');
+  });
+
+  it('pergunta de venda NAO vira pedido de ajuste — devolve null e segue', async () => {
+    // A invariante que este describe existe para proteger.
+    const r = await useCase.aprovacao(DE, QUEM, 'quanto vendi hoje?');
+
+    expect(r).toBeNull();
+    expect(tratar.execute).not.toHaveBeenCalled();
+    expect(catalogos.atualizarFoto).not.toHaveBeenCalled();
+  });
+
+  it('a palavra tem de abrir a frase', async () => {
+    // "aprovo" no meio de uma duvida nao e aprovacao.
+    expect(
+      await useCase.aprovacao(DE, QUEM, 'nao sei se aprovo essa'),
+    ).toBeNull();
+  });
+
+  it('fila vazia devolve null e baixa a catraca da memoria', async () => {
+    catalogos.listarEmAprovacao.mockResolvedValue([]);
+    sessao.marcarEmAprovacao(DE);
+
+    expect(await useCase.aprovacao(DE, QUEM, 'aprovo')).toBeNull();
+    expect(useCase.temFotoEmAprovacao(DE)).toBe(false);
+  });
+
+  it('a fila vem filtrada por quem fotografou — nunca pelo que veio na mensagem', async () => {
+    await useCase.aprovacao(DE, QUEM, 'aprovo');
+    expect(catalogos.listarEmAprovacao).toHaveBeenCalledWith(QUEM);
+  });
+});

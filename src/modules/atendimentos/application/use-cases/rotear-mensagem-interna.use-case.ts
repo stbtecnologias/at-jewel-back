@@ -84,6 +84,11 @@ export class RotearMensagemInternaUseCase {
   async execute(msg: MensagemDoCanal): Promise<RespostaDoCanal> {
     const telefone = msg.de.replace(/@.*$/, '');
 
+    // O texto ja resolvido, memorizado — `undefined` e "ainda nao resolvi".
+    // O mesmo audio pode ser consultado no ramo do catalogo e de novo no dos
+    // agentes, e transcrever duas vezes cobraria duas.
+    let textoResolvido: string | null | undefined;
+
     // ---------------------------------------------------------------------
     // CATALOGO — a terceira ramificacao, decidida pela MENSAGEM e nao pelo
     // telefone.
@@ -111,15 +116,42 @@ export class RotearMensagemInternaUseCase {
       });
     }
 
-    // Texto com foto esperando classificacao e a RESPOSTA do "de qual
-    // catalogo e?". Precede os dois agentes: se caisse na Anastasia, ela
-    // responderia "0002" como se fosse pergunta sobre vendas.
-    if (this.canalCatalogo.temFotoEsperando(msg.de)) {
-      const quem = await this.identificarAdmin.execute(telefone, PERMISSAO_CATALOGO);
+    // ---------------------------------------------------------------------
+    // TEXTO COM ALGO PENDENTE NO CATALOGO. Sao dois casos, e os dois precedem
+    // os agentes:
+    //
+    //   foto esperando catalogo  -> "0002" e a RESPOSTA de "de qual e?"
+    //   foto tratada esperando   -> "aprovo" / "ajusta mais claro"
+    //
+    // Se caissem na Anastasia, ela responderia "0002" como se fosse pergunta
+    // sobre vendas.
+    //
+    // AS DUAS CONDICOES SAO CONSULTAS EM MEMORIA, e e isso que preserva a
+    // ordem vendedora-antes-de-gestao: sem elas, todo texto do canal faria um
+    // lookup de admin antes do de vendedora.
+    // ---------------------------------------------------------------------
+    const esperandoCatalogo = this.canalCatalogo.temFotoEsperando(msg.de);
+    if (esperandoCatalogo || this.canalCatalogo.temFotoEmAprovacao(msg.de)) {
+      const quem = await this.identificarAdmin.execute(
+        telefone,
+        PERMISSAO_CATALOGO,
+      );
       if (quem) {
-        const respostaTexto = await this.resolverTexto(msg);
-        if (respostaTexto) {
-          return this.canalCatalogo.resposta(msg.de, quem.nome ?? '', respostaTexto);
+        textoResolvido = await this.resolverTexto(msg);
+        if (textoResolvido) {
+          const nome = quem.nome ?? '';
+          if (esperandoCatalogo) {
+            return this.canalCatalogo.resposta(msg.de, nome, textoResolvido);
+          }
+          const aprovacao = await this.canalCatalogo.aprovacao(
+            msg.de,
+            nome,
+            textoResolvido,
+          );
+          // `null` = o texto nao era resposta de aprovacao. Uma pergunta sobre
+          // vendas feita com foto pendurada segue para a Anastasia como
+          // seguiria em qualquer outro momento.
+          if (aprovacao) return aprovacao;
         }
       }
     }
@@ -133,7 +165,10 @@ export class RotearMensagemInternaUseCase {
       return { resposta: null, motivo: 'ignorado_remetente_desconhecido' };
     }
 
-    const texto = await this.resolverTexto(msg);
+    const texto =
+      textoResolvido !== undefined
+        ? textoResolvido
+        : await this.resolverTexto(msg);
     if (texto === null) {
       const nome = (vendedora?.nome ?? admin?.nome ?? '').trim().split(/\s+/)[0];
       return {

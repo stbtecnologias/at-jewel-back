@@ -16,6 +16,7 @@ import {
 } from '../../../catalogos/domain/ports/injection-tokens';
 import type {
   CatalogoAberto,
+  FotoItem,
   ICatalogoRepository,
 } from '../../../catalogos/domain/ports/repositories/catalogo-repository.port';
 import { PRODUTO_REPOSITORY } from '../../../erp/domain/ports/injection-tokens';
@@ -59,6 +60,114 @@ const RE_NUMERO = /#?\b(\d{1,6})\b/;
  */
 const PALAVRAS_DE_COMANDO =
   /\b(catalogo|catálogo|cat|ref|referencia|referência|codigo|código|peca|peça|foto)\b/gi;
+
+/**
+ * ===========================================================================
+ * O VOCABULARIO DA APROVACAO — E POR QUE ELE E FECHADO.
+ *
+ * A resposta a "ficou assim?" chega como texto livre no MESMO canal em que a
+ * pessoa tambem conversa com a Anastasia. Se qualquer texto que nao fosse
+ * "aprovo" virasse pedido de ajuste, um "quanto vendi hoje?" digitado com uma
+ * foto pendurada iria parar no modelo de imagem — cobrado, demorado, e sem
+ * resposta a pergunta que ela fez.
+ *
+ * Entao sao duas listas fechadas, e QUALQUER OUTRA COISA nao e resposta de
+ * aprovacao: cai nos agentes de sempre. E deliberado errar para o lado de
+ * "nao entendi como aprovacao" — o custo e ela repetir a palavra; o custo do
+ * contrario e uma geracao perdida e a pergunta dela ignorada.
+ *
+ * Sem LLM aqui, pelo mesmo motivo dos avisos: e classificacao de uma palavra,
+ * e um modelo so acrescentaria latencia, custo e uma superficie de injecao
+ * onde hoje nao existe nenhuma.
+ * ===========================================================================
+ */
+const PALAVRAS_APROVA = [
+  'aprovo',
+  'aprovado',
+  'aprovada',
+  'aprovar',
+  'ok',
+  'okay',
+  'perfeito',
+  'pode ir',
+  'pode publicar',
+  'ficou bom',
+  'ficou otimo',
+  'isso mesmo',
+  'ta bom',
+  'ta otimo',
+  'beleza',
+  'blz',
+  'sim',
+];
+
+/**
+ * Pedido de mudanca. O que vem DEPOIS da palavra e a instrucao para a IA.
+ *
+ * REPARE QUE "nao" SOZINHO NAO ESTA AQUI, e a ausencia e o ponto: "nao sei",
+ * "nao precisa", "nao consegui ver" sao conversa, e um "nao" solto na lista
+ * mandaria as tres para o modelo de imagem. So entram as formas em que a
+ * negativa e inequivocamente sobre a foto.
+ */
+const PALAVRAS_AJUSTA = [
+  'ajusta',
+  'ajuste',
+  'ajustar',
+  'muda',
+  'mudar',
+  'troca',
+  'trocar',
+  'refaz',
+  'refazer',
+  'de novo',
+  'reprova',
+  'reprovar',
+  'nao gostei',
+  'nao ficou bom',
+  'nao ficou',
+  'nao curti',
+];
+
+/** `aprovo todas`, `todas`, `todos` — vale para a fila inteira. */
+const RE_TODAS = /\btod[ao]s\b/;
+
+type Veredito =
+  | { tipo: 'APROVA'; todas: boolean }
+  | { tipo: 'AJUSTA'; pedido: string | null }
+  | { tipo: 'NENHUM' };
+
+/**
+ * A resposta a "ficou assim?".
+ *
+ * Compara sobre o texto NORMALIZADO — minusculas, sem acento e sem pontuacao —
+ * para "Aprovo!", "aprovo" e "APROVO" serem a mesma coisa, e para nao ser
+ * preciso repetir cada palavra com e sem acento.
+ *
+ * A palavra tem de ABRIR a frase. "Nao sei se aprovo essa" contem "aprovo" e
+ * nao e aprovacao nenhuma; exigindo o inicio, cai em NENHUM e vai para os
+ * agentes, que e o lado seguro de errar.
+ */
+function lerVeredito(texto: string): Veredito {
+  const n = normalizar(texto);
+  if (!n) return { tipo: 'NENHUM' };
+
+  if (PALAVRAS_APROVA.some((p) => n === p || n.startsWith(`${p} `))) {
+    return { tipo: 'APROVA', todas: RE_TODAS.test(n) };
+  }
+
+  // A MAIS LONGA que casar, e nao a primeira da lista: "nao ficou bom" e
+  // "nao ficou" casam as duas, e pela primeira sobraria "bom" como pedido de
+  // estilo — uma instrucao que ninguem deu.
+  const ajusta = PALAVRAS_AJUSTA.filter(
+    (p) => n === p || n.startsWith(`${p} `),
+  ).sort((a, b) => b.length - a.length)[0];
+  if (ajusta) {
+    const resto = n.slice(ajusta.length).trim();
+    return { tipo: 'AJUSTA', pedido: resto.length >= 3 ? resto : null };
+  }
+
+  return { tipo: 'NENHUM' };
+}
 
 /**
  * O que sobra da legenda vira pedido de estilo para a IA — "fundo rosa",
@@ -111,10 +220,14 @@ export interface RespostaFoto {
  * depois, sobre um arquivo que ja e nosso.
  * ==========================================================================
  *
- * ESTA RODADA NAO TEM IA. A foto entra como veio do celular, em status
- * RECEBIDA. O tratamento pela IA e a aprovacao na conversa sao a proxima
- * etapa; ate la a tela mostra o packshot cru, que ja e util para conferir
- * enquadramento e se a peca certa foi fotografada.
+ * O CICLO COMPLETO DA FOTO, ja fechado:
+ *
+ *   chega  ->  originais/  ->  IA  ->  fotos/  ->  "ficou assim?"  ->  APROVADA
+ *                                        ^                |
+ *                                        +--- "ajusta ..." +
+ *
+ * A ida ate a IA e a volta com a versao tratada estao em `tratarEAvisar`; a
+ * leitura do sim e do "muda isso" esta em `aprovacao`.
  */
 @Injectable()
 export class ProcessarFotoCatalogoUseCase {
@@ -161,11 +274,20 @@ export class ProcessarFotoCatalogoUseCase {
       const tratada = await this.armazenamento.ler(r.foto.arquivoId);
       if (!tratada) return;
 
+      // A CATRACA SOBE ANTES DO ENVIO. Se subisse depois e o envio falhasse
+      // no meio, a foto ficaria EM_APROVACAO no banco sem ninguem escutando a
+      // resposta; assim, no maximo, ela responde a uma imagem que nao chegou —
+      // e a fila do banco, que e a verdade, corrige.
+      this.sessao.marcarEmAprovacao(chat);
+
       await this.whatsapp.enviarImagem(
         chat,
         tratada.conteudo,
         tratada.mime,
-        'Ficou assim. Se aprovar, me responde "aprovo" — se quiser mudar algo, é só dizer o quê.',
+        // A peca vai NOMEADA porque a fila pode ter varias: sem o codigo, um
+        // "aprovo" solto seria um chute sobre qual imagem ela esta olhando.
+        `${r.foto.codigoErp ? `${r.foto.codigoErp} — ficou assim.` : 'Ficou assim.'}\n` +
+          'Se aprovar, responde "aprovo". Para mudar algo, "ajusta" e o quê — ex.: "ajusta fundo branco".',
       );
     } catch (err) {
       this.logger.error(
@@ -325,8 +447,97 @@ export class ProcessarFotoCatalogoUseCase {
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // Chegou um texto enquanto havia foto esperando o "aprovo"
+  // ---------------------------------------------------------------------------
+
+  /**
+   * A resposta ao "ficou assim?".
+   *
+   * ==========================================================================
+   * DEVOLVE `null` QUANDO O TEXTO NAO ERA RESPOSTA DE APROVACAO — e esse null
+   * e o contrato com o roteador: significa "nao era comigo, segue para os
+   * agentes". Um "quanto vendi hoje?" digitado com foto pendurada tem de
+   * chegar na Anastasia como chegaria em qualquer outro momento.
+   * ==========================================================================
+   *
+   * QUEM APROVA E QUEM FOTOGRAFOU. A fila vem filtrada por `remetente`, que e
+   * o nome do staff resolvido NO SERVIDOR a partir do telefone — nunca algo
+   * que veio escrito na mensagem. Nao ha caminho de codigo para aprovar a foto
+   * de outra pessoa.
+   *
+   * QUAL FOTO: a mais antiga da fila, que e a que ela viu primeiro. "aprovo
+   * todas" pega a fila inteira — o caso real de quem fotografa 20 pecas e so
+   * confere no fim.
+   *
+   * @param nomeRemetente rotulo do staff, resolvido pelo telefone.
+   */
+  async aprovacao(
+    de: string,
+    nomeRemetente: string,
+    texto: string,
+  ): Promise<RespostaFoto | null> {
+    const fila = await this.catalogos.listarEmAprovacao(nomeRemetente.trim());
+    if (fila.length === 0) {
+      // A catraca estava levantada e o banco discorda: ou a tela ja aprovou,
+      // ou o tratamento nem chegou a EM_APROVACAO. O banco manda.
+      this.sessao.esquecerAprovacao(de);
+      return null;
+    }
+
+    const veredito = lerVeredito(texto);
+    if (veredito.tipo === 'NENHUM') return null;
+
+    if (veredito.tipo === 'AJUSTA') {
+      if (!veredito.pedido) {
+        // Sem instrucao, gerar de novo so queimaria uma das tres tentativas
+        // para produzir outra imagem igualmente sem rumo.
+        return {
+          resposta:
+            'O que você quer que eu mude? Me diz — "mais claro", "fundo branco" — que eu refaço.',
+          motivo: 'ajuste_sem_pedido',
+        };
+      }
+
+      const alvo = fila[0];
+      // Mesma razao de sempre: gerar leva 10 a 30 segundos e o webhook nao
+      // pode esperar. Ela recebe o "refazendo" agora e a imagem quando ficar.
+      void this.tratarEAvisar(alvo.id, veredito.pedido, de);
+      return {
+        resposta: `Refazendo ${this.rotulo(alvo)}. Te mando em instantes.`,
+        motivo: 'foto_em_ajuste',
+      };
+    }
+
+    const alvos = veredito.todas ? fila : [fila[0]];
+    for (const foto of alvos) {
+      await this.catalogos.atualizarFoto(foto.id, {
+        status: 'APROVADA',
+        aprovadoPor: nomeRemetente,
+        aprovadoEm: new Date(),
+      });
+    }
+
+    const restantes = fila.length - alvos.length;
+    if (restantes === 0) this.sessao.esquecerAprovacao(de);
+
+    return {
+      resposta: this.confirmarAprovacao(alvos, restantes),
+      motivo: 'foto_aprovada',
+    };
+  }
+
   temFotoEsperando(de: string): boolean {
     return this.sessao.temPendentes(de);
+  }
+
+  /**
+   * Vale a pena tratar o proximo texto deste remetente como resposta de
+   * aprovacao? E so a catraca de memoria — quem confere de verdade e
+   * `aprovacao`, contra o banco.
+   */
+  temFotoEmAprovacao(de: string): boolean {
+    return this.sessao.temEmAprovacao(de);
   }
 
   // ---------------------------------------------------------------------------
@@ -467,6 +678,23 @@ export class ProcessarFotoCatalogoUseCase {
       // As palavras de comando saem — ninguem quer "catalogo" no prompt.
       pedidoDeEstilo: limparPedido(resto),
     };
+  }
+
+  /** Como chamar a peca numa frase. Sem codigo, ela e so "a foto". */
+  private rotulo(foto: FotoItem): string {
+    return foto.codigoErp ? `a ${foto.codigoErp}` : 'a foto';
+  }
+
+  private confirmarAprovacao(aprovadas: FotoItem[], restantes: number): string {
+    const cabeca =
+      aprovadas.length === 1
+        ? `${aprovadas[0].codigoErp ?? 'Foto'} aprovada — já está no catálogo.`
+        : `${aprovadas.length} fotos aprovadas — já estão no catálogo.`;
+
+    // Dizer quantas sobraram evita o engano de achar que "aprovo" limpou a
+    // fila inteira: a peca seguinte ficaria esperando sem ninguem saber.
+    if (restantes === 0) return cabeca;
+    return `${cabeca}\nAinda tenho ${restantes} esperando sua resposta.`;
   }
 
   private perguntarCatalogo(abertos: CatalogoAberto[]): string {
