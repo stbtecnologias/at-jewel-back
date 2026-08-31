@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository } from 'typeorm';
 import type {
   AtualizarCatalogoData,
+  AtualizarFotoData,
   CatalogoAberto,
   CatalogoDetalhe,
   CatalogoItem,
@@ -177,6 +178,40 @@ export class CatalogoRepository implements ICatalogoRepository {
     return this.paraFoto(criada);
   }
 
+  async atualizarFoto(id: string, dados: AtualizarFotoData): Promise<FotoItem> {
+    const linha = await this.repoFotos.findOne({ where: { id } });
+    if (!linha) throw new NotFoundException('Foto não encontrada');
+
+    // `undefined` nao mexe; `null` grava null. A distincao importa em
+    // `aprovadoPor`: reprovar precisa LIMPAR a aprovacao anterior, e um
+    // `if (dados.aprovadoPor)` engoliria isso.
+    if (dados.arquivoId !== undefined) linha.arquivoId = dados.arquivoId;
+    if (dados.mime !== undefined) linha.mime = dados.mime;
+    if (dados.status !== undefined) linha.status = dados.status;
+    if (dados.versoes !== undefined) linha.versoes = dados.versoes;
+    if (dados.aprovadoPor !== undefined) linha.aprovadoPor = dados.aprovadoPor;
+    if (dados.aprovadoEm !== undefined) linha.aprovadoEm = dados.aprovadoEm;
+
+    return this.paraFoto(await this.repoFotos.save(linha));
+  }
+
+  async buscarFotoPorId(id: string): Promise<FotoItem | null> {
+    const linha = await this.repoFotos.findOne({ where: { id } });
+    return linha ? this.paraFoto(linha) : null;
+  }
+
+  async listarEmAprovacao(remetente: string): Promise<FotoItem[]> {
+    // Remetente vazio nao filtra nada: seria "todas as fotos sem dono", e um
+    // "aprovo" carimbaria a fila alheia. Melhor devolver nada.
+    if (!remetente.trim()) return [];
+
+    const linhas = await this.repoFotos.find({
+      where: { status: 'EM_APROVACAO', remetente },
+      order: { updatedAt: 'ASC' },
+    });
+    return linhas.map((l) => this.paraFoto(l));
+  }
+
   async buscarNomeUsuario(userId: string): Promise<string | null> {
     const linhas = await this.repo.manager.query<{ nome: string | null }[]>(
       `SELECT nome FROM admin_users WHERE id = $1 LIMIT 1`,
@@ -277,6 +312,7 @@ export class CatalogoRepository implements ICatalogoRepository {
   private paraFoto(linha: CatalogoFotoOrmEntity): FotoItem {
     return {
       id: linha.id,
+      catalogoId: linha.catalogoId,
       posicao: linha.posicao,
       codigoErp: linha.codigoErp,
       descricao: linha.descricao,
@@ -287,6 +323,7 @@ export class CatalogoRepository implements ICatalogoRepository {
       parcelas: linha.parcelas,
       origem: linha.origem,
       remetente: linha.remetente,
+      arquivoOriginalId: linha.arquivoOriginalId,
       arquivoId: linha.arquivoId,
       status: linha.status,
       versoes: linha.versoes,

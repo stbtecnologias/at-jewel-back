@@ -30,8 +30,19 @@ export interface ReferenciaItem {
   ordem: number;
 }
 
+export interface AtualizarFotoData {
+  arquivoId?: string;
+  mime?: string;
+  status?: StatusFoto;
+  /** Contador de tentativas — e o que sustenta o teto de geracoes. */
+  versoes?: number;
+  aprovadoPor?: string | null;
+  aprovadoEm?: Date | null;
+}
+
 export interface FotoItem {
   id: string;
+  catalogoId: string;
   posicao: number;
   codigoErp: string | null;
   descricao: string | null;
@@ -39,6 +50,8 @@ export interface FotoItem {
   parcelas: number | null;
   origem: OrigemFoto;
   remetente: string | null;
+  /** A foto como saiu do celular. NUNCA e reescrita. */
+  arquivoOriginalId: string | null;
   arquivoId: string | null;
   status: StatusFoto;
   versoes: number;
@@ -143,6 +156,29 @@ export interface ICatalogoRepository {
 
   /** Acrescenta uma foto ao fim do catalogo. */
   criarFoto(dados: CriarFotoData): Promise<FotoItem>;
+
+  /**
+   * Atualiza a foto depois do tratamento: a chave da versao tratada, o novo
+   * status e o historico de tentativas.
+   *
+   * `arquivoOriginalId` NAO entra aqui — o original nunca e reescrito.
+   */
+  atualizarFoto(id: string, dados: AtualizarFotoData): Promise<FotoItem>;
+
+  buscarFotoPorId(id: string): Promise<FotoItem | null>;
+
+  /**
+   * As fotos que esperam o sim de quem as mandou, da mais antiga para a mais
+   * nova.
+   *
+   * FILTRA PELO REMETENTE, e nao so pelo status: quem aprova e quem
+   * fotografou. Sem o filtro, um "aprovo" no WhatsApp carimbaria a foto de
+   * outra pessoa que estivesse na fila no mesmo minuto.
+   *
+   * A ordem e a da ultima alteracao, que e a ordem em que as versoes tratadas
+   * chegaram no celular — assim "aprovo" atinge a que ela viu primeiro.
+   */
+  listarEmAprovacao(remetente: string): Promise<FotoItem[]>;
 
   criarReferencia(dados: CriarReferenciaData): Promise<ReferenciaItem>;
   /** Devolve a chave do arquivo removido, para o use case apagar o binario. */

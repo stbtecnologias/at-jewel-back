@@ -22,7 +22,15 @@ export interface ArquivoParaGuardar {
 
 /** Pastas logicas dentro do armazenamento. */
 export const PASTA_REFERENCIAS = 'referencias';
+/** A foto tratada pela IA — e a que vai para o catalogo. */
 export const PASTA_FOTOS = 'fotos';
+
+/**
+ * A foto como saiu do celular. NUNCA e reescrita: reprovar precisa poder
+ * gerar de novo a partir dela, e nao de cima de um tratamento anterior —
+ * tratar o tratado degrada a imagem a cada rodada.
+ */
+export const PASTA_ORIGINAIS = 'originais';
 export const PASTA_FINAIS = 'finais';
 
 /**
@@ -61,6 +69,15 @@ export const MIMES_IMAGEM = ['image/jpeg', 'image/png', 'image/webp'] as const;
 export interface IArmazenamento {
   /** Grava e devolve a CHAVE. Quem chama guarda a chave, e so ela. */
   guardar(arquivo: ArquivoParaGuardar, pasta: string): Promise<string>;
+
+  /**
+   * Le o arquivo inteiro na memoria. Devolve null se nao existir.
+   *
+   * Existe porque o tratamento pela IA precisa MANDAR a imagem para outro
+   * servico — nao basta servi-la ao navegador. O teto de 12 MB por arquivo
+   * (LIMITE_BYTES) e o que torna seguro carregar assim.
+   */
+  ler(chave: string): Promise<{ conteudo: Buffer; mime: string } | null>;
 
   /** Remove pela chave. Silencioso se o arquivo ja nao existir. */
   remover(chave: string): Promise<void>;

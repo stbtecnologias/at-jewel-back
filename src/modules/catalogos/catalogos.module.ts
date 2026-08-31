@@ -11,12 +11,15 @@ import {
   RemoverCatalogoUseCase,
   RemoverReferenciaUseCase,
 } from './application/use-cases/catalogos.use-cases';
+import { TratarFotoUseCase } from './application/use-cases/tratar-foto.use-case';
 import {
   ARMAZENAMENTO,
   CATALOGO_REPOSITORY,
+  TRATAMENTO_IMAGEM,
 } from './domain/ports/injection-tokens';
 import { DiscoArmazenamento } from './infrastructure/armazenamento/disco.armazenamento';
 import { S3Armazenamento } from './infrastructure/armazenamento/s3.armazenamento';
+import { OpenaiTratamentoImagemClient } from './infrastructure/ia/openai-tratamento-imagem.client';
 import { CatalogoFotoOrmEntity } from './infrastructure/database/typeorm/entities/catalogo-foto.orm-entity';
 import { CatalogoReferenciaOrmEntity } from './infrastructure/database/typeorm/entities/catalogo-referencia.orm-entity';
 import { CatalogoOrmEntity } from './infrastructure/database/typeorm/entities/catalogo.orm-entity';
@@ -48,6 +51,8 @@ import { MidiaController } from './infrastructure/http/controllers/midia.control
     RemoverCatalogoUseCase,
     AnexarReferenciaUseCase,
     RemoverReferenciaUseCase,
+    TratarFotoUseCase,
+    { provide: TRATAMENTO_IMAGEM, useClass: OpenaiTratamentoImagemClient },
     { provide: CATALOGO_REPOSITORY, useClass: CatalogoRepository },
     {
       // O ADAPTADOR SAI DO AMBIENTE, e nao de um `if` espalhado pelo codigo.
@@ -66,6 +71,6 @@ import { MidiaController } from './infrastructure/http/controllers/midia.control
           : new DiscoArmazenamento(config),
     },
   ],
-  exports: [CATALOGO_REPOSITORY, ARMAZENAMENTO],
+  exports: [CATALOGO_REPOSITORY, ARMAZENAMENTO, TratarFotoUseCase],
 })
 export class CatalogosModule {}

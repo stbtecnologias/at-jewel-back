@@ -6,12 +6,16 @@ import { ProcessarMensagemWhatsappUseCase } from './processar-mensagem-whatsapp.
 
 function make() {
   const llm: jest.Mocked<ILlmClient> = {
-    chat: jest.fn().mockResolvedValue({ texto: 'Olá, seja bem-vinda à A.T. Jewel.', tokens: 10 }),
+    chat: jest.fn().mockResolvedValue({
+      texto: 'Olá, seja bem-vinda à A.T. Jewel.',
+      tokens: 10,
+    }),
     chatComFerramentas: jest.fn(),
-  } as unknown as jest.Mocked<ILlmClient>;
+  };
 
   const whatsapp: jest.Mocked<IWhatsappGateway> = {
-    enviarTexto: jest.fn().mockResolvedValue(undefined),
+    enviarTexto: jest.fn(),
+    enviarImagem: jest.fn().mockResolvedValue(undefined),
     // Nao usados neste fluxo: quem resolve LID e chatId e a borda HTTP.
     resolverChatId: jest.fn(),
     resolverRemetente: jest.fn(async (de: string) => de),
@@ -27,9 +31,14 @@ function make() {
     buscar: jest.fn().mockResolvedValue(null),
     buscarTodos: jest.fn(),
     salvar: jest.fn(),
-  } as unknown as jest.Mocked<IAgentePromptsRepository>;
+  };
 
-  const useCase = new ProcessarMensagemWhatsappUseCase(llm, whatsapp, config, prompts);
+  const useCase = new ProcessarMensagemWhatsappUseCase(
+    llm,
+    whatsapp,
+    config,
+    prompts,
+  );
   return { useCase, llm, whatsapp, prompts };
 }
 
@@ -37,9 +46,15 @@ describe('ProcessarMensagemWhatsappUseCase', () => {
   it('gera resposta com o LLM e envia pelo gateway', async () => {
     const { useCase, llm, whatsapp } = make();
 
-    const r = await useCase.execute({ de: '5585999@c.us', texto: 'Oi, quero um anel' });
+    const r = await useCase.execute({
+      de: '5585999@c.us',
+      texto: 'Oi, quero um anel',
+    });
 
-    expect(r).toEqual({ resposta: 'Olá, seja bem-vinda à A.T. Jewel.', enviada: true });
+    expect(r).toEqual({
+      resposta: 'Olá, seja bem-vinda à A.T. Jewel.',
+      enviada: true,
+    });
     expect(llm.chat).toHaveBeenCalledTimes(1);
     expect(whatsapp.enviarTexto).toHaveBeenCalledWith(
       '5585999@c.us',
@@ -71,7 +86,9 @@ describe('ProcessarMensagemWhatsappUseCase', () => {
 
   it('preserva a resposta mesmo se o envio falhar (enviada=false)', async () => {
     const { useCase, whatsapp } = make();
-    whatsapp.enviarTexto.mockRejectedValueOnce(new Error('sessao WAHA nao conectada'));
+    whatsapp.enviarTexto.mockRejectedValueOnce(
+      new Error('sessao WAHA nao conectada'),
+    );
 
     const r = await useCase.execute({ de: '5585999@c.us', texto: 'Oi' });
 
@@ -95,8 +112,14 @@ describe('ProcessarMensagemWhatsappUseCase', () => {
   it('inclui o historico do chat nas mensagens do turno seguinte', async () => {
     const { useCase, llm } = make();
 
-    await useCase.execute({ de: '5585999@c.us', texto: 'Quero um anel de brilhantes' });
-    await useCase.execute({ de: '5585999@c.us', texto: 'É um presente de reconciliação' });
+    await useCase.execute({
+      de: '5585999@c.us',
+      texto: 'Quero um anel de brilhantes',
+    });
+    await useCase.execute({
+      de: '5585999@c.us',
+      texto: 'É um presente de reconciliação',
+    });
 
     const segunda = llm.chat.mock.calls[1][0].mensagens;
     expect(segunda).toEqual([
@@ -118,7 +141,9 @@ describe('ProcessarMensagemWhatsappUseCase', () => {
 
   it('nao registra no historico a resposta que a cliente nao recebeu', async () => {
     const { useCase, llm, whatsapp } = make();
-    whatsapp.enviarTexto.mockRejectedValueOnce(new Error('sessao WAHA nao conectada'));
+    whatsapp.enviarTexto.mockRejectedValueOnce(
+      new Error('sessao WAHA nao conectada'),
+    );
 
     await useCase.execute({ de: '5585999@c.us', texto: 'Primeira' });
     await useCase.execute({ de: '5585999@c.us', texto: 'Segunda' });

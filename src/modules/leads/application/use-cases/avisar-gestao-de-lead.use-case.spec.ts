@@ -61,7 +61,8 @@ describe('AvisarGestaoDeLeadUseCase', () => {
 
     whatsapp = {
       resolverChatId: jest.fn().mockResolvedValue('5585911112222@c.us'),
-      enviarTexto: jest.fn().mockResolvedValue(undefined),
+      enviarTexto: jest.fn(),
+      enviarImagem: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<IWhatsappGateway>;
 
     useCase = new AvisarGestaoDeLeadUseCase(admins, permissoes, whatsapp);

@@ -28,7 +28,13 @@ describe('RotearMensagemInternaUseCase', () => {
   let identificarAdmin: { execute: jest.Mock };
   let canalVendedora: { execute: jest.Mock };
   let canalGestao: { execute: jest.Mock };
-  let canalCatalogo: { foto: jest.Mock; resposta: jest.Mock; temFotoEsperando: jest.Mock };
+  let canalCatalogo: {
+    foto: jest.Mock;
+    resposta: jest.Mock;
+    temFotoEsperando: jest.Mock;
+    temFotoEmAprovacao: jest.Mock;
+    aprovacao: jest.Mock;
+  };
   let whatsapp: { baixarMidia: jest.Mock };
   let transcricao: { transcrever: jest.Mock; disponivel: jest.Mock };
   let useCase: RotearMensagemInternaUseCase;
@@ -48,6 +54,8 @@ describe('RotearMensagemInternaUseCase', () => {
       foto: jest.fn().mockResolvedValue({ resposta: 'foto guardada', motivo: 'foto_guardada' }),
       resposta: jest.fn().mockResolvedValue({ resposta: 'classificada', motivo: 'fotos_classificadas' }),
       temFotoEsperando: jest.fn(() => false),
+      temFotoEmAprovacao: jest.fn(() => false),
+      aprovacao: jest.fn().mockResolvedValue(null),
     };
     whatsapp = { baixarMidia: jest.fn() };
     transcricao = { transcrever: jest.fn(), disponivel: jest.fn(() => true) };
@@ -176,5 +184,71 @@ describe('RotearMensagemInternaUseCase', () => {
     await useCase.execute({ de: '558586467241@c.us', texto: 'oi', audio: AUDIO });
 
     expect(transcricao.transcrever).not.toHaveBeenCalled();
+  });
+
+  // -------------------------------------------------------------------------
+  // Aprovacao da foto tratada
+  // -------------------------------------------------------------------------
+
+  it('com foto esperando aprovacao, o "aprovo" precede os dois agentes', async () => {
+    canalCatalogo.temFotoEmAprovacao.mockReturnValue(true);
+    canalCatalogo.aprovacao.mockResolvedValue({
+      resposta: 'BR26252 aprovada',
+      motivo: 'foto_aprovada',
+    });
+    identificarAdmin.execute.mockResolvedValue(ADMIN);
+
+    const r = await useCase.execute({
+      de: '558586467241@c.us',
+      texto: 'aprovo',
+    });
+
+    expect(r.motivo).toBe('foto_aprovada');
+    expect(canalGestao.execute).not.toHaveBeenCalled();
+  });
+
+  it('texto que nao era aprovacao volta para a Anastasia', async () => {
+    // A invariante: `null` do canal de catalogo significa "nao era comigo".
+    canalCatalogo.temFotoEmAprovacao.mockReturnValue(true);
+    canalCatalogo.aprovacao.mockResolvedValue(null);
+    identificarAdmin.execute.mockResolvedValue(ADMIN);
+
+    const r = await useCase.execute({
+      de: '558586467241@c.us',
+      texto: 'quanto vendi hoje?',
+    });
+
+    expect(r.resposta).toBe('da anastasia');
+  });
+
+  it('a catraca da aprovacao nao inverte a ordem: vendedora continua primeiro', async () => {
+    // Sem nada pendente, nenhum lookup de admin acontece antes do de vendedora
+    // — e o que impede vendedora com login de cair no canal amplo.
+    identificarVendedora.execute.mockResolvedValue(VENDEDORA);
+
+    await useCase.execute({ de: '558586467241@c.us', texto: 'aprovo' });
+
+    expect(identificarAdmin.execute).not.toHaveBeenCalled();
+    expect(canalCatalogo.aprovacao).not.toHaveBeenCalled();
+  });
+
+  it('o audio e transcrito UMA vez, mesmo passando pelo ramo do catalogo', async () => {
+    // O ramo do catalogo resolve o texto; se ele nao guardasse o resultado, a
+    // Anastasia mandaria transcrever de novo — e a chamada e paga.
+    canalCatalogo.temFotoEmAprovacao.mockReturnValue(true);
+    canalCatalogo.aprovacao.mockResolvedValue(null);
+    identificarAdmin.execute.mockResolvedValue(ADMIN);
+    whatsapp.baixarMidia.mockResolvedValue({
+      conteudo: Buffer.from('ogg'),
+      mimetype: 'audio/ogg',
+    });
+    transcricao.transcrever.mockResolvedValue('quanto vendi hoje?');
+
+    await useCase.execute({ de: '558586467241@c.us', texto: '', audio: AUDIO });
+
+    expect(transcricao.transcrever).toHaveBeenCalledTimes(1);
+    expect(canalGestao.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ texto: 'quanto vendi hoje?' }),
+    );
   });
 });

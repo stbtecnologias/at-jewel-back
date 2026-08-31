@@ -6,3 +6,4 @@ export const CATALOGO_REPOSITORY = Symbol('ICatalogoRepository');
  * chaves ja gravadas continuam valendo.
  */
 export const ARMAZENAMENTO = Symbol('IArmazenamento');
+export const TRATAMENTO_IMAGEM = Symbol('ITratamentoImagem');
