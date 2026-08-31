@@ -17,9 +17,6 @@ const MODELO_PADRAO = 'gpt-image-1';
  */
 const TIMEOUT_MS = 120_000;
 
-/** Quantas referencias vao junto. Mais que isso encarece sem melhorar. */
-const MAX_REFERENCIAS = 3;
-
 /**
  * A REGRA QUE NAO SE NEGOCIA.
  *
@@ -30,28 +27,31 @@ const MAX_REFERENCIAS = 3;
  * a loja nao tem — e o cliente pedindo o que nao existe.
  */
 const REGRA_PECA_INTOCADA =
-  'REGRA ABSOLUTA: a joia da primeira imagem não pode ser alterada de forma ' +
-  'alguma. Mantenha exatamente o mesmo número de pedras, o mesmo formato, o ' +
-  'mesmo corte, a mesma cor de metal e as mesmas proporções entre as partes. ' +
-  'Não adicione, não remova, não corrija, não embeleze nenhum detalhe da peça. ' +
-  'Você está tratando apenas a APRESENTAÇÃO: fundo, iluminação, sombra, ' +
-  'enquadramento e nitidez.';
+  'REGRA ABSOLUTA: o objeto da imagem enviada é o único objeto da imagem de ' +
+  'saída, e não pode ser alterado nem substituído. Mantenha exatamente o mesmo ' +
+  'número de pedras, o mesmo formato, o mesmo corte, a mesma cor de metal e as ' +
+  'mesmas proporções entre as partes. Não adicione, não remova, não corrija, ' +
+  'não embeleze e não troque nenhum detalhe. Você está tratando apenas a ' +
+  'APRESENTAÇÃO: fundo, iluminação, sombra, enquadramento e nitidez.';
 
 /**
- * O PADRAO DA CASA, DITO COM TODAS AS LETRAS.
+ * O PADRAO DA CASA, EM TEXTO — QUE E A UNICA FORMA SEGURA DE DIZE-LO.
  *
- * A primeira versao pedia "mesmo tipo de fundo, mesma iluminacao" e confiava
- * no modelo para deduzir o resto das referencias. Nao funcionou, e o motivo e
- * instrutivo: AS REFERENCIAS SAO PAGINAS DE CATALOGO, e nao packshots. Elas
- * trazem a peca, o texto ao lado e o papel em volta — e o modelo copiou o tom
- * do papel, devolvendo a peca sobre fundo bege e vista de cima.
+ * Duas tentativas fracassadas ensinaram isto, as duas em 31/08/2026:
  *
- * Conferido nos catalogos reais em 31/08/2026: a peca aparece recortada sobre
- * BRANCO, de frente, na altura do olho. Sem cenario, sem superficie, sem mesa.
+ *   1. o prompt pedia "mesmo fundo e mesma iluminacao das referencias" e
+ *      mandava as paginas junto. O modelo copiou o tom do PAPEL da pagina e
+ *      devolveu a peca sobre fundo bege, vista de cima.
+ *   2. o prompt passou a dizer "use as paginas apenas como referencia". O
+ *      modelo recortou um brinco de DENTRO de uma pagina e o devolveu no
+ *      lugar da peca enviada.
  *
- * Entao o packshot passa a ser descrito aqui, e as referencias servem ao que
- * elas de fato ensinam: proporcao da peca no quadro, temperatura da luz,
- * acabamento do metal. Nao o layout da pagina.
+ * Nao adiantou insistir no texto porque o problema era a chamada: mandar
+ * varias `image[]` para `/v1/images/edits` significa "edite estas juntas".
+ * Agora vai uma imagem so, e o padrao vem escrito.
+ *
+ * Conferido nos catalogos reais: a peca aparece recortada sobre BRANCO, de
+ * frente, na altura do olho. Sem cenario, sem superficie, sem mesa.
  */
 const PADRAO_PACKSHOT =
   'Fundo BRANCO liso e uniforme. Sem cenário, sem mesa, sem superfície ' +
@@ -61,13 +61,9 @@ const PADRAO_PACKSHOT =
   'Centralizada, ocupando a maior parte do quadro.';
 
 const INSTRUCAO_BASE =
-  'A primeira imagem é a foto de uma joia, tirada com celular. As imagens ' +
-  'seguintes são páginas de catálogos anteriores desta joalheria. ' +
-  'ATENÇÃO: use as páginas apenas como referência de como a PEÇA é ' +
-  'apresentada — proporção no quadro, temperatura da luz, acabamento do ' +
-  'metal. NÃO copie o layout da página, NÃO copie a cor do papel e NÃO ' +
-  'reproduza nenhum texto delas. Não escreva texto algum na imagem. ' +
-  `Produza a foto da primeira imagem assim: ${PADRAO_PACKSHOT}`;
+  'A imagem enviada é a foto de uma peça, tirada com celular. Produza o ' +
+  `packshot dela para catálogo: ${PADRAO_PACKSHOT} ` +
+  'Não escreva texto algum na imagem.';
 
 /**
  * Tratamento da foto pela API de imagens da OpenAI.
@@ -109,15 +105,11 @@ export class OpenaiTratamentoImagemClient implements ITratamentoImagem {
     form.append('size', pedido.formato === '9:16' ? '1024x1536' : '1536x1024');
     form.append('n', '1');
 
-    // A ORDEM IMPORTA: a primeira imagem e a peca, as demais sao referencia —
-    // e o prompt diz isso com todas as letras. Inverter faria o modelo tratar
-    // uma pagina de catalogo antigo como se fosse a joia nova.
+    // UMA IMAGEM SO, E ISSO NAO E ECONOMIA: e o que impede o modelo de trocar
+    // a joia por outra. Ver a porta (`PedidoDeTratamento.original`) — mandar
+    // as paginas de referencia junto fez o modelo devolver um brinco recortado
+    // de dentro de uma delas.
     form.append('image[]', this.paraBlob(pedido.original), 'peca.png');
-    for (const [i, ref] of pedido.referencias
-      .slice(0, MAX_REFERENCIAS)
-      .entries()) {
-      form.append('image[]', this.paraBlob(ref), `referencia-${i + 1}.png`);
-    }
 
     try {
       const resp = await fetch(ENDPOINT, {

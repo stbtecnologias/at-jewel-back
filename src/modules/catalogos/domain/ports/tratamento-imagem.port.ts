@@ -20,14 +20,32 @@ export interface ImagemDeEntrada {
 }
 
 export interface PedidoDeTratamento {
-  /** A foto como saiu do celular. */
-  original: ImagemDeEntrada;
-
   /**
-   * As referencias de IMAGEM do catalogo — as paginas anteriores que definem
-   * o padrao. Sao o que faz a peca nova parecer da mesma colecao.
+   * A foto como saiu do celular — E A UNICA IMAGEM QUE ENTRA.
+   *
+   * =========================================================================
+   * AS PAGINAS DE REFERENCIA NAO VAO JUNTO, E ISSO CUSTOU CARO PARA APRENDER.
+   *
+   * Elas iam, ate 31/08/2026. O resultado do teste daquele dia: o modelo
+   * recortou um brinco de turquesa e malaquita DE DENTRO de uma pagina de
+   * referencia e o devolveu no lugar da peca enviada. Nao foi "embelezar" a
+   * joia — foi TROCAR a joia por outra, de outra peca do catalogo antigo.
+   *
+   * A causa nao esta no texto do prompt, e sim no endpoint. `/v1/images/edits`
+   * recebe varias `image[]` e o significado dele e "edite estas imagens
+   * JUNTAS". Nao existe vaga de "esta e apenas referencia de estilo". O prompt
+   * dizia uma coisa e a FORMA DA CHAMADA dizia outra — e a forma ganha.
+   *
+   * Entao o padrao visual entra so por TEXTO, em `padrao`. E suficiente: o
+   * padrao da casa e "fundo branco liso, peca de frente, centralizada", que
+   * cabe numa linha. Mandar a pagina junto acrescentava o risco de trocar a
+   * joia sem acrescentar precisao nenhuma.
+   *
+   * NAO ACRESCENTE UM CAMPO DE IMAGEM AQUI enquanto o provedor nao tiver uma
+   * entrada declaradamente de referencia, que o modelo nao possa editar.
+   * =========================================================================
    */
-  referencias: ImagemDeEntrada[];
+  original: ImagemDeEntrada;
 
   /**
    * O padrao escrito do catalogo, montado a partir das referencias de texto

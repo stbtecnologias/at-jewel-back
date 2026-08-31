@@ -14,10 +14,7 @@ import type {
   ICatalogoRepository,
   ReferenciaItem,
 } from '../../domain/ports/repositories/catalogo-repository.port';
-import type {
-  ImagemDeEntrada,
-  ITratamentoImagem,
-} from '../../domain/ports/tratamento-imagem.port';
+import type { ITratamentoImagem } from '../../domain/ports/tratamento-imagem.port';
 
 /**
  * Teto de geracoes por foto.
@@ -109,7 +106,9 @@ export class TratarFotoUseCase {
 
     const tratada = await this.ia.tratar({
       original,
-      referencias: await this.imagensDeReferencia(catalogo.referencias),
+      // As referencias de IMAGEM nao vao junto — nem chegam a ser lidas do
+      // armazenamento. Ver `PedidoDeTratamento.original`: manda-las fez o
+      // modelo devolver uma joia recortada de dentro de uma delas.
       padrao: this.padraoEscrito(catalogo.referencias),
       pedidoDaPessoa,
       formato: catalogo.formato,
@@ -148,25 +147,6 @@ export class TratarFotoUseCase {
     });
 
     return { foto: atualizada, recado: null };
-  }
-
-  /**
-   * As referencias de IMAGEM, carregadas do armazenamento.
-   *
-   * Em serie e nao em paralelo: sao poucas (tres, no teto do cliente), e
-   * disparar tudo junto contra o S3 so aumenta o pico sem ganhar tempo
-   * perceptivel.
-   */
-  private async imagensDeReferencia(
-    referencias: ReferenciaItem[],
-  ): Promise<ImagemDeEntrada[]> {
-    const imagens: ImagemDeEntrada[] = [];
-    for (const r of referencias) {
-      if (r.tipo !== 'IMAGEM' || !r.arquivoId) continue;
-      const lida = await this.armazenamento.ler(r.arquivoId);
-      if (lida) imagens.push(lida);
-    }
-    return imagens;
   }
 
   /**
