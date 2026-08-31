@@ -45,7 +45,8 @@ export class CatalogoRepository implements ICatalogoRepository {
     // Releitura obrigatoria: `numero` vem do DEFAULT da coluna (sequence), e
     // por isso nao volta no objeto do save.
     const detalhe = await this.buscarPorId(criado.id);
-    if (!detalhe) throw new NotFoundException('Catálogo não encontrado após criação');
+    if (!detalhe)
+      throw new NotFoundException('Catálogo não encontrado após criação');
     return detalhe;
   }
 
@@ -61,7 +62,7 @@ export class CatalogoRepository implements ICatalogoRepository {
       qb.andWhere(
         new Brackets((w) => {
           w.where('LOWER(c.nome) LIKE :termo', { termo })
-            .orWhere('LOWER(COALESCE(c.tema, \'\')) LIKE :termo', { termo })
+            .orWhere("LOWER(COALESCE(c.tema, '')) LIKE :termo", { termo })
             .orWhere('c.numero LIKE :termo', { termo });
         }),
       );
@@ -108,7 +109,10 @@ export class CatalogoRepository implements ICatalogoRepository {
     return linha ? this.montarDetalhe(linha) : null;
   }
 
-  async atualizar(id: string, dados: AtualizarCatalogoData): Promise<CatalogoDetalhe> {
+  async atualizar(
+    id: string,
+    dados: AtualizarCatalogoData,
+  ): Promise<CatalogoDetalhe> {
     const linha = await this.repo.findOne({ where: { id } });
     if (!linha) throw new NotFoundException('Catálogo não encontrado');
 
@@ -127,7 +131,8 @@ export class CatalogoRepository implements ICatalogoRepository {
 
   async remover(id: string): Promise<void> {
     const resultado = await this.repo.delete({ id });
-    if (!resultado.affected) throw new NotFoundException('Catálogo não encontrado');
+    if (!resultado.affected)
+      throw new NotFoundException('Catálogo não encontrado');
   }
 
   async listarAbertos(): Promise<CatalogoAberto[]> {
@@ -156,7 +161,8 @@ export class CatalogoRepository implements ICatalogoRepository {
         posicao: Number(linha?.max ?? 0) + 1,
         codigoErp: dados.codigoErp,
         descricao: dados.descricao,
-        precoAVista: dados.precoAVista === null ? null : String(dados.precoAVista),
+        precoAVista:
+          dados.precoAVista === null ? null : String(dados.precoAVista),
         parcelas: dados.parcelas,
         origem: dados.origem,
         remetente: dados.remetente,
@@ -182,11 +188,11 @@ export class CatalogoRepository implements ICatalogoRepository {
   async criarReferencia(dados: CriarReferenciaData): Promise<ReferenciaItem> {
     // A ordem e o fim da fila. MAX+1 basta: referencia entra por acao humana
     // numa tela, nao por concorrencia de webhook.
-    const { max } = await this.repoReferencias
+    const { max } = (await this.repoReferencias
       .createQueryBuilder('r')
       .select('COALESCE(MAX(r.ordem), -1)', 'max')
       .where('r.catalogo_id = :id', { id: dados.catalogoId })
-      .getRawOne<{ max: string }>() ?? { max: '-1' };
+      .getRawOne<{ max: string }>()) ?? { max: '-1' };
 
     const criada = await this.repoReferencias.save(
       this.repoReferencias.create({
@@ -202,7 +208,10 @@ export class CatalogoRepository implements ICatalogoRepository {
     return this.paraReferencia(criada);
   }
 
-  async removerReferencia(catalogoId: string, referenciaId: string): Promise<string | null> {
+  async removerReferencia(
+    catalogoId: string,
+    referenciaId: string,
+  ): Promise<string | null> {
     const linha = await this.repoReferencias.findOne({
       where: { id: referenciaId, catalogoId },
     });
@@ -216,10 +225,18 @@ export class CatalogoRepository implements ICatalogoRepository {
   // Mapeamento
   // -------------------------------------------------------------------------
 
-  private async montarDetalhe(linha: CatalogoOrmEntity): Promise<CatalogoDetalhe> {
+  private async montarDetalhe(
+    linha: CatalogoOrmEntity,
+  ): Promise<CatalogoDetalhe> {
     const [referencias, fotos] = await Promise.all([
-      this.repoReferencias.find({ where: { catalogoId: linha.id }, order: { ordem: 'ASC' } }),
-      this.repoFotos.find({ where: { catalogoId: linha.id }, order: { posicao: 'ASC' } }),
+      this.repoReferencias.find({
+        where: { catalogoId: linha.id },
+        order: { ordem: 'ASC' },
+      }),
+      this.repoFotos.find({
+        where: { catalogoId: linha.id },
+        order: { posicao: 'ASC' },
+      }),
     ]);
 
     return {
@@ -265,7 +282,8 @@ export class CatalogoRepository implements ICatalogoRepository {
       descricao: linha.descricao,
       // NUMERIC volta como string do driver — convertido aqui, e nao na
       // entidade, como em produtos.valor_venda.
-      precoAVista: linha.precoAVista === null ? null : Number(linha.precoAVista),
+      precoAVista:
+        linha.precoAVista === null ? null : Number(linha.precoAVista),
       parcelas: linha.parcelas,
       origem: linha.origem,
       remetente: linha.remetente,

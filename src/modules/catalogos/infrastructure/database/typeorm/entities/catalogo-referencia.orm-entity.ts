@@ -19,7 +19,9 @@ export class CatalogoReferenciaOrmEntity {
   @Column({ name: 'catalogo_id', type: 'uuid' })
   catalogoId: string;
 
-  @ManyToOne(() => CatalogoOrmEntity, (c) => c.referencias, { onDelete: 'CASCADE' })
+  @ManyToOne(() => CatalogoOrmEntity, (c) => c.referencias, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'catalogo_id' })
   catalogo: CatalogoOrmEntity;
 

@@ -37,7 +37,13 @@ export class CatalogoFotoOrmEntity {
 
   // NUMERIC volta do pg como STRING. A conversao acontece no repositorio, no
   // mapeamento para o read-model — mesmo criterio de produtos.valor_venda.
-  @Column({ name: 'preco_a_vista', type: 'numeric', precision: 12, scale: 2, nullable: true })
+  @Column({
+    name: 'preco_a_vista',
+    type: 'numeric',
+    precision: 12,
+    scale: 2,
+    nullable: true,
+  })
   precoAVista: string | null;
 
   @Column({ type: 'int', nullable: true })

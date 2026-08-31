@@ -146,5 +146,8 @@ export interface ICatalogoRepository {
 
   criarReferencia(dados: CriarReferenciaData): Promise<ReferenciaItem>;
   /** Devolve a chave do arquivo removido, para o use case apagar o binario. */
-  removerReferencia(catalogoId: string, referenciaId: string): Promise<string | null>;
+  removerReferencia(
+    catalogoId: string,
+    referenciaId: string,
+  ): Promise<string | null>;
 }
