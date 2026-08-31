@@ -117,7 +117,7 @@ describe('S3Armazenamento', () => {
 
   describe('remover', () => {
     it('engole a falha — remover e idempotente', async () => {
-      // @ts-expect-error
+      // @ts-expect-error — o espiao passa a falhar.
       armazenamento.cliente = {
         send: jest.fn(() => Promise.reject(new Error('NoSuchKey'))),
       };
@@ -129,7 +129,7 @@ describe('S3Armazenamento', () => {
   });
 
   describe('caminhoPublico', () => {
-    it('devolve caminho RELATIVO, e nao a URL do bucket', async () => {
+    it('devolve caminho RELATIVO, e nao a URL do bucket', () => {
       // O bucket e privado; quem serve a imagem e o back. Devolver URL do S3
       // aqui exporia o bucket e amarraria o front ao endereco dele.
       expect(armazenamento.caminhoPublico('catalogo/0331/fotos/x.jpg')).toBe(
