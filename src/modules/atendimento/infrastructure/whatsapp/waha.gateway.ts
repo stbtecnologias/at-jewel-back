@@ -19,7 +19,9 @@ export class WahaGateway implements IWhatsappGateway {
     const session = this.config.get<string>('WAHA_SESSION') ?? 'default';
 
     if (!baseUrl || !apiKey) {
-      this.logger.warn('WAHA_BASE_URL/WAHA_API_KEY ausentes — chatId nao resolvido.');
+      this.logger.warn(
+        'WAHA_BASE_URL/WAHA_API_KEY ausentes — chatId nao resolvido.',
+      );
       return null;
     }
 
@@ -52,7 +54,9 @@ export class WahaGateway implements IWhatsappGateway {
     const session = this.config.get<string>('WAHA_SESSION') ?? 'default';
 
     if (!baseUrl || !apiKey) {
-      this.logger.warn('WAHA_BASE_URL/WAHA_API_KEY ausentes — LID nao resolvido.');
+      this.logger.warn(
+        'WAHA_BASE_URL/WAHA_API_KEY ausentes — LID nao resolvido.',
+      );
       return de;
     }
 
@@ -63,7 +67,9 @@ export class WahaGateway implements IWhatsappGateway {
     try {
       const resp = await fetch(url, { headers: { 'X-Api-Key': apiKey } });
       if (!resp.ok) {
-        this.logger.warn(`WAHA lids retornou ${resp.status} — LID nao resolvido.`);
+        this.logger.warn(
+          `WAHA lids retornou ${resp.status} — LID nao resolvido.`,
+        );
         return de;
       }
       const dados = (await resp.json()) as { pn?: string };
@@ -84,7 +90,9 @@ export class WahaGateway implements IWhatsappGateway {
     const session = this.config.get<string>('WAHA_SESSION') ?? 'default';
 
     if (!baseUrl || !apiKey) {
-      this.logger.warn('WAHA_BASE_URL/WAHA_API_KEY ausentes — resposta nao enviada.');
+      this.logger.warn(
+        'WAHA_BASE_URL/WAHA_API_KEY ausentes — resposta nao enviada.',
+      );
       return;
     }
 
@@ -101,8 +109,54 @@ export class WahaGateway implements IWhatsappGateway {
     if (!resp.ok) {
       const corpo = await resp.text().catch(() => '');
       // Nao logamos o texto da mensagem (pode conter PII); so o status/erro.
-      this.logger.error(`WAHA sendText falhou: ${resp.status} ${corpo.slice(0, 200)}`);
+      this.logger.error(
+        `WAHA sendText falhou: ${resp.status} ${corpo.slice(0, 200)}`,
+      );
       throw new Error(`WAHA sendText retornou ${resp.status}`);
+    }
+  }
+
+  async enviarImagem(
+    chatId: string,
+    conteudo: Buffer,
+    mime: string,
+    legenda: string,
+  ): Promise<void> {
+    const baseUrl = this.config.get<string>('WAHA_BASE_URL');
+    const apiKey = this.config.get<string>('WAHA_API_KEY');
+    const session = this.config.get<string>('WAHA_SESSION') ?? 'default';
+
+    if (!baseUrl || !apiKey) {
+      this.logger.warn(
+        'WAHA_BASE_URL/WAHA_API_KEY ausentes — imagem nao enviada.',
+      );
+      return;
+    }
+
+    const url = `${baseUrl.replace(/\/$/, '')}/api/sendImage`;
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Api-Key': apiKey },
+      body: JSON.stringify({
+        session,
+        chatId,
+        file: {
+          mimetype: mime,
+          // BASE64, e nao URL: a imagem esta num bucket privado, e o WhatsApp
+          // nao teria como baixa-la de la.
+          data: conteudo.toString('base64'),
+          filename: 'peca.png',
+        },
+        caption: legenda,
+      }),
+    });
+
+    if (!resp.ok) {
+      const corpo = await resp.text().catch(() => '');
+      this.logger.error(
+        `WAHA sendImage falhou: ${resp.status} ${corpo.slice(0, 200)}`,
+      );
+      throw new Error(`WAHA sendImage retornou ${resp.status}`);
     }
   }
 
@@ -113,14 +167,18 @@ export class WahaGateway implements IWhatsappGateway {
     const apiKey = this.config.get<string>('WAHA_API_KEY');
 
     if (!baseUrl || !apiKey) {
-      this.logger.warn('WAHA_BASE_URL/WAHA_API_KEY ausentes — midia nao baixada.');
+      this.logger.warn(
+        'WAHA_BASE_URL/WAHA_API_KEY ausentes — midia nao baixada.',
+      );
       return null;
     }
 
     const alvo = montarUrlDeArquivo(baseUrl, url);
     if (!alvo) {
       // Ver `montarUrlDeArquivo`: caminho fora de /api/files nao e nosso.
-      this.logger.warn('URL de midia com caminho inesperado — download recusado.');
+      this.logger.warn(
+        'URL de midia com caminho inesperado — download recusado.',
+      );
       return null;
     }
 

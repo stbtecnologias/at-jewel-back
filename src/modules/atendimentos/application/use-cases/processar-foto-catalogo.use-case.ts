@@ -1,10 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { WHATSAPP_GATEWAY } from '../../../atendimento/domain/ports/injection-tokens';
 import type { IWhatsappGateway } from '../../../atendimento/domain/ports/whatsapp-gateway.port';
+import { TratarFotoUseCase } from '../../../catalogos/application/use-cases/tratar-foto.use-case';
 import {
   LIMITE_BYTES,
   MIMES_IMAGEM,
-  PASTA_FOTOS,
+  PASTA_ORIGINAIS,
   PASTA_PENDENTES,
   pastaDoCatalogo,
   type IArmazenamento,
@@ -19,7 +20,10 @@ import type {
 } from '../../../catalogos/domain/ports/repositories/catalogo-repository.port';
 import { PRODUTO_REPOSITORY } from '../../../erp/domain/ports/injection-tokens';
 import type { IProdutoRepository } from '../../../erp/domain/ports/repositories/produto-repository.port';
-import { SessaoCatalogoService, type FotoPendente } from '../sessao-catalogo.service';
+import {
+  SessaoCatalogoService,
+  type FotoPendente,
+} from '../sessao-catalogo.service';
 
 /**
  * Parcelamento padrao.
@@ -46,6 +50,27 @@ const RE_PARCELAS = /\b(\d{1,2})\s*x\b/i;
 
 /** `0042`, `#42`, `42` — o numero do catalogo. */
 const RE_NUMERO = /#?\b(\d{1,6})\b/;
+
+/**
+ * Palavras que sao COMANDO, nao estilo.
+ *
+ * A fronteira de palavra nos dois lados e essencial: sem ela, "cat" casaria
+ * dentro de "catalogo" (deixando "alogo") e "foto" dentro de "fotografia".
+ */
+const PALAVRAS_DE_COMANDO =
+  /\b(catalogo|catálogo|cat|ref|referencia|referência|codigo|código|peca|peça|foto)\b/gi;
+
+/**
+ * O que sobra da legenda vira pedido de estilo para a IA — "fundo rosa",
+ * "mais claro". Menos de tres caracteres e ruido de pontuacao, nao instrucao.
+ */
+function limparPedido(resto: string): string | null {
+  const limpo = resto
+    .replace(PALAVRAS_DE_COMANDO, ' ')
+    .replace(/[#\s]+/g, ' ')
+    .trim();
+  return limpo.length >= 3 ? limpo : null;
+}
 
 /**
  * A imagem como a APLICACAO a conhece. Espelha o que o webhook extrai, mas
@@ -105,7 +130,49 @@ export class ProcessarFotoCatalogoUseCase {
     @Inject(WHATSAPP_GATEWAY)
     private readonly whatsapp: IWhatsappGateway,
     private readonly sessao: SessaoCatalogoService,
+    private readonly tratar: TratarFotoUseCase,
   ) {}
+
+  /**
+   * Trata a foto e manda o resultado para quem a enviou.
+   *
+   * RODA FORA DA RESPOSTA, e por isso nao tem `await` de quem a chama: gerar
+   * imagem leva 10 a 30 segundos, e segurar o webhook por esse tempo faria o
+   * WAHA reenviar o evento — a mesma foto entraria duas vezes.
+   *
+   * Nada aqui pode estourar para fora: a foto ja esta gravada, e a pessoa ja
+   * recebeu a confirmacao. Falhar custa a versao tratada, nunca a imagem.
+   */
+  private async tratarEAvisar(
+    fotoId: string,
+    pedidoDeEstilo: string | null,
+    chat: string,
+  ): Promise<void> {
+    try {
+      const r = await this.tratar.execute(fotoId, pedidoDeEstilo);
+      if (!r) return;
+
+      if (r.recado) {
+        await this.whatsapp.enviarTexto(chat, r.recado);
+        return;
+      }
+      if (r.foto.status !== 'EM_APROVACAO' || !r.foto.arquivoId) return;
+
+      const tratada = await this.armazenamento.ler(r.foto.arquivoId);
+      if (!tratada) return;
+
+      await this.whatsapp.enviarImagem(
+        chat,
+        tratada.conteudo,
+        tratada.mime,
+        'Ficou assim. Se aprovar, me responde "aprovo" — se quiser mudar algo, é só dizer o quê.',
+      );
+    } catch (err) {
+      this.logger.error(
+        `Falha ao tratar/avisar a foto ${fotoId}: ${String(err)}`,
+      );
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Chegou uma foto
@@ -127,7 +194,8 @@ export class ProcessarFotoCatalogoUseCase {
       // O WAHA reconheceu a imagem mas nao entregou o arquivo. Avisar e melhor
       // que silencio: quem mandou acha que deu certo.
       return {
-        resposta: 'Chegou sua foto mas não consegui baixar o arquivo. Pode mandar de novo?',
+        resposta:
+          'Chegou sua foto mas não consegui baixar o arquivo. Pode mandar de novo?',
         motivo: 'imagem_sem_arquivo',
       };
     }
@@ -135,12 +203,15 @@ export class ProcessarFotoCatalogoUseCase {
     const arquivo = await this.whatsapp.baixarMidia(msg.imagem.url);
     if (!arquivo) {
       return {
-        resposta: 'Chegou sua foto mas não consegui baixar o arquivo. Pode mandar de novo?',
+        resposta:
+          'Chegou sua foto mas não consegui baixar o arquivo. Pode mandar de novo?',
         motivo: 'imagem_download_falhou',
       };
     }
 
-    const mime = arquivo.mimetype.startsWith('image/') ? arquivo.mimetype : msg.imagem.mimetype;
+    const mime = arquivo.mimetype.startsWith('image/')
+      ? arquivo.mimetype
+      : msg.imagem.mimetype;
     if (!MIMES_IMAGEM.includes(mime as (typeof MIMES_IMAGEM)[number])) {
       return {
         resposta: `Não consigo usar esse formato (${mime}). Manda como foto normal (JPEG ou PNG).`,
@@ -169,6 +240,7 @@ export class ProcessarFotoCatalogoUseCase {
         mime,
         codigoErp: analise.codigo,
         parcelas: analise.parcelas,
+        pedidoDeEstilo: analise.pedidoDeEstilo,
       });
       if (!pendurou) {
         await this.armazenamento.remover(chave);
@@ -178,17 +250,26 @@ export class ProcessarFotoCatalogoUseCase {
           motivo: 'fila_cheia',
         };
       }
-      return { resposta: this.perguntarCatalogo(abertos), motivo: 'aguardando_catalogo' };
+      return {
+        resposta: this.perguntarCatalogo(abertos),
+        motivo: 'aguardando_catalogo',
+      };
     }
 
     this.sessao.lembrarCatalogo(msg.de, catalogo);
-    const guardada = await this.guardarFoto(catalogo, msg.nomeRemetente, {
-      arquivoId: chave,
-      mime,
-      codigoErp: analise.codigo,
-      parcelas: analise.parcelas,
-      em: Date.now(),
-    });
+    const guardada = await this.guardarFoto(
+      catalogo,
+      msg.nomeRemetente,
+      {
+        arquivoId: chave,
+        mime,
+        codigoErp: analise.codigo,
+        parcelas: analise.parcelas,
+        pedidoDeEstilo: analise.pedidoDeEstilo,
+        em: Date.now(),
+      },
+      msg.de,
+    );
 
     return { resposta: guardada, motivo: 'foto_guardada' };
   }
@@ -196,14 +277,17 @@ export class ProcessarFotoCatalogoUseCase {
   // ---------------------------------------------------------------------------
   // Chegou um texto enquanto havia foto esperando
   // ---------------------------------------------------------------------------
-  async resposta(de: string, nomeRemetente: string, texto: string): Promise<RespostaFoto> {
+  async resposta(
+    de: string,
+    nomeRemetente: string,
+    texto: string,
+  ): Promise<RespostaFoto> {
     const abertos = await this.catalogos.listarAbertos();
     const analise = this.lerLegenda(texto, abertos);
 
     if (!analise.catalogo) {
       return {
-        resposta:
-          'Não achei esse catálogo. ' + this.perguntarCatalogo(abertos),
+        resposta: 'Não achei esse catálogo. ' + this.perguntarCatalogo(abertos),
         motivo: 'catalogo_nao_reconhecido',
       };
     }
@@ -227,7 +311,9 @@ export class ProcessarFotoCatalogoUseCase {
         codigoErp: pendente.codigoErp ?? analise.codigo,
         parcelas: pendente.parcelas ?? analise.parcelas,
       };
-      linhas.push(await this.guardarFoto(catalogo, nomeRemetente, comCodigo));
+      linhas.push(
+        await this.guardarFoto(catalogo, nomeRemetente, comCodigo, de),
+      );
     }
 
     return {
@@ -255,6 +341,8 @@ export class ProcessarFotoCatalogoUseCase {
     catalogo: CatalogoAberto,
     remetente: string,
     foto: FotoPendente,
+    // Para onde mandar a versao tratada quando ela ficar pronta.
+    chat: string,
   ): Promise<string> {
     let descricao: string | null = null;
     let preco: number | null = null;
@@ -262,14 +350,18 @@ export class ProcessarFotoCatalogoUseCase {
     if (foto.codigoErp) {
       const produto = await this.produtos.findByCodigoErp(foto.codigoErp);
       if (produto) {
-        descricao = produto.descricaoEtiqueta ?? `${produto.familia} ${produto.categoria}`.trim();
+        descricao =
+          produto.descricaoEtiqueta ??
+          `${produto.familia} ${produto.categoria}`.trim();
         // `valorVenda` do ERP e o preco A VISTA — confirmado com o Lucas em
         // 28/08. O parcelado e derivado dele, nunca guardado.
         preco = produto.valorVenda;
       } else {
         // Nao e erro: a peca pode ainda nao ter sido sincronizada. A foto entra
         // com o codigo escrito e sem descricao — por isso a tabela nao tem FK.
-        this.logger.warn(`Peca ${foto.codigoErp} nao encontrada no ERP — foto sem descritivo.`);
+        this.logger.warn(
+          `Peca ${foto.codigoErp} nao encontrada no ERP — foto sem descritivo.`,
+        );
       }
     }
 
@@ -282,10 +374,10 @@ export class ProcessarFotoCatalogoUseCase {
     // a area de espera. Imagem no lugar errado e melhor que linha sem imagem.
     const arquivoId = await this.armazenamento.mover(
       foto.arquivoId,
-      pastaDoCatalogo(catalogo.numero, PASTA_FOTOS),
+      pastaDoCatalogo(catalogo.numero, PASTA_ORIGINAIS),
     );
 
-    await this.catalogos.criarFoto({
+    const criada = await this.catalogos.criarFoto({
       catalogoId: catalogo.id,
       codigoErp: foto.codigoErp,
       descricao,
@@ -294,12 +386,18 @@ export class ProcessarFotoCatalogoUseCase {
       origem: 'WHATSAPP',
       remetente,
       arquivoOriginalId: arquivoId,
-      // Sem IA ainda: a foto exibida E a original. Quando a geracao existir,
-      // `arquivo_id` passa a apontar para a versao tratada e a original fica.
+      // Aponta para o ORIGINAL ate a IA responder. Se o tratamento falhar, a
+      // tela mostra o packshot cru — que ja serve para conferir enquadramento
+      // e se a peca certa foi fotografada.
       arquivoId,
       mime: foto.mime,
       status: 'RECEBIDA',
     });
+
+    // O TRATAMENTO NAO SEGURA A RESPOSTA. Gerar imagem leva 10 a 30 segundos, e
+    // a pessoa fica olhando o WhatsApp — ela recebe "guardei" agora e a versao
+    // tratada quando ficar pronta, podendo mandar a proxima peca no intervalo.
+    void this.tratarEAvisar(criada.id, foto.pedidoDeEstilo ?? null, chat);
 
     const alvo = `#${catalogo.numero} ${catalogo.nome}`;
     if (!foto.codigoErp) {
@@ -321,7 +419,12 @@ export class ProcessarFotoCatalogoUseCase {
   private lerLegenda(
     texto: string,
     abertos: CatalogoAberto[],
-  ): { catalogo: CatalogoAberto | null; codigo: string | null; parcelas: number | null } {
+  ): {
+    catalogo: CatalogoAberto | null;
+    codigo: string | null;
+    parcelas: number | null;
+    pedidoDeEstilo: string | null;
+  } {
     const bruto = (texto ?? '').trim();
 
     const mCodigo = bruto.match(RE_CODIGO);
@@ -347,13 +450,23 @@ export class ProcessarFotoCatalogoUseCase {
     if (!catalogo) {
       const termo = normalizar(resto);
       if (termo.length >= 3) {
-        const candidatos = abertos.filter((c) => normalizar(c.nome).includes(termo));
+        const candidatos = abertos.filter((c) =>
+          normalizar(c.nome).includes(termo),
+        );
         // Ambiguo nao decide sozinho — cai na pergunta.
         if (candidatos.length === 1) catalogo = candidatos[0];
       }
     }
 
-    return { catalogo, codigo, parcelas: parcelas && parcelas > 0 ? parcelas : null };
+    return {
+      catalogo,
+      codigo,
+      parcelas: parcelas && parcelas > 0 ? parcelas : null,
+      // O QUE SOBROU E PEDIDO DE ESTILO. Tirados catalogo, codigo e parcelas, o
+      // resto so pode ser instrucao para a imagem: "fundo rosa", "mais claro".
+      // As palavras de comando saem — ninguem quer "catalogo" no prompt.
+      pedidoDeEstilo: limparPedido(resto),
+    };
   }
 
   private perguntarCatalogo(abertos: CatalogoAberto[]): string {
@@ -363,7 +476,10 @@ export class ProcessarFotoCatalogoUseCase {
 
   private emReais(valor: number | null): string {
     if (valor === null) return '—';
-    return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    return valor.toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    });
   }
 
   /** Apaga do disco o que expirou sem ninguem dizer a que catalogo pertencia. */

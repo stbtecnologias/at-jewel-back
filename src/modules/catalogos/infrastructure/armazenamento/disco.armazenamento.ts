@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, rename, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname, extname, join, resolve, sep } from 'node:path';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -7,6 +7,14 @@ import type {
   ArquivoParaGuardar,
   IArmazenamento,
 } from '../../domain/ports/armazenamento.port';
+
+/** O disco nao guarda o MIME; deriva-se da extensao, que nos mesmos geramos. */
+function mimePorExtensao(chave: string): string {
+  const ext = extname(chave).toLowerCase();
+  if (ext === '.png') return 'image/png';
+  if (ext === '.webp') return 'image/webp';
+  return 'image/jpeg';
+}
 
 const EXTENSAO_POR_MIME: Record<string, string> = {
   'image/jpeg': '.jpg',
@@ -58,6 +66,15 @@ export class DiscoArmazenamento implements IArmazenamento {
     await writeFile(destino, arquivo.conteudo);
 
     return chave;
+  }
+
+  async ler(chave: string): Promise<{ conteudo: Buffer; mime: string } | null> {
+    try {
+      const conteudo = await readFile(this.caminhoAbsoluto(chave));
+      return { conteudo, mime: mimePorExtensao(chave) };
+    } catch {
+      return null;
+    }
   }
 
   async remover(chave: string): Promise<void> {

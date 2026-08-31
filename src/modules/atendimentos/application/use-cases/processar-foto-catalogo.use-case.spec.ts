@@ -26,7 +26,11 @@ describe('ProcessarFotoCatalogoUseCase — leitura da legenda', () => {
         lerLegenda: (
           t: string,
           a: CatalogoAberto[],
-        ) => { catalogo: CatalogoAberto | null; codigo: string | null; parcelas: number | null };
+        ) => {
+          catalogo: CatalogoAberto | null;
+          codigo: string | null;
+          parcelas: number | null;
+        };
       }
     ).lerLegenda(texto, ABERTOS);
   }
@@ -38,6 +42,9 @@ describe('ProcessarFotoCatalogoUseCase — leitura da legenda', () => {
       {} as never,
       {} as never,
       new SessaoCatalogoService(),
+      // O tratamento pela IA nao participa destes testes: eles exercitam a
+      // LEITURA DA LEGENDA, que acontece antes de qualquer geracao.
+      {} as never,
     );
   });
 

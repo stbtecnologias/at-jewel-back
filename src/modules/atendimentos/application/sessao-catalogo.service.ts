@@ -39,6 +39,11 @@ export interface FotoPendente {
   /** Codigo da peca, quando veio na legenda. */
   codigoErp: string | null;
   parcelas: number | null;
+  /**
+   * O que sobrou da legenda depois de tirar catalogo, codigo e parcelas:
+   * "fundo rosa", "mais claro". Vai para a IA como pedido pontual.
+   */
+  pedidoDeEstilo?: string | null;
   em: number;
 }
 
@@ -56,13 +61,22 @@ export class SessaoCatalogoService {
   private readonly sessoes = new Map<string, Sessao>();
 
   /** Catalogo lembrado da ultima vez, se ainda dentro da janela. */
-  catalogoAtual(chave: string): { id: string; numero: string; nome: string } | null {
+  catalogoAtual(
+    chave: string,
+  ): { id: string; numero: string; nome: string } | null {
     const s = this.viva(chave);
     if (!s?.catalogoId) return null;
-    return { id: s.catalogoId, numero: s.catalogoNumero!, nome: s.catalogoNome! };
+    return {
+      id: s.catalogoId,
+      numero: s.catalogoNumero!,
+      nome: s.catalogoNome!,
+    };
   }
 
-  lembrarCatalogo(chave: string, catalogo: { id: string; numero: string; nome: string }): void {
+  lembrarCatalogo(
+    chave: string,
+    catalogo: { id: string; numero: string; nome: string },
+  ): void {
     const s = this.viva(chave) ?? this.nova();
     s.catalogoId = catalogo.id;
     s.catalogoNumero = catalogo.numero;
@@ -114,7 +128,9 @@ export class SessaoCatalogoService {
       this.sessoes.delete(chave);
     }
     if (orfaos.length) {
-      this.logger.warn(`${orfaos.length} foto(s) expiraram sem catalogo informado.`);
+      this.logger.warn(
+        `${orfaos.length} foto(s) expiraram sem catalogo informado.`,
+      );
     }
     return orfaos;
   }

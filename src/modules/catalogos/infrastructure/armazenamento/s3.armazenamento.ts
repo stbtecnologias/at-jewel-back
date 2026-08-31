@@ -132,6 +132,17 @@ export class S3Armazenamento implements IArmazenamento {
     }
   }
 
+  async ler(chave: string): Promise<{ conteudo: Buffer; mime: string } | null> {
+    try {
+      const lido = await this.lerStream(chave);
+      const partes: Buffer[] = [];
+      for await (const c of lido.corpo) partes.push(c as Buffer);
+      return { conteudo: Buffer.concat(partes), mime: lido.mime };
+    } catch {
+      return null;
+    }
+  }
+
   caminhoPublico(chave: string): string {
     return `/midia/${chave}`;
   }
@@ -142,7 +153,7 @@ export class S3Armazenamento implements IArmazenamento {
    * Fora da porta `IArmazenamento` de proposito: o adaptador de disco nao
    * precisa disso — la o `serveStatic` do Express resolve.
    */
-  async ler(chave: string): Promise<ArquivoLido> {
+  async lerStream(chave: string): Promise<ArquivoLido> {
     try {
       const saida = await this.cliente.send(
         new GetObjectCommand({ Bucket: this.bucket, Key: chave }),

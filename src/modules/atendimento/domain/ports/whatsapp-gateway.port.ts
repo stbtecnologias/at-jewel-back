@@ -10,6 +10,20 @@ export interface IWhatsappGateway {
   enviarTexto(chatId: string, texto: string): Promise<void>;
 
   /**
+   * Envia uma imagem com legenda.
+   *
+   * O arquivo vai em BASE64 no corpo, e nao por URL: a imagem tratada mora num
+   * bucket privado, e mandar a URL faria o WhatsApp tentar baixar de um lugar
+   * a que ele nao tem acesso.
+   */
+  enviarImagem(
+    chatId: string,
+    conteudo: Buffer,
+    mime: string,
+    legenda: string,
+  ): Promise<void>;
+
+  /**
    * Descobre o `chatId` real de um telefone, perguntando ao provedor.
    *
    * NAO MONTE O chatId CONCATENANDO. O identificador de uma conta de WhatsApp
@@ -69,5 +83,7 @@ export interface IWhatsappGateway {
    *
    * @returns bytes e mimetype, ou `null` se nao deu para baixar.
    */
-  baixarMidia(url: string): Promise<{ conteudo: Buffer; mimetype: string } | null>;
+  baixarMidia(
+    url: string,
+  ): Promise<{ conteudo: Buffer; mimetype: string } | null>;
 }

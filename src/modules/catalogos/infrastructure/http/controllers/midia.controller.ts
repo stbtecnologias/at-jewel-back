@@ -43,7 +43,7 @@ export class MidiaController {
     }
 
     const chave = Array.isArray(partes) ? partes.join('/') : String(partes);
-    const arquivo = await this.armazenamento.ler(chave);
+    const arquivo = await this.armazenamento.lerStream(chave);
 
     res.setHeader('Content-Type', arquivo.mime);
     if (arquivo.tamanho)
