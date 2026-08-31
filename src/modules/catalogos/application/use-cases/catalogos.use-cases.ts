@@ -7,6 +7,7 @@ import {
 import type {
   FormatoCatalogo,
   StatusCatalogo,
+  StatusFoto,
   TipoReferencia,
 } from '../../domain/entities/enums';
 import {
@@ -23,6 +24,7 @@ import {
 import type {
   CatalogoDetalhe,
   FiltroCatalogo,
+  FotoItem,
   ICatalogoRepository,
   ListaCatalogos,
   ReferenciaItem,
@@ -294,5 +296,83 @@ export class RemoverReferenciaUseCase {
       referenciaId,
     );
     if (chave) await this.armazenamento.remover(chave);
+  }
+}
+
+/**
+ * A CURADORIA DA FOTO — e por que ela nao e "aprovar de novo".
+ *
+ * ==========================================================================
+ * SAO DUAS DECISOES, DE DUAS PESSOAS, EM DOIS LUGARES.
+ *
+ *   a foto ficou boa?       -> quem fotografou, na conversa do WhatsApp
+ *   esta peca entra AGORA?  -> quem monta o catalogo, nesta tela
+ *
+ * A primeira e sobre a IMAGEM: enquadramento, luz, se a peca certa foi
+ * fotografada. Quem julga e quem estava com a peca na mao, e por isso a
+ * aprovacao mora na conversa — la ela esta olhando a imagem que acabou de
+ * chegar. ESTA TELA NAO APROVA, deliberadamente.
+ *
+ * A segunda e COMERCIAL: a peca pode estar bem fotografada e mesmo assim nao
+ * entrar nesta campanha. Tirar do catalogo nao diz nada sobre a foto.
+ * ==========================================================================
+ *
+ * E TIRAR NAO APAGA. A linha continua na tabela e o arquivo continua no
+ * armazenamento — REPROVADA e exatamente o que a migracao 42 descreve, "fica
+ * no historico, fora do catalogo". Decidindo depois que a peca entra,
+ * `devolver` a traz de volta sem ninguem fotografar de novo.
+ */
+@Injectable()
+export class CurarFotoUseCase {
+  constructor(
+    @Inject(CATALOGO_REPOSITORY)
+    private readonly repositorio: ICatalogoRepository,
+  ) {}
+
+  /** Tira a peca desta edicao do catalogo. Reversivel por `devolver`. */
+  async tirar(catalogoId: string, fotoId: string): Promise<FotoItem> {
+    const foto = await this.exigirFoto(catalogoId, fotoId);
+    if (foto.status === 'REPROVADA') return foto;
+    return this.repositorio.atualizarFoto(fotoId, { status: 'REPROVADA' });
+  }
+
+  /**
+   * Traz de volta ao catalogo.
+   *
+   * O ESTADO ANTERIOR E DEDUZIDO, e nao guardado. Uma coluna `status_anterior`
+   * seria um segundo lugar para a verdade morar, e desincronizaria na primeira
+   * vez que o status mudasse por outro caminho. Os carimbos que ja existem
+   * contam a historia inteira:
+   *
+   *   tem `aprovadoEm`             -> alguem ja disse que a foto ficou boa
+   *   a tratada difere da original -> a IA rodou, faltava o sim
+   *   nenhum dos dois              -> chegou e parou ali
+   */
+  async devolver(catalogoId: string, fotoId: string): Promise<FotoItem> {
+    const foto = await this.exigirFoto(catalogoId, fotoId);
+    if (foto.status !== 'REPROVADA') return foto;
+
+    const status: StatusFoto = foto.aprovadoEm
+      ? 'APROVADA'
+      : foto.arquivoId && foto.arquivoId !== foto.arquivoOriginalId
+        ? 'EM_APROVACAO'
+        : 'RECEBIDA';
+
+    return this.repositorio.atualizarFoto(fotoId, { status });
+  }
+
+  /**
+   * A foto tem de ser DESTE catalogo. Sem a conferencia, o id da rota seria
+   * decorativo: um fotoId valido de outra colecao passaria.
+   */
+  private async exigirFoto(
+    catalogoId: string,
+    fotoId: string,
+  ): Promise<FotoItem> {
+    const foto = await this.repositorio.buscarFotoPorId(fotoId);
+    if (!foto || foto.catalogoId !== catalogoId) {
+      throw new NotFoundException('Foto não encontrada neste catálogo');
+    }
+    return foto;
   }
 }
