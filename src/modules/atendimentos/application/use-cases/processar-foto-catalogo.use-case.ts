@@ -517,21 +517,36 @@ export class ProcessarFotoCatalogoUseCase {
     }
 
     const veredito = lerVeredito(texto);
+
+    // EU ACABEI DE PERGUNTAR O QUE MUDAR — então isto é a resposta, e não
+    // precisa da palavra de comando. Vale só quando o texto não é, por si, um
+    // veredito: um "aprovo" logo depois da pergunta continua sendo aprovação,
+    // e não pedido de estilo.
+    if (veredito.tipo === 'NENHUM' && this.sessao.eraRespostaDeAjuste(de)) {
+      const alvo = fila[0];
+      void this.tratarEAvisar(alvo.id, texto.trim(), de);
+      return {
+        resposta: `Refazendo ${this.rotulo(alvo)}. Te mando em instantes.`,
+        motivo: 'foto_em_ajuste',
+      };
+    }
+
     if (veredito.tipo === 'NENHUM') return null;
 
     if (veredito.tipo === 'DESCARTA') {
       const alvos = veredito.todas ? fila : [fila[0]];
       for (const foto of alvos) await this.jogarFora(foto);
 
-      const restantes = fila.length - alvos.length;
-      if (restantes === 0) this.sessao.esquecerAprovacao(de);
+      const restantes = fila.slice(alvos.length);
+      if (restantes.length === 0) this.sessao.esquecerAprovacao(de);
+
+      const cabeca =
+        alvos.length === 1
+          ? `Descartei ${this.rotulo(alvos[0])}.`
+          : `Descartei ${alvos.length} fotos.`;
 
       return {
-        resposta:
-          alvos.length === 1
-            ? `Descartei ${this.rotulo(alvos[0])}.` +
-              (restantes ? ` Ainda tenho ${restantes} esperando.` : '')
-            : `Descartei ${alvos.length} fotos.`,
+        resposta: `${cabeca}${this.eSobraram(restantes)}`,
         motivo: 'foto_descartada',
       };
     }
@@ -539,7 +554,9 @@ export class ProcessarFotoCatalogoUseCase {
     if (veredito.tipo === 'AJUSTA') {
       if (!veredito.pedido) {
         // Sem instrucao, gerar de novo so queimaria uma das tres tentativas
-        // para produzir outra imagem igualmente sem rumo.
+        // para produzir outra imagem igualmente sem rumo. Pergunto — e marco
+        // que a proxima mensagem e a resposta, senao ela cairia nos agentes.
+        this.sessao.pedirOAjuste(de);
         return {
           resposta:
             'O que você quer que eu mude? Me diz — "mais claro", "fundo branco" — que eu refaço.',
@@ -566,8 +583,8 @@ export class ProcessarFotoCatalogoUseCase {
       });
     }
 
-    const restantes = fila.length - alvos.length;
-    if (restantes === 0) this.sessao.esquecerAprovacao(de);
+    const restantes = fila.slice(alvos.length);
+    if (restantes.length === 0) this.sessao.esquecerAprovacao(de);
 
     return {
       resposta: this.confirmarAprovacao(alvos, restantes),
@@ -762,16 +779,42 @@ export class ProcessarFotoCatalogoUseCase {
     return foto.codigoErp ? `a ${foto.codigoErp}` : 'a foto';
   }
 
-  private confirmarAprovacao(aprovadas: FotoItem[], restantes: number): string {
+  private confirmarAprovacao(
+    aprovadas: FotoItem[],
+    restantes: FotoItem[],
+  ): string {
     const cabeca =
       aprovadas.length === 1
         ? `${aprovadas[0].codigoErp ?? 'Foto'} aprovada — já está no catálogo.`
         : `${aprovadas.length} fotos aprovadas — já estão no catálogo.`;
 
-    // Dizer quantas sobraram evita o engano de achar que "aprovo" limpou a
-    // fila inteira: a peca seguinte ficaria esperando sem ninguem saber.
-    if (restantes === 0) return cabeca;
-    return `${cabeca}\nAinda tenho ${restantes} esperando sua resposta.`;
+    return `${cabeca}${this.eSobraram(restantes)}`;
+  }
+
+  /**
+   * O que ainda espera resposta — NOMEANDO a próxima.
+   *
+   * ==========================================================================
+   * NÃO CRIE UMA PERGUNTA QUE VOCÊ NÃO SABE RESPONDER.
+   *
+   * Antes esta linha dizia só "Ainda tenho 1 esperando sua resposta", e em
+   * 31/08 o Lucas respondeu o óbvio: "qual?". Aquele "qual?" não é veredito
+   * nenhum, então cai nos agentes — e a conversa morre, porque a Anastasia não
+   * sabe do que ele está falando.
+   *
+   * A saída não é ensinar a responder "qual?": é dizer o nome de uma vez. Um
+   * aviso que provoca pergunta previsível está pela metade.
+   * ==========================================================================
+   */
+  private eSobraram(restantes: FotoItem[]): string {
+    if (restantes.length === 0) return '';
+    if (restantes.length === 1) {
+      return `\nAinda falta ${this.rotulo(restantes[0])}.`;
+    }
+    return (
+      `\nAinda faltam ${restantes.length} — a próxima é ` +
+      `${this.rotulo(restantes[0])}.`
+    );
   }
 
   private perguntarCatalogo(abertos: CatalogoAberto[]): string {

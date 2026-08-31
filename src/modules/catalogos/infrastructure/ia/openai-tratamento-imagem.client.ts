@@ -21,18 +21,45 @@ const TIMEOUT_MS = 120_000;
  * A REGRA QUE NAO SE NEGOCIA.
  *
  * Vem primeiro no prompt e e repetida no fim, porque instrucao no meio de
- * texto longo e a que mais se perde. Um modelo de imagem "melhora" o que ve se
- * ninguem o proibir: acrescenta pedra, arredonda um formato, corrige uma
- * assimetria que era da peca. O resultado seria um catalogo mostrando joia que
- * a loja nao tem — e o cliente pedindo o que nao existe.
+ * texto longo e a que mais se perde.
+ *
+ * ==========================================================================
+ * AS PROIBICOES SAO NOMEADAS UMA A UMA PORQUE A REGRA GENERICA JA FALHOU.
+ *
+ * A versao anterior dizia "mantenha o mesmo numero de pedras e a mesma cor de
+ * metal" — e em 31/08/2026 o modelo devolveu uma alianca de metal branco SEM
+ * PEDRA como uma alianca DOURADA COM BRILHANTE. A regra estava escrita e foi
+ * ignorada.
+ *
+ * O que mudou aqui: cada falha observada virou uma linha propria, no
+ * imperativo, com o caso concreto ("se nao tem pedra, a saida nao tem
+ * pedra"; "nunca transforme metal branco em dourado"). Instrucao enumerada e
+ * especifica sobrevive melhor que paragrafo generico.
+ *
+ * E O RISCO CONTINUA. Isto e mitigacao, nao garantia: o `gpt-image-1` no
+ * `/images/edits` REGERA a imagem em vez de edita-la, entao preservar a peca e
+ * um resultado provavel, nunca certo. Quem for conferir o catalogo tem de
+ * saber disso — a aprovacao na conversa existe tambem para isto.
+ *
+ * A unica forma de garantir seria nao regerar: recortar a peca da foto e
+ * assenta-la no fundo. Decisao do Lucas em 31/08 foi seguir com a geracao.
+ * ==========================================================================
  */
 const REGRA_PECA_INTOCADA =
   'REGRA ABSOLUTA: o objeto da imagem enviada é o único objeto da imagem de ' +
-  'saída, e não pode ser alterado nem substituído. Mantenha exatamente o mesmo ' +
-  'número de pedras, o mesmo formato, o mesmo corte, a mesma cor de metal e as ' +
-  'mesmas proporções entre as partes. Não adicione, não remova, não corrija, ' +
-  'não embeleze e não troque nenhum detalhe. Você está tratando apenas a ' +
-  'APRESENTAÇÃO: fundo, iluminação, sombra, enquadramento e nitidez.';
+  'saída. Ele não pode ser alterado, substituído, completado nem embelezado.\n' +
+  '- NÃO ACRESCENTE PEDRAS. Se a peça enviada não tem nenhuma pedra, a imagem ' +
+  'de saída não pode ter nenhuma pedra. Se tem três, tem três.\n' +
+  '- NÃO MUDE A COR DO METAL. Metal branco, prateado ou cinza permanece ' +
+  'branco, prateado ou cinza. NUNCA transforme metal branco em dourado.\n' +
+  '- NÃO MUDE o formato, o corte, a espessura, o acabamento, os gravados nem ' +
+  'as proporções entre as partes.\n' +
+  '- NÃO POLIR, NÃO LIMPAR, NÃO RESTAURAR. Marcas de uso, riscos e ' +
+  'irregularidades da peça são dela e permanecem.\n' +
+  'Esta NÃO é uma joia de catálogo idealizada: é ESTA peça específica, como ' +
+  'ela é. Você está tratando apenas a APRESENTAÇÃO — fundo, iluminação, ' +
+  'sombra, enquadramento e nitidez. Na dúvida entre embelezar e manter, ' +
+  'MANTENHA.';
 
 /**
  * O PADRAO DA CASA, EM TEXTO — QUE E A UNICA FORMA SEGURA DE DIZE-LO.
