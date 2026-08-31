@@ -1,9 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname, extname, join, resolve, sep } from 'node:path';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { ArquivoParaGuardar, IArmazenamento } from '../../domain/ports/armazenamento.port';
+import type {
+  ArquivoParaGuardar,
+  IArmazenamento,
+} from '../../domain/ports/armazenamento.port';
 
 const EXTENSAO_POR_MIME: Record<string, string> = {
   'image/jpeg': '.jpg',
@@ -38,13 +41,16 @@ export class DiscoArmazenamento implements IArmazenamento {
 
   constructor(private readonly config: ConfigService) {
     this.raiz = resolve(
-      this.config.get<string>('ARMAZENAMENTO_DIR') ?? join(process.cwd(), 'armazenamento'),
+      this.config.get<string>('ARMAZENAMENTO_DIR') ??
+        join(process.cwd(), 'armazenamento'),
     );
   }
 
   async guardar(arquivo: ArquivoParaGuardar, pasta: string): Promise<string> {
     const extensao =
-      EXTENSAO_POR_MIME[arquivo.mime] ?? extname(arquivo.nomeOriginal).toLowerCase() ?? '';
+      EXTENSAO_POR_MIME[arquivo.mime] ??
+      extname(arquivo.nomeOriginal).toLowerCase() ??
+      '';
     const chave = `${pasta}/${randomUUID()}${extensao}`;
     const destino = this.caminhoAbsoluto(chave);
 
@@ -62,6 +68,29 @@ export class DiscoArmazenamento implements IArmazenamento {
       // ja foi apagada. Falhar aqui deixaria a base inconsistente por causa de
       // um arquivo que ja nao existe.
       this.logger.debug(`Arquivo ja ausente ao remover: ${chave}`);
+    }
+  }
+
+  async mover(chave: string, novaPasta: string): Promise<string> {
+    const nome = chave.split('/').pop();
+    if (!nome) return chave;
+
+    const novaChave = `${novaPasta}/${nome}`;
+    if (novaChave === chave) return chave;
+
+    try {
+      const destino = this.caminhoAbsoluto(novaChave);
+      await mkdir(dirname(destino), { recursive: true });
+      await rename(this.caminhoAbsoluto(chave), destino);
+      return novaChave;
+    } catch (err) {
+      // Devolve a chave ORIGINAL: quem chama grava o que vier no banco, e uma
+      // linha apontando para o lugar antigo e melhor que uma apontando para
+      // lugar nenhum.
+      this.logger.error(
+        `Falha ao mover ${chave} -> ${novaChave}: ${String(err)}`,
+      );
+      return chave;
     }
   }
 

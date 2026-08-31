@@ -42,11 +42,18 @@ async function bootstrap() {
   // que e para onde isto vai.
   //
   // O front chama /api/midia/... e o rewrite do Next entrega aqui.
+  //
+  // SO QUANDO O ARMAZENAMENTO E O DISCO. Com `AWS_S3_BUCKET` definido, quem
+  // responde /midia e o `MidiaController`, que busca o objeto no bucket — que e
+  // privado. Registrar o estatico junto faria o Express atender antes do Nest e
+  // devolver 404 para tudo, porque o diretorio local estaria vazio.
   // -------------------------------------------------------------------------
-  const dirMidia = resolve(
-    config.get<string>('ARMAZENAMENTO_DIR') ?? join(process.cwd(), 'armazenamento'),
-  );
-  app.use('/midia', serveStatic(dirMidia, { index: false, maxAge: '7d' }));
+  if (!config.get<string>('AWS_S3_BUCKET')) {
+    const dirMidia = resolve(
+      config.get<string>('ARMAZENAMENTO_DIR') ?? join(process.cwd(), 'armazenamento'),
+    );
+    app.use('/midia', serveStatic(dirMidia, { index: false, maxAge: '7d' }));
+  }
 
   // CORS com allowlist explicita por env. Lista separada por virgula sem espacos.
   // Default em dev: localhost:3000 (este backend) e localhost:5173 (vite default).

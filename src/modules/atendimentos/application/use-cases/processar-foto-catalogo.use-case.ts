@@ -5,6 +5,8 @@ import {
   LIMITE_BYTES,
   MIMES_IMAGEM,
   PASTA_FOTOS,
+  PASTA_PENDENTES,
+  pastaDoCatalogo,
   type IArmazenamento,
 } from '../../../catalogos/domain/ports/armazenamento.port';
 import {
@@ -155,7 +157,7 @@ export class ProcessarFotoCatalogoUseCase {
     // GRAVA ANTES DE QUALQUER PERGUNTA — ver o cabecalho.
     const chave = await this.armazenamento.guardar(
       { conteudo: arquivo.conteudo, mime, nomeOriginal: 'whatsapp' },
-      PASTA_FOTOS,
+      PASTA_PENDENTES,
     );
 
     const analise = this.lerLegenda(msg.legenda, abertos);
@@ -271,6 +273,18 @@ export class ProcessarFotoCatalogoUseCase {
       }
     }
 
+    // AGORA sabemos de qual catalogo a foto e, e so agora ela pode ir para a
+    // pasta dele. Ate aqui viveu em `catalogo/pendentes/` — ver o cabecalho:
+    // gravar antes de perguntar e o que impede a imagem de se perder enquanto
+    // a vendedora responde.
+    //
+    // Se o `mover` falhar, ele devolve a chave ORIGINAL, e a linha aponta para
+    // a area de espera. Imagem no lugar errado e melhor que linha sem imagem.
+    const arquivoId = await this.armazenamento.mover(
+      foto.arquivoId,
+      pastaDoCatalogo(catalogo.numero, PASTA_FOTOS),
+    );
+
     await this.catalogos.criarFoto({
       catalogoId: catalogo.id,
       codigoErp: foto.codigoErp,
@@ -279,10 +293,10 @@ export class ProcessarFotoCatalogoUseCase {
       parcelas: foto.codigoErp ? (foto.parcelas ?? PARCELAS_PADRAO) : null,
       origem: 'WHATSAPP',
       remetente,
-      arquivoOriginalId: foto.arquivoId,
+      arquivoOriginalId: arquivoId,
       // Sem IA ainda: a foto exibida E a original. Quando a geracao existir,
       // `arquivo_id` passa a apontar para a versao tratada e a original fica.
-      arquivoId: foto.arquivoId,
+      arquivoId,
       mime: foto.mime,
       status: 'RECEBIDA',
     });

@@ -1,4 +1,10 @@
-import { IsEnum, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsEnum,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 import { SanitizeText } from '../../../../../shared/http/sanitize/sanitize-text.transform';
 import {
   FORMATOS_CATALOGO,

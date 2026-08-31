@@ -88,7 +88,10 @@ export class CatalogosController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @Permissions('catalogo:write')
-  async criar(@Body() dto: CriarCatalogoDto, @Request() req: { user: JwtPayload }) {
+  async criar(
+    @Body() dto: CriarCatalogoDto,
+    @Request() req: { user: JwtPayload },
+  ) {
     return this.criarCatalogo.execute({
       nome: dto.nome,
       tema: dto.tema ?? null,

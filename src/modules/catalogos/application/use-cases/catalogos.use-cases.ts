@@ -1,4 +1,9 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type {
   FormatoCatalogo,
   StatusCatalogo,
@@ -8,9 +13,13 @@ import {
   LIMITE_BYTES,
   MIMES_IMAGEM,
   PASTA_REFERENCIAS,
+  pastaDoCatalogo,
   type IArmazenamento,
 } from '../../domain/ports/armazenamento.port';
-import { ARMAZENAMENTO, CATALOGO_REPOSITORY } from '../../domain/ports/injection-tokens';
+import {
+  ARMAZENAMENTO,
+  CATALOGO_REPOSITORY,
+} from '../../domain/ports/injection-tokens';
 import type {
   CatalogoDetalhe,
   FiltroCatalogo,
@@ -53,9 +62,10 @@ export class BuscarCatalogoUseCase {
    * que a pessoa ve e digita — e o UUID continua valendo para chamada interna.
    */
   async execute(idOuNumero: string): Promise<CatalogoDetalhe> {
-    const ehUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-      idOuNumero,
-    );
+    const ehUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        idOuNumero,
+      );
 
     const encontrado = ehUuid
       ? await this.repositorio.buscarPorId(idOuNumero)
@@ -105,7 +115,9 @@ export class CriarCatalogoUseCase {
       formato: input.formato ?? '9:16',
       criadoPorUserId: input.criadoPorUserId,
       criadoPorNome:
-        nomeCadastrado?.trim() || input.criadoPorNomeFallback?.trim() || 'Equipe',
+        nomeCadastrado?.trim() ||
+        input.criadoPorNomeFallback?.trim() ||
+        'Equipe',
     });
   }
 }
@@ -124,7 +136,10 @@ export class AtualizarCatalogoUseCase {
     private readonly repositorio: ICatalogoRepository,
   ) {}
 
-  async execute(id: string, input: AtualizarCatalogoInput): Promise<CatalogoDetalhe> {
+  async execute(
+    id: string,
+    input: AtualizarCatalogoInput,
+  ): Promise<CatalogoDetalhe> {
     // Liberar para COLETANDO significa entrar na lista que a agente oferece no
     // WhatsApp. Sem referencia, a IA nao tem o que seguir — e a foto volta
     // tratada em qualquer estilo. Barrado aqui, e nao na tela: a tela pode ser
@@ -189,18 +204,28 @@ export class AnexarReferenciaUseCase {
   ) {}
 
   /** Referencia de texto: fonte, composicao ou observacao livre. */
-  async texto(catalogoId: string, tipo: TipoReferencia, valor: string): Promise<ReferenciaItem> {
+  async texto(
+    catalogoId: string,
+    tipo: TipoReferencia,
+    valor: string,
+  ): Promise<ReferenciaItem> {
     if (tipo === 'IMAGEM') {
-      throw new BadRequestException('Referência de imagem exige upload de arquivo');
+      throw new BadRequestException(
+        'Referência de imagem exige upload de arquivo',
+      );
     }
     await this.exigirCatalogo(catalogoId);
     return this.repositorio.criarReferencia({ catalogoId, tipo, valor });
   }
 
   /** Referencia de imagem: pagina de um catalogo anterior, editorial, capa. */
-  async imagens(catalogoId: string, arquivos: ArquivoRecebido[]): Promise<ReferenciaItem[]> {
-    if (arquivos.length === 0) throw new BadRequestException('Nenhum arquivo enviado');
-    await this.exigirCatalogo(catalogoId);
+  async imagens(
+    catalogoId: string,
+    arquivos: ArquivoRecebido[],
+  ): Promise<ReferenciaItem[]> {
+    if (arquivos.length === 0)
+      throw new BadRequestException('Nenhum arquivo enviado');
+    const catalogo = await this.exigirCatalogo(catalogoId);
 
     const criadas: ReferenciaItem[] = [];
     // Em serie, e nao em paralelo: a ordem das referencias e a ordem em que
@@ -213,7 +238,7 @@ export class AnexarReferenciaUseCase {
           mime: arquivo.mimetype,
           nomeOriginal: arquivo.originalname,
         },
-        PASTA_REFERENCIAS,
+        pastaDoCatalogo(catalogo.numero, PASTA_REFERENCIAS),
       );
       criadas.push(
         await this.repositorio.criarReferencia({
@@ -229,7 +254,9 @@ export class AnexarReferenciaUseCase {
   }
 
   private validar(arquivo: ArquivoRecebido): void {
-    if (!MIMES_IMAGEM.includes(arquivo.mimetype as (typeof MIMES_IMAGEM)[number])) {
+    if (
+      !MIMES_IMAGEM.includes(arquivo.mimetype as (typeof MIMES_IMAGEM)[number])
+    ) {
       throw new BadRequestException(
         `Formato não aceito (${arquivo.mimetype}). Envie JPEG, PNG ou WebP.`,
       );
@@ -241,9 +268,14 @@ export class AnexarReferenciaUseCase {
     }
   }
 
-  private async exigirCatalogo(id: string): Promise<void> {
+  /**
+   * Devolve o catalogo em vez de so validar: o NUMERO dele entra na chave do
+   * arquivo (`catalogo/0331/referencias/...`), e ja o tinhamos em maos aqui.
+   */
+  private async exigirCatalogo(id: string) {
     const existe = await this.repositorio.buscarPorId(id);
     if (!existe) throw new NotFoundException('Catálogo não encontrado');
+    return existe;
   }
 }
 
@@ -257,7 +289,10 @@ export class RemoverReferenciaUseCase {
   ) {}
 
   async execute(catalogoId: string, referenciaId: string): Promise<void> {
-    const chave = await this.repositorio.removerReferencia(catalogoId, referenciaId);
+    const chave = await this.repositorio.removerReferencia(
+      catalogoId,
+      referenciaId,
+    );
     if (chave) await this.armazenamento.remover(chave);
   }
 }
