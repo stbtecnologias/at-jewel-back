@@ -37,12 +37,37 @@ const REGRA_PECA_INTOCADA =
   'Você está tratando apenas a APRESENTAÇÃO: fundo, iluminação, sombra, ' +
   'enquadramento e nitidez.';
 
+/**
+ * O PADRAO DA CASA, DITO COM TODAS AS LETRAS.
+ *
+ * A primeira versao pedia "mesmo tipo de fundo, mesma iluminacao" e confiava
+ * no modelo para deduzir o resto das referencias. Nao funcionou, e o motivo e
+ * instrutivo: AS REFERENCIAS SAO PAGINAS DE CATALOGO, e nao packshots. Elas
+ * trazem a peca, o texto ao lado e o papel em volta — e o modelo copiou o tom
+ * do papel, devolvendo a peca sobre fundo bege e vista de cima.
+ *
+ * Conferido nos catalogos reais em 31/08/2026: a peca aparece recortada sobre
+ * BRANCO, de frente, na altura do olho. Sem cenario, sem superficie, sem mesa.
+ *
+ * Entao o packshot passa a ser descrito aqui, e as referencias servem ao que
+ * elas de fato ensinam: proporcao da peca no quadro, temperatura da luz,
+ * acabamento do metal. Nao o layout da pagina.
+ */
+const PADRAO_PACKSHOT =
+  'Fundo BRANCO liso e uniforme. Sem cenário, sem mesa, sem superfície ' +
+  'visível, sem gradiente, sem textura e sem cor de papel. Sombra mínima ou ' +
+  'nenhuma. A peça deve aparecer DE FRENTE, na altura do olho, como produto ' +
+  'fotografado em estúdio — nunca vista de cima nem em perspectiva inclinada. ' +
+  'Centralizada, ocupando a maior parte do quadro.';
+
 const INSTRUCAO_BASE =
   'A primeira imagem é a foto de uma joia, tirada com celular. As imagens ' +
-  'seguintes são páginas de catálogos anteriores desta joalheria e definem o ' +
-  'padrão visual da casa. Produza a foto da primeira imagem no mesmo padrão ' +
-  'das seguintes: mesmo tipo de fundo, mesma iluminação, mesma sombra e mesmo ' +
-  'enquadramento. Não escreva texto algum na imagem.';
+  'seguintes são páginas de catálogos anteriores desta joalheria. ' +
+  'ATENÇÃO: use as páginas apenas como referência de como a PEÇA é ' +
+  'apresentada — proporção no quadro, temperatura da luz, acabamento do ' +
+  'metal. NÃO copie o layout da página, NÃO copie a cor do papel e NÃO ' +
+  'reproduza nenhum texto delas. Não escreva texto algum na imagem. ' +
+  `Produza a foto da primeira imagem assim: ${PADRAO_PACKSHOT}`;
 
 /**
  * Tratamento da foto pela API de imagens da OpenAI.
