@@ -131,7 +131,12 @@ describe('ProcessarFotoCatalogoUseCase — aprovacao da foto tratada', () => {
       aprovadoEm: null,
     }) as never;
 
-  let catalogos: { listarEmAprovacao: jest.Mock; atualizarFoto: jest.Mock };
+  let catalogos: {
+    listarEmAprovacao: jest.Mock;
+    atualizarFoto: jest.Mock;
+    removerFoto: jest.Mock;
+  };
+  let armazenamento: { remover: jest.Mock };
   let tratar: { execute: jest.Mock };
   let sessao: SessaoCatalogoService;
   let useCase: ProcessarFotoCatalogoUseCase;
@@ -142,13 +147,15 @@ describe('ProcessarFotoCatalogoUseCase — aprovacao da foto tratada', () => {
         .fn()
         .mockResolvedValue([FOTO('f-1', 'BR26252'), FOTO('f-2', 'CO26185')]),
       atualizarFoto: jest.fn().mockResolvedValue(undefined),
+      removerFoto: jest.fn().mockResolvedValue(undefined),
     };
+    armazenamento = { remover: jest.fn().mockResolvedValue(undefined) };
     tratar = { execute: jest.fn().mockResolvedValue(null) };
     sessao = new SessaoCatalogoService();
 
     useCase = new ProcessarFotoCatalogoUseCase(
       catalogos as never,
-      {} as never,
+      armazenamento as never,
       {} as never,
       { enviarTexto: jest.fn(), enviarImagem: jest.fn() } as never,
       sessao,
@@ -226,5 +233,47 @@ describe('ProcessarFotoCatalogoUseCase — aprovacao da foto tratada', () => {
   it('a fila vem filtrada por quem fotografou — nunca pelo que veio na mensagem', async () => {
     await useCase.aprovacao(DE, QUEM, 'aprovo');
     expect(catalogos.listarEmAprovacao).toHaveBeenCalledWith(QUEM);
+  });
+
+  // -------------------------------------------------------------------------
+  // Descarte — o único caminho irreversível
+  // -------------------------------------------------------------------------
+
+  it('"descarta" apaga os arquivos E a linha, nos dois lugares', async () => {
+    const r = await useCase.aprovacao(DE, QUEM, 'descarta');
+
+    // Os arquivos saem ANTES da linha: falhando o S3, sobra a linha (legível e
+    // retentável) e não binário órfão que ninguém sabe identificar.
+    expect(armazenamento.remover).toHaveBeenCalledWith(
+      'catalogo/0002/originais/a.jpg',
+    );
+    expect(armazenamento.remover).toHaveBeenCalledWith(
+      'catalogo/0002/fotos/a.png',
+    );
+    expect(catalogos.removerFoto).toHaveBeenCalledWith('f-1');
+    expect(catalogos.atualizarFoto).not.toHaveBeenCalled();
+    expect(r?.motivo).toBe('foto_descartada');
+  });
+
+  it('não tenta apagar duas vezes quando a foto nunca foi tratada', async () => {
+    // Tratada e original são a MESMA chave: a IA não chegou a rodar.
+    catalogos.listarEmAprovacao.mockResolvedValue([
+      {
+        ...(FOTO('f-1', 'BR26252') as object),
+        arquivoId: 'catalogo/0002/originais/a.jpg',
+      },
+    ]);
+
+    await useCase.aprovacao(DE, QUEM, 'apaga');
+
+    expect(armazenamento.remover).toHaveBeenCalledTimes(1);
+  });
+
+  it('descartar não publica: a palavra de descarte é lida ANTES da de aprovação', async () => {
+    // A invariante que a ordem existe para garantir — o descarte não tem volta.
+    await useCase.aprovacao(DE, QUEM, 'descarta todas');
+
+    expect(catalogos.removerFoto).toHaveBeenCalledTimes(2);
+    expect(catalogos.atualizarFoto).not.toHaveBeenCalled();
   });
 });

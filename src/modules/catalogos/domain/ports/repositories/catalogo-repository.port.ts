@@ -180,6 +180,16 @@ export interface ICatalogoRepository {
    */
   listarEmAprovacao(remetente: string): Promise<FotoItem[]>;
 
+  /**
+   * Apaga a foto de vez — a linha, e quem chama apaga os arquivos.
+   *
+   * DIFERENTE DE `REPROVADA`, que tira do catálogo mas guarda. Este caminho
+   * existe para o descarte na conversa: a peça nunca chegou a entrar no
+   * catálogo, ninguém a aprovou, e guardar uma foto que a própria pessoa disse
+   * para jogar fora só acumularia lixo que ninguém sabe interpretar depois.
+   */
+  removerFoto(id: string): Promise<void>;
+
   criarReferencia(dados: CriarReferenciaData): Promise<ReferenciaItem>;
   /** Devolve a chave do arquivo removido, para o use case apagar o binario. */
   removerReferencia(

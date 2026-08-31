@@ -128,12 +128,35 @@ const PALAVRAS_AJUSTA = [
   'nao curti',
 ];
 
+/**
+ * Jogar fora. A peca nunca entrou no catalogo e nao vai entrar.
+ *
+ * SO ESTA LISTA APAGA DE VERDADE. `ajusta` refaz e `aprovo` publica; aqui a
+ * linha e os arquivos somem. Por isso as palavras sao inequivocas — nada de
+ * "nao" nem "deixa": tem de ser um verbo de descarte.
+ */
+const PALAVRAS_DESCARTA = [
+  'descarta',
+  'descartar',
+  'descarte',
+  'apaga',
+  'apagar',
+  'deleta',
+  'deletar',
+  'exclui',
+  'excluir',
+  'joga fora',
+  'esquece',
+  'cancela',
+];
+
 /** `aprovo todas`, `todas`, `todos` — vale para a fila inteira. */
 const RE_TODAS = /\btod[ao]s\b/;
 
 type Veredito =
   | { tipo: 'APROVA'; todas: boolean }
   | { tipo: 'AJUSTA'; pedido: string | null }
+  | { tipo: 'DESCARTA'; todas: boolean }
   | { tipo: 'NENHUM' };
 
 /**
@@ -150,6 +173,13 @@ type Veredito =
 function lerVeredito(texto: string): Veredito {
   const n = normalizar(texto);
   if (!n) return { tipo: 'NENHUM' };
+
+  // O DESCARTE E CONFERIDO PRIMEIRO. Ele e o unico irreversivel, e uma frase
+  // que casasse nas duas listas nao pode acabar publicando o que a pessoa
+  // mandou jogar fora.
+  if (PALAVRAS_DESCARTA.some((p) => n === p || n.startsWith(`${p} `))) {
+    return { tipo: 'DESCARTA', todas: RE_TODAS.test(n) };
+  }
 
   if (PALAVRAS_APROVA.some((p) => n === p || n.startsWith(`${p} `))) {
     return { tipo: 'APROVA', todas: RE_TODAS.test(n) };
@@ -287,7 +317,7 @@ export class ProcessarFotoCatalogoUseCase {
         // A peca vai NOMEADA porque a fila pode ter varias: sem o codigo, um
         // "aprovo" solto seria um chute sobre qual imagem ela esta olhando.
         `${r.foto.codigoErp ? `${r.foto.codigoErp} — ficou assim.` : 'Ficou assim.'}\n` +
-          'Se aprovar, responde "aprovo". Para mudar algo, "ajusta" e o quê — ex.: "ajusta fundo branco".',
+          '"aprovo" põe no catálogo · "ajusta" e o quê refaz · "descarta" joga fora.',
       );
     } catch (err) {
       this.logger.error(
@@ -489,6 +519,23 @@ export class ProcessarFotoCatalogoUseCase {
     const veredito = lerVeredito(texto);
     if (veredito.tipo === 'NENHUM') return null;
 
+    if (veredito.tipo === 'DESCARTA') {
+      const alvos = veredito.todas ? fila : [fila[0]];
+      for (const foto of alvos) await this.jogarFora(foto);
+
+      const restantes = fila.length - alvos.length;
+      if (restantes === 0) this.sessao.esquecerAprovacao(de);
+
+      return {
+        resposta:
+          alvos.length === 1
+            ? `Descartei ${this.rotulo(alvos[0])}.` +
+              (restantes ? ` Ainda tenho ${restantes} esperando.` : '')
+            : `Descartei ${alvos.length} fotos.`,
+        motivo: 'foto_descartada',
+      };
+    }
+
     if (veredito.tipo === 'AJUSTA') {
       if (!veredito.pedido) {
         // Sem instrucao, gerar de novo so queimaria uma das tres tentativas
@@ -611,14 +658,20 @@ export class ProcessarFotoCatalogoUseCase {
     // tratada quando ficar pronta, podendo mandar a proxima peca no intervalo.
     void this.tratarEAvisar(criada.id, foto.pedidoDeEstilo ?? null, chat);
 
+    // O AVISO DE QUE ALGO ESTA ACONTECENDO. Entre o "guardei" e a imagem
+    // tratada passam de 10 a 60 segundos, e minuto calado no WhatsApp e lido
+    // como "deu errado" — a pessoa reenvia a mesma foto, que entra duas vezes.
+    // Uma linha resolve, e ela ja sai daqui sabendo o que esperar.
+    const tratando = '\nEstou tratando a imagem, já te mando.';
+
     const alvo = `#${catalogo.numero} ${catalogo.nome}`;
     if (!foto.codigoErp) {
-      return `Foto guardada em ${alvo}. Se quiser, me manda o código da peça que eu completo o descritivo.`;
+      return `Foto guardada em ${alvo}. Se quiser, me manda o código da peça que eu completo o descritivo.${tratando}`;
     }
     if (!descricao) {
-      return `Foto guardada em ${alvo} com o código ${foto.codigoErp} — essa peça ainda não está no sistema, então ficou sem descrição e sem preço.`;
+      return `Foto guardada em ${alvo} com o código ${foto.codigoErp} — essa peça ainda não está no sistema, então ficou sem descrição e sem preço.${tratando}`;
     }
-    return `Foto guardada em ${alvo}.\n${foto.codigoErp} · ${descricao}\n${this.emReais(preco)} à vista`;
+    return `Foto guardada em ${alvo}.\n${foto.codigoErp} · ${descricao}\n${this.emReais(preco)} à vista${tratando}`;
   }
 
   /**
@@ -679,6 +732,29 @@ export class ProcessarFotoCatalogoUseCase {
       // As palavras de comando saem — ninguem quer "catalogo" no prompt.
       pedidoDeEstilo: limparPedido(resto),
     };
+  }
+
+  /**
+   * Apaga a foto de vez: os arquivos e a linha.
+   *
+   * OS ARQUIVOS SAEM PRIMEIRO. Apagando a linha antes, uma falha no S3
+   * deixaria binario no bucket sem nenhuma linha que o nomeasse — ninguem
+   * saberia depois o que aquilo era nem se podia sair. Na ordem inversa, a
+   * falha deixa a linha, que continua legivel e retentavel.
+   *
+   * Os dois arquivos podem ser o MESMO quando a foto nunca foi tratada; o Set
+   * evita o segundo `remover` numa chave que ja saiu.
+   */
+  private async jogarFora(foto: FotoItem): Promise<void> {
+    const chaves = new Set(
+      [foto.arquivoOriginalId, foto.arquivoId].filter(
+        (c): c is string => !!c,
+      ),
+    );
+    for (const chave of chaves) {
+      await this.armazenamento.remover(chave);
+    }
+    await this.catalogos.removerFoto(foto.id);
   }
 
   /** Como chamar a peca numa frase. Sem codigo, ela e so "a foto". */
