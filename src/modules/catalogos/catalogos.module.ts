@@ -12,7 +12,9 @@ import {
   RemoverCatalogoUseCase,
   RemoverReferenciaUseCase,
 } from './application/use-cases/catalogos.use-cases';
+import { EnviarFinalUseCase } from './application/use-cases/enviar-final.use-case';
 import { ExportarCatalogoUseCase } from './application/use-cases/exportar-catalogo.use-case';
+import { MontarCatalogoUseCase } from './application/use-cases/montar-catalogo.use-case';
 import { TratarFotoUseCase } from './application/use-cases/tratar-foto.use-case';
 import {
   ARMAZENAMENTO,
@@ -22,6 +24,7 @@ import {
 import { DiscoArmazenamento } from './infrastructure/armazenamento/disco.armazenamento';
 import { S3Armazenamento } from './infrastructure/armazenamento/s3.armazenamento';
 import { OpenaiTratamentoImagemClient } from './infrastructure/ia/openai-tratamento-imagem.client';
+import { CatalogoFinalOrmEntity } from './infrastructure/database/typeorm/entities/catalogo-final.orm-entity';
 import { CatalogoFotoOrmEntity } from './infrastructure/database/typeorm/entities/catalogo-foto.orm-entity';
 import { CatalogoReferenciaOrmEntity } from './infrastructure/database/typeorm/entities/catalogo-referencia.orm-entity';
 import { CatalogoOrmEntity } from './infrastructure/database/typeorm/entities/catalogo.orm-entity';
@@ -41,6 +44,7 @@ import { MidiaController } from './infrastructure/http/controllers/midia.control
       CatalogoOrmEntity,
       CatalogoReferenciaOrmEntity,
       CatalogoFotoOrmEntity,
+      CatalogoFinalOrmEntity,
     ]),
     AuthModule,
   ],
@@ -54,7 +58,9 @@ import { MidiaController } from './infrastructure/http/controllers/midia.control
     AnexarReferenciaUseCase,
     RemoverReferenciaUseCase,
     CurarFotoUseCase,
+    EnviarFinalUseCase,
     ExportarCatalogoUseCase,
+    MontarCatalogoUseCase,
     TratarFotoUseCase,
     { provide: TRATAMENTO_IMAGEM, useClass: OpenaiTratamentoImagemClient },
     { provide: CATALOGO_REPOSITORY, useClass: CatalogoRepository },

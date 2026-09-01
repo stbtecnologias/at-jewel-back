@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, In, Repository } from 'typeorm';
+import type { OrigemFinal } from '../../../../domain/entities/enums';
 import type {
   AtualizarCatalogoData,
   AtualizarFotoData,
@@ -13,9 +14,12 @@ import type {
   FiltroCatalogo,
   FotoItem,
   ICatalogoRepository,
+  FinalItem,
   ListaCatalogos,
   ReferenciaItem,
+  RegistrarFinalData,
 } from '../../../../domain/ports/repositories/catalogo-repository.port';
+import { CatalogoFinalOrmEntity } from '../entities/catalogo-final.orm-entity';
 import { CatalogoFotoOrmEntity } from '../entities/catalogo-foto.orm-entity';
 import { CatalogoReferenciaOrmEntity } from '../entities/catalogo-referencia.orm-entity';
 import { CatalogoOrmEntity } from '../entities/catalogo.orm-entity';
@@ -29,6 +33,8 @@ export class CatalogoRepository implements ICatalogoRepository {
     private readonly repoReferencias: Repository<CatalogoReferenciaOrmEntity>,
     @InjectRepository(CatalogoFotoOrmEntity)
     private readonly repoFotos: Repository<CatalogoFotoOrmEntity>,
+    @InjectRepository(CatalogoFinalOrmEntity)
+    private readonly repoFinais: Repository<CatalogoFinalOrmEntity>,
   ) {}
 
   async criar(dados: CriarCatalogoData): Promise<CatalogoDetalhe> {
@@ -78,12 +84,46 @@ export class CatalogoRepository implements ICatalogoRepository {
     // Contagem numa consulta separada, e nao por JOIN + GROUP BY: com o join, o
     // `take` limitaria LINHAS e nao catalogos, e uma colecao de 30 fotos comeria
     // a pagina inteira sozinha.
-    const contagem = await this.contarFotos(linhas.map((l) => l.id));
+    const ids = linhas.map((l) => l.id);
+    const [contagem, origens] = await Promise.all([
+      this.contarFotos(ids),
+      this.origemDoFinal(ids),
+    ]);
 
     return {
-      itens: linhas.map((l) => this.paraItem(l, contagem.get(l.id) ?? 0)),
+      itens: linhas.map((l) =>
+        this.paraItem(l, contagem.get(l.id) ?? 0, origens.get(l.id) ?? null),
+      ),
       total,
     };
+  }
+
+  /**
+   * De onde veio a versão ATUAL da peça final de cada catálogo.
+   *
+   * Numa consulta só para a página inteira, e não uma por linha: com 50
+   * catálogos na tela, o caminho ingênuo seriam 50 idas ao banco só para
+   * pintar um selo.
+   *
+   * `DISTINCT ON` é o jeito do Postgres de dizer "a primeira linha de cada
+   * grupo" — aqui, a mais recente de cada catálogo.
+   */
+  private async origemDoFinal(
+    ids: string[],
+  ): Promise<Map<string, OrigemFinal>> {
+    if (ids.length === 0) return new Map();
+
+    const linhas = await this.repoFinais.manager.query<
+      { catalogo_id: string; origem: OrigemFinal }[]
+    >(
+      `SELECT DISTINCT ON (catalogo_id) catalogo_id, origem
+         FROM catalogo_finais
+        WHERE catalogo_id = ANY($1)
+        ORDER BY catalogo_id, created_at DESC`,
+      [ids],
+    );
+
+    return new Map(linhas.map((l) => [l.catalogo_id, l.origem]));
   }
 
   private async contarFotos(ids: string[]): Promise<Map<string, number>> {
@@ -134,6 +174,31 @@ export class CatalogoRepository implements ICatalogoRepository {
     const detalhe = await this.buscarPorId(id);
     if (!detalhe) throw new NotFoundException('Catálogo não encontrado');
     return detalhe;
+  }
+
+  async registrarFinal(
+    id: string,
+    dados: RegistrarFinalData,
+  ): Promise<FinalItem> {
+    const existe = await this.repo.findOne({ where: { id } });
+    if (!existe) throw new NotFoundException('Catálogo não encontrado');
+
+    // ACRESCENTA. Nada é sobrescrito e nada é apagado — a versão anterior
+    // continua baixável, e esta passa a valer por ser a mais recente.
+    const criada = await this.repoFinais.save(
+      this.repoFinais.create({
+        catalogoId: id,
+        origem: dados.origem,
+        arquivoId: dados.arquivoId,
+        nomeArquivo: dados.nomeArquivo,
+        mime: dados.mime,
+        tamanhoBytes:
+          dados.tamanhoBytes === null ? null : String(dados.tamanhoBytes),
+        enviadoPor: dados.enviadoPor,
+      }),
+    );
+
+    return this.paraFinal(criada);
   }
 
   async remover(id: string): Promise<void> {
@@ -279,7 +344,7 @@ export class CatalogoRepository implements ICatalogoRepository {
   private async montarDetalhe(
     linha: CatalogoOrmEntity,
   ): Promise<CatalogoDetalhe> {
-    const [referencias, fotos] = await Promise.all([
+    const [referencias, fotos, finais] = await Promise.all([
       this.repoReferencias.find({
         where: { catalogoId: linha.id },
         order: { ordem: 'ASC' },
@@ -300,19 +365,35 @@ export class CatalogoRepository implements ICatalogoRepository {
         where: { catalogoId: linha.id, status: In(['APROVADA', 'REPROVADA']) },
         order: { posicao: 'ASC' },
       }),
+      // Da mais nova para a mais velha: a primeira é a que vale.
+      this.repoFinais.find({
+        where: { catalogoId: linha.id },
+        order: { createdAt: 'DESC' },
+      }),
     ]);
 
+    const versoes = finais.map((f) => this.paraFinal(f));
+    const atual = versoes[0] ?? null;
+
     return {
-      ...this.paraItem(linha, fotos.length),
+      ...this.paraItem(linha, fotos.length, atual?.origem ?? null),
       referencias: referencias.map((r) => this.paraReferencia(r)),
       fotos: fotos.map((f) => this.paraFoto(f)),
-      finalArquivoId: linha.finalArquivoId,
-      finalNomeArquivo: linha.finalNomeArquivo,
-      finalEntregueEm: linha.finalEntregueEm,
+      finais: versoes,
+      // DERIVADOS da lista, e não lidos de coluna: um campo "atual" gravado
+      // seria uma segunda verdade a divergir na primeira inserção feita por
+      // fora. Existem porque a tela já os consumia.
+      finalArquivoId: atual?.arquivoId ?? null,
+      finalNomeArquivo: atual?.nomeArquivo ?? null,
+      finalEntregueEm: atual?.createdAt ?? null,
     };
   }
 
-  private paraItem(linha: CatalogoOrmEntity, totalFotos: number): CatalogoItem {
+  private paraItem(
+    linha: CatalogoOrmEntity,
+    totalFotos: number,
+    finalOrigem: OrigemFinal | null,
+  ): CatalogoItem {
     return {
       id: linha.id,
       numero: linha.numero,
@@ -322,7 +403,22 @@ export class CatalogoRepository implements ICatalogoRepository {
       status: linha.status,
       criadoPorNome: linha.criadoPorNome,
       totalFotos,
-      finalOrigem: linha.finalOrigem,
+      finalOrigem,
+      createdAt: linha.createdAt,
+    };
+  }
+
+  private paraFinal(linha: CatalogoFinalOrmEntity): FinalItem {
+    return {
+      id: linha.id,
+      origem: linha.origem,
+      arquivoId: linha.arquivoId,
+      nomeArquivo: linha.nomeArquivo,
+      mime: linha.mime,
+      // BIGINT volta como string do driver — convertido aqui, no mapeamento.
+      tamanhoBytes:
+        linha.tamanhoBytes === null ? null : Number(linha.tamanhoBytes),
+      enviadoPor: linha.enviadoPor,
       createdAt: linha.createdAt,
     };
   }
