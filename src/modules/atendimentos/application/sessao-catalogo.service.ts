@@ -72,6 +72,15 @@ interface Sessao {
   aguardandoAprovacao: boolean;
   /** Perguntei "o que quer que eu mude?" e ainda não recebi a resposta. */
   aguardandoPedido: boolean;
+  /**
+   * A última foto guardada veio SEM código, e eu convidei a pessoa a mandá-lo.
+   *
+   * Sem isto o convite era vazio: a mensagem dizia "me manda o código da peça
+   * que eu completo o descritivo" e o `BR26252` digitado em seguida caía na
+   * Anastasia, que respondia "esse código não me diz muito sozinho". Medido
+   * em 01/09/2026.
+   */
+  fotoSemCodigo: { fotoId: string; alvo: string } | null;
   atualizadoEm: number;
 }
 
@@ -178,6 +187,35 @@ export class SessaoCatalogoService {
     return true;
   }
 
+  /**
+   * Guarda que esta foto ficou sem código, para o código digitado em seguida
+   * ter onde entrar.
+   *
+   * SÓ A ÚLTIMA. Mandando três fotos sem código, o `BR26252` que vier depois
+   * é da terceira — é a que ela acabou de ver confirmada na tela. Uma fila
+   * aqui exigiria dizer de qual peça é cada código, e quem fotografa em série
+   * manda o código junto da legenda de qualquer forma.
+   *
+   * @param alvo rótulo do catálogo, para a confirmação citar onde a peça está.
+   */
+  esperarCodigo(chave: string, fotoId: string, alvo: string): void {
+    const s = this.viva(chave) ?? this.nova();
+    s.fotoSemCodigo = { fotoId, alvo };
+    s.atualizadoEm = Date.now();
+    this.sessoes.set(chave, s);
+  }
+
+  codigoPendente(chave: string): { fotoId: string; alvo: string } | null {
+    return this.viva(chave)?.fotoSemCodigo ?? null;
+  }
+
+  esquecerCodigo(chave: string): void {
+    const s = this.viva(chave);
+    if (!s) return;
+    s.fotoSemCodigo = null;
+    this.sessoes.set(chave, s);
+  }
+
   /** Retira e devolve tudo que estava esperando. */
   recolherPendentes(chave: string): FotoPendente[] {
     const s = this.viva(chave);
@@ -229,6 +267,7 @@ export class SessaoCatalogoService {
       pendentes: [],
       aguardandoAprovacao: false,
       aguardandoPedido: false,
+      fotoSemCodigo: null,
       atualizadoEm: Date.now(),
     };
   }
