@@ -111,7 +111,6 @@ export class TratarFotoUseCase {
       // modelo devolver uma joia recortada de dentro de uma delas.
       padrao: this.padraoEscrito(catalogo.referencias),
       pedidoDaPessoa,
-      formato: catalogo.formato,
     });
 
     if (!tratada) {
