@@ -32,19 +32,51 @@ import type {
 const PAGINA = { curto: 720, longo: 1280 };
 
 /** Respiro nas bordas. Generoso de propósito: catálogo de joia é branco. */
-const MARGEM = 64;
+const MARGEM = 48;
 
 /**
- * Fração da altura útil que a foto ocupa. O resto é do texto.
+ * OITO PEÇAS POR PÁGINA, e a disposição segue o formato.
  *
- * 0,62 saiu das páginas de referência: a peça domina, mas o bloco de texto
- * não fica espremido no rodapé. Constante e não cálculo automático porque o
- * equilíbrio é editorial — quem ajustar isto está mexendo no visual da casa.
+ * Levantado no catálogo "New In" real, em 01/09/2026: as páginas de grade têm
+ * QUATRO COLUNAS POR DUAS LINHAS, em paisagem. Em retrato o mesmo oito vira
+ * duas por quatro — muda a forma da folha, não a densidade.
+ *
+ * UMA PEÇA POR PÁGINA era o desenho anterior, decidido antes de eu ver o
+ * material. Numa folha 16:9 aquilo desperdiçava metade do papel, e nenhuma
+ * página do catálogo da casa faz isso.
  */
-const FATIA_DA_FOTO = 0.62;
+const POR_PAGINA = 8;
+
+/** Espaço entre as células da grade. */
+const GAP = 18;
 
 /**
- * O catálogo montado em PDF, uma peça por página.
+ * Fração da altura da célula que a foto ocupa. O resto é do texto.
+ *
+ * A peça domina, mas o descritivo não fica espremido. Constante e não cálculo
+ * automático porque o equilíbrio é editorial — quem ajustar isto está mexendo
+ * no visual da casa.
+ */
+const FATIA_DA_FOTO = 0.55;
+
+/**
+ * O DESCRITIVO NÃO É PRETO no catálogo da casa — é um azul-petróleo escuro, e
+ * só as linhas de valor são pretas. Conferido nas páginas do "New In".
+ */
+const COR_DESCRITIVO = '#1f3a5f';
+const COR_VALOR = '#111111';
+
+/**
+ * A peça sem preço tem frase própria, e ela É IMPRESSA.
+ *
+ * Aparece em cinco peças do catálogo real. Antes daqui, peça sem preço saía com
+ * um vazio embaixo do código — e o leitor não sabe se o preço foi esquecido ou
+ * se é sob consulta. As duas leituras custam uma ligação.
+ */
+const SOB_CONSULTA = '*PREÇO SOB CONSULTA';
+
+/**
+ * O catálogo montado em PDF: capa, páginas de grade e contracapa.
  *
  * ==========================================================================
  * A MONTAGEM É NOSSA E DETERMINÍSTICA — NENHUM MODELO DESENHA ESTA PÁGINA.
@@ -152,17 +184,26 @@ export class MontarCatalogoUseCase {
 
     this.capa(doc, catalogo, largura, altura, fotos.length);
 
+    // AS IMAGENS SÃO LIDAS ANTES DE DESENHAR, e não durante: a grade precisa
+    // saber quantas peças de fato entraram para paginar. Lendo dentro do laço
+    // de desenho, uma foto que sumisse deixaria um buraco no meio da página em
+    // vez de a grade simplesmente fechar.
+    const pecas: { foto: FotoItem; imagem: Buffer }[] = [];
     for (const foto of fotos) {
-      // Foto que sumiu do armazenamento não vira página em branco: melhor um
-      // catálogo com 29 peças do que uma página muda no meio dele.
       if (!foto.arquivoId) continue;
       const lida = await this.armazenamento.ler(foto.arquivoId);
       if (!lida) {
         this.logger.warn(`Foto ${foto.id} sem arquivo — fora do PDF.`);
         continue;
       }
-      this.pagina(doc, foto, lida.conteudo, largura, altura);
+      pecas.push({ foto, imagem: lida.conteudo });
     }
+
+    for (let i = 0; i < pecas.length; i += POR_PAGINA) {
+      this.grade(doc, pecas.slice(i, i + POR_PAGINA), retrato, largura, altura);
+    }
+
+    this.contracapa(doc, largura, altura);
 
     doc.end();
     return pronto;
@@ -218,68 +259,124 @@ export class MontarCatalogoUseCase {
   }
 
   /**
-   * Uma peça por página: a foto em cima, o descritivo embaixo.
+   * Uma página de grade: até oito peças, packshot com o descritivo embaixo.
    *
-   * O TEXTO É O MESMO DA TELA, e isso não é coincidência: código e descrição
-   * numa linha separados por `•`, descrição em caixa alta, valores em negrito,
-   * `R$` colado no número e "a vista" sem acento. Levantado nas páginas de
-   * referência em 31/08 — ver `Descritivo` no front, que desenha este mesmo
-   * bloco em HTML.
+   * QUATRO COLUNAS EM PAISAGEM, DUAS EM RETRATO. A densidade é a mesma; o que
+   * muda é a forma da folha. Em retrato, quatro colunas dariam células de 150pt
+   * e o descritivo quebraria em cinco linhas.
    */
-  private pagina(
+  private grade(
     doc: PDFKit.PDFDocument,
-    foto: FotoItem,
-    imagem: Buffer,
+    pecas: { foto: FotoItem; imagem: Buffer }[],
+    retrato: boolean,
     largura: number,
     altura: number,
   ): void {
     doc.addPage();
+
+    const colunas = retrato ? 2 : 4;
+    const linhas = POR_PAGINA / colunas;
     const util = largura - MARGEM * 2;
-    const alturaUtil = altura - MARGEM * 2;
-    const alturaDaFoto = alturaUtil * FATIA_DA_FOTO;
+    const utilAltura = altura - MARGEM * 2;
 
-    // `fit` preserva a proporção e centraliza dentro da caixa: a foto NUNCA é
-    // distorcida para preencher. Packshot esticado é o tipo de erro que passa
-    // no desenvolvimento e salta aos olhos no impresso.
-    doc.image(imagem, MARGEM, MARGEM, {
-      fit: [util, alturaDaFoto],
-      align: 'center',
-      valign: 'center',
-    });
+    const larguraCelula = (util - GAP * (colunas - 1)) / colunas;
+    const alturaCelula = (utilAltura - GAP * (linhas - 1)) / linhas;
 
-    const topoDoTexto = MARGEM + alturaDaFoto + 34;
-    const descritivo = foto.descricao
+    for (const [i, { foto, imagem }] of pecas.entries()) {
+      const coluna = i % colunas;
+      const linha = Math.floor(i / colunas);
+      const x = MARGEM + coluna * (larguraCelula + GAP);
+      const y = MARGEM + linha * (alturaCelula + GAP);
+
+      const alturaFoto = alturaCelula * FATIA_DA_FOTO;
+
+      // `fit` preserva a proporção e centraliza: a foto NUNCA é distorcida para
+      // preencher. Packshot esticado passa no desenvolvimento e salta aos olhos
+      // no impresso.
+      doc.image(imagem, x, y, {
+        fit: [larguraCelula, alturaFoto],
+        align: 'center',
+        valign: 'center',
+      });
+
+      this.descritivo(doc, foto, x, y + alturaFoto + 10, larguraCelula);
+    }
+  }
+
+  /**
+   * O bloco de texto de uma peça, no padrão impresso.
+   *
+   *     BR26243 • BRINCO DIAMANTE, TURQUESA,
+   *     MALAQUITA E OURO AMARELO 18K
+   *
+   *     R$71.120,00 a vista
+   *     10 X R$8.890,00
+   *
+   * Código e descrição numa linha separados por `•`, descrição em caixa alta e
+   * na cor do descritivo; valores em negrito e pretos. É o mesmo bloco que o
+   * `Descritivo` do front desenha em HTML — levantado nas páginas do "New In".
+   */
+  private descritivo(
+    doc: PDFKit.PDFDocument,
+    foto: FotoItem,
+    x: number,
+    y: number,
+    largura: number,
+  ): void {
+    const texto = foto.descricao
       ? `${foto.codigoErp ?? '—'} • ${foto.descricao.toUpperCase()}`
       : (foto.codigoErp ?? '');
 
     doc
-      .fillColor('#1a1a1a')
+      .fillColor(COR_DESCRITIVO)
       .font('Helvetica-Bold')
-      .fontSize(13)
-      .text(descritivo, MARGEM, topoDoTexto, {
-        width: util,
-        align: 'center',
-        lineGap: 2,
-      });
+      .fontSize(7.5)
+      .text(texto, x, y, { width: largura, align: 'center', lineGap: 1 });
 
-    if (foto.precoAVista === null || foto.parcelas === null) return;
+    doc.fillColor(COR_VALOR).fontSize(8.5);
 
+    // SEM PREÇO TEM FRASE, e não vazio. Ver `SOB_CONSULTA`.
+    if (foto.precoAVista === null || foto.parcelas === null) {
+      doc.text(SOB_CONSULTA, x, doc.y + 6, { width: largura, align: 'center' });
+      return;
+    }
+
+    doc.text(`${this.emReais(foto.precoAVista)} a vista`, x, doc.y + 6, {
+      width: largura,
+      align: 'center',
+    });
+
+    doc.fontSize(8).text(
+      `${foto.parcelas} X ${this.emReais(
+        valorDaParcela(foto.precoAVista, foto.parcelas, foto.jurosPercentual),
+      )}`,
+      x,
+      doc.y + 2,
+      { width: largura, align: 'center' },
+    );
+  }
+
+  /**
+   * A última página: só a marca, centralizada em branco.
+   *
+   * É o que o catálogo real faz — a contracapa não vende, fecha. Sem ela o PDF
+   * termina na última grade, que pode estar pela metade, e parece cortado.
+   */
+  private contracapa(
+    doc: PDFKit.PDFDocument,
+    largura: number,
+    altura: number,
+  ): void {
+    doc.addPage();
     doc
-      .fontSize(16)
-      .text(`${this.emReais(foto.precoAVista)} a vista`, MARGEM, doc.y + 16, {
-        width: util,
+      .fillColor('#1a1a1a')
+      .font('Helvetica')
+      .fontSize(30)
+      .text('A.T JEWEL', MARGEM, altura * 0.46, {
+        width: largura - MARGEM * 2,
         align: 'center',
+        characterSpacing: 3,
       });
-
-    doc
-      .fontSize(13)
-      .fillColor('#4a4a4a')
-      .text(
-        `${foto.parcelas} X ${this.emReais(valorDaParcela(foto.precoAVista, foto.parcelas, foto.jurosPercentual))}`,
-        MARGEM,
-        doc.y + 6,
-        { width: util, align: 'center' },
-      );
   }
 
   /** `R$44.900,00` — colado, como no catálogo impresso. */

@@ -192,8 +192,10 @@ describe('MontarCatalogoUseCase', () => {
     expect(pdf).toContain('2 peças');
   });
 
-  it('peça sem preço não imprime valor nenhum', async () => {
-    // `R$ 0,00` impresso num catálogo é pior que não ter linha de preço.
+  it('peça sem preço imprime "SOB CONSULTA", e não um vazio', async () => {
+    // Vazio embaixo do código não diz se o preço foi esquecido ou se é sob
+    // consulta, e as duas leituras custam uma ligação. `R$ 0,00` seria pior
+    // ainda: parece preço.
     repo.buscarPorId.mockResolvedValue(
       CATALOGO([FOTO({ precoAVista: null, parcelas: null })]),
     );
@@ -202,7 +204,54 @@ describe('MontarCatalogoUseCase', () => {
     const pdf = pdfGravado();
 
     expect(pdf).toContain('BR26252');
+    expect(pdf).toContain('PREÇO SOB CONSULTA');
     expect(pdf).not.toContain('a vista');
+  });
+
+  it('o juro informado manda na parcela, e o NULL cai na regra da casa', async () => {
+    repo.buscarPorId.mockResolvedValue(
+      CATALOGO([
+        FOTO({ id: 'f-1', codigoErp: 'COM', precoAVista: 44900, parcelas: 12, jurosPercentual: 15 }),
+        FOTO({ id: 'f-2', codigoErp: 'SEM', precoAVista: 44900, parcelas: 10 }),
+      ]),
+    );
+
+    await useCase.execute('cat-1');
+    const pdf = pdfGravado();
+
+    // 44.900 x 1,15 / 12
+    expect(pdf).toContain('12 X R$4.302,92');
+    // 44.900 / 0,80 / 10 — a regra antiga, que NAO foi traduzida para %.
+    expect(pdf).toContain('10 X R$5.612,50');
+  });
+
+  it('mais de oito peças abrem uma página nova', async () => {
+    // A paginação da grade. Com nove pecas o PDF tem capa + 2 grades +
+    // contracapa: se o corte falhasse, a nona sairia por cima da primeira.
+    const nove = Array.from({ length: 9 }, (_, i) =>
+      FOTO({ id: `f-${i}`, codigoErp: `BR${i}` }),
+    );
+    repo.buscarPorId.mockResolvedValue(CATALOGO(nove));
+
+    await useCase.execute('cat-1');
+    const [arquivo] = armazenamento.guardar.mock.calls[0] as [
+      { conteudo: Buffer },
+    ];
+
+    // `/Type /Page` aparece uma vez por página no PDF.
+    const paginas = (
+      arquivo.conteudo.toString('latin1').match(/\/Type\s*\/Page[^s]/g) ?? []
+    ).length;
+    expect(paginas).toBe(4);
+  });
+
+  it('a contracapa fecha o documento com a marca', async () => {
+    repo.buscarPorId.mockResolvedValue(CATALOGO([FOTO()]));
+
+    await useCase.execute('cat-1');
+
+    // Sem ela o PDF termina numa grade pela metade e parece cortado.
+    expect(pdfGravado()).toContain('A.T JEWEL');
   });
 
   it('foto que sumiu do armazenamento não vira página muda', async () => {
