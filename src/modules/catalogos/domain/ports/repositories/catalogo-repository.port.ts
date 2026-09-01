@@ -77,6 +77,16 @@ export interface CatalogoItem {
 export interface CatalogoDetalhe extends CatalogoItem {
   referencias: ReferenciaItem[];
   fotos: FotoItem[];
+
+  /**
+   * As versões da peça final, da mais nova para a mais velha. A PRIMEIRA é a
+   * que vale — não existe campo "atual", porque ele seria uma segunda verdade
+   * a divergir desta lista.
+   *
+   * Os `final*` abaixo são DERIVADOS de `finais[0]`, e existem só porque a
+   * tela já os consumia. São cópia de leitura, nunca dado guardado.
+   */
+  finais: FinalItem[];
   finalArquivoId: string | null;
   finalNomeArquivo: string | null;
   finalEntregueEm: Date | null;
@@ -100,6 +110,36 @@ export interface AtualizarCatalogoData {
   tema?: string | null;
   formato?: FormatoCatalogo;
   status?: StatusCatalogo;
+}
+
+/**
+ * Uma versão da peça final — venha ela do nosso montador ou do marketing.
+ *
+ * Não entra em `AtualizarCatalogoData` de propósito: aquele é o que a TELA DE
+ * EDIÇÃO altera, e o arquivo final não é campo de formulário. Misturar os dois
+ * abriria um `PATCH /catalogos/:id` capaz de apontar o catálogo para qualquer
+ * chave de arquivo.
+ */
+export interface RegistrarFinalData {
+  origem: OrigemFinal;
+  arquivoId: string;
+  nomeArquivo: string;
+  mime: string | null;
+  tamanhoBytes: number | null;
+  /** Nome do staff que enviou. Nulo quando foi o sistema que montou. */
+  enviadoPor: string | null;
+}
+
+/** Uma versão já entregue. A mais recente é a que vale. */
+export interface FinalItem {
+  id: string;
+  origem: OrigemFinal;
+  arquivoId: string;
+  nomeArquivo: string;
+  mime: string | null;
+  tamanhoBytes: number | null;
+  enviadoPor: string | null;
+  createdAt: Date;
 }
 
 /** O minimo que a agente do WhatsApp precisa para oferecer uma escolha. */
@@ -139,6 +179,15 @@ export interface ICatalogoRepository {
   buscarPorNumero(numero: string): Promise<CatalogoDetalhe | null>;
   atualizar(id: string, dados: AtualizarCatalogoData): Promise<CatalogoDetalhe>;
   remover(id: string): Promise<void>;
+
+  /**
+   * Acrescenta uma versão da peça final. NÃO apaga nada: a anterior continua
+   * baixável, e a nova passa a ser a atual por ser a mais recente.
+   *
+   * Foi um slot único até 01/09/2026, e o slot único fazia montar o catálogo
+   * apagar o arquivo do marketing — e o contrário. Ver a migração 44.
+   */
+  registrarFinal(id: string, dados: RegistrarFinalData): Promise<FinalItem>;
 
   /**
    * Nome cadastrado do staff, para o rótulo denormalizado de quem criou. O JWT

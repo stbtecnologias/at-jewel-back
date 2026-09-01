@@ -11,11 +11,20 @@ import {
   Post,
   Query,
   Request,
+  Res,
+  UploadedFile,
   UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FilesInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
+import {
+  EnviarFinalUseCase,
+  LIMITE_FINAL_BYTES,
+} from '../../../application/use-cases/enviar-final.use-case';
+import { ExportarCatalogoUseCase } from '../../../application/use-cases/exportar-catalogo.use-case';
+import { MontarCatalogoUseCase } from '../../../application/use-cases/montar-catalogo.use-case';
 import { Permissions } from '../../../../auth/infrastructure/http/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../../../auth/infrastructure/http/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../../../auth/infrastructure/http/guards/permissions.guard';
@@ -61,6 +70,9 @@ export class CatalogosController {
     private readonly anexarReferencia: AnexarReferenciaUseCase,
     private readonly removerReferencia: RemoverReferenciaUseCase,
     private readonly curarFoto: CurarFotoUseCase,
+    private readonly exportarCatalogo: ExportarCatalogoUseCase,
+    private readonly montarCatalogo: MontarCatalogoUseCase,
+    private readonly enviarFinalCatalogo: EnviarFinalUseCase,
   ) {}
 
   @Get()
@@ -119,6 +131,72 @@ export class CatalogosController {
   @Permissions('catalogo:write')
   async remover(@Param('id', ParseUUIDPipe) id: string) {
     await this.removerCatalogo.execute(id);
+  }
+
+  /**
+   * Monta o catálogo em PDF, uma peça por página.
+   *
+   * `catalogo:write` porque grava: o arquivo vai para o armazenamento e o
+   * catálogo passa a apontar para ele. Rodar de novo substitui o anterior.
+   */
+  @Post(':id/montagem')
+  @Permissions('catalogo:write')
+  async montar(@Param('id', ParseUUIDPipe) id: string) {
+    return this.montarCatalogo.execute(id);
+  }
+
+  /**
+   * O catálogo montado fora, voltando.
+   *
+   * `FileInterceptor` com `limits` próprio: o teto do catálogo (12 MB) foi
+   * dimensionado para foto de celular, e um PDF de InDesign passa disso sem
+   * esforço. Sem `limits`, o multer leria um arquivo de qualquer tamanho para
+   * a memória antes de qualquer validação nossa.
+   */
+  @Post(':id/final')
+  @HttpCode(HttpStatus.CREATED)
+  @Permissions('catalogo:write')
+  @UseInterceptors(
+    FileInterceptor('arquivo', { limits: { fileSize: LIMITE_FINAL_BYTES } }),
+  )
+  async enviarFinal(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() arquivo: ArquivoRecebido | undefined,
+    @Request() req: { user: JwtPayload },
+  ) {
+    // O nome do staff sai do JWT — nunca do corpo. Rótulo de histórico que a
+    // própria pessoa pudesse escrever não valeria como registro de quem foi.
+    return this.enviarFinalCatalogo.execute(id, arquivo, req.user.email);
+  }
+
+  /**
+   * O zip para o marketing montar a peça fora.
+   *
+   * `@Res()` porque a resposta é um STREAM: o zip vai sendo escrito enquanto as
+   * fotos são lidas do armazenamento, e não existe objeto para o Nest
+   * serializar. Devolver o arquivo montado exigiria segurá-lo inteiro na
+   * memória antes de mandar o primeiro byte.
+   *
+   * `catalogo:read` e não `write`: exportar não muda nada.
+   */
+  @Get(':id/exportacao')
+  @Permissions('catalogo:read')
+  async exportar(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res({ passthrough: false }) res: Response,
+  ) {
+    const { nomeArquivo, arquivo } = await this.exportarCatalogo.execute(id);
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${nomeArquivo}"`,
+    );
+    // Sem isto o navegador do front não enxerga o cabeçalho e o download sai
+    // com o nome da rota (`exportacao`) em vez do nome do catálogo.
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+
+    arquivo.pipe(res);
   }
 
   // ---------------------------------------------------------------------------
