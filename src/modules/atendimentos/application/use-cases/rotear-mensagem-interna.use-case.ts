@@ -121,17 +121,24 @@ export class RotearMensagemInternaUseCase {
     // os agentes:
     //
     //   foto esperando catalogo  -> "0002" e a RESPOSTA de "de qual e?"
+    //   foto guardada sem codigo -> "BR26252" completa o descritivo
     //   foto tratada esperando   -> "aprovo" / "ajusta mais claro"
     //
-    // Se caissem na Anastasia, ela responderia "0002" como se fosse pergunta
-    // sobre vendas.
+    // OS TRES SAO RESPOSTA A UMA PERGUNTA QUE O SISTEMA FEZ. Caindo na
+    // Anastasia, ela responde "0002" como pergunta sobre vendas e "BR26252"
+    // como codigo que nao diz nada — as duas coisas ja aconteceram.
     //
-    // AS DUAS CONDICOES SAO CONSULTAS EM MEMORIA, e e isso que preserva a
+    // AS TRES CONDICOES SAO CONSULTAS EM MEMORIA, e e isso que preserva a
     // ordem vendedora-antes-de-gestao: sem elas, todo texto do canal faria um
     // lookup de admin antes do de vendedora.
     // ---------------------------------------------------------------------
     const esperandoCatalogo = this.canalCatalogo.temFotoEsperando(msg.de);
-    if (esperandoCatalogo || this.canalCatalogo.temFotoEmAprovacao(msg.de)) {
+    const esperandoCodigo = this.canalCatalogo.temCodigoEsperando(msg.de);
+    if (
+      esperandoCatalogo ||
+      esperandoCodigo ||
+      this.canalCatalogo.temFotoEmAprovacao(msg.de)
+    ) {
       const quem = await this.identificarAdmin.execute(
         telefone,
         PERMISSAO_CATALOGO,
@@ -143,6 +150,17 @@ export class RotearMensagemInternaUseCase {
           if (esperandoCatalogo) {
             return this.canalCatalogo.resposta(msg.de, nome, textoResolvido);
           }
+
+          // O CODIGO ANTES DA APROVACAO: "BR26252" nao e veredito, e sem esta
+          // ordem ele passaria direto para os agentes.
+          if (esperandoCodigo) {
+            const anotado = await this.canalCatalogo.codigo(
+              msg.de,
+              textoResolvido,
+            );
+            if (anotado) return anotado;
+          }
+
           const aprovacao = await this.canalCatalogo.aprovacao(
             msg.de,
             nome,

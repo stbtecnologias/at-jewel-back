@@ -38,6 +38,19 @@ export interface AtualizarFotoData {
   versoes?: number;
   aprovadoPor?: string | null;
   aprovadoEm?: Date | null;
+
+  /**
+   * O DESCRITIVO CHEGA DEPOIS quando a foto veio sem código.
+   *
+   * A pessoa manda a foto, responde de qual catálogo é, e só então digita
+   * `BR26252`. Até 01/09/2026 esses quatro campos só podiam ser gravados na
+   * criação, e o código digitado depois não tinha onde entrar — a mensagem
+   * convidava a mandá-lo e ninguém escutava.
+   */
+  codigoErp?: string | null;
+  descricao?: string | null;
+  precoAVista?: number | null;
+  parcelas?: number | null;
 }
 
 export interface FotoItem {

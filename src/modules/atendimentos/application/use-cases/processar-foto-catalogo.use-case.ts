@@ -479,6 +479,66 @@ export class ProcessarFotoCatalogoUseCase {
   }
 
   // ---------------------------------------------------------------------------
+  // Chegou o codigo da peca, depois da foto
+  // ---------------------------------------------------------------------------
+
+  /**
+   * O `BR26252` digitado depois de a foto ja estar guardada.
+   *
+   * ==========================================================================
+   * ISTO EXISTE PORQUE A MENSAGEM ANTERIOR CONVIDA. Ao guardar uma foto sem
+   * codigo, a confirmacao diz "me manda o codigo da peca que eu completo o
+   * descritivo" — e ate 01/09/2026 ninguem escutava: o codigo caia nos
+   * agentes e a Anastasia respondia "esse codigo nao me diz muito sozinho".
+   *
+   * Mesma regra de ontem, e vale repetir: nao crie uma pergunta que voce nao
+   * sabe responder.
+   * ==========================================================================
+   *
+   * Devolve `null` quando o texto NAO tem cara de codigo — ai era outra coisa,
+   * e segue para os agentes.
+   */
+  async codigo(de: string, texto: string): Promise<RespostaFoto | null> {
+    const pendente = this.sessao.codigoPendente(de);
+    if (!pendente) return null;
+
+    const m = texto.match(RE_CODIGO);
+    if (!m) return null;
+
+    const codigo = m[1].toUpperCase();
+    const { descricao, preco } = await this.buscarNoErp(codigo);
+
+    // O parcelamento so faz sentido com preco. Sem ele, deixar `10x` gravado
+    // faria a tela calcular parcela de um valor que nao existe.
+    await this.catalogos.atualizarFoto(pendente.fotoId, {
+      codigoErp: codigo,
+      descricao,
+      precoAVista: preco,
+      parcelas: preco === null ? null : PARCELAS_PADRAO,
+    });
+
+    this.sessao.esquecerCodigo(de);
+
+    if (!descricao) {
+      return {
+        resposta:
+          `Anotei ${codigo} na foto de ${pendente.alvo} — mas essa peça ainda não está no ` +
+          'sistema, então ficou sem descrição e sem preço.',
+        motivo: 'codigo_sem_produto',
+      };
+    }
+
+    return {
+      resposta: `${pendente.alvo}\n${codigo} · ${descricao}\n${this.emReais(preco)} à vista`,
+      motivo: 'codigo_anotado',
+    };
+  }
+
+  temCodigoEsperando(de: string): boolean {
+    return this.sessao.codigoPendente(de) !== null;
+  }
+
+  // ---------------------------------------------------------------------------
   // Chegou um texto enquanto havia foto esperando o "aprovo"
   // ---------------------------------------------------------------------------
 
@@ -575,6 +635,32 @@ export class ProcessarFotoCatalogoUseCase {
     }
 
     const alvos = veredito.todas ? fila : [fila[0]];
+
+    // ==========================================================================
+    // SEM CÓDIGO NÃO ENTRA NO CATÁLOGO.
+    //
+    // Em 01/09/2026 uma foto sem código foi aprovada e apareceu na tela com
+    // `—` no lugar do descritivo. Um catálogo é peça, código e preço: sem eles
+    // a página sai com um espaço em branco onde deveria estar a venda, e o PDF
+    // montado imprime isso.
+    //
+    // Barrar aqui e não na montagem é deliberado: aqui a pessoa está com a
+    // peça na mão e o código à vista. Na montagem, dias depois, ninguém sabe
+    // mais de qual peça era aquela foto.
+    // ==========================================================================
+    const semCodigo = alvos.filter((f) => !f.codigoErp);
+    if (semCodigo.length > 0) {
+      // Marca a primeira, para o código que vier em seguida encontrá-la.
+      this.sessao.esperarCodigo(de, semCodigo[0].id, 'essa foto');
+      return {
+        resposta:
+          semCodigo.length === 1
+            ? 'Essa foto ainda está sem código. Me manda o código da peça que eu completo o descritivo — aí é só dizer "aprovo".'
+            : `${semCodigo.length} dessas fotos estão sem código. Me manda o código de cada uma antes de aprovar.`,
+        motivo: 'aprovacao_sem_codigo',
+      };
+    }
+
     for (const foto of alvos) {
       await this.catalogos.atualizarFoto(foto.id, {
         status: 'APROVADA',
@@ -620,26 +706,7 @@ export class ProcessarFotoCatalogoUseCase {
     // Para onde mandar a versao tratada quando ela ficar pronta.
     chat: string,
   ): Promise<string> {
-    let descricao: string | null = null;
-    let preco: number | null = null;
-
-    if (foto.codigoErp) {
-      const produto = await this.produtos.findByCodigoErp(foto.codigoErp);
-      if (produto) {
-        descricao =
-          produto.descricaoEtiqueta ??
-          `${produto.familia} ${produto.categoria}`.trim();
-        // `valorVenda` do ERP e o preco A VISTA — confirmado com o Lucas em
-        // 28/08. O parcelado e derivado dele, nunca guardado.
-        preco = produto.valorVenda;
-      } else {
-        // Nao e erro: a peca pode ainda nao ter sido sincronizada. A foto entra
-        // com o codigo escrito e sem descricao — por isso a tabela nao tem FK.
-        this.logger.warn(
-          `Peca ${foto.codigoErp} nao encontrada no ERP — foto sem descritivo.`,
-        );
-      }
-    }
+    const { descricao, preco } = await this.buscarNoErp(foto.codigoErp);
 
     // AGORA sabemos de qual catalogo a foto e, e so agora ela pode ir para a
     // pasta dele. Ate aqui viveu em `catalogo/pendentes/` — ver o cabecalho:
@@ -683,6 +750,10 @@ export class ProcessarFotoCatalogoUseCase {
 
     const alvo = `#${catalogo.numero} ${catalogo.nome}`;
     if (!foto.codigoErp) {
+      // O CONVITE SÓ VALE SE ALGUÉM ESCUTAR. Marcar aqui é o que faz o
+      // `BR26252` digitado em seguida encontrar esta foto — sem isto ele cai
+      // nos agentes, e a Anastasia responde que o código não diz nada.
+      this.sessao.esperarCodigo(chat, criada.id, alvo);
       return `Foto guardada em ${alvo}. Se quiser, me manda o código da peça que eu completo o descritivo.${tratando}`;
     }
     if (!descricao) {
@@ -772,6 +843,36 @@ export class ProcessarFotoCatalogoUseCase {
       await this.armazenamento.remover(chave);
     }
     await this.catalogos.removerFoto(foto.id);
+  }
+
+  /**
+   * O descritivo da peca, pelo codigo.
+   *
+   * Peca ausente do ERP NAO e erro: ela pode ainda nao ter sido sincronizada.
+   * A foto entra com o codigo escrito e sem descricao — e por isso que a
+   * tabela nao tem FK para produtos.
+   */
+  private async buscarNoErp(
+    codigo: string | null,
+  ): Promise<{ descricao: string | null; preco: number | null }> {
+    if (!codigo) return { descricao: null, preco: null };
+
+    const produto = await this.produtos.findByCodigoErp(codigo);
+    if (!produto) {
+      this.logger.warn(
+        `Peca ${codigo} nao encontrada no ERP — foto sem descritivo.`,
+      );
+      return { descricao: null, preco: null };
+    }
+
+    return {
+      descricao:
+        produto.descricaoEtiqueta ??
+        `${produto.familia} ${produto.categoria}`.trim(),
+      // `valorVenda` do ERP e o preco A VISTA — confirmado com o Lucas em
+      // 28/08. O parcelado e derivado dele, nunca guardado.
+      preco: produto.valorVenda,
+    };
   }
 
   /** Como chamar a peca numa frase. Sem codigo, ela e so "a foto". */

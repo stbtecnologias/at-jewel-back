@@ -137,6 +137,7 @@ describe('ProcessarFotoCatalogoUseCase — aprovacao da foto tratada', () => {
     removerFoto: jest.Mock;
   };
   let armazenamento: { remover: jest.Mock };
+  let produtos: { findByCodigoErp: jest.Mock };
   let tratar: { execute: jest.Mock };
   let sessao: SessaoCatalogoService;
   let useCase: ProcessarFotoCatalogoUseCase;
@@ -150,13 +151,14 @@ describe('ProcessarFotoCatalogoUseCase — aprovacao da foto tratada', () => {
       removerFoto: jest.fn().mockResolvedValue(undefined),
     };
     armazenamento = { remover: jest.fn().mockResolvedValue(undefined) };
+    produtos = { findByCodigoErp: jest.fn().mockResolvedValue(null) };
     tratar = { execute: jest.fn().mockResolvedValue(null) };
     sessao = new SessaoCatalogoService();
 
     useCase = new ProcessarFotoCatalogoUseCase(
       catalogos as never,
       armazenamento as never,
-      {} as never,
+      produtos as never,
       { enviarTexto: jest.fn(), enviarImagem: jest.fn() } as never,
       sessao,
       tratar as never,
@@ -263,6 +265,69 @@ describe('ProcessarFotoCatalogoUseCase — aprovacao da foto tratada', () => {
   it('a fila vem filtrada por quem fotografou — nunca pelo que veio na mensagem', async () => {
     await useCase.aprovacao(DE, QUEM, 'aprovo');
     expect(catalogos.listarEmAprovacao).toHaveBeenCalledWith(QUEM);
+  });
+
+  // -------------------------------------------------------------------------
+  // O código que chega depois da foto
+  // -------------------------------------------------------------------------
+
+  it('o código digitado depois completa a foto que ficou sem ele', async () => {
+    // O caso real de 01/09: a mensagem convidava a mandar o código e ninguém
+    // escutava — ele caía na Anastasia.
+    sessao.esperarCodigo(DE, 'f-9', '#0001 Rosa Pink');
+    produtos.findByCodigoErp.mockResolvedValue({
+      descricaoEtiqueta: 'BRINCO RUBI 0.63 CTS',
+      valorVenda: 44900,
+    });
+
+    const r = await useCase.codigo(DE, 'Br26252');
+
+    expect(catalogos.atualizarFoto).toHaveBeenCalledWith('f-9', {
+      codigoErp: 'BR26252',
+      descricao: 'BRINCO RUBI 0.63 CTS',
+      precoAVista: 44900,
+      parcelas: 10,
+    });
+    expect(r?.resposta).toContain('44.900,00');
+    // Consumido: a próxima mensagem volta a cair nos agentes.
+    expect(useCase.temCodigoEsperando(DE)).toBe(false);
+  });
+
+  it('texto sem cara de código devolve null e segue', async () => {
+    sessao.esperarCodigo(DE, 'f-9', '#0001 Rosa Pink');
+
+    expect(await useCase.codigo(DE, 'quanto vendi hoje?')).toBeNull();
+    expect(catalogos.atualizarFoto).not.toHaveBeenCalled();
+  });
+
+  it('peça fora do ERP anota o código e avisa que ficou sem preço', async () => {
+    sessao.esperarCodigo(DE, 'f-9', '#0001 Rosa Pink');
+    produtos.findByCodigoErp.mockResolvedValue(null);
+
+    const r = await useCase.codigo(DE, 'BR99999');
+
+    expect(catalogos.atualizarFoto).toHaveBeenCalledWith('f-9', {
+      codigoErp: 'BR99999',
+      descricao: null,
+      precoAVista: null,
+      // Sem preço não há parcela: deixar 10x gravado faria a tela calcular
+      // parcela de um valor que não existe.
+      parcelas: null,
+    });
+    expect(r?.motivo).toBe('codigo_sem_produto');
+  });
+
+  it('foto SEM CÓDIGO não entra no catálogo', async () => {
+    // Em 01/09 uma foto sem código foi aprovada e apareceu na tela com `—` no
+    // lugar do descritivo. Catálogo é peça, código e preço.
+    catalogos.listarEmAprovacao.mockResolvedValue([FOTO('f-1', null)]);
+
+    const r = await useCase.aprovacao(DE, QUEM, 'aprovo');
+
+    expect(catalogos.atualizarFoto).not.toHaveBeenCalled();
+    expect(r?.motivo).toBe('aprovacao_sem_codigo');
+    // E já fica esperando o código, para a pessoa só precisar digitá-lo.
+    expect(useCase.temCodigoEsperando(DE)).toBe(true);
   });
 
   // -------------------------------------------------------------------------

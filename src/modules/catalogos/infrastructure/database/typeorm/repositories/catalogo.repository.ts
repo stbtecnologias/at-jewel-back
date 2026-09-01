@@ -269,6 +269,15 @@ export class CatalogoRepository implements ICatalogoRepository {
     if (dados.aprovadoPor !== undefined) linha.aprovadoPor = dados.aprovadoPor;
     if (dados.aprovadoEm !== undefined) linha.aprovadoEm = dados.aprovadoEm;
 
+    if (dados.codigoErp !== undefined) linha.codigoErp = dados.codigoErp;
+    if (dados.descricao !== undefined) linha.descricao = dados.descricao;
+    if (dados.parcelas !== undefined) linha.parcelas = dados.parcelas;
+    if (dados.precoAVista !== undefined) {
+      // NUMERIC vai como string para o driver, igual em `criarFoto`.
+      linha.precoAVista =
+        dados.precoAVista === null ? null : String(dados.precoAVista);
+    }
+
     return this.paraFoto(await this.repoFotos.save(linha));
   }
 

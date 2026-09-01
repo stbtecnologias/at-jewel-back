@@ -34,6 +34,8 @@ describe('RotearMensagemInternaUseCase', () => {
     temFotoEsperando: jest.Mock;
     temFotoEmAprovacao: jest.Mock;
     aprovacao: jest.Mock;
+    temCodigoEsperando: jest.Mock;
+    codigo: jest.Mock;
   };
   let whatsapp: { baixarMidia: jest.Mock };
   let transcricao: { transcrever: jest.Mock; disponivel: jest.Mock };
@@ -56,6 +58,8 @@ describe('RotearMensagemInternaUseCase', () => {
       temFotoEsperando: jest.fn(() => false),
       temFotoEmAprovacao: jest.fn(() => false),
       aprovacao: jest.fn().mockResolvedValue(null),
+      temCodigoEsperando: jest.fn(() => false),
+      codigo: jest.fn().mockResolvedValue(null),
     };
     whatsapp = { baixarMidia: jest.fn() };
     transcricao = { transcrever: jest.fn(), disponivel: jest.fn(() => true) };
@@ -230,6 +234,26 @@ describe('RotearMensagemInternaUseCase', () => {
 
     expect(identificarAdmin.execute).not.toHaveBeenCalled();
     expect(canalCatalogo.aprovacao).not.toHaveBeenCalled();
+  });
+
+  it('o codigo da peca precede os agentes, e nao vira pergunta de vendas', async () => {
+    // O caso real de 01/09: a confirmação da foto convidava a mandar o código,
+    // e o "BR26252" caía na Anastasia — que respondia que o código não dizia
+    // nada sozinho.
+    canalCatalogo.temCodigoEsperando.mockReturnValue(true);
+    canalCatalogo.codigo.mockResolvedValue({
+      resposta: 'BR26252 · BRINCO RUBI',
+      motivo: 'codigo_anotado',
+    });
+    identificarAdmin.execute.mockResolvedValue(ADMIN);
+
+    const r = await useCase.execute({
+      de: '558586467241@c.us',
+      texto: 'Br26252',
+    });
+
+    expect(r.motivo).toBe('codigo_anotado');
+    expect(canalGestao.execute).not.toHaveBeenCalled();
   });
 
   it('o audio e transcrito UMA vez, mesmo passando pelo ramo do catalogo', async () => {
