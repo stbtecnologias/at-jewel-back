@@ -12,6 +12,7 @@ import {
   RemoverCatalogoUseCase,
   RemoverReferenciaUseCase,
 } from './application/use-cases/catalogos.use-cases';
+import { ExportarCatalogoUseCase } from './application/use-cases/exportar-catalogo.use-case';
 import { TratarFotoUseCase } from './application/use-cases/tratar-foto.use-case';
 import {
   ARMAZENAMENTO,
@@ -53,6 +54,7 @@ import { MidiaController } from './infrastructure/http/controllers/midia.control
     AnexarReferenciaUseCase,
     RemoverReferenciaUseCase,
     CurarFotoUseCase,
+    ExportarCatalogoUseCase,
     TratarFotoUseCase,
     { provide: TRATAMENTO_IMAGEM, useClass: OpenaiTratamentoImagemClient },
     { provide: CATALOGO_REPOSITORY, useClass: CatalogoRepository },

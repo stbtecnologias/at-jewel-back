@@ -11,11 +11,14 @@ import {
   Post,
   Query,
   Request,
+  Res,
   UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
+import { ExportarCatalogoUseCase } from '../../../application/use-cases/exportar-catalogo.use-case';
 import { Permissions } from '../../../../auth/infrastructure/http/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../../../auth/infrastructure/http/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../../../auth/infrastructure/http/guards/permissions.guard';
@@ -61,6 +64,7 @@ export class CatalogosController {
     private readonly anexarReferencia: AnexarReferenciaUseCase,
     private readonly removerReferencia: RemoverReferenciaUseCase,
     private readonly curarFoto: CurarFotoUseCase,
+    private readonly exportarCatalogo: ExportarCatalogoUseCase,
   ) {}
 
   @Get()
@@ -119,6 +123,36 @@ export class CatalogosController {
   @Permissions('catalogo:write')
   async remover(@Param('id', ParseUUIDPipe) id: string) {
     await this.removerCatalogo.execute(id);
+  }
+
+  /**
+   * O zip para o marketing montar a peça fora.
+   *
+   * `@Res()` porque a resposta é um STREAM: o zip vai sendo escrito enquanto as
+   * fotos são lidas do armazenamento, e não existe objeto para o Nest
+   * serializar. Devolver o arquivo montado exigiria segurá-lo inteiro na
+   * memória antes de mandar o primeiro byte.
+   *
+   * `catalogo:read` e não `write`: exportar não muda nada.
+   */
+  @Get(':id/exportacao')
+  @Permissions('catalogo:read')
+  async exportar(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res({ passthrough: false }) res: Response,
+  ) {
+    const { nomeArquivo, arquivo } = await this.exportarCatalogo.execute(id);
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${nomeArquivo}"`,
+    );
+    // Sem isto o navegador do front não enxerga o cabeçalho e o download sai
+    // com o nome da rota (`exportacao`) em vez do nome do catálogo.
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+
+    arquivo.pipe(res);
   }
 
   // ---------------------------------------------------------------------------
