@@ -129,7 +129,19 @@ export class OpenaiTratamentoImagemClient implements ITratamentoImagem {
       this.config.get<string>('OPENAI_IMAGEM_MODEL') ?? MODELO_PADRAO,
     );
     form.append('prompt', this.montarPrompt(pedido));
-    form.append('size', pedido.formato === '9:16' ? '1024x1536' : '1536x1024');
+    // ==========================================================================
+    // QUADRADA, SEMPRE. O packshot e quadrado — quem tem proporcao 9:16 ou 16:9
+    // e a PECA FINAL montada, e nao a foto da joia. Esta na definicao do enum,
+    // com todas as letras.
+    //
+    // Estava pedindo 1024x1536 quando o catalogo era 9:16, e a tela — que
+    // desenha a foto num quadrado — cortava o topo e a base da peca. Medido em
+    // 01/09/2026: uma garrafa chegou com tampa e fundo fora do quadro.
+    //
+    // Nao adianta so consertar a exibicao: a imagem alta seria montada no PDF
+    // com o mesmo corte, e o arquivo entregue ao marketing tambem.
+    // ==========================================================================
+    form.append('size', '1024x1024');
     form.append('n', '1');
 
     // UMA IMAGEM SO, E ISSO NAO E ECONOMIA: e o que impede o modelo de trocar

@@ -60,8 +60,6 @@ export interface PedidoDeTratamento {
    */
   pedidoDaPessoa: string | null;
 
-  /** Proporcao final: 9:16 para story, 16:9 para apresentacao. */
-  formato: '9:16' | '16:9';
 }
 
 export interface ImagemTratada {
