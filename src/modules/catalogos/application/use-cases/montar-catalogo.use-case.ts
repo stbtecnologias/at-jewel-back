@@ -15,6 +15,7 @@ import {
   ARMAZENAMENTO,
   CATALOGO_REPOSITORY,
 } from '../../domain/ports/injection-tokens';
+import { valorDaParcela } from '../../domain/ports/repositories/catalogo-repository.port';
 import type {
   CatalogoDetalhe,
   FotoItem,
@@ -41,21 +42,6 @@ const MARGEM = 64;
  * equilíbrio é editorial — quem ajustar isto está mexendo no visual da casa.
  */
 const FATIA_DA_FOTO = 0.62;
-
-/**
- * O parcelado a partir do a vista.
- *
- * TERCEIRO LUGAR onde esta regra vive: aqui, no `ExportarCatalogoUseCase` e no
- * `esboco.tsx` do front. Não há pacote compartilhado entre os repositórios, e
- * dentro do back os dois use cases produzem artefatos diferentes do mesmo
- * dado. Mudou um, mude os três.
- *
- * Verificada em 25 de 25 peças no levantamento de 20/08/2026.
- */
-function parcelaDe(precoAVista: number, parcelas: number): number {
-  const fator = parcelas === 6 ? 0.9 : 0.8;
-  return precoAVista / fator / parcelas;
-}
 
 /**
  * O catálogo montado em PDF, uma peça por página.
@@ -289,7 +275,7 @@ export class MontarCatalogoUseCase {
       .fontSize(13)
       .fillColor('#4a4a4a')
       .text(
-        `${foto.parcelas} X ${this.emReais(parcelaDe(foto.precoAVista, foto.parcelas))}`,
+        `${foto.parcelas} X ${this.emReais(valorDaParcela(foto.precoAVista, foto.parcelas, foto.jurosPercentual))}`,
         MARGEM,
         doc.y + 6,
         { width: util, align: 'center' },

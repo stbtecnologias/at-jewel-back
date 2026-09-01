@@ -11,29 +11,12 @@ import {
   ARMAZENAMENTO,
   CATALOGO_REPOSITORY,
 } from '../../domain/ports/injection-tokens';
+import { valorDaParcela } from '../../domain/ports/repositories/catalogo-repository.port';
 import type {
   FotoItem,
   ICatalogoRepository,
   ReferenciaItem,
 } from '../../domain/ports/repositories/catalogo-repository.port';
-
-/**
- * O parcelado a partir do a vista.
- *
- * ==========================================================================
- * ESTA REGRA TEM UM GEMEO NO FRONT (`esboco.tsx`, `parcelaDe`), e os dois
- * precisam mudar juntos. Nao ha pacote compartilhado entre os repositorios,
- * entao a duplicacao e consciente — e este comentario e o unico aviso.
- *
- * Verificada em 25 de 25 pecas no levantamento de 20/08/2026: o total
- * parcelado e o a vista dividido por 0,80 (10X) ou por 0,90 (6X). Por isso o
- * sistema guarda UM preco e calcula o outro; nao existem dois campos.
- * ==========================================================================
- */
-function parcelaDe(precoAVista: number, parcelas: number): number {
-  const fator = parcelas === 6 ? 0.9 : 0.8;
-  return precoAVista / fator / parcelas;
-}
 
 /**
  * O separador do CSV e `;`, e nao `,`.
@@ -239,7 +222,7 @@ export class ExportarCatalogoUseCase {
           temPreco ? this.emReais(foto.precoAVista!) : '',
           foto.parcelas !== null ? String(foto.parcelas) : '',
           temPreco
-            ? this.emReais(parcelaDe(foto.precoAVista!, foto.parcelas!))
+            ? this.emReais(valorDaParcela(foto.precoAVista!, foto.parcelas!, foto.jurosPercentual))
             : '',
         ]
           .map((c) => this.escapar(c))

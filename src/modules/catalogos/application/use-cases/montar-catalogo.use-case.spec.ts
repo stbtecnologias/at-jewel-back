@@ -73,6 +73,7 @@ describe('MontarCatalogoUseCase', () => {
     descricao: 'Brinco Rubi 0.63 cts',
     precoAVista: 44900,
     parcelas: 10,
+    jurosPercentual: null,
     origem: 'WHATSAPP',
     remetente: 'Faby',
     arquivoOriginalId: 'catalogo/0001/originais/a.jpg',

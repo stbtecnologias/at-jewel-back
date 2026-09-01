@@ -51,6 +51,47 @@ export interface AtualizarFotoData {
   descricao?: string | null;
   precoAVista?: number | null;
   parcelas?: number | null;
+  jurosPercentual?: number | null;
+}
+
+/**
+ * O VALOR DA PARCELA — e onde ele mora.
+ *
+ * ==========================================================================
+ * DUAS CONTAS, E SABER QUAL USAR DEPENDE DE UM NULL.
+ *
+ *   juros informado   total = a_vista * (1 + juros/100)
+ *   juros NULL        total = a_vista / 0,80 (10X) ou / 0,90 (6X)
+ *
+ * A segunda e a regra da casa, levantada em 25 de 25 pecas em 20/08/2026 e
+ * conferida de novo em 01/09 contra a pagina impressa: R$35.920,00 a vista
+ * sai como 10 X R$4.490,00.
+ *
+ * E ELAS NAO SAO A MESMA COISA. Dividir por 0,80 equivale a um juro de 25%,
+ * nao de 20%. Por isso `juros_percentual` NULL continua caindo na regra
+ * antiga em vez de ser traduzido para um percentual — traduzir mudaria o
+ * preco impresso das pecas ja cadastradas.
+ *
+ * ESTA FUNCAO TEM DOIS GEMEOS: um no front (`esboco.tsx`) e outro implicito
+ * em cada lugar que exibe parcela. Nao ha pacote compartilhado entre os
+ * repositorios; mudou aqui, mude la.
+ * ==========================================================================
+ */
+export function valorDaParcela(
+  precoAVista: number,
+  parcelas: number,
+  jurosPercentual: number | null,
+): number {
+  // `== null` COBRE undefined DE PROPOSITO. O valor chega de JSON em alguns
+  // caminhos, e ali um campo ausente e `undefined`, nao `null` — com `===` ele
+  // cairia na multiplicacao e produziria NaN, que vira "R$NaN" impresso na
+  // pagina. O lado seguro de errar aqui e cair na regra da casa.
+  const total =
+    jurosPercentual == null
+      ? precoAVista / (parcelas === 6 ? 0.9 : 0.8)
+      : precoAVista * (1 + jurosPercentual / 100);
+
+  return total / parcelas;
 }
 
 export interface FotoItem {
@@ -61,6 +102,8 @@ export interface FotoItem {
   descricao: string | null;
   precoAVista: number | null;
   parcelas: number | null;
+  /** Juro do parcelamento em %. NULL = nao informado, vale a regra da casa. */
+  jurosPercentual: number | null;
   origem: OrigemFoto;
   remetente: string | null;
   /** A foto como saiu do celular. NUNCA e reescrita. */
@@ -168,6 +211,7 @@ export interface CriarFotoData {
   descricao: string | null;
   precoAVista: number | null;
   parcelas: number | null;
+  jurosPercentual: number | null;
   origem: OrigemFoto;
   remetente: string | null;
   arquivoOriginalId: string | null;

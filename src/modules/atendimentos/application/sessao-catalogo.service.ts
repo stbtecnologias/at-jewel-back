@@ -43,6 +43,8 @@ export interface FotoPendente {
   /** Codigo da peca, quando veio na legenda. */
   codigoErp: string | null;
   parcelas: number | null;
+  /** Juro em %. null = nao informado, vale a regra da casa. */
+  juros?: number | null;
   /**
    * O que sobrou da legenda depois de tirar catalogo, codigo e parcelas:
    * "fundo rosa", "mais claro". Vai para a IA como pedido pontual.
