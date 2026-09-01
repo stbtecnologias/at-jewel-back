@@ -49,6 +49,29 @@ const RE_CODIGO = /\b([A-Z]{2}\d{3,})\b/i;
 /** `10x`, `6 X` — parcelamento informado na legenda. */
 const RE_PARCELAS = /\b(\d{1,2})\s*x\b/i;
 
+/**
+ * `15%`, `12 %` — o JURO do parcelamento, sobre o valor a vista.
+ *
+ * Decidido com o Lucas em 01/09/2026: o numero e juro, nao desconto. Entao
+ * `12x 15%` em R$44.900,00 e 44.900 x 1,15 = R$51.635,00, parcelado em 12.
+ */
+const RE_JUROS = /(\d{1,3})\s*%/;
+
+/**
+ * `sem juros`, `s/ juros`, `sem acrescimo` — juro ZERO, e nao ausencia dele.
+ *
+ * A diferenca importa: sem indicacao nenhuma vale a regra da casa (dividir por
+ * 0,80), que equivale a 25% de juro. "Sem juros" e o contrario disso, e
+ * precisa de um jeito de ser dito.
+ */
+const RE_SEM_JUROS =
+  /\bsem\s*juros\b|\bs\s*\/?\s*juros\b|\bsem\s*acr[eé]scimo\b/i;
+
+// A BARRA E OPCIONAL de proposito. `lerJuros` compara sobre o texto
+// NORMALIZADO, e o `normalizar` troca a barra por espaco — entao `s/ juros`
+// chega ali como `s juros`. Exigindo a barra, a forma abreviada nunca casaria,
+// e a peca sairia com o acrescimo padrao: o oposto do que foi pedido.
+
 /** `0042`, `#42`, `42` — o numero do catalogo. */
 const RE_NUMERO = /#?\b(\d{1,6})\b/;
 
@@ -393,6 +416,7 @@ export class ProcessarFotoCatalogoUseCase {
         mime,
         codigoErp: analise.codigo,
         parcelas: analise.parcelas,
+        juros: analise.juros,
         pedidoDeEstilo: analise.pedidoDeEstilo,
       });
       if (!pendurou) {
@@ -418,6 +442,7 @@ export class ProcessarFotoCatalogoUseCase {
         mime,
         codigoErp: analise.codigo,
         parcelas: analise.parcelas,
+        juros: analise.juros,
         pedidoDeEstilo: analise.pedidoDeEstilo,
         em: Date.now(),
       },
@@ -463,6 +488,7 @@ export class ProcessarFotoCatalogoUseCase {
         ...pendente,
         codigoErp: pendente.codigoErp ?? analise.codigo,
         parcelas: pendente.parcelas ?? analise.parcelas,
+        juros: pendente.juros ?? analise.juros,
       };
       linhas.push(
         await this.guardarFoto(catalogo, nomeRemetente, comCodigo, de),
@@ -508,13 +534,27 @@ export class ProcessarFotoCatalogoUseCase {
     const codigo = m[1].toUpperCase();
     const { descricao, preco } = await this.buscarNoErp(codigo);
 
-    // O parcelamento so faz sentido com preco. Sem ele, deixar `10x` gravado
+    // O PARCELAMENTO TAMBEM VALE AQUI. `BR26252 6x` numa mensagem so tem de
+    // funcionar igual a `0001 BR26252 6x` na legenda — quem escreve nao sabe
+    // (nem deveria saber) que sao dois caminhos de codigo diferentes.
+    const semCodigo = texto.replace(m[0], ' ');
+    const mParcelas = semCodigo.match(RE_PARCELAS);
+    const pedidas = mParcelas ? Number(mParcelas[1]) : null;
+    const juros = this.lerJuros(semCodigo);
+
+    // Parcelamento so faz sentido com preco. Sem ele, deixar `10x` gravado
     // faria a tela calcular parcela de um valor que nao existe.
     await this.catalogos.atualizarFoto(pendente.fotoId, {
       codigoErp: codigo,
       descricao,
       precoAVista: preco,
-      parcelas: preco === null ? null : PARCELAS_PADRAO,
+      parcelas:
+        preco === null
+          ? null
+          : pedidas && pedidas > 0
+            ? pedidas
+            : PARCELAS_PADRAO,
+      jurosPercentual: preco === null ? null : juros,
     });
 
     this.sessao.esquecerCodigo(de);
@@ -726,6 +766,7 @@ export class ProcessarFotoCatalogoUseCase {
       descricao,
       precoAVista: preco,
       parcelas: foto.codigoErp ? (foto.parcelas ?? PARCELAS_PADRAO) : null,
+      jurosPercentual: foto.juros ?? null,
       origem: 'WHATSAPP',
       remetente,
       arquivoOriginalId: arquivoId,
@@ -776,6 +817,8 @@ export class ProcessarFotoCatalogoUseCase {
     catalogo: CatalogoAberto | null;
     codigo: string | null;
     parcelas: number | null;
+    /** Juro em %. `null` = nao informado, vale a regra da casa. */
+    juros: number | null;
     pedidoDeEstilo: string | null;
   } {
     const bruto = (texto ?? '').trim();
@@ -787,6 +830,14 @@ export class ProcessarFotoCatalogoUseCase {
     const mParcelas = resto.match(RE_PARCELAS);
     const parcelas = mParcelas ? Number(mParcelas[1]) : null;
     if (mParcelas) resto = resto.replace(mParcelas[0], ' ');
+
+    // O JURO SAI DEPOIS DAS PARCELAS, e a ordem e obrigatoria: em `12x 15%`,
+    // procurar o percentual antes deixaria o `12x` intacto, mas procurar as
+    // PARCELAS depois acharia... nada errado. O risco real e o inverso — o
+    // numero do catalogo. Tirando parcelas e juro primeiro, o que sobrar de
+    // digito e catalogo, e `15` deixa de poder virar catalogo #0015.
+    const juros = this.lerJuros(resto);
+    resto = resto.replace(RE_SEM_JUROS, ' ').replace(RE_JUROS, ' ');
 
     // Numero: casa contra os catalogos abertos, comparando sem os zeros a
     // esquerda — quem digita "2" quer o "0002".
@@ -814,6 +865,7 @@ export class ProcessarFotoCatalogoUseCase {
     return {
       catalogo,
       codigo,
+      juros,
       parcelas: parcelas && parcelas > 0 ? parcelas : null,
       // O QUE SOBROU E PEDIDO DE ESTILO. Tirados catalogo, codigo e parcelas, o
       // resto so pode ser instrucao para a imagem: "fundo rosa", "mais claro".
@@ -916,6 +968,23 @@ export class ProcessarFotoCatalogoUseCase {
       `\nAinda faltam ${restantes.length} — a próxima é ` +
       `${this.rotulo(restantes[0])}.`
     );
+  }
+
+  /**
+   * O juro dito no texto. `null` quando nada foi dito.
+   *
+   * "SEM JUROS" VEM PRIMEIRO porque ele e uma afirmacao, e nao a falta de uma:
+   * zero e um valor. Sem essa ordem, "10x sem juros" cairia no `null` e a peca
+   * sairia com o acrescimo padrao — o oposto exato do que foi pedido.
+   */
+  private lerJuros(texto: string): number | null {
+    if (RE_SEM_JUROS.test(normalizar(texto))) return 0;
+
+    const m = texto.match(RE_JUROS);
+    if (!m) return null;
+
+    const valor = Number(m[1]);
+    return Number.isFinite(valor) && valor >= 0 ? valor : null;
   }
 
   private perguntarCatalogo(abertos: CatalogoAberto[]): string {

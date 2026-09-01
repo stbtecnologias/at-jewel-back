@@ -49,6 +49,18 @@ export class CatalogoFotoOrmEntity {
   @Column({ type: 'int', nullable: true })
   parcelas: number | null;
 
+  // Juro do parcelamento em %, sobre o a vista. NULL NAO E ausencia de dado:
+  // quer dizer "ninguem informou, use a regra da casa". NUMERIC volta como
+  // string do driver — convertido no repositorio, como `preco_a_vista`.
+  @Column({
+    name: 'juros_percentual',
+    type: 'numeric',
+    precision: 5,
+    scale: 2,
+    nullable: true,
+  })
+  jurosPercentual: string | null;
+
   @Column({ type: 'text', default: 'UPLOAD' })
   origem: OrigemFoto;
 

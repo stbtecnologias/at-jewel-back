@@ -30,6 +30,8 @@ describe('ProcessarFotoCatalogoUseCase — leitura da legenda', () => {
           catalogo: CatalogoAberto | null;
           codigo: string | null;
           parcelas: number | null;
+          juros: number | null;
+          pedidoDeEstilo: string | null;
         };
       }
     ).lerLegenda(texto, ABERTOS);
@@ -97,6 +99,43 @@ describe('ProcessarFotoCatalogoUseCase — leitura da legenda', () => {
 
   it('numero de catalogo que nao esta aberto nao casa', () => {
     expect(ler('0099 BR26252').catalogo).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // O juro do parcelamento
+  // -------------------------------------------------------------------------
+
+  it('le o juro em porcentagem', () => {
+    const r = ler('0002 BR26252 12x 15%');
+    expect(r.parcelas).toBe(12);
+    expect(r.juros).toBe(15);
+    // E o `15` NAO pode virar numero de catalogo: parcelas e juro saem do
+    // texto antes, entao o que sobra de digito e catalogo.
+    expect(r.catalogo?.numero).toBe('0002');
+  });
+
+  it('"sem juros" e ZERO, e nao ausencia', () => {
+    // A diferenca decide o preco: sem indicacao vale a regra da casa, que
+    // equivale a 25% de acrescimo. "Sem juros" e o oposto disso.
+    expect(ler('0002 BR26252 10x sem juros').juros).toBe(0);
+    expect(ler('0002 BR26252 10x s/ juros').juros).toBe(0);
+  });
+
+  it('sem dizer nada, o juro fica NULO — vale a regra da casa', () => {
+    expect(ler('0002 BR26252 10x').juros).toBeNull();
+  });
+
+  it('a ordem das partes nao importa', () => {
+    const r = ler('15% BR26252 12x 0002');
+    expect(r.codigo).toBe('BR26252');
+    expect(r.parcelas).toBe(12);
+    expect(r.juros).toBe(15);
+    expect(r.catalogo?.numero).toBe('0002');
+  });
+
+  it('o juro nao vira pedido de estilo', () => {
+    // Sobrando na legenda, "15%" iria para a IA como instrucao de imagem.
+    expect(ler('0002 BR26252 12x 15%').pedidoDeEstilo).toBeNull();
   });
 });
 
@@ -287,10 +326,28 @@ describe('ProcessarFotoCatalogoUseCase — aprovacao da foto tratada', () => {
       descricao: 'BRINCO RUBI 0.63 CTS',
       precoAVista: 44900,
       parcelas: 10,
+      jurosPercentual: null,
     });
     expect(r?.resposta).toContain('44.900,00');
     // Consumido: a próxima mensagem volta a cair nos agentes.
     expect(useCase.temCodigoEsperando(DE)).toBe(false);
+  });
+
+  it('o parcelamento na mesma mensagem vale — "BR26252 6x"', async () => {
+    // Tem de funcionar igual a `0001 BR26252 6x` na legenda: quem escreve não
+    // sabe que são dois caminhos de código diferentes.
+    sessao.esperarCodigo(DE, 'f-9', '#0001 Rosa Pink');
+    produtos.findByCodigoErp.mockResolvedValue({
+      descricaoEtiqueta: 'BRINCO RUBI',
+      valorVenda: 44900,
+    });
+
+    await useCase.codigo(DE, 'BR26252 6x');
+
+    expect(catalogos.atualizarFoto).toHaveBeenCalledWith(
+      'f-9',
+      expect.objectContaining({ parcelas: 6 }),
+    );
   });
 
   it('texto sem cara de código devolve null e segue', async () => {
@@ -313,6 +370,7 @@ describe('ProcessarFotoCatalogoUseCase — aprovacao da foto tratada', () => {
       // Sem preço não há parcela: deixar 10x gravado faria a tela calcular
       // parcela de um valor que não existe.
       parcelas: null,
+      jurosPercentual: null,
     });
     expect(r?.motivo).toBe('codigo_sem_produto');
   });

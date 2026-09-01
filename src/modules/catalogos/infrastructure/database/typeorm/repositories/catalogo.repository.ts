@@ -137,9 +137,7 @@ export class CatalogoRepository implements ICatalogoRepository {
       // O MESMO FILTRO DO DETALHE. Sem ele, a listagem contaria fotos que a
       // tela do catalogo nao mostra, e o numero do card nunca bateria com o
       // que a pessoa ve ao abrir.
-      .andWhere('f.status IN (:...status)', {
-        status: ['APROVADA', 'REPROVADA'],
-      })
+      .andWhere('f.status = :status', { status: 'APROVADA' })
       .groupBy('f.catalogo_id')
       .getRawMany<{ catalogoId: string; total: string }>();
 
@@ -236,6 +234,8 @@ export class CatalogoRepository implements ICatalogoRepository {
         precoAVista:
           dados.precoAVista === null ? null : String(dados.precoAVista),
         parcelas: dados.parcelas,
+        jurosPercentual:
+          dados.jurosPercentual === null ? null : String(dados.jurosPercentual),
         origem: dados.origem,
         remetente: dados.remetente,
         arquivoOriginalId: dados.arquivoOriginalId,
@@ -272,6 +272,10 @@ export class CatalogoRepository implements ICatalogoRepository {
     if (dados.codigoErp !== undefined) linha.codigoErp = dados.codigoErp;
     if (dados.descricao !== undefined) linha.descricao = dados.descricao;
     if (dados.parcelas !== undefined) linha.parcelas = dados.parcelas;
+    if (dados.jurosPercentual !== undefined) {
+      linha.jurosPercentual =
+        dados.jurosPercentual === null ? null : String(dados.jurosPercentual);
+    }
     if (dados.precoAVista !== undefined) {
       // NUMERIC vai como string para o driver, igual em `criarFoto`.
       linha.precoAVista =
@@ -359,19 +363,23 @@ export class CatalogoRepository implements ICatalogoRepository {
         order: { ordem: 'ASC' },
       }),
       this.repoFotos.find({
-        // SO O QUE JA PASSOU PELA APROVACAO.
+        // SO O QUE ESTA NO CATALOGO. NADA MAIS.
         //
         // Enquanto a foto esta a caminho — RECEBIDA, PROCESSANDO,
-        // EM_APROVACAO — ela vive na CONVERSA, e nao no catalogo. Quem
-        // fotografou ainda pode refazer ou jogar fora, e mostrar isso na tela
-        // faria a colecao parecer conter peca que ninguem aprovou. Foi
-        // exatamente o que aconteceu em 31/08/2026, quando a tela deu a
-        // entender que uma foto em EM_APROVACAO ja compunha o catalogo.
+        // EM_APROVACAO — ela vive na CONVERSA. Mostrar isso na tela faria a
+        // colecao parecer conter peca que ninguem aprovou, e foi o que
+        // aconteceu em 31/08/2026.
         //
-        // REPROVADA fica porque ela ESTEVE no catalogo: e a peca que a
-        // curadoria tirou, e sem ela na lista o botao de devolver nao teria
-        // como ser alcancado.
-        where: { catalogoId: linha.id, status: In(['APROVADA', 'REPROVADA']) },
+        // E REPROVADA TAMBEM NAO VEM, por decisao do Lucas em 01/09: a peca
+        // tirada da edicao nao deve aparecer de forma nenhuma, nem esmaecida
+        // nem atras de um "ver as que sairam". O filtro e AQUI e nao no front
+        // para o dado nao chegar nem pela rede — uma segunda tela nao teria
+        // como esquecer de filtrar.
+        //
+        // O CUSTO ACEITO: `devolver` continua existindo na rota e no status,
+        // mas deixa de ter caminho pela tela. Reverter uma peca tirada passa a
+        // exigir chamada direta a API ou SQL.
+        where: { catalogoId: linha.id, status: 'APROVADA' },
         order: { posicao: 'ASC' },
       }),
       // Da mais nova para a mais velha: a primeira é a que vale.
@@ -454,6 +462,8 @@ export class CatalogoRepository implements ICatalogoRepository {
       precoAVista:
         linha.precoAVista === null ? null : Number(linha.precoAVista),
       parcelas: linha.parcelas,
+      jurosPercentual:
+        linha.jurosPercentual === null ? null : Number(linha.jurosPercentual),
       origem: linha.origem,
       remetente: linha.remetente,
       arquivoOriginalId: linha.arquivoOriginalId,

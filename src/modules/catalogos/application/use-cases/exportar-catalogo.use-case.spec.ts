@@ -18,6 +18,7 @@ describe('ExportarCatalogoUseCase', () => {
     descricao: 'BRINCO RUBI 0.63 CTS',
     precoAVista: 44900,
     parcelas: 10,
+    jurosPercentual: null,
     origem: 'WHATSAPP',
     remetente: 'Faby',
     arquivoOriginalId: 'catalogo/0001/originais/a.jpg',
