@@ -339,8 +339,8 @@ export class FerramentasGestaoService {
 
       // A RESPOSTA AO AVISO DE LEAD NOVO. Nao passa por aqui nada que decida
       // quem atende: quem escolhe e a usuaria, e o use case so resolve o nome.
-      gestaoEncaminharLead: async ({ vendedora, lead }) =>
-        this.encaminharLead.execute({ vendedora, lead }),
+      gestaoEncaminharLead: async ({ vendedora, lead, quando }) =>
+        this.encaminharLead.execute({ vendedora, lead, quando }),
 
       gestaoCarteiraDoCliente: async ({ cliente }) => {
         const achados = await this.clientes.buscarPorNomeParcial(

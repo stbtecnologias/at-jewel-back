@@ -349,6 +349,11 @@ const GESTAO_ENCAMINHAR_LEAD_TOOL: Anthropic.Tool = {
         description:
           'Nome do lead, quando a usuaria disser qual. Omita se ela nao disse.',
       },
+      quando: {
+        type: 'string',
+        description:
+          'Horario combinado, COMO A USUARIA FALOU: "hoje as 14h", "amanha de manha". Vai como recado para a vendedora — NAO agenda nem cobra nada. Omita se ela nao mencionou horario; nunca invente um.',
+      },
     },
     required: ['vendedora'],
   },
@@ -851,10 +856,15 @@ export class AnthropicClient implements ILlmClient {
       ) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as { vendedora?: string; lead?: string };
+            const e = toolUse.input as {
+              vendedora?: string;
+              lead?: string;
+              quando?: string;
+            };
             const r = await params.gestaoEncaminharLead!({
               vendedora: String(e.vendedora ?? '').slice(0, 120),
               lead: e.lead ? String(e.lead).slice(0, 120) : undefined,
+              quando: e.quando ? String(e.quando).slice(0, 120) : undefined,
             });
             return textoDoEncaminhamento(r);
           }),

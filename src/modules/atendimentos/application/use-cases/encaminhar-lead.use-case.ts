@@ -25,6 +25,21 @@ export interface EncaminharLeadInput {
    * "manda pro Thiago" nao precisa repetir de quem se trata.
    */
   lead?: string | null;
+  /**
+   * Horario combinado, EM TEXTO LIVRE, como o ADM falou — "hoje as 14h",
+   * "amanha de manha", "depois das 18h".
+   *
+   * NAO E AGENDAMENTO, e a diferenca importa: nada aqui vira relogio, nada
+   * cobra a vendedora depois. E um recado, e vai como recado. O fluxo de
+   * cliente da casa e que agenda de verdade, porque la existe atendimento
+   * para pendurar a cobranca.
+   *
+   * EXISTE PORQUE SEM ELE O HORARIO SUMIA. O ADM responde ao aviso com
+   * "encaminha para a Marina, hoje as 14h" — sem um lugar para isso, a
+   * frase e lida, o encaminhamento acontece, e a vendedora recebe a peca
+   * sem a hora. Nada avisa que uma parte do pedido foi ignorada.
+   */
+  quando?: string | null;
 }
 
 /**
@@ -141,7 +156,10 @@ export class EncaminharLeadUseCase {
     // ninguem ter sido avisado — e nenhuma tela mostraria isso. Falhando o
     // envio, ele continua esperando e da para tentar de novo.
     try {
-      await this.whatsapp.enviarTexto(chatId, this.mensagem(lead));
+      await this.whatsapp.enviarTexto(
+        chatId,
+        this.mensagem(lead, input.quando),
+      );
     } catch (err) {
       this.logger.error(
         `Falha ao encaminhar o lead ${lead.id} para ${alvo.nome}: ${err instanceof Error ? err.message : err}`,
@@ -213,11 +231,16 @@ export class EncaminharLeadUseCase {
    * telefone. Sem a linha de sugestao — ela e conversa entre o sistema e o ADM,
    * e chegar na vendedora soaria como se alguem tivesse duvidado dela.
    */
-  private mensagem(lead: Lead): string {
-    return [
-      ...blocoDoLead(lead),
-      `Entre em contato: ${telefoneLegivel(lead.whatsapp)}`,
-    ].join('\n');
+  private mensagem(lead: Lead, quando?: string | null): string {
+    const linhas = blocoDoLead(lead);
+
+    // O HORARIO ANTES DO TELEFONE: ela le "quando" e ja tem o "como" na
+    // linha seguinte. Invertido, o numero fica orfao no meio do texto.
+    const combinado = quando?.trim();
+    if (combinado) linhas.push(`Pediu contato ${combinado}.`);
+
+    linhas.push(`Entre em contato: ${telefoneLegivel(lead.whatsapp)}`);
+    return linhas.join('\n');
   }
 }
 

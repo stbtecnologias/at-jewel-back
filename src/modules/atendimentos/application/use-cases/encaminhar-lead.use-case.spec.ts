@@ -223,4 +223,37 @@ describe('EncaminharLeadUseCase', () => {
     const [, texto] = whatsapp.enviarTexto.mock.calls[0] as [string, string];
     expect(texto).toContain('Cliente sem nome informado');
   });
+
+  it('o horário combinado vai na mensagem, antes do telefone', async () => {
+    // Ela lê "quando" e já tem o "como" na linha seguinte.
+    await useCase.execute({ vendedora: 'Thiago', quando: 'hoje às 14h' });
+
+    const [, texto] = whatsapp.enviarTexto.mock.calls[0] as [string, string];
+
+    expect(texto).toContain('Pediu contato hoje às 14h.');
+    expect(texto.indexOf('Pediu contato')).toBeLessThan(
+      texto.indexOf('Entre em contato'),
+    );
+  });
+
+  it('sem horário, a linha não aparece — e não inventa uma', async () => {
+    await useCase.execute({ vendedora: 'Thiago' });
+
+    const [, texto] = whatsapp.enviarTexto.mock.calls[0] as [string, string];
+    expect(texto).not.toContain('Pediu contato');
+  });
+
+  it('horário NÃO agenda nada: é recado, não relógio', async () => {
+    // O fluxo de cliente da casa cria atendimento e cobra o relato. Aqui não
+    // existe atendimento para pendurar a cobrança, e a decisão foi texto puro.
+    const r = await useCase.execute({
+      vendedora: 'Thiago',
+      quando: 'amanhã às 10h',
+    });
+
+    expect(r.status).toBe('ENCAMINHADO');
+    expect(leads.encaminhar).toHaveBeenCalledWith('lead-1', 'SEED-VD02');
+    // Nada além do envio e do registro do encaminhamento.
+    expect(whatsapp.enviarTexto).toHaveBeenCalledTimes(1);
+  });
 });

@@ -308,6 +308,8 @@ export type GestaoVendedorasHandler = () => Promise<{ linhas: string[] }>;
 export type GestaoEncaminharLeadHandler = (input: {
   vendedora: string;
   lead?: string;
+  /** Horario combinado em texto livre. Vai como RECADO, nao vira agenda. */
+  quando?: string;
 }) => Promise<{
   status: string;
   leadNome?: string;
