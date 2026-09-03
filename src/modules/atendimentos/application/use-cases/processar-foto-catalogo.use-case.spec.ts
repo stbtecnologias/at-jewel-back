@@ -47,6 +47,7 @@ describe('ProcessarFotoCatalogoUseCase — leitura da legenda', () => {
       // O tratamento pela IA nao participa destes testes: eles exercitam a
       // LEITURA DA LEGENDA, que acontece antes de qualquer geracao.
       {} as never,
+      {} as never,
     );
   });
 
@@ -201,6 +202,7 @@ describe('ProcessarFotoCatalogoUseCase — aprovacao da foto tratada', () => {
       { enviarTexto: jest.fn(), enviarImagem: jest.fn() } as never,
       sessao,
       tratar as never,
+      { execute: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 
@@ -428,5 +430,191 @@ describe('ProcessarFotoCatalogoUseCase — aprovacao da foto tratada', () => {
 
     expect(catalogos.removerFoto).toHaveBeenCalledTimes(2);
     expect(catalogos.atualizarFoto).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A PECA ENCONTRADA PELA DESCRICAO, quando o codigo nao esta a mao.
+ *
+ * O que estes testes protegem sao as duas bordas do recurso, e as duas doem
+ * de formas opostas:
+ *
+ *   engolir de menos -> "anel de esmeralda" cai na Anastasia e a foto fica
+ *                       sem codigo, que e o defeito que isto veio consertar;
+ *   engolir de mais  -> "quanto vendi hoje?" vira busca de produto, e a
+ *                       pergunta dela morre sem nunca chegar a quem responde.
+ */
+describe('ProcessarFotoCatalogoUseCase — a peca pela descricao', () => {
+  const DE = '558586467241@c.us';
+
+  const PRODUTO = (
+    codigo: string | null,
+    descricao: string,
+    preco: number,
+  ) => ({
+    codigoErp: codigo,
+    descricaoEtiqueta: descricao,
+    valorVenda: preco,
+    familia: 'ANEL',
+    categoria: 'JOIA',
+  });
+
+  let catalogos: { atualizarFoto: jest.Mock };
+  let produtos: { findByCodigoErp: jest.Mock };
+  let listar: { execute: jest.Mock };
+  let sessao: SessaoCatalogoService;
+  let useCase: ProcessarFotoCatalogoUseCase;
+
+  beforeEach(() => {
+    catalogos = { atualizarFoto: jest.fn().mockResolvedValue(undefined) };
+    produtos = {
+      findByCodigoErp: jest
+        .fn()
+        .mockResolvedValue(
+          PRODUTO('CB512', 'ANEL ESMERALDA GOTA OB 18K', 18900),
+        ),
+    };
+    listar = { execute: jest.fn().mockResolvedValue([]) };
+    sessao = new SessaoCatalogoService();
+
+    useCase = new ProcessarFotoCatalogoUseCase(
+      catalogos as never,
+      {} as never,
+      produtos as never,
+      {} as never,
+      sessao,
+      {} as never,
+      listar as never,
+    );
+
+    // O estado que o recurso inteiro pressupoe: uma foto guardada esperando
+    // o codigo. Sem ela, nada aqui roda — e isso tambem e testado.
+    sessao.esperarCodigo(DE, 'f-1', 'essa foto');
+  });
+
+  it('a descricao vira lista numerada, com o preco em cada linha', async () => {
+    listar.execute.mockResolvedValue([
+      PRODUTO('CB384', 'ANEL ESMERALDA OB 18K', 12400),
+      PRODUTO('CB512', 'ANEL ESMERALDA GOTA OB 18K', 18900),
+    ]);
+
+    const r = await useCase.buscarPeca(DE, 'anel de esmeralda ouro branco');
+
+    expect(r?.motivo).toBe('busca_com_opcoes');
+    expect(r?.resposta).toContain('1 · CB384');
+    expect(r?.resposta).toContain('2 · CB512');
+    // O preco e o que separa duas pecas de nome quase igual.
+    expect(r?.resposta).toContain('12.400,00');
+    // Nada foi gravado ainda: a busca so oferece.
+    expect(catalogos.atualizarFoto).not.toHaveBeenCalled();
+  });
+
+  it('o numero escolhe, e o codigo vai para a foto', async () => {
+    listar.execute.mockResolvedValue([
+      PRODUTO('CB384', 'ANEL ESMERALDA OB 18K', 12400),
+      PRODUTO('CB512', 'ANEL ESMERALDA GOTA OB 18K', 18900),
+    ]);
+    await useCase.buscarPeca(DE, 'anel de esmeralda');
+
+    const r = await useCase.buscarPeca(DE, '2');
+
+    expect(r?.motivo).toBe('codigo_anotado');
+    const [id, dados] = catalogos.atualizarFoto.mock.calls[0] as [
+      string,
+      { codigoErp: string },
+    ];
+    expect(id).toBe('f-1');
+    expect(dados.codigoErp).toBe('CB512');
+  });
+
+  it('o parcelamento continua valendo na escolha: `2 6x`', async () => {
+    listar.execute.mockResolvedValue([
+      PRODUTO('CB384', 'ANEL ESMERALDA OB 18K', 12400),
+      PRODUTO('CB512', 'ANEL ESMERALDA GOTA OB 18K', 18900),
+    ]);
+    await useCase.buscarPeca(DE, 'anel de esmeralda');
+
+    await useCase.buscarPeca(DE, '2 6x');
+
+    const [, dados] = catalogos.atualizarFoto.mock.calls[0] as [
+      string,
+      { parcelas: number },
+    ];
+    expect(dados.parcelas).toBe(6);
+  });
+
+  it('pergunta sobre vendas NAO vira busca de peca', async () => {
+    // A borda cara: engolir aqui faz a pergunta dela morrer sem chegar na
+    // Anastasia — e ela nunca fica sabendo que perguntou.
+    const r = await useCase.buscarPeca(DE, 'quanto vendi hoje?');
+
+    expect(r).toBeNull();
+    expect(listar.execute).not.toHaveBeenCalled();
+  });
+
+  it('uma opcao so ainda pergunta — e o `sim` confirma', async () => {
+    listar.execute.mockResolvedValue([
+      PRODUTO('CB512', 'ANEL ESMERALDA GOTA OB 18K', 18900),
+    ]);
+    const lista = await useCase.buscarPeca(DE, 'anel de esmeralda gota');
+
+    // Nao anotou sozinha: errar a peca imprime o preco de outra na pagina.
+    expect(lista?.motivo).toBe('busca_com_opcoes');
+    expect(catalogos.atualizarFoto).not.toHaveBeenCalled();
+
+    // E o "sim" que a pergunta convida e entendido.
+    const r = await useCase.buscarPeca(DE, 'sim');
+    expect(r?.motivo).toBe('codigo_anotado');
+  });
+
+  it('numero fora da lista responde, em vez de calar', async () => {
+    listar.execute.mockResolvedValue([
+      PRODUTO('CB384', 'ANEL ESMERALDA OB 18K', 12400),
+    ]);
+    await useCase.buscarPeca(DE, 'anel de esmeralda');
+
+    const r = await useCase.buscarPeca(DE, '9');
+
+    expect(r?.motivo).toBe('escolha_fora_da_lista');
+    expect(catalogos.atualizarFoto).not.toHaveBeenCalled();
+  });
+
+  it('busca sem resultado responde, e nao deixa um beco', async () => {
+    const r = await useCase.buscarPeca(DE, 'anel de kriptonita');
+
+    expect(r?.motivo).toBe('busca_sem_resultado');
+    expect(r?.resposta).toContain('código');
+  });
+
+  it('o texto vai CRU para a busca, com acento', async () => {
+    // `normalizar` tira o cedilha, e `alianca` nao casa com `ALIANÇA` no
+    // ILIKE. O normalizado decide se e busca; o cru e o que se procura.
+    await useCase.buscarPeca(DE, 'aliança de ouro');
+
+    const [filtro] = listar.execute.mock.calls[0] as [{ busca: string }];
+    expect(filtro.busca).toContain('aliança');
+  });
+
+  it('sem foto esperando codigo, nao busca nada', async () => {
+    sessao.esquecerCodigo(DE);
+
+    const r = await useCase.buscarPeca(DE, 'anel de esmeralda');
+
+    expect(r).toBeNull();
+    expect(listar.execute).not.toHaveBeenCalled();
+  });
+
+  it('peca sem codigo no ERP nao entra na lista', async () => {
+    // Oferecer uma peca sem codigo seria oferecer um beco: a escolha existe
+    // justamente para preencher `codigo_erp`.
+    listar.execute.mockResolvedValue([
+      PRODUTO(null, 'ANEL SEM CODIGO', 900),
+      PRODUTO('CB384', 'ANEL ESMERALDA OB 18K', 12400),
+    ]);
+
+    const r = await useCase.buscarPeca(DE, 'anel de esmeralda');
+
+    expect(r?.resposta).toContain('1 · CB384');
+    expect(r?.resposta).not.toContain('SEM CODIGO');
   });
 });

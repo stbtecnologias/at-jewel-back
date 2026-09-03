@@ -36,6 +36,20 @@ const JANELA_MS = 30 * 60 * 1000;
 /** Teto de fotos penduradas por remetente. Evita fila infinita de quem nunca responde. */
 const MAX_PENDENTES = 30;
 
+/**
+ * Uma peca que a busca por descricao devolveu, esperando escolha.
+ *
+ * O PRECO VAI JUNTO de proposito. Duas pecas da mesma familia tem descricao
+ * quase igual — "ANEL ESMERALDA OB 18K" e "ANEL ESMERALDA GOTA OB 18K" —, e o
+ * valor e o que separa uma da outra num relance. Escolher errado aqui nao
+ * levanta erro nenhum: imprime o preco de outra peca na pagina do catalogo.
+ */
+export interface OpcaoPeca {
+  codigo: string;
+  descricao: string;
+  preco: number | null;
+}
+
 export interface FotoPendente {
   /** Chave do arquivo JA gravado no armazenamento. */
   arquivoId: string;
@@ -83,6 +97,17 @@ interface Sessao {
    * em 01/09/2026.
    */
   fotoSemCodigo: { fotoId: string; alvo: string } | null;
+  /**
+   * A lista que eu acabei de mostrar — "1 · CB384 …", "2 · CB512 …" —,
+   * esperando o numero.
+   *
+   * ANDA COLADA AO `fotoSemCodigo`, e nunca sozinha: a escolha so faz sentido
+   * enquanto existe a foto que vai receber o codigo. Por isso nasce e morre
+   * junto — ver `esperarCodigo` e `esquecerCodigo`. Solta, uma lista velha
+   * transformaria o "2" digitado dez minutos depois no codigo de uma peca que
+   * ninguem estava mais procurando.
+   */
+  escolha: OpcaoPeca[] | null;
   atualizadoEm: number;
 }
 
@@ -203,6 +228,9 @@ export class SessaoCatalogoService {
   esperarCodigo(chave: string, fotoId: string, alvo: string): void {
     const s = this.viva(chave) ?? this.nova();
     s.fotoSemCodigo = { fotoId, alvo };
+    // Convite novo, lista velha morre: as opcoes da foto anterior nao servem
+    // para esta.
+    s.escolha = null;
     s.atualizadoEm = Date.now();
     this.sessoes.set(chave, s);
   }
@@ -215,7 +243,23 @@ export class SessaoCatalogoService {
     const s = this.viva(chave);
     if (!s) return;
     s.fotoSemCodigo = null;
+    s.escolha = null;
     this.sessoes.set(chave, s);
+  }
+
+  /**
+   * Guarda a lista mostrada, para o numero digitado em seguida ter onde entrar.
+   * Substitui a anterior: quem busca de novo esta corrigindo a busca.
+   */
+  oferecerEscolha(chave: string, opcoes: OpcaoPeca[]): void {
+    const s = this.viva(chave) ?? this.nova();
+    s.escolha = opcoes;
+    s.atualizadoEm = Date.now();
+    this.sessoes.set(chave, s);
+  }
+
+  escolhaPendente(chave: string): OpcaoPeca[] | null {
+    return this.viva(chave)?.escolha ?? null;
   }
 
   /** Retira e devolve tudo que estava esperando. */
@@ -270,6 +314,7 @@ export class SessaoCatalogoService {
       aguardandoAprovacao: false,
       aguardandoPedido: false,
       fotoSemCodigo: null,
+      escolha: null,
       atualizadoEm: Date.now(),
     };
   }
