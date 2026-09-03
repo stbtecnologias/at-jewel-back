@@ -618,3 +618,95 @@ describe('ProcessarFotoCatalogoUseCase — a peca pela descricao', () => {
     expect(r?.resposta).not.toContain('SEM CODIGO');
   });
 });
+
+/**
+ * O CHAO DO CANAL DO CATALOGO.
+ *
+ * Quem tem `catalogo:write` e nao tem agente proprio — estoque, marketing —
+ * escrevia qualquer coisa que nao fosse comando e caia na TRIAGEM: a Anastasia
+ * tentava qualificar a propria equipe como cliente, e o telefone do estoque
+ * virava lead na fila de encaminhamento da gestao. Medido em 03/09/2026.
+ */
+describe('ProcessarFotoCatalogoUseCase — o texto solto de quem cuida do catalogo', () => {
+  const DE = '558586467241@c.us';
+  const QUEM = 'Faby Rocha';
+
+  let catalogos: { listarAbertos: jest.Mock; listarEmAprovacao: jest.Mock };
+  let sessao: SessaoCatalogoService;
+  let useCase: ProcessarFotoCatalogoUseCase;
+
+  beforeEach(() => {
+    catalogos = {
+      listarAbertos: jest
+        .fn()
+        .mockResolvedValue([{ id: 'c1', numero: '0001', nome: 'New In' }]),
+      listarEmAprovacao: jest.fn().mockResolvedValue([]),
+    };
+    sessao = new SessaoCatalogoService();
+
+    useCase = new ProcessarFotoCatalogoUseCase(
+      catalogos as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      sessao,
+      {} as never,
+      {} as never,
+    );
+  });
+
+  it('diz os catálogos abertos e o que este canal faz', async () => {
+    const r = await useCase.conversa(DE, QUEM);
+
+    expect(r.motivo).toBe('catalogo_conversa');
+    expect(r.resposta).toContain('#0001 — New In');
+    // Quem escreveu não sabia o que o canal faz, senão teria escrito outra coisa.
+    expect(r.resposta).toContain('Me manda a foto da peça');
+  });
+
+  it('sem catálogo aberto, diz isso em vez de mostrar lista vazia', async () => {
+    catalogos.listarAbertos.mockResolvedValue([]);
+
+    const r = await useCase.conversa(DE, QUEM);
+
+    expect(r.resposta).toContain('Não tem catálogo aberto agora.');
+  });
+
+  it('avisa o que está esperando resposta, nomeando as peças', async () => {
+    catalogos.listarEmAprovacao.mockResolvedValue([
+      { id: 'f-1', codigoErp: 'BR26252' },
+      { id: 'f-2', codigoErp: null },
+    ]);
+
+    const r = await useCase.conversa(DE, QUEM);
+
+    expect(r.resposta).toContain('2 fotos esperando sua resposta');
+    expect(r.resposta).toContain('BR26252');
+    expect(r.resposta).toContain('sem código');
+  });
+
+  it('a catraca da aprovação SOBE aqui — e isso conserta um beco', async () => {
+    // A marca vive em memória e some no restart do container. Sem levantá-la,
+    // o "aprovo" digitado logo depois desta mensagem não seria reconhecido.
+    catalogos.listarEmAprovacao.mockResolvedValue([
+      { id: 'f-1', codigoErp: 'BR26252' },
+    ]);
+    expect(useCase.temFotoEmAprovacao(DE)).toBe(false);
+
+    await useCase.conversa(DE, QUEM);
+
+    expect(useCase.temFotoEmAprovacao(DE)).toBe(true);
+  });
+
+  it('sem nada esperando, a catraca continua baixa', async () => {
+    await useCase.conversa(DE, QUEM);
+
+    expect(useCase.temFotoEmAprovacao(DE)).toBe(false);
+  });
+
+  it('a fila é a DE QUEM ESCREVEU, e não a da casa', async () => {
+    await useCase.conversa(DE, QUEM);
+
+    expect(catalogos.listarEmAprovacao).toHaveBeenCalledWith(QUEM);
+  });
+});

@@ -851,6 +851,73 @@ export class ProcessarFotoCatalogoUseCase {
   }
 
   // ---------------------------------------------------------------------------
+  // Texto solto de quem cuida do catalogo
+  // ---------------------------------------------------------------------------
+
+  /**
+   * O chao do canal, para quem tem `catalogo:write` e nao tem agente proprio.
+   *
+   * ==========================================================================
+   * QUEM E DA CASA NAO PODE FALAR COM O VAZIO.
+   *
+   * O estoque manda foto e responde "aprovo". Escrevendo qualquer outra coisa,
+   * ate 03/09/2026 caia na TRIAGEM — a Anastasia tentava qualificar a propria
+   * equipe como cliente, e o telefone do estoque virava lead na fila de
+   * encaminhamento da gestao.
+   * ==========================================================================
+   *
+   * NAO SUBSTITUI NADA. O roteador tenta antes todos os caminhos que ja
+   * existem — responder o catalogo, mandar o codigo, aprovar, buscar a peca.
+   * Aqui chega o que sobrou, e a resposta e dizer o que este canal faz.
+   *
+   * SEM LLM, pelo mesmo motivo do resto do modulo: sao duas consultas e uma
+   * frase. Um modelo acrescentaria latencia, custo e uma superficie de injecao
+   * onde hoje nao existe nenhuma.
+   */
+  async conversa(de: string, nomeRemetente: string): Promise<RespostaFoto> {
+    const [abertos, esperando] = await Promise.all([
+      this.catalogos.listarAbertos(),
+      this.catalogos.listarEmAprovacao(nomeRemetente.trim()),
+    ]);
+
+    const blocos: string[] = [];
+
+    if (esperando.length > 0) {
+      // A CATRACA SOBE JUNTO, e isto conserta um beco antigo: a marca de
+      // aprovacao vive em memoria e some no restart do container. Sem ela, o
+      // "aprovo" digitado depois nao era reconhecido e a pessoa ficava sem
+      // saida — a tela aprova, mas nem todo mundo tem a tela aberta.
+      this.sessao.marcarEmAprovacao(de);
+
+      const nomes = esperando
+        .map((f) => f.codigoErp ?? 'sem código')
+        .join(', ');
+      blocos.push(
+        esperando.length === 1
+          ? `Tem 1 foto esperando sua resposta: ${nomes}.`
+          : `Tem ${esperando.length} fotos esperando sua resposta: ${nomes}.`,
+      );
+    }
+
+    blocos.push(
+      abertos.length > 0
+        ? `Catálogos abertos:\n${abertos
+            .map((c) => `#${c.numero} — ${c.nome}`)
+            .join('\n')}`
+        : 'Não tem catálogo aberto agora.',
+    );
+
+    // A FRASE DE AJUDA VAI SEMPRE, e por ultimo: quem escreveu nao sabia o que
+    // este canal faz, senao teria escrito outra coisa.
+    blocos.push(
+      'Me manda a foto da peça que eu trato e te devolvo. Na legenda dá para ' +
+        'dizer o catálogo, o código e o parcelamento — 0001 BR26252 10x.',
+    );
+
+    return { resposta: blocos.join('\n\n'), motivo: 'catalogo_conversa' };
+  }
+
+  // ---------------------------------------------------------------------------
   // Interno
   // ---------------------------------------------------------------------------
 
@@ -1006,9 +1073,7 @@ export class ProcessarFotoCatalogoUseCase {
    */
   private async jogarFora(foto: FotoItem): Promise<void> {
     const chaves = new Set(
-      [foto.arquivoOriginalId, foto.arquivoId].filter(
-        (c): c is string => !!c,
-      ),
+      [foto.arquivoOriginalId, foto.arquivoId].filter((c): c is string => !!c),
     );
     for (const chave of chaves) {
       await this.armazenamento.remover(chave);

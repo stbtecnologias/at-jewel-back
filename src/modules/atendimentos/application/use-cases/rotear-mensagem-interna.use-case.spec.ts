@@ -15,7 +15,11 @@ import { RotearMensagemInternaUseCase } from './rotear-mensagem-interna.use-case
  *    Audio de estranho nao pode custar um centavo.
  */
 describe('RotearMensagemInternaUseCase', () => {
-  const VENDEDORA = { id: 'vd-1', nome: 'Marina Albuquerque', codigoErp: 'SEED-VD01' };
+  const VENDEDORA = {
+    id: 'vd-1',
+    nome: 'Marina Albuquerque',
+    codigoErp: 'SEED-VD01',
+  };
   const ADMIN = { id: 'ad-1', nome: 'Lucas Barbosa', role: 'ADMIN' };
 
   const AUDIO = {
@@ -37,6 +41,7 @@ describe('RotearMensagemInternaUseCase', () => {
     temCodigoEsperando: jest.Mock;
     codigo: jest.Mock;
     buscarPeca: jest.Mock;
+    conversa: jest.Mock;
   };
   let whatsapp: { baixarMidia: jest.Mock };
   let transcricao: { transcrever: jest.Mock; disponivel: jest.Mock };
@@ -46,22 +51,36 @@ describe('RotearMensagemInternaUseCase', () => {
     identificarVendedora = { execute: jest.fn().mockResolvedValue(null) };
     identificarAdmin = { execute: jest.fn().mockResolvedValue(null) };
     canalVendedora = {
-      execute: jest.fn().mockResolvedValue({ resposta: 'da elena', motivo: 'conversa' }),
+      execute: jest
+        .fn()
+        .mockResolvedValue({ resposta: 'da elena', motivo: 'conversa' }),
     };
     canalGestao = {
-      execute: jest.fn().mockResolvedValue({ resposta: 'da anastasia', motivo: 'conversa' }),
+      execute: jest
+        .fn()
+        .mockResolvedValue({ resposta: 'da anastasia', motivo: 'conversa' }),
     };
     // Sem foto esperando por padrao: o fluxo de texto continua indo para os
     // dois agentes de sempre, que e o que os testes daqui verificam.
     canalCatalogo = {
-      foto: jest.fn().mockResolvedValue({ resposta: 'foto guardada', motivo: 'foto_guardada' }),
-      resposta: jest.fn().mockResolvedValue({ resposta: 'classificada', motivo: 'fotos_classificadas' }),
+      foto: jest.fn().mockResolvedValue({
+        resposta: 'foto guardada',
+        motivo: 'foto_guardada',
+      }),
+      resposta: jest.fn().mockResolvedValue({
+        resposta: 'classificada',
+        motivo: 'fotos_classificadas',
+      }),
       temFotoEsperando: jest.fn(() => false),
       temFotoEmAprovacao: jest.fn(() => false),
       aprovacao: jest.fn().mockResolvedValue(null),
       temCodigoEsperando: jest.fn(() => false),
       codigo: jest.fn().mockResolvedValue(null),
       buscarPeca: jest.fn().mockResolvedValue(null),
+      conversa: jest.fn().mockResolvedValue({
+        resposta: 'do catalogo',
+        motivo: 'catalogo_conversa',
+      }),
     };
     whatsapp = { baixarMidia: jest.fn() };
     transcricao = { transcrever: jest.fn(), disponivel: jest.fn(() => true) };
@@ -73,14 +92,17 @@ describe('RotearMensagemInternaUseCase', () => {
       canalGestao as never,
       canalCatalogo as never,
       whatsapp as never,
-      transcricao as never,
+      transcricao,
     );
   });
 
   it('vendedora vai para a Elena, e a gestao nem e consultada', async () => {
     identificarVendedora.execute.mockResolvedValue(VENDEDORA);
 
-    const r = await useCase.execute({ de: '558586467241@c.us', texto: 'minha agenda?' });
+    const r = await useCase.execute({
+      de: '558586467241@c.us',
+      texto: 'minha agenda?',
+    });
 
     expect(r.resposta).toBe('da elena');
     expect(canalGestao.execute).not.toHaveBeenCalled();
@@ -187,7 +209,11 @@ describe('RotearMensagemInternaUseCase', () => {
   it('texto digitado tem precedencia sobre audio', async () => {
     identificarVendedora.execute.mockResolvedValue(VENDEDORA);
 
-    await useCase.execute({ de: '558586467241@c.us', texto: 'oi', audio: AUDIO });
+    await useCase.execute({
+      de: '558586467241@c.us',
+      texto: 'oi',
+      audio: AUDIO,
+    });
 
     expect(transcricao.transcrever).not.toHaveBeenCalled();
   });
@@ -329,5 +355,76 @@ describe('RotearMensagemInternaUseCase', () => {
     expect(canalGestao.execute).toHaveBeenCalledWith(
       expect.objectContaining({ texto: 'quanto vendi hoje?' }),
     );
+  });
+
+  describe('quem cuida do catálogo tem casa', () => {
+    const ESTOQUISTA = { id: 'ad-9', nome: 'Faby Rocha', role: 'ESTOQUISTA' };
+
+    /** Reconhece só com a permissão de catálogo — nunca com a de gestão. */
+    const soCatalogo = () =>
+      identificarAdmin.execute.mockImplementation(
+        (_tel: string, permissao?: string) =>
+          Promise.resolve(permissao === 'catalogo:write' ? ESTOQUISTA : null),
+      );
+
+    it('texto do estoquista NÃO cai na triagem: vai para o canal do catálogo', async () => {
+      // Até 03/09/2026 caía, e a Anastasia tentava qualificar a própria equipe
+      // como cliente — o telefone do estoque virava lead na fila da gestão.
+      soCatalogo();
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'oi, tudo bem?',
+      });
+
+      expect(r.motivo).toBe('catalogo_conversa');
+      expect(canalCatalogo.conversa).toHaveBeenCalled();
+      expect(canalGestao.execute).not.toHaveBeenCalled();
+      expect(canalVendedora.execute).not.toHaveBeenCalled();
+    });
+
+    it('o ADMIN continua na Anastasia: a gestão vem ANTES do catálogo', async () => {
+      // Ele tem as duas permissões. Invertida a ordem, o texto dele deixaria de
+      // ser assunto da gestão — e a foto dele já ia para o catálogo pelo ramo
+      // da imagem, que não muda.
+      identificarAdmin.execute.mockResolvedValue(ADMIN);
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'quanto vendi hoje?',
+      });
+
+      expect(r.resposta).toBe('da anastasia');
+      expect(canalCatalogo.conversa).not.toHaveBeenCalled();
+    });
+
+    it('desconhecido continua desconhecido', async () => {
+      // A regressão que importa: abrir uma terceira porta não pode abrir a
+      // primeira. Quem não é da casa segue sem resposta.
+      const r = await useCase.execute({
+        de: '558599990000@c.us',
+        texto: 'oi',
+      });
+
+      expect(r.motivo).toBe('ignorado_remetente_desconhecido');
+      expect(canalCatalogo.conversa).not.toHaveBeenCalled();
+    });
+
+    it('áudio do estoquista é transcrito — ele é da casa', async () => {
+      soCatalogo();
+      whatsapp.baixarMidia.mockResolvedValue({
+        conteudo: Buffer.from('ogg'),
+        mimetype: 'audio/ogg',
+      });
+      transcricao.transcrever.mockResolvedValue('preciso mandar umas fotos');
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: '',
+        audio: AUDIO,
+      });
+
+      expect(r.motivo).toBe('catalogo_conversa');
+    });
   });
 });
