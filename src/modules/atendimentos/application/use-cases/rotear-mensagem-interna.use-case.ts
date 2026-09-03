@@ -103,9 +103,14 @@ export class RotearMensagemInternaUseCase {
     // dado de venda.
     // ---------------------------------------------------------------------
     if (msg.imagem) {
-      const quem = await this.identificarAdmin.execute(telefone, PERMISSAO_CATALOGO);
+      const quem = await this.identificarAdmin.execute(
+        telefone,
+        PERMISSAO_CATALOGO,
+      );
       if (!quem) {
-        this.logger.debug('Foto de remetente sem permissao de catalogo — ignorada.');
+        this.logger.debug(
+          'Foto de remetente sem permissao de catalogo — ignorada.',
+        );
         return { resposta: null, motivo: 'ignorado_foto_sem_permissao' };
       }
       return this.canalCatalogo.foto({
@@ -191,11 +196,29 @@ export class RotearMensagemInternaUseCase {
     }
 
     const vendedora = await this.identificarVendedora.execute(telefone);
-    const admin = vendedora ? null : await this.identificarAdmin.execute(telefone);
+    const admin = vendedora
+      ? null
+      : await this.identificarAdmin.execute(telefone);
 
-    if (!vendedora && !admin) {
+    // QUEM CUIDA DO CATALOGO E DA CASA, e ate 03/09/2026 caia na TRIAGEM: o
+    // estoquista escrevia qualquer coisa que nao fosse "aprovo" e a Anastasia
+    // tentava qualifica-lo como cliente — o telefone da equipe virava lead na
+    // fila de encaminhamento da gestao.
+    //
+    // VEM DEPOIS DA GESTAO de proposito. O ADMIN tem as duas permissoes, e o
+    // texto dele continua sendo assunto da Anastasia; foto dele ja ia para o
+    // catalogo pelo ramo da imagem, e continua indo. So chega aqui quem NAO
+    // tem canal proprio — estoque e marketing.
+    const doCatalogo =
+      vendedora || admin
+        ? null
+        : await this.identificarAdmin.execute(telefone, PERMISSAO_CATALOGO);
+
+    if (!vendedora && !admin && !doCatalogo) {
       // Nao logamos o numero: e PII, e o log e o lugar mais facil de vazar.
-      this.logger.debug('Mensagem interna de remetente nao reconhecido — ignorada.');
+      this.logger.debug(
+        'Mensagem interna de remetente nao reconhecido — ignorada.',
+      );
       return { resposta: null, motivo: 'ignorado_remetente_desconhecido' };
     }
 
@@ -204,7 +227,9 @@ export class RotearMensagemInternaUseCase {
         ? textoResolvido
         : await this.resolverTexto(msg);
     if (texto === null) {
-      const nome = (vendedora?.nome ?? admin?.nome ?? '').trim().split(/\s+/)[0];
+      const nome = (vendedora?.nome ?? admin?.nome ?? doCatalogo?.nome ?? '')
+        .trim()
+        .split(/\s+/)[0];
       return {
         resposta:
           `${nome ? `${nome}, c` : 'C'}hegou seu áudio mas não consegui ouvir. ` +
@@ -214,6 +239,13 @@ export class RotearMensagemInternaUseCase {
     }
     if (!texto) {
       return { resposta: null, motivo: 'ignorado_sem_conteudo' };
+    }
+
+    // O CHAO DO CANAL DO CATALOGO. Tudo que era assunto dele ja foi tentado
+    // la em cima — responder o catalogo, mandar o codigo, aprovar, buscar a
+    // peca. Aqui chega o que sobrou, e a resposta e dizer o que este canal faz.
+    if (doCatalogo) {
+      return this.canalCatalogo.conversa(msg.de, doCatalogo.nome ?? '');
     }
 
     if (vendedora) {
@@ -258,7 +290,9 @@ export class RotearMensagemInternaUseCase {
 
     const texto = await this.transcricao.transcrever({
       conteudo: arquivo.conteudo,
-      mimetype: arquivo.mimetype.startsWith('audio') ? arquivo.mimetype : mimetype,
+      mimetype: arquivo.mimetype.startsWith('audio')
+        ? arquivo.mimetype
+        : mimetype,
     });
 
     if (!texto) return null;
