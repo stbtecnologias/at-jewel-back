@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { ClientesModule } from '../clientes/clientes.module';
+import { VendedorasModule } from '../vendedoras/vendedoras.module';
 import { WhatsappGatewayModule } from '../atendimento/whatsapp-gateway.module';
 import { AvisarGestaoDeLeadUseCase } from './application/use-cases/avisar-gestao-de-lead.use-case';
 import { RegistrarLeadUseCase } from './application/use-cases/registrar-lead.use-case';
@@ -24,6 +25,8 @@ import { LeadsController } from './infrastructure/http/controllers/leads.control
     ClientesModule,
     // Para avisar a gestao no WhatsApp quando a triagem termina.
     WhatsappGatewayModule,
+    // Para dizer, no mesmo aviso, quem eu sugeriria para atender.
+    VendedorasModule,
   ],
   controllers: [LeadsController],
   providers: [

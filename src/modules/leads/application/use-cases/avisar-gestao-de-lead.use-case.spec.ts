@@ -48,6 +48,7 @@ describe('AvisarGestaoDeLeadUseCase', () => {
   let admins: jest.Mocked<IAdminUserRepository>;
   let permissoes: jest.Mocked<PermissionsService>;
   let whatsapp: jest.Mocked<IWhatsappGateway>;
+  let sugerir: { execute: jest.Mock };
 
   beforeEach(() => {
     admins = {
@@ -65,7 +66,24 @@ describe('AvisarGestaoDeLeadUseCase', () => {
       enviarImagem: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<IWhatsappGateway>;
 
-    useCase = new AvisarGestaoDeLeadUseCase(admins, permissoes, whatsapp);
+    sugerir = {
+      execute: jest.fn().mockResolvedValue([
+        {
+          codigoErp: 'SEED-VD02',
+          nome: 'Marina Albuquerque',
+          tipo: 'CONSULTORA',
+          score: 78,
+          motivos: ['especialista em aliança de ouro branco, par'],
+        },
+      ]),
+    };
+
+    useCase = new AvisarGestaoDeLeadUseCase(
+      admins,
+      permissoes,
+      whatsapp,
+      sugerir as never,
+    );
   });
 
   it('avisa quem tem telefone e permissao de gestao', async () => {
@@ -105,6 +123,94 @@ describe('AvisarGestaoDeLeadUseCase', () => {
     expect(texto).not.toContain('5585944443333');
   });
 
+  it('a sugestão vai com NOME e motivo, e não com o código', async () => {
+    // Código solto no WhatsApp ("SEED-VD02") obriga quem lê a lembrar de cor
+    // de quem é — e ele está lendo no meio do dia, no celular.
+    await useCase.execute(leadFake());
+
+    const texto = whatsapp.enviarTexto.mock.calls[0][1];
+    expect(texto).toContain('Sugestão: Marina Albuquerque');
+    expect(texto).toContain('especialista em');
+    expect(texto).not.toContain('SEED-VD02');
+  });
+
+  it('a especialidade procurada é o texto cru do que ela quer', async () => {
+    // O casamento é parcial nos dois sentidos, então a frase da triagem
+    // serve como está — "anel" casa com "aneis de noivado".
+    await useCase.execute(leadFake());
+
+    expect(sugerir.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        especialidade: 'aliança de ouro branco, par',
+        limit: 1,
+      }),
+    );
+  });
+
+  it('sugestão que falha não derruba o aviso', async () => {
+    // Um lead sem sugestão ainda vale a mensagem: a pergunta do fim continua
+    // respondível. Falhar aqui custa uma linha, nunca o aviso.
+    sugerir.execute.mockRejectedValue(new Error('metricas fora do ar'));
+
+    expect(await useCase.execute(leadFake())).toBe(1);
+
+    const texto = whatsapp.enviarTexto.mock.calls[0][1];
+    expect(texto).toContain('Para qual vendedora encaminho?');
+    expect(texto).not.toContain('Sugestão:');
+  });
+
+  it('ninguém disponível: o aviso sai sem a linha de sugestão', async () => {
+    sugerir.execute.mockResolvedValue([]);
+
+    expect(await useCase.execute(leadFake())).toBe(1);
+    expect(whatsapp.enviarTexto.mock.calls[0][1]).not.toContain('Sugestão:');
+  });
+
+  it('código gravado no lead tem precedência sobre o meu palpite', async () => {
+    // Alguém escolheu deliberadamente pela API; sobrepor seria ignorar o
+    // pedido. Eu só resolvo o código em nome.
+    sugerir.execute.mockResolvedValue([
+      {
+        codigoErp: 'SEED-VD09',
+        nome: 'Beatriz Lima',
+        tipo: 'CONSULTORA',
+        score: 90,
+        motivos: [],
+      },
+      {
+        codigoErp: 'SEED-VD02',
+        nome: 'Marina Albuquerque',
+        tipo: 'CONSULTORA',
+        score: 40,
+        motivos: [],
+      },
+    ]);
+
+    await useCase.execute(leadFake({ vendedoraSugeridaCodigo: 'SEED-VD02' }));
+
+    const texto = whatsapp.enviarTexto.mock.calls[0][1];
+    expect(texto).toContain('Marina Albuquerque');
+    expect(texto).not.toContain('Beatriz');
+  });
+
+  it('código pedido que não está disponível imprime o código, e não outra pessoa', async () => {
+    // Trocar em silêncio por outra vendedora seria pior que uma linha feia.
+    sugerir.execute.mockResolvedValue([
+      {
+        codigoErp: 'SEED-VD09',
+        nome: 'Beatriz Lima',
+        tipo: 'CONSULTORA',
+        score: 90,
+        motivos: [],
+      },
+    ]);
+
+    await useCase.execute(leadFake({ vendedoraSugeridaCodigo: 'SEED-VD77' }));
+
+    const texto = whatsapp.enviarTexto.mock.calls[0][1];
+    expect(texto).toContain('SEED-VD77');
+    expect(texto).not.toContain('Beatriz');
+  });
   it('um destinatario com problema nao cala os outros', async () => {
     admins.listarTodos.mockResolvedValue([
       ADMIN,
