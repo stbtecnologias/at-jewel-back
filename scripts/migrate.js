@@ -109,6 +109,11 @@ const MANIFESTO = {
   // tipos de marcador serve, e inventar um 'default' para uma migracao unica
   // seria mais maquinario do que ela merece. `verify` a ignora, como ja ignora
   // 36 a 41.
+  // 44 e 45 sao ALTER em catalogo_fotos — tambem nao levantadas.
+  // 46 cria QUATRO objetos. O marcador e movimentacoes_pagamentos porque ela
+  // referencia movimentacoes, que referencia operacoes: se ela existe, as
+  // outras tres existem.
+  '46_movimentacoes.sql':                 { tipo: 'tabela',     alvo: 'movimentacoes_pagamentos' },
 };
 
 // ---------------------------------------------------------------------------

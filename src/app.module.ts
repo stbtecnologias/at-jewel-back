@@ -22,6 +22,8 @@ import { EmpresasModule } from './modules/empresas/empresas.module';
 import { GruposEstoqueModule } from './modules/grupos-estoque/grupos-estoque.module';
 import { LocaisEstoqueModule } from './modules/locais-estoque/locais-estoque.module';
 import { EstoqueModule } from './modules/estoque/estoque.module';
+import { OperacoesModule } from './modules/operacoes/operacoes.module';
+import { MovimentacoesModule } from './modules/movimentacoes/movimentacoes.module';
 import { CatalogosModule } from './modules/catalogos/catalogos.module';
 import { GrupoEstoqueOrmEntity } from './modules/grupos-estoque/infrastructure/database/typeorm/entities/grupo-estoque.orm-entity';
 import { LocalEstoqueOrmEntity } from './modules/locais-estoque/infrastructure/database/typeorm/entities/local-estoque.orm-entity';
@@ -140,6 +142,11 @@ import { HealthController } from './health.controller';
     GruposEstoqueModule,
     LocaisEstoqueModule,
     EstoqueModule,
+    // O documento do ERP e o cadastro que diz o que ele e (migracao 46).
+    // OperacoesModule vem antes: MovimentacoesModule o importa para
+    // resolver `operacao_id` na ingestao.
+    OperacoesModule,
+    MovimentacoesModule,
     CatalogosModule,
     AnalyticsModule,
     AgentesModule,

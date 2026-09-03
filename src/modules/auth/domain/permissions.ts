@@ -13,6 +13,11 @@ export const PERMISSOES: PermissaoDef[] = [
   { chave: 'vendas:read', label: 'Ver vendas (próprias, se vendedora)', grupo: 'Vendas' },
   { chave: 'vendas:read_all', label: 'Ver vendas de todas as vendedoras (comparativo)', grupo: 'Vendas' },
   { chave: 'vendas:write', label: 'Editar vendas', grupo: 'Vendas' },
+  // Um par cobre operacoes e movimentacoes. Escrita e de gestao, nao de
+  // lancamento: o ERP e o dono do documento, e o CRM nunca cria um. Serve
+  // para classificar uma operacao nova e corrigir de-para errado.
+  { chave: 'movimentacoes:read', label: 'Ver movimentações do ERP e o cadastro de operações', grupo: 'Vendas' },
+  { chave: 'movimentacoes:write', label: 'Classificar operações e corrigir o de-para do ERP', grupo: 'Vendas' },
   { chave: 'produtos:read', label: 'Ver produtos', grupo: 'Produtos' },
   { chave: 'produtos:write', label: 'Editar produtos', grupo: 'Produtos' },
   { chave: 'ocorrencias:read', label: 'Ver ocorrências', grupo: 'Produtos' },
