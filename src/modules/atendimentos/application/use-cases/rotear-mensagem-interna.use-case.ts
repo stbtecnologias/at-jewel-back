@@ -123,6 +123,7 @@ export class RotearMensagemInternaUseCase {
     //   foto esperando catalogo  -> "0002" e a RESPOSTA de "de qual e?"
     //   foto guardada sem codigo -> "BR26252" completa o descritivo
     //   foto tratada esperando   -> "aprovo" / "ajusta mais claro"
+    //   codigo na ponta da lingua nao -> "anel de esmeralda", e eu listo
     //
     // OS TRES SAO RESPOSTA A UMA PERGUNTA QUE O SISTEMA FEZ. Caindo na
     // Anastasia, ela responde "0002" como pergunta sobre vendas e "BR26252"
@@ -170,6 +171,21 @@ export class RotearMensagemInternaUseCase {
           // vendas feita com foto pendurada segue para a Anastasia como
           // seguiria em qualquer outro momento.
           if (aprovacao) return aprovacao;
+
+          // A BUSCA DA PECA E A ULTIMA A OLHAR, e a ordem e o que a torna
+          // segura: aqui ja se sabe que o texto nao era codigo nem veredito.
+          // Antes da aprovacao, um `aprovo` viraria termo de busca.
+          //
+          // Ela tambem so age com o texto dizendo QUE PECA E ("anel...",
+          // "brinco...") ou respondendo a uma lista que acabou de sair — o
+          // resto segue para os agentes, como sempre.
+          if (esperandoCodigo) {
+            const escolhida = await this.canalCatalogo.buscarPeca(
+              msg.de,
+              textoResolvido,
+            );
+            if (escolhida) return escolhida;
+          }
         }
       }
     }

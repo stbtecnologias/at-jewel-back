@@ -36,6 +36,7 @@ describe('RotearMensagemInternaUseCase', () => {
     aprovacao: jest.Mock;
     temCodigoEsperando: jest.Mock;
     codigo: jest.Mock;
+    buscarPeca: jest.Mock;
   };
   let whatsapp: { baixarMidia: jest.Mock };
   let transcricao: { transcrever: jest.Mock; disponivel: jest.Mock };
@@ -60,6 +61,7 @@ describe('RotearMensagemInternaUseCase', () => {
       aprovacao: jest.fn().mockResolvedValue(null),
       temCodigoEsperando: jest.fn(() => false),
       codigo: jest.fn().mockResolvedValue(null),
+      buscarPeca: jest.fn().mockResolvedValue(null),
     };
     whatsapp = { baixarMidia: jest.fn() };
     transcricao = { transcrever: jest.fn(), disponivel: jest.fn(() => true) };
@@ -254,6 +256,59 @@ describe('RotearMensagemInternaUseCase', () => {
 
     expect(r.motivo).toBe('codigo_anotado');
     expect(canalGestao.execute).not.toHaveBeenCalled();
+  });
+
+  it('a descricao da peca vira lista, e nao pergunta para a Anastasia', async () => {
+    // Quem esta com a peca na mao nem sempre tem o codigo a vista.
+    canalCatalogo.temCodigoEsperando.mockReturnValue(true);
+    canalCatalogo.buscarPeca.mockResolvedValue({
+      resposta: 'Achei 2. Qual delas?',
+      motivo: 'busca_com_opcoes',
+    });
+    identificarAdmin.execute.mockResolvedValue(ADMIN);
+
+    const r = await useCase.execute({
+      de: '558586467241@c.us',
+      texto: 'anel de esmeralda ouro branco',
+    });
+
+    expect(r.motivo).toBe('busca_com_opcoes');
+    expect(canalGestao.execute).not.toHaveBeenCalled();
+  });
+
+  it('a busca e a ULTIMA a olhar: o `aprovo` nao vira termo de busca', async () => {
+    // A ordem e o que torna a busca segura. Invertida, um "aprovo" com foto
+    // esperando codigo seria procurado no catalogo de produtos.
+    canalCatalogo.temCodigoEsperando.mockReturnValue(true);
+    canalCatalogo.temFotoEmAprovacao.mockReturnValue(true);
+    canalCatalogo.aprovacao.mockResolvedValue({
+      resposta: 'BR26252 aprovada.',
+      motivo: 'foto_aprovada',
+    });
+    identificarAdmin.execute.mockResolvedValue(ADMIN);
+
+    const r = await useCase.execute({
+      de: '558586467241@c.us',
+      texto: 'aprovo',
+    });
+
+    expect(r.motivo).toBe('foto_aprovada');
+    expect(canalCatalogo.buscarPeca).not.toHaveBeenCalled();
+  });
+
+  it('texto que nao era busca nem veredito segue para a Anastasia', async () => {
+    // A borda oposta, e a mais cara: engolir a pergunta dela faz a duvida
+    // morrer sem nunca chegar a quem responde.
+    canalCatalogo.temCodigoEsperando.mockReturnValue(true);
+    identificarAdmin.execute.mockResolvedValue(ADMIN);
+
+    const r = await useCase.execute({
+      de: '558586467241@c.us',
+      texto: 'quanto vendi hoje?',
+    });
+
+    expect(canalCatalogo.buscarPeca).toHaveBeenCalled();
+    expect(r.resposta).toBe('da anastasia');
   });
 
   it('o audio e transcrito UMA vez, mesmo passando pelo ramo do catalogo', async () => {
