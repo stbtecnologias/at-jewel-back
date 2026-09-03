@@ -22,6 +22,11 @@ export const SCOPES_VALIDOS = [
   // aumentaria o numero de scopes a administrar sem separar risco nenhum.
   'estoque:read',
   'estoque:write',
+  // Um par cobre `operacoes` e as tres tabelas de `movimentacoes`, pelo mesmo
+  // argumento do estoque: quem le a movimentacao precisa da operacao para
+  // saber o que ela e. Sao os dois lados do mesmo documento do ERP.
+  'movimentacoes:read',
+  'movimentacoes:write',
   'agente_eventos:write',
   // A triagem da Anastasia: o `atwpp` nao tem banco, e grava por aqui.
   'leads:read',
@@ -70,6 +75,10 @@ export const SCOPE_DESCRICAO: Record<ApiKeyScope, string> = {
   'estoque:read': 'Consultar saldo de estoque, grupos e locais',
   'estoque:write':
     'Sincronizar saldo de estoque e manter grupos e locais (integracao do ERP)',
+  'movimentacoes:read':
+    'Ler movimentacoes do ERP (vendas, devolucoes) e o cadastro de operacoes',
+  'movimentacoes:write':
+    'Sincronizar movimentacoes e manter o cadastro de operacoes (integracao do ERP)',
   'agente_eventos:write': 'Registrar eventos da Anastasia/Elena/Sofia',
   'leads:read': 'Ler leads da triagem (fila do admin)',
   'leads:write': 'Registrar e atualizar a triagem do cliente (consumido pelo atwpp)',
