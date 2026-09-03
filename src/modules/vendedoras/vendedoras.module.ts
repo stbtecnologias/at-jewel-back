@@ -57,6 +57,9 @@ import { VendedorasController } from './infrastructure/http/controllers/vendedor
     VENDEDORA_REPOSITORY,
     VENDEDORA_METRICAS_REPOSITORY,
     BuscarVendedoraPorWhatsappUseCase,
+    // O aviso de lead novo sugere quem atende. O score fica AQUI: ele le
+    // metricas e vendas, que o modulo de leads nao alcanca nem deve alcancar.
+    SugerirVendedorasUseCase,
   ],
 })
 export class VendedorasModule {}
