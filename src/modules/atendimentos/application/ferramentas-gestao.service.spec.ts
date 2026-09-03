@@ -15,8 +15,13 @@ describe('FerramentasGestaoService', () => {
   let carteira: { semComprar: jest.Mock; maioresCompradores: jest.Mock };
   let agendarGestao: { execute: jest.Mock };
   let auditoria: { listar: jest.Mock; detalhe: jest.Mock };
-  let vendedoras: { listar: jest.Mock; buscarPorCodigoErp: jest.Mock; buscarPorId: jest.Mock };
+  let vendedoras: {
+    listar: jest.Mock;
+    buscarPorCodigoErp: jest.Mock;
+    buscarPorId: jest.Mock;
+  };
   let clientes: { buscarPorNomeParcial: jest.Mock };
+  let leads: { listarAguardandoGestao: jest.Mock };
   let servico: FerramentasGestaoService;
 
   const MARINA = {
@@ -30,12 +35,16 @@ describe('FerramentasGestaoService', () => {
     resolverVendedora = { execute: jest.fn().mockResolvedValue(MARINA) };
     agenda = { execute: jest.fn().mockResolvedValue([]) };
     desempenho = {
-      vendas: jest.fn().mockResolvedValue({ quantidade: 0, receita: 0, ticketMedio: 0 }),
+      vendas: jest
+        .fn()
+        .mockResolvedValue({ quantidade: 0, receita: 0, ticketMedio: 0 }),
       metas: jest.fn().mockResolvedValue([]),
     };
     carteira = {
       semComprar: jest.fn().mockResolvedValue({ clientes: [], total: 0 }),
-      maioresCompradores: jest.fn().mockResolvedValue({ clientes: [], total: 0 }),
+      maioresCompradores: jest
+        .fn()
+        .mockResolvedValue({ clientes: [], total: 0 }),
     };
     agendarGestao = { execute: jest.fn() };
     auditoria = {
@@ -48,6 +57,7 @@ describe('FerramentasGestaoService', () => {
       buscarPorId: jest.fn().mockResolvedValue(null),
     };
     clientes = { buscarPorNomeParcial: jest.fn().mockResolvedValue([]) };
+    leads = { listarAguardandoGestao: jest.fn().mockResolvedValue([]) };
 
     servico = new FerramentasGestaoService(
       resolverVendedora as never,
@@ -56,8 +66,10 @@ describe('FerramentasGestaoService', () => {
       carteira as never,
       agendarGestao as never,
       auditoria as never,
+      { execute: jest.fn() } as never,
       vendedoras as never,
       clientes as never,
+      leads as never,
     );
   });
 
@@ -112,7 +124,9 @@ describe('FerramentasGestaoService', () => {
         sugestoes: ['Marina Albuquerque', 'Beatriz Nogueira'],
       });
 
-      const r = await servico.montar().gestaoCarteira({ vendedora: 'Fernanda' });
+      const r = await servico
+        .montar()
+        .gestaoCarteira({ vendedora: 'Fernanda' });
 
       expect(r.status).toBe('NAO_ENCONTRADA');
       expect(r.nomes).toContain('Beatriz Nogueira');
@@ -142,7 +156,9 @@ describe('FerramentasGestaoService', () => {
       expect(r.status).toBe('OK');
       // A FRASE DELA, inteira. Resumir aqui seria o modelo repetindo um
       // resumo de um resumo — e o relato existe justamente para nao virar isso.
-      expect(r.linhas[0]).toContain('Gostou do solitario mas quer ver em ouro rose.');
+      expect(r.linhas[0]).toContain(
+        'Gostou do solitario mas quer ver em ouro rose.',
+      );
       expect(r.linhas[0]).toContain('Luana Ferreira');
     });
 
@@ -171,15 +187,25 @@ describe('FerramentasGestaoService', () => {
     it('com cliente nomeado, abre o episodio inteiro e nao so o ultimo relato', async () => {
       auditoria.listar.mockResolvedValue({
         total: 1,
-        itens: [{ id: 'at-3', clienteNome: 'Luana Ferreira', etapa: 'REMARCADO' }],
+        itens: [
+          { id: 'at-3', clienteNome: 'Luana Ferreira', etapa: 'REMARCADO' },
+        ],
       });
       auditoria.detalhe.mockResolvedValue({
         clienteNome: 'Luana Ferreira',
         etapa: 'REMARCADO',
         interacoes: [
-          { relato: 'Liguei e ela pediu para retornar depois.', ocorridoEm: new Date(), criadoEm: new Date() },
+          {
+            relato: 'Liguei e ela pediu para retornar depois.',
+            ocorridoEm: new Date(),
+            criadoEm: new Date(),
+          },
           { relato: null, ocorridoEm: new Date(), criadoEm: new Date() },
-          { relato: 'Falei agora, remarcou para amanha as 14h.', ocorridoEm: new Date(), criadoEm: new Date() },
+          {
+            relato: 'Falei agora, remarcou para amanha as 14h.',
+            ocorridoEm: new Date(),
+            criadoEm: new Date(),
+          },
         ],
       });
 
@@ -231,7 +257,9 @@ describe('FerramentasGestaoService', () => {
   describe('melhores clientes de uma vendedora', () => {
     it('repassa categoria e periodo, e devolve o total', async () => {
       carteira.maioresCompradores.mockResolvedValue({
-        clientes: [{ nome: 'Ana', ultimaCompra: null, quantidade: 4, valorTotal: 12000 }],
+        clientes: [
+          { nome: 'Ana', ultimaCompra: null, quantidade: 4, valorTotal: 12000 },
+        ],
         total: 27,
       });
 
@@ -252,13 +280,122 @@ describe('FerramentasGestaoService', () => {
 
     it('sem categoria, a unidade vira compra', async () => {
       carteira.maioresCompradores.mockResolvedValue({
-        clientes: [{ nome: 'Ana', ultimaCompra: null, quantidade: 4, valorTotal: 12000 }],
+        clientes: [
+          { nome: 'Ana', ultimaCompra: null, quantidade: 4, valorTotal: 12000 },
+        ],
         total: 4,
       });
 
       const r = await servico.montar().gestaoMelhores({ vendedora: 'Marina' });
 
       expect(r.linhas[0]).toContain('compras');
+    });
+  });
+
+  describe('a equipe, para quem precisa escolher', () => {
+    const VD = (
+      nome: string,
+      statusDisponibilidade: string,
+      especialidades: string[] = [],
+    ) => ({ nome, statusDisponibilidade, especialidades });
+
+    it('DISPONIVEL primeiro, e ninguém fica de fora', async () => {
+      // Esconder quem está de férias faria a usuária procurar um nome que ela
+      // sabe que existe.
+      vendedoras.listar.mockResolvedValue([
+        VD('Beatriz', 'FERIAS'),
+        VD('Marina', 'DISPONIVEL'),
+        VD('Camila', 'OCUPADA'),
+      ]);
+
+      const r = await servico.montar().gestaoVendedoras();
+
+      expect(r.linhas).toEqual([
+        'Marina',
+        'Beatriz — de férias',
+        'Camila — ocupada',
+      ]);
+    });
+
+    it('a especialidade entra: é o que ajuda a escolher', async () => {
+      vendedoras.listar.mockResolvedValue([
+        VD('Marina', 'DISPONIVEL', ['noivado', 'alta joalheria']),
+      ]);
+
+      const r = await servico.montar().gestaoVendedoras();
+
+      expect(r.linhas[0]).toBe('Marina — noivado, alta joalheria');
+    });
+
+    it('só as ATIVAS: quem saiu da equipe não é opção', async () => {
+      await servico.montar().gestaoVendedoras();
+
+      expect(vendedoras.listar).toHaveBeenCalledWith({ ativo: true });
+    });
+  });
+
+  describe('a fila de leads esperando encaminhamento', () => {
+    const dias = (n: number) => {
+      const d = new Date();
+      d.setDate(d.getDate() - n);
+      return d;
+    };
+
+    it('cada linha diz o que a pessoa quer e HÁ QUANTO TEMPO espera', async () => {
+      // A idade é o ponto: o aviso sai uma vez só, então lead esquecido não
+      // volta a se anunciar. É ela que separa "chegou agora" de "está parado".
+      leads.listarAguardandoGestao.mockResolvedValue([
+        {
+          nome: 'Nick Tesla',
+          produtosDesejados: 'aneis de noivado',
+          direcionadoGestaoEm: dias(0),
+          criadoEm: dias(0),
+        },
+        {
+          nome: 'Ana Prado',
+          produtosDesejados: 'colar de pérolas',
+          direcionadoGestaoEm: dias(3),
+          criadoEm: dias(5),
+        },
+      ]);
+
+      const r = await servico.montar().gestaoLeads();
+
+      expect(r.linhas).toEqual([
+        'Nick Tesla — aneis de noivado — hoje',
+        'Ana Prado — colar de pérolas — há 3 dias',
+      ]);
+    });
+
+    it('lead sem nome ainda aparece na fila', async () => {
+      // Quem sumiu antes de dizer o nome é justamente o que se perde de vista.
+      leads.listarAguardandoGestao.mockResolvedValue([
+        {
+          nome: null,
+          produtosDesejados: 'brinco',
+          direcionadoGestaoEm: dias(1),
+          criadoEm: dias(1),
+        },
+      ]);
+
+      const r = await servico.montar().gestaoLeads();
+
+      expect(r.linhas[0]).toBe('sem nome informado — brinco — há 1 dia');
+    });
+
+    it('a espera cai para a criação quando não houve promoção datada', async () => {
+      leads.listarAguardandoGestao.mockResolvedValue([
+        {
+          nome: 'Bia',
+          produtosDesejados: null,
+          direcionadoGestaoEm: null,
+          criadoEm: dias(2),
+        },
+      ]);
+
+      const r = await servico.montar().gestaoLeads();
+
+      expect(r.linhas[0]).toBe('Bia — há 2 dias');
     });
   });
 });

@@ -205,7 +205,6 @@ export type AgendarContatoHandler = (
   input: AgendarContatoLlmInput,
 ) => Promise<AgendarContatoLlmResultado>;
 
-
 // ===========================================================================
 // GESTAO — o espelho das ferramentas da vendedora, COM o parametro "de quem".
 //
@@ -278,6 +277,46 @@ export type GestaoPanoramaHandler = (input: {
  * De quem e este cliente. EXCLUSIVA DA GESTAO — e literalmente a pergunta que
  * a vendedora nao pode fazer (ver ELENA_INTERNA_SYSTEM).
  */
+/**
+ * "Que leads estao esperando encaminhamento?"
+ *
+ * A IDADE VAI EM CADA LINHA, e e a informacao que justifica a ferramenta.
+ * Uma lista de nomes diz quem esta na fila; a idade diz QUEM ESTA PARADO —
+ * e lead esquecido nao gera aviso nenhum, porque o aviso sai uma vez so.
+ *
+ * SEM TELEFONE, igual ao aviso: o ADM nao liga para ninguem, e o numero
+ * solto numa lista so serviria para ser repassado adiante sem controle.
+ */
+export type GestaoLeadsHandler = () => Promise<{ linhas: string[] }>;
+
+/**
+ * "Quais sao as minhas vendedoras?" — a pergunta que o aviso de lead provoca.
+ *
+ * Devolve UMA LINHA POR VENDEDORA, ja pronta para ser repassada. O status
+ * vem junto porque a pergunta real e "para quem eu posso mandar agora", e
+ * uma lista sem isso convida a encaminhar para quem esta de ferias.
+ */
+export type GestaoVendedorasHandler = () => Promise<{ linhas: string[] }>;
+
+/**
+ * "Manda pro Thiago" — a resposta ao aviso de lead novo.
+ *
+ * O RESULTADO E FECHADO, e nao um texto livre: quem transforma status em
+ * frase e o cliente do LLM, para a Anastasia nunca improvisar sobre um erro
+ * que ela nao entende. Nenhuma variante carrega telefone de cliente.
+ */
+export type GestaoEncaminharLeadHandler = (input: {
+  vendedora: string;
+  lead?: string;
+}) => Promise<{
+  status: string;
+  leadNome?: string;
+  vendedoraNome?: string;
+  termo?: string;
+  nomes?: string[];
+  sugestoes?: string[];
+}>;
+
 export type GestaoCarteiraDoClienteHandler = (input: {
   cliente: string;
 }) => Promise<{
@@ -351,6 +390,9 @@ export interface ChatParams {
   gestaoMetas?: GestaoMetasHandler;
   gestaoPanorama?: GestaoPanoramaHandler;
   gestaoCarteiraDoCliente?: GestaoCarteiraDoClienteHandler;
+  gestaoEncaminharLead?: GestaoEncaminharLeadHandler;
+  gestaoVendedoras?: GestaoVendedorasHandler;
+  gestaoLeads?: GestaoLeadsHandler;
   gestaoCarteira?: GestaoCarteiraHandler;
   gestaoMelhores?: GestaoMelhoresHandler;
   gestaoAgendar?: GestaoAgendarHandler;

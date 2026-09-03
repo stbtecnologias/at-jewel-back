@@ -313,6 +313,47 @@ const GESTAO_MELHORES_TOOL: Anthropic.Tool = {
   },
 };
 
+const GESTAO_LEADS_TOOL: Anthropic.Tool = {
+  name: 'listar_leads',
+  description:
+    'Lista os LEADS que terminaram a triagem e ainda esperam ser encaminhados a uma vendedora, com o que cada um procura e ha quanto tempo espera. Use para "que leads estao esperando", "tem lead pendente?", "o que ficou para encaminhar". Nao traz telefone.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {},
+  },
+};
+
+const GESTAO_VENDEDORAS_TOOL: Anthropic.Tool = {
+  name: 'listar_vendedoras',
+  description:
+    'Lista as vendedoras ATIVAS da equipe, com a disponibilidade e as especialidades de cada uma. Use para "quais sao as minhas vendedoras", "quem esta disponivel", "para quem eu posso encaminhar" — e sempre que a usuaria precisar escolher uma pessoa e nao souber os nomes. Nao traz venda, meta nem telefone.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {},
+  },
+};
+
+const GESTAO_ENCAMINHAR_LEAD_TOOL: Anthropic.Tool = {
+  name: 'encaminhar_lead',
+  description:
+    'Encaminha para uma vendedora um LEAD que terminou a triagem — a resposta ao aviso "Chegou um lead novo... para qual vendedora encaminho?". Use quando a usuaria disser para quem mandar: "manda pro Thiago", "encaminha a Marina para a Cintia". Passe o nome da vendedora como ela falou; o nome do lead so se ela disser qual, porque com um unico lead esperando o sistema ja sabe de quem se trata. ISTO E PARA LEAD, nao para cliente da casa: cliente com carteira usa avisar_vendedora.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      vendedora: {
+        type: 'string',
+        description: 'Nome da vendedora, como a usuaria falou.',
+      },
+      lead: {
+        type: 'string',
+        description:
+          'Nome do lead, quando a usuaria disser qual. Omita se ela nao disse.',
+      },
+    },
+    required: ['vendedora'],
+  },
+};
+
 const GESTAO_CARTEIRA_CLIENTE_TOOL: Anthropic.Tool = {
   name: 'de_quem_e_o_cliente',
   description:
@@ -527,6 +568,9 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoPanorama) tools.push(GESTAO_PANORAMA_TOOL);
     if (params.gestaoCarteiraDoCliente)
       tools.push(GESTAO_CARTEIRA_CLIENTE_TOOL);
+    if (params.gestaoEncaminharLead) tools.push(GESTAO_ENCAMINHAR_LEAD_TOOL);
+    if (params.gestaoVendedoras) tools.push(GESTAO_VENDEDORAS_TOOL);
+    if (params.gestaoLeads) tools.push(GESTAO_LEADS_TOOL);
     if (params.gestaoCarteira) tools.push(GESTAO_CARTEIRA_TOOL);
     if (params.gestaoMelhores) tools.push(GESTAO_MELHORES_TOOL);
     if (params.gestaoAgendar) tools.push(GESTAO_AGENDAR_TOOL);
@@ -770,6 +814,49 @@ export class AnthropicClient implements ILlmClient {
               dias: typeof e.dias === 'number' ? e.dias : undefined,
             });
             return textoDosFeedbacks(r, Boolean(e.cliente));
+          }),
+        );
+      } else if (toolUse.name === 'listar_leads' && params.gestaoLeads) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const r = await params.gestaoLeads!();
+            if (r.linhas.length === 0) {
+              return 'Nenhum lead esperando encaminhamento. Diga isso.';
+            }
+            return (
+              `${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+              'Repasse a lista assim e pergunte se ela quer encaminhar algum agora.'
+            );
+          }),
+        );
+      } else if (
+        toolUse.name === 'listar_vendedoras' &&
+        params.gestaoVendedoras
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const r = await params.gestaoVendedoras!();
+            if (r.linhas.length === 0) {
+              return 'Nenhuma vendedora ativa cadastrada. Diga isso.';
+            }
+            return (
+              `${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+              'Repasse a lista assim, sem acrescentar numeros de venda.'
+            );
+          }),
+        );
+      } else if (
+        toolUse.name === 'encaminhar_lead' &&
+        params.gestaoEncaminharLead
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as { vendedora?: string; lead?: string };
+            const r = await params.gestaoEncaminharLead!({
+              vendedora: String(e.vendedora ?? '').slice(0, 120),
+              lead: e.lead ? String(e.lead).slice(0, 120) : undefined,
+            });
+            return textoDoEncaminhamento(r);
           }),
         );
       } else if (
@@ -1290,4 +1377,72 @@ function textoDaLeituraDeGestao(
       : '') +
     'Repasse os nomes, horarios e numeros exatamente como estao.'
   );
+}
+
+/**
+ * O status do encaminhamento virando instrucao para a Anastasia.
+ *
+ * CADA ERRO JA VEM COM A SAIDA. "Nao encaminhei" sozinho deixa a usuaria sem
+ * o proximo passo, e ela responde ao aviso de novo — a mesma armadilha de
+ * criar uma pergunta sem resposta possivel.
+ */
+function textoDoEncaminhamento(r: {
+  status: string;
+  leadNome?: string;
+  vendedoraNome?: string;
+  termo?: string;
+  nomes?: string[];
+  sugestoes?: string[];
+}): string {
+  const lista = (xs?: string[]) => (xs ?? []).map((x) => `- ${x}`).join('\n');
+
+  switch (r.status) {
+    case 'ENCAMINHADO':
+      return (
+        `Encaminhado: ${r.leadNome} foi para ${r.vendedoraNome}, que ja recebeu os dados e o telefone no WhatsApp. ` +
+        'Confirme isso em uma frase.'
+      );
+    case 'NENHUM_LEAD':
+      return 'Nenhum lead esperando encaminhamento agora. Diga isso.';
+    case 'LEAD_AMBIGUO':
+      return (
+        `Ha mais de um lead esperando:\n${lista(r.nomes)}\n\n` +
+        'Mostre os nomes e pergunte qual deles encaminhar.'
+      );
+    case 'LEAD_NAO_ENCONTRADO':
+      return (
+        `Nenhum lead com o nome "${r.termo}". Os que esperam sao:\n${lista(r.nomes)}\n\n` +
+        'Mostre a lista e pergunte qual e.'
+      );
+    case 'VENDEDORA_NAO_ENCONTRADA':
+      return (
+        `Nenhuma vendedora ativa com o nome "${r.termo}". As ativas sao:\n${lista(r.sugestoes)}\n\n` +
+        'Mostre a lista e pergunte para qual encaminhar.'
+      );
+    case 'VENDEDORA_AMBIGUA':
+      return (
+        `Mais de uma vendedora com esse nome:\n${lista(r.nomes)}\n\n` +
+        'Pergunte qual delas.'
+      );
+    case 'VENDEDORA_SEM_CODIGO':
+      return (
+        `${r.vendedoraNome} nao tem codigo do ERP no cadastro, e sem ele nao da para registrar o encaminhamento. ` +
+        'Diga isso e sugira completar o cadastro dela.'
+      );
+    case 'VENDEDORA_SEM_WHATSAPP':
+      return (
+        `${r.vendedoraNome} nao tem WhatsApp interno cadastrado. ` +
+        'Diga que o lead continua esperando e que o numero dela precisa ser cadastrado.'
+      );
+    case 'NUMERO_SEM_WHATSAPP':
+      return (
+        `O numero cadastrado de ${r.vendedoraNome} nao corresponde a uma conta de WhatsApp. ` +
+        'Diga que o lead continua esperando.'
+      );
+    default:
+      return (
+        `Nao consegui avisar ${r.vendedoraNome ?? 'a vendedora'} agora. ` +
+        'Diga que o lead continua esperando e que da para tentar de novo.'
+      );
+  }
 }

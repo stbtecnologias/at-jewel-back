@@ -4,6 +4,9 @@ import type {
   GestaoMelhoresHandler,
   GestaoAgendarHandler,
   GestaoCarteiraDoClienteHandler,
+  GestaoEncaminharLeadHandler,
+  GestaoLeadsHandler,
+  GestaoVendedorasHandler,
   GestaoFeedbacksHandler,
   GestaoLeituraResultado,
   GestaoMetasHandler,
@@ -12,6 +15,8 @@ import type {
   GestaoAgendaHandler,
 } from '../../agentes/domain/ports/llm-client.port';
 import { CLIENTE_REPOSITORY } from '../../clientes/domain/ports/injection-tokens';
+import { LEAD_REPOSITORY } from '../../leads/domain/ports/injection-tokens';
+import type { ILeadRepository } from '../../leads/domain/ports/repositories/lead-repository.port';
 import type { IClienteRepository } from '../../clientes/domain/ports/repositories/cliente-repository.port';
 import { VENDEDORA_REPOSITORY } from '../../vendedoras/domain/ports/injection-tokens';
 import type { IVendedoraRepository } from '../../vendedoras/domain/ports/repositories/vendedora-repository.port';
@@ -25,10 +30,25 @@ import { ConsultarCarteiraVendedoraUseCase } from './use-cases/consultar-carteir
 import { ConsultarDesempenhoVendedoraUseCase } from './use-cases/consultar-desempenho-vendedora.use-case';
 import { ResolverVendedoraPorNomeUseCase } from './use-cases/resolver-vendedora-por-nome.use-case';
 import { ConsultarAuditoriaUseCase } from './use-cases/consultar-auditoria.use-case';
+import { EncaminharLeadUseCase } from './use-cases/encaminhar-lead.use-case';
 
 const MAXIMO_CLIENTES_HOMONIMOS = 5;
 /** Feedbacks por resposta. Acima disso a mensagem deixa de ser lida. */
 const MAXIMO_FEEDBACKS = 10;
+/** Leads por resposta. Acima disso a mensagem deixa de ser lida. */
+const MAXIMO_LEADS = 15;
+
+/**
+ * O status como uma pessoa fala. DISPONIVEL nao entra: ela e o normal, e
+ * escrever "disponivel" em toda linha da lista so gasta o olho de quem le.
+ */
+const DISPONIBILIDADE_LEGIVEL: Record<string, string> = {
+  DISPONIVEL: 'disponível',
+  OCUPADA: 'ocupada',
+  AUSENTE: 'ausente',
+  FERIAS: 'de férias',
+};
+
 /** Janela padrao quando nao dizem "hoje" nem "esta semana". */
 const DIAS_PADRAO_FEEDBACK = 7;
 
@@ -40,6 +60,9 @@ export interface FerramentasGestao {
   gestaoPanorama: GestaoPanoramaHandler;
   gestaoAgendar: GestaoAgendarHandler;
   gestaoCarteiraDoCliente: GestaoCarteiraDoClienteHandler;
+  gestaoEncaminharLead: GestaoEncaminharLeadHandler;
+  gestaoLeads: GestaoLeadsHandler;
+  gestaoVendedoras: GestaoVendedorasHandler;
   gestaoCarteira: GestaoCarteiraHandler;
   gestaoMelhores: GestaoMelhoresHandler;
   gestaoFeedbacks: GestaoFeedbacksHandler;
@@ -73,10 +96,13 @@ export class FerramentasGestaoService {
     private readonly carteira: ConsultarCarteiraVendedoraUseCase,
     private readonly agendarGestao: AgendarContatoGestaoUseCase,
     private readonly auditoria: ConsultarAuditoriaUseCase,
+    private readonly encaminharLead: EncaminharLeadUseCase,
     @Inject(VENDEDORA_REPOSITORY)
     private readonly vendedoras: IVendedoraRepository,
     @Inject(CLIENTE_REPOSITORY)
     private readonly clientes: IClienteRepository,
+    @Inject(LEAD_REPOSITORY)
+    private readonly leads: ILeadRepository,
   ) {}
 
   /**
@@ -226,7 +252,10 @@ export class FerramentasGestaoService {
             total = falas.length;
             if (falas.length === 0) {
               return [
-                d.clienteNome + ' — ' + rotuloEtapa(d.etapa) + ', sem feedback registrado ainda',
+                d.clienteNome +
+                  ' — ' +
+                  rotuloEtapa(d.etapa) +
+                  ', sem feedback registrado ainda',
               ];
             }
             return falas.map(
@@ -256,11 +285,62 @@ export class FerramentasGestaoService {
                 ' — ' +
                 rotuloEtapa(i.etapa) +
                 ', ainda sem feedback' +
-                (i.aguardandoRelato ? ' (cobranca enviada, aguardando resposta)' : ''),
+                (i.aguardandoRelato
+                  ? ' (cobranca enviada, aguardando resposta)'
+                  : ''),
           );
         });
         return { ...r, total };
       },
+
+      // A FILA QUE NINGUEM VE. O aviso de lead sai UMA VEZ SO, entao um lead
+      // que a usuaria nao encaminhou na hora nao volta a se anunciar — e nao
+      // existe tela de leads. Sem isto, ele fica invisivel no banco.
+      //
+      // A IDADE E O PONTO, e nao os nomes: e ela que separa "chegou agora" de
+      // "esta parado desde terca".
+      gestaoLeads: async () => {
+        const fila = await this.leads.listarAguardandoGestao(MAXIMO_LEADS);
+        return {
+          linhas: fila.map((l) => {
+            const partes = [l.nome?.trim() || 'sem nome informado'];
+            if (l.produtosDesejados) partes.push(l.produtosDesejados);
+            partes.push(esperaLegivel(l.direcionadoGestaoEm ?? l.criadoEm));
+            return partes.join(' — ');
+          }),
+        };
+      },
+
+      // A PERGUNTA QUE O AVISO PROVOCA. Ele termina em "para qual vendedora
+      // encaminho?", e sem isto a resposta era "nao tenho como listar" — a
+      // pergunta nascendo do sistema e morrendo nele.
+      //
+      // DISPONIVEL PRIMEIRO, mas ninguem fica de fora: esconder quem esta de
+      // ferias faria a usuaria procurar um nome que ela sabe que existe.
+      gestaoVendedoras: async () => {
+        const ativas = await this.vendedoras.listar({ ativo: true });
+        const ordenadas = [
+          ...ativas.filter((v) => v.statusDisponibilidade === 'DISPONIVEL'),
+          ...ativas.filter((v) => v.statusDisponibilidade !== 'DISPONIVEL'),
+        ];
+        return {
+          linhas: ordenadas.map((v) => {
+            const partes = [v.nome];
+            if (v.statusDisponibilidade !== 'DISPONIVEL') {
+              partes.push(DISPONIBILIDADE_LEGIVEL[v.statusDisponibilidade]);
+            }
+            if (v.especialidades.length > 0) {
+              partes.push(v.especialidades.join(', '));
+            }
+            return partes.join(' — ');
+          }),
+        };
+      },
+
+      // A RESPOSTA AO AVISO DE LEAD NOVO. Nao passa por aqui nada que decida
+      // quem atende: quem escolhe e a usuaria, e o use case so resolve o nome.
+      gestaoEncaminharLead: async ({ vendedora, lead }) =>
+        this.encaminharLead.execute({ vendedora, lead }),
 
       gestaoCarteiraDoCliente: async ({ cliente }) => {
         const achados = await this.clientes.buscarPorNomeParcial(
@@ -277,7 +357,9 @@ export class FerramentasGestaoService {
           let dono = 'sem vendedora vinculada';
           if (codigo) {
             const v = await this.vendedoras.buscarPorCodigoErp(codigo);
-            dono = v ? `carteira de ${v.nome}` : `vendedora ${codigo} (não cadastrada)`;
+            dono = v
+              ? `carteira de ${v.nome}`
+              : `vendedora ${codigo} (não cadastrada)`;
           }
           linhas.push(
             `${c.nome}${c.codigoErp ? ` (código ${c.codigoErp})` : ''} — ${dono}`,
@@ -299,10 +381,14 @@ export class FerramentasGestaoService {
    */
   private async comVendedora(
     nome: string,
-    consulta: (vendedoraId: string, codigoErp: string | null) => Promise<string[]>,
+    consulta: (
+      vendedoraId: string,
+      codigoErp: string | null,
+    ) => Promise<string[]>,
   ): Promise<GestaoLeituraResultado> {
     const r = await this.resolverVendedora.execute(nome);
-    if (r.status === 'AMBIGUA') return { status: 'AMBIGUA', linhas: [], nomes: r.nomes };
+    if (r.status === 'AMBIGUA')
+      return { status: 'AMBIGUA', linhas: [], nomes: r.nomes };
     if (r.status === 'NAO_ENCONTRADA') {
       return { status: 'NAO_ENCONTRADA', linhas: [], nomes: r.sugestoes };
     }
@@ -432,4 +518,20 @@ function rotuloEtapa(etapa: string): string {
     NAO_AVANCOU: 'nao avancou',
   };
   return mapa[etapa] ?? etapa.toLowerCase();
+}
+
+/**
+ * Ha quanto tempo o lead espera, como uma pessoa diria.
+ *
+ * EM DIAS, e nao em horas: a decisao que a lista alimenta e "esse ai eu
+ * esqueci?", e para isso a diferenca entre 3h e 5h nao muda nada. "hoje"
+ * cobre o dia corrente inteiro.
+ */
+function esperaLegivel(desde: Date, agora = new Date()): string {
+  const dias = Math.floor(
+    (agora.getTime() - new Date(desde).getTime()) / 86_400_000,
+  );
+  if (dias <= 0) return 'hoje';
+  if (dias === 1) return 'há 1 dia';
+  return `há ${dias} dias`;
 }

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WhatsappGatewayModule } from '../atendimento/whatsapp-gateway.module';
 import { ClientesModule } from '../clientes/clientes.module';
+import { LeadsModule } from '../leads/leads.module';
 import { MetasModule } from '../metas/metas.module';
 import { ProdutosModule } from '../produtos/produtos.module';
 import { CatalogosModule } from '../catalogos/catalogos.module';
@@ -18,6 +19,7 @@ import { ConsultarProdutosVendedoraUseCase } from './application/use-cases/consu
 import { DispararPendenciasUseCase } from './application/use-cases/disparar-pendencias.use-case';
 import { ProcessarMensagemGestaoUseCase } from './application/use-cases/processar-mensagem-gestao.use-case';
 import { ProcessarMensagemInternaUseCase } from './application/use-cases/processar-mensagem-interna.use-case';
+import { EncaminharLeadUseCase } from './application/use-cases/encaminhar-lead.use-case';
 import { ProcessarFotoCatalogoUseCase } from './application/use-cases/processar-foto-catalogo.use-case';
 import { ResolverVendedoraPorNomeUseCase } from './application/use-cases/resolver-vendedora-por-nome.use-case';
 import { RotearMensagemInternaUseCase } from './application/use-cases/rotear-mensagem-interna.use-case';
@@ -47,6 +49,8 @@ import { AtendimentoRepository } from './infrastructure/database/typeorm/reposit
     // O agendador precisa do nome do cliente, do WhatsApp da vendedora e do
     // gateway de envio. Nenhum destes importa atendimentos — sem ciclo.
     ClientesModule,
+    // Encaminhar o lead que terminou a triagem para uma vendedora.
+    LeadsModule,
     VendedorasModule,
     // Vendas e metas: o que a vendedora consulta sobre si mesma no canal
     // interno. Os dois sao folhas (so TypeORM e Auth), entao nao ha ciclo.
@@ -87,6 +91,7 @@ import { AtendimentoRepository } from './infrastructure/database/typeorm/reposit
     // Memoria curta de "de qual catalogo e essa foto". Singleton, como a
     // MemoriaConversaService — o Map vive no processo.
     SessaoCatalogoService,
+    EncaminharLeadUseCase,
     ProcessarFotoCatalogoUseCase,
     ResolverVendedoraPorNomeUseCase,
     ProcessarMensagemGestaoUseCase,
