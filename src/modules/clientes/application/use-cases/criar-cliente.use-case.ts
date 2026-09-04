@@ -28,6 +28,18 @@ export interface CriarClienteInput {
   email?: string | null;
 
   /**
+   * ACRESCENTADOS EM 04/09/2026. Os dois sao colunas da tabela e ja eram
+   * aceitos no PATCH; so a CRIACAO nao os tinha, e quem cadastrava pelo painel
+   * era obrigado a salvar e editar em seguida.
+   *
+   * O `vendedoraCodigoErp` ficou mais importante desde o MEL-23: e ele que
+   * define de quem e o cliente, e cliente sem carteira e invisivel para toda
+   * vendedora restrita.
+   */
+  observacaoGeral?: string | null;
+  vendedoraCodigoErp?: string | null;
+
+  /**
    * Perfil — OPCIONAIS desde 12/08/2026.
    *
    * Eram obrigatorios porque a rota nasceu para o fluxo da Anastasia: cliente
@@ -144,6 +156,8 @@ export class CriarClienteUseCase {
       telefone2: input.telefone2 ?? null,
       email: input.email ?? null,
       emailHash,
+      observacaoGeral: input.observacaoGeral ?? null,
+      vendedoraCodigoErp: input.vendedoraCodigoErp ?? null,
       ativo: true,
     });
 

@@ -103,4 +103,25 @@ export class CriarClienteDto {
   @IsOptional()
   @IsIn([...ORIGENS_CONTATO])
   origemContato?: OrigemContato;
+
+  /**
+   * ACRESCENTADOS EM 04/09/2026, para o cadastro pelo painel.
+   *
+   * Os dois ja existiam no PATCH e sao colunas da tabela; a criacao nao os
+   * aceitava, entao quem cadastrava era obrigado a salvar e editar em seguida.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  @SanitizeText()
+  observacaoGeral?: string;
+
+  /**
+   * De quem e este cliente. Desde o MEL-23 e o que define quem consegue
+   * ve-lo: cliente sem carteira e invisivel para toda vendedora restrita.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  vendedoraCodigoErp?: string;
 }
