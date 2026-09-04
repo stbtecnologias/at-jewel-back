@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -16,6 +17,7 @@ import { JwtOrApiKeyGuard } from '../../../../auth/infrastructure/http/guards/jw
 import { BuscarMovimentacaoPorIdErpUseCase } from '../../../application/use-cases/buscar-movimentacao-por-id-erp.use-case';
 import { BuscarMovimentacaoUseCase } from '../../../application/use-cases/buscar-movimentacao.use-case';
 import { ListarMovimentacoesUseCase } from '../../../application/use-cases/listar-movimentacoes.use-case';
+import { RemoverMovimentacaoUseCase } from '../../../application/use-cases/remover-movimentacao.use-case';
 import { SincronizarMovimentacaoUseCase } from '../../../application/use-cases/sincronizar-movimentacao.use-case';
 import { FiltroMovimentacaoDto } from '../dto/filtro-movimentacao.dto';
 import { SincronizarMovimentacaoDto } from '../dto/sincronizar-movimentacao.dto';
@@ -24,15 +26,22 @@ import { SincronizarMovimentacaoDto } from '../dto/sincronizar-movimentacao.dto'
 // API valida o SCOPE (@RequireScopes). Mesmo par de `operacoes` — quem le a
 // movimentacao precisa da operacao para saber o que ela e.
 //
-// SO PUT PARA ESCREVER. Nao ha POST, PATCH nem DELETE, e nenhum dos tres e
-// esquecimento:
+// PUT PARA ESCREVER, DELETE PARA DESFAZER. Nao ha POST nem PATCH, e nenhum
+// dos dois e esquecimento:
 //
 //   POST     duplicaria o caminho de entrada. O ERP reenvia o mesmo documento
 //            e isso tem de ser barato e sem efeito.
 //   PATCH    o CRM nao edita documento fiscal. O que e nosso — a projecao —
 //            nao mora nesta tabela.
-//   DELETE   `ativo: false` vem do proprio ERP; apagar destruiria a unica
-//            copia que temos do que ele mandou.
+//
+// O DELETE existe desde 04/09/2026, e a ordem das ferramentas importa:
+//
+//   dado errado ou incompleto  -> PUT, que substitui o agregado inteiro
+//   venda cancelada no ERP     -> PUT com `ativo: false`, que e do ERP
+//   documento que nao devia ter entrado -> DELETE
+//
+// So o terceiro caso e que o PUT nao alcanca: um `idErpMovimentacao` digitado
+// errado cria um fantasma, e reenviar so corrige o CONTEUDO dele.
 @Controller('movimentacoes')
 export class MovimentacoesController {
   constructor(
@@ -40,6 +49,7 @@ export class MovimentacoesController {
     private readonly buscar: BuscarMovimentacaoUseCase,
     private readonly buscarPorIdErp: BuscarMovimentacaoPorIdErpUseCase,
     private readonly listar: ListarMovimentacoesUseCase,
+    private readonly remover: RemoverMovimentacaoUseCase,
   ) {}
 
   @Get()
@@ -89,5 +99,19 @@ export class MovimentacoesController {
   async sincronizarMovimentacao(@Body() dto: SincronizarMovimentacaoDto) {
     const { movimentacao, criada } = await this.sincronizar.execute(dto);
     return { ...movimentacao.toPublic(), criada };
+  }
+
+  // Pelo NOSSO UUID, nao pelo id do ERP — decisao do Lucas em 04/09/2026, e
+  // ela protege: obriga um GET antes, entao ninguem apaga de cabeca um id que
+  // acha que sabe. Itens e pagamentos vao junto pelo CASCADE.
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(JwtOrApiKeyGuard)
+  @Permissions('movimentacoes:write')
+  @RequireScopes('movimentacoes:write')
+  async removerMovimentacao(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.remover.execute(id);
   }
 }

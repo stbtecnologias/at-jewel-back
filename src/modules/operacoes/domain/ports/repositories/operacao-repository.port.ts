@@ -8,16 +8,6 @@ export interface FiltroOperacao {
   busca?: string;
 }
 
-/**
- * SEM `remover`, e de proposito.
- *
- * `movimentacoes.operacao_id` e ON DELETE RESTRICT (migracao 46): o banco ja
- * recusaria apagar uma operacao com documento pendurado. Expor a rota so
- * produziria um 500 vindo do Postgres em vez de uma resposta util — e o
- * caminho certo aqui e sempre `ativo = false`, porque operacao descontinuada
- * precisa continuar existindo para as movimentacoes historicas fazerem
- * sentido.
- */
 export interface IOperacaoRepository {
   criar(operacao: OperacaoEntity): Promise<OperacaoEntity>;
   buscarPorId(id: string): Promise<OperacaoEntity | null>;
@@ -26,4 +16,18 @@ export interface IOperacaoRepository {
   buscarPorCodigoErp(codigoErp: string): Promise<OperacaoEntity | null>;
   listar(filtros: FiltroOperacao): Promise<OperacaoEntity[]>;
   atualizar(operacao: OperacaoEntity): Promise<OperacaoEntity>;
+
+  /**
+   * Exclusao FISICA. Existe para limpar o que nao devia ter entrado — uma
+   * operacao cadastrada por engano durante a integracao.
+   *
+   * NAO E O CAMINHO PARA DESCONTINUAR. Operacao que a loja parou de usar
+   * precisa continuar existindo, senao as movimentacoes historicas perdem o
+   * sentido — para isso e `ativo = false`.
+   *
+   * Lanca `OperacaoEmUsoError` quando ha movimentacao vinculada: a FK e
+   * ON DELETE RESTRICT, e quem recusa e o banco. O erro tipado existe para
+   * quem chama poder devolver 409 em vez de deixar vazar um 500.
+   */
+  remover(id: string): Promise<void>;
 }

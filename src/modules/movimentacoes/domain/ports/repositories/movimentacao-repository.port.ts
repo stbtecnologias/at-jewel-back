@@ -43,4 +43,23 @@ export interface IMovimentacaoRepository {
 
   /** Sem o agregado — `toResumo` e o que a listagem devolve. */
   listar(filtros: FiltroMovimentacao): Promise<PaginaMovimentacoes>;
+
+  /**
+   * Exclusao FISICA do documento. Itens e pagamentos vao junto, pelo
+   * `ON DELETE CASCADE` da migracao 46.
+   *
+   * ==========================================================================
+   * NAO E O CAMINHO PARA CORRIGIR, NEM PARA CANCELAR.
+   *
+   *   dado errado ou incompleto  -> reenviar pelo PUT, que substitui tudo
+   *   venda cancelada no ERP     -> reenviar com `ativo: false`
+   *
+   * Isto existe para UM caso, que o PUT nao alcanca: documento que nao devia
+   * ter entrado. Um `idErpMovimentacao` digitado errado cria um fantasma, e o
+   * PUT so consegue corrigir o CONTEUDO dele — nunca faze-lo sumir.
+   *
+   * Vai acontecer durante a integracao, e a alternativa era SQL na mao.
+   * ==========================================================================
+   */
+  remover(id: string): Promise<void>;
 }

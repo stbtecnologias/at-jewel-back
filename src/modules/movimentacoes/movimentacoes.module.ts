@@ -12,6 +12,7 @@ import { ResolverReferenciasErpService } from './application/resolver-referencia
 import { BuscarMovimentacaoPorIdErpUseCase } from './application/use-cases/buscar-movimentacao-por-id-erp.use-case';
 import { BuscarMovimentacaoUseCase } from './application/use-cases/buscar-movimentacao.use-case';
 import { ListarMovimentacoesUseCase } from './application/use-cases/listar-movimentacoes.use-case';
+import { RemoverMovimentacaoUseCase } from './application/use-cases/remover-movimentacao.use-case';
 import { SincronizarMovimentacaoUseCase } from './application/use-cases/sincronizar-movimentacao.use-case';
 import { MOVIMENTACAO_REPOSITORY } from './domain/ports/injection-tokens';
 import { MovimentacaoItemOrmEntity } from './infrastructure/database/typeorm/entities/movimentacao-item.orm-entity';
@@ -57,6 +58,7 @@ import { MovimentacoesController } from './infrastructure/http/controllers/movim
     BuscarMovimentacaoUseCase,
     BuscarMovimentacaoPorIdErpUseCase,
     ListarMovimentacoesUseCase,
+    RemoverMovimentacaoUseCase,
     { provide: MOVIMENTACAO_REPOSITORY, useClass: MovimentacaoRepository },
   ],
   exports: [MOVIMENTACAO_REPOSITORY],

@@ -20,6 +20,25 @@ import { OperacaoClasse } from './enums';
  * Safira viraria deploy, que e exatamente o argumento que criou
  * `formas_pagamento.classificacao` na migracao 28.
  */
+/**
+ * Tentativa de apagar operacao que tem movimentacao pendurada.
+ *
+ * `movimentacoes.operacao_id` e ON DELETE RESTRICT (migracao 46), entao quem
+ * impede de verdade e o banco. Esta classe existe para o erro atravessar as
+ * camadas com significado: sem ela, o que chegaria na borda seria um
+ * `QueryFailedError` cru, e o integrador veria 500 em vez de saber que a
+ * operacao esta em uso.
+ */
+export class OperacaoEmUsoError extends Error {
+  constructor() {
+    super(
+      'Operacao tem movimentacoes vinculadas e nao pode ser apagada. ' +
+        'Para tira-la de circulacao sem perder o historico, use PATCH com ativo: false.',
+    );
+    this.name = 'OperacaoEmUsoError';
+  }
+}
+
 export interface OperacaoProps {
   id?: string;
   idErp?: string | null;

@@ -1,7 +1,21 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, ILike, Repository } from 'typeorm';
-import { OperacaoEntity } from '../../../../domain/entities/operacao.entity';
+import {
+  OperacaoEmUsoError,
+  OperacaoEntity,
+} from '../../../../domain/entities/operacao.entity';
+
+/** `foreign_key_violation`, tanto no erro do driver quanto no wrapper do TypeORM. */
+const CODIGO_FK_VIOLADA = '23503';
+
+function ehViolacaoDeChaveEstrangeira(erro: unknown): boolean {
+  if (typeof erro !== 'object' || erro === null) return false;
+  const e = erro as { code?: unknown; driverError?: { code?: unknown } };
+  return (
+    e.code === CODIGO_FK_VIOLADA || e.driverError?.code === CODIGO_FK_VIOLADA
+  );
+}
 import {
   FiltroOperacao,
   IOperacaoRepository,
@@ -57,6 +71,25 @@ export class OperacaoRepository implements IOperacaoRepository {
     await this.repo.update(o.id, this.toOrm(o));
     const atualizado = await this.repo.findOneByOrFail({ id: o.id });
     return this.toDomain(atualizado);
+  }
+
+  /**
+   * `23503` e o `foreign_key_violation` do Postgres. E a unica falha esperada
+   * aqui, e vem de `movimentacoes.operacao_id`, que e ON DELETE RESTRICT.
+   *
+   * Checar o codigo em vez de contar movimentacoes antes: a contagem seria uma
+   * corrida — nada impede um documento chegar entre a contagem e o DELETE. O
+   * banco decide, e a gente traduz.
+   */
+  async remover(id: string): Promise<void> {
+    try {
+      await this.repo.delete(id);
+    } catch (erro) {
+      if (ehViolacaoDeChaveEstrangeira(erro)) {
+        throw new OperacaoEmUsoError();
+      }
+      throw erro;
+    }
   }
 
   private toOrm(o: OperacaoEntity): Partial<OperacaoOrmEntity> {
