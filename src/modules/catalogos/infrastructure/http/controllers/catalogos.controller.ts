@@ -31,21 +31,29 @@ import { PermissionsGuard } from '../../../../auth/infrastructure/http/guards/pe
 import type { JwtPayload } from '../../../../auth/infrastructure/http/strategies/jwt.strategy';
 import {
   AnexarReferenciaUseCase,
+  AnotarReferenciaUseCase,
   AtualizarCatalogoUseCase,
+  CorrigirParcelamentoUseCase,
   BuscarCatalogoUseCase,
   CriarCatalogoUseCase,
   CurarFotoUseCase,
+  DefinirCapaUseCase,
   ListarCatalogosUseCase,
   RemoverCatalogoUseCase,
   RemoverReferenciaUseCase,
   type ArquivoRecebido,
 } from '../../../application/use-cases/catalogos.use-cases';
 import type { StatusCatalogo } from '../../../domain/entities/enums';
-import { LIMITE_BYTES } from '../../../domain/ports/armazenamento.port';
 import {
+  LIMITE_PDF_BYTES,
+} from '../../../domain/ports/armazenamento.port';
+import {
+  AnotarReferenciaDto,
   AtualizarCatalogoDto,
+  CorrigirParcelamentoDto,
   CriarCatalogoDto,
   CriarReferenciaDto,
+  DefinirCapaDto,
 } from '../dto/catalogo.dto';
 
 /** Teto de referencias por envio. Impede um `select all` virar 300 arquivos. */
@@ -66,6 +74,9 @@ export class CatalogosController {
     private readonly buscarCatalogo: BuscarCatalogoUseCase,
     private readonly criarCatalogo: CriarCatalogoUseCase,
     private readonly atualizarCatalogo: AtualizarCatalogoUseCase,
+    private readonly definirCapaCatalogo: DefinirCapaUseCase,
+    private readonly anotarReferencia: AnotarReferenciaUseCase,
+    private readonly corrigirParcelamento: CorrigirParcelamentoUseCase,
     private readonly removerCatalogo: RemoverCatalogoUseCase,
     private readonly anexarReferencia: AnexarReferenciaUseCase,
     private readonly removerReferencia: RemoverReferenciaUseCase,
@@ -115,6 +126,25 @@ export class CatalogosController {
       // houver nome. Mesmo caminho das demandas.
       criadoPorNomeFallback: req.user.email,
     });
+  }
+
+  /**
+   * A capa do catalogo — uma das referencias que ja estao anexadas.
+   *
+   * Rota propria, e nao um campo no PATCH acima, porque este precisa checar
+   * que a referencia e DESTE catalogo e que ela e imagem. Num campo do DTO
+   * geral, essa checagem viraria uma excecao no meio de um caminho que so
+   * atribui valores.
+   *
+   * `referencia_id` ausente ou nulo = volta a capa automatica.
+   */
+  @Patch(':id/capa')
+  @Permissions('catalogo:write')
+  async definirCapa(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: DefinirCapaDto,
+  ) {
+    return this.definirCapaCatalogo.execute(id, dto.referencia_id ?? null);
   }
 
   @Patch(':id')
@@ -220,6 +250,29 @@ export class CatalogosController {
     return this.curarFoto.tirar(id, fotoId);
   }
 
+  /**
+   * Corrigir parcelas e juro de uma peca ja no catalogo.
+   *
+   * Rota propria, e nao um PATCH generico com o corpo da foto: as outras duas
+   * rotas de foto sao explicitas justamente para a tela nao ter como gravar
+   * `status`, e um PATCH aberto aqui desfaria essa protecao.
+   *
+   * Campo ausente nao mexe; `null` limpa. Sao coisas diferentes: mandar so
+   * `parcelas` nao pode apagar o juro que ja estava la.
+   */
+  @Patch(':id/fotos/:fotoId/parcelamento')
+  @Permissions('catalogo:write')
+  async corrigirParcelamentoFoto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('fotoId', ParseUUIDPipe) fotoId: string,
+    @Body() dto: CorrigirParcelamentoDto,
+  ) {
+    return this.corrigirParcelamento.execute(id, fotoId, {
+      parcelas: dto.parcelas,
+      jurosPercentual: dto.juros_percentual,
+    });
+  }
+
   @Patch(':id/fotos/:fotoId/devolver')
   @Permissions('catalogo:write')
   async devolverFoto(
@@ -254,8 +307,13 @@ export class CatalogosController {
   @HttpCode(HttpStatus.CREATED)
   @Permissions('catalogo:write')
   @UseInterceptors(
+    // O TETO AQUI E O MAIOR DOS DOIS, e a diferenca por tipo fica no use case.
+    // O multer nao sabe distinguir PDF de JPEG: um teto unico de 12 MB
+    // derrubaria o PDF antes de qualquer validacao nossa, com erro ilegivel; um
+    // teto de 60 MB deixaria passar um JPEG gigante ate a nossa recusa, que e o
+    // lugar onde da para explicar o porque.
     FilesInterceptor('arquivos', MAX_ARQUIVOS, {
-      limits: { fileSize: LIMITE_BYTES, files: MAX_ARQUIVOS },
+      limits: { fileSize: LIMITE_PDF_BYTES, files: MAX_ARQUIVOS },
     }),
   )
   async anexarImagens(
@@ -263,6 +321,17 @@ export class CatalogosController {
     @UploadedFiles() arquivos: ArquivoRecebido[],
   ) {
     return this.anexarReferencia.imagens(id, arquivos ?? []);
+  }
+
+  /** A nota daquele arquivo. Corpo vazio, ou `observacao` em branco, apaga. */
+  @Patch(':id/referencias/:referenciaId')
+  @Permissions('catalogo:write')
+  async anotar(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('referenciaId', ParseUUIDPipe) referenciaId: string,
+    @Body() dto: AnotarReferenciaDto,
+  ) {
+    return this.anotarReferencia.execute(id, referenciaId, dto.observacao ?? null);
   }
 
   @Delete(':id/referencias/:referenciaId')

@@ -39,6 +39,10 @@ export class CatalogoReferenciaOrmEntity {
   @Column({ type: 'text', nullable: true })
   mime: string | null;
 
+  // O que foi pedido DESTE arquivo — ver a migracao 49.
+  @Column({ name: 'observacao', type: 'text', nullable: true })
+  observacao: string | null;
+
   @Column({ type: 'int', default: 0 })
   ordem: number;
 

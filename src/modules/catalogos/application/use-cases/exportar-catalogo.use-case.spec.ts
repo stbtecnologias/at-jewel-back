@@ -136,13 +136,28 @@ describe('ExportarCatalogoUseCase', () => {
     expect(csv).toContain('"BRINCO 18K; 5,80G"');
   });
 
-  it('a parcela é calculada, e bate com a do catálogo impresso', async () => {
-    // 35.920 / 0,80 / 10 = 4.490 — conferido em 25 de 25 peças no levantamento.
+  it('SEM JURO INFORMADO, a parcela é o preço dividido — sem acréscimo', async () => {
+    // 35.920 / 10 = 3.592. Até 04/09/2026 esta peça saía 10 X R$4.490,00,
+    // porque o valor era dividido por 0,80 antes — 25% embutidos sem ninguém
+    // ter pedido. A regra caiu por decisão do Lucas; o número mudou junto.
     const csv = csvDe([
       { foto: FOTO({ precoAVista: 35920, parcelas: 10 }), nome: '01-x.png' },
     ]);
 
-    expect(csv).toContain('4.490,00');
+    expect(csv).toContain('3.592,00');
+    expect(csv).not.toContain('4.490,00');
+  });
+
+  it('o juro escrito na legenda continua sendo aplicado', async () => {
+    // 1.000 x 1,15 / 10 = 115. É o único caminho que acrescenta valor agora.
+    const csv = csvDe([
+      {
+        foto: FOTO({ precoAVista: 1000, parcelas: 10, jurosPercentual: 15 }),
+        nome: '01-x.png',
+      },
+    ]);
+
+    expect(csv).toContain('115,00');
   });
 
   it('peça sem preço deixa as colunas de valor vazias, e não zeradas', async () => {

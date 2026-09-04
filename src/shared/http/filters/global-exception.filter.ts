@@ -92,6 +92,18 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       return body;
     }
 
+    // MULTER NAO E ERRO INTERNO — e o usuario mandando arquivo grande demais
+    // ou demais arquivos. Sem este ramo virava 500 com "File too large" em dev
+    // e "Erro interno do servidor" em producao: a pessoa nao ficava sabendo que
+    // bastava mandar um arquivo menor.
+    if (ehErroDeUpload(exception)) {
+      return {
+        statusCode: HttpStatus.PAYLOAD_TOO_LARGE,
+        error: 'Payload Too Large',
+        message: mensagemDeUpload(exception),
+      };
+    }
+
     // Erro desconhecido. Em producao mascarar; em dev expor para debug.
     const message = isProd
       ? 'Erro interno do servidor'
@@ -131,5 +143,27 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       default:
         return status >= 500 ? 'Internal Server Error' : 'Error';
     }
+  }
+}
+
+/**
+ * Erro do multer, reconhecido pelo `name` — o pacote nao e importado aqui de
+ * proposito: este filtro e do shared e nao deve conhecer a biblioteca de upload
+ * de um modulo.
+ */
+function ehErroDeUpload(e: unknown): e is Error & { code?: string; field?: string } {
+  return e instanceof Error && e.name === 'MulterError';
+}
+
+function mensagemDeUpload(e: Error & { code?: string }): string {
+  switch (e.code) {
+    case 'LIMIT_FILE_SIZE':
+      return 'Arquivo grande demais para este envio.';
+    case 'LIMIT_FILE_COUNT':
+      return 'Arquivos demais num envio só.';
+    case 'LIMIT_UNEXPECTED_FILE':
+      return 'Campo de arquivo inesperado no envio.';
+    default:
+      return 'Não foi possível receber o arquivo enviado.';
   }
 }

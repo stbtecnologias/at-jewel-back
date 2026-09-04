@@ -19,6 +19,10 @@ const EXTENSAO_POR_MIME: Record<string, string> = {
   'image/jpeg': '.jpg',
   'image/png': '.png',
   'image/webp': '.webp',
+  // Referencia de catalogo aceita PDF. Sem esta linha a chave sairia com a
+  // extensao do nome enviado — que da certo quase sempre, e some quando o
+  // arquivo chega sem extensao nenhuma.
+  'application/pdf': '.pdf',
 };
 
 export interface ArquivoLido {

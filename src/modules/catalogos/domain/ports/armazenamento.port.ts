@@ -50,6 +50,45 @@ export function pastaDoCatalogo(numero: string, pasta: string): string {
 }
 
 /**
+ * A FOTO DE PRODUTO — que nao pertence a catalogo nenhum.
+ *
+ *   produtos/CO26185/uuid.jpg
+ *
+ * Mora fora de `catalogo/` de proposito: ela e da PECA, e a mesma peca aparece
+ * em varios catalogos ao longo do tempo. Pendurar a foto no catalogo faria a
+ * imagem morrer junto com a campanha.
+ *
+ * A pasta usa o CODIGO DO ERP, e nao o id interno, pela regra de sempre: o
+ * codigo e a chave estavel da peca, e uma resync que recrie linhas orfanaria
+ * tudo que estivesse preso ao id. De quebra, o bucket fica legivel — da para
+ * achar a foto de uma peca sabendo so o codigo dela.
+ *
+ * O codigo e higienizado porque vai virar caminho: a base tem codigo com hifen
+ * (`1-25-3A-2`), e nada garante que nao apareca um com barra ou espaco.
+ */
+/**
+ * As fotos de uma OCORRENCIA — defeito, devolucao, reclamacao.
+ *
+ *   ocorrencias/<id>/uuid.jpg
+ *
+ * Por id, e nao por codigo de peca: a ocorrencia e do EPISODIO, nao da peca. A
+ * mesma peca pode voltar tres vezes, e as fotos de cada volta contam historias
+ * diferentes — misturar as tres numa pasta so faria a terceira parecer prova da
+ * primeira.
+ */
+export function pastaDaOcorrencia(ocorrenciaId: string): string {
+  return `ocorrencias/${ocorrenciaId}`;
+}
+
+export function pastaDaFotoDeProduto(codigoErp: string): string {
+  const limpo = codigoErp
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9._-]/g, '_');
+  return `produtos/${limpo}`;
+}
+
+/**
  * A AREA DE ESPERA, e por que ela precisa existir.
  *
  * A foto que chega pelo WhatsApp e gravada ANTES de se saber a que catalogo
@@ -65,6 +104,41 @@ export const PASTA_PENDENTES = 'catalogo/pendentes';
 export const LIMITE_BYTES = 12 * 1024 * 1024;
 
 export const MIMES_IMAGEM = ['image/jpeg', 'image/png', 'image/webp'] as const;
+
+/**
+ * O que uma REFERENCIA aceita — imagem mais PDF.
+ *
+ * Lista propria, e nao um item a mais em `MIMES_IMAGEM`, porque aquela e usada
+ * tambem pela foto que chega do WhatsApp e pela foto de produto. Alargar la
+ * deixaria um PDF entrar como packshot de peca, que e coisa que nao existe.
+ *
+ * O PDF cabe AQUI porque referencia visual nao vai para a IA — decidido em
+ * 28/08/2026 e escrito no `tratar-foto.use-case.ts`: mandar as imagens de
+ * referencia fez o modelo devolver uma joia recortada de dentro de uma delas.
+ * Entao referencia e material de consulta de GENTE, e gente le PDF.
+ */
+export const MIMES_REFERENCIA = [...MIMES_IMAGEM, 'application/pdf'] as const;
+
+/**
+ * Teto de uma referencia em PDF — MUITO maior que o da imagem, e precisa ser.
+ *
+ * `LIMITE_BYTES` foi dimensionado para packshot de celular. Catalogo fechado em
+ * PDF de grafica passa disso com folga.
+ *
+ * O NUMERO SAI DOS ARQUIVOS REAIS, medidos em 04/09/2026 nos catalogos que a
+ * casa tem em maos:
+ *
+ *   FATHER'S DAY  18 MB    AT JEWEL           64 MB
+ *   ESMERALDA     36 MB    NEW IN             78 MB
+ *   A.T JEWEL     37 MB    A.T FINE JEWELRY   87 MB
+ *   PIERCE        50 MB
+ *
+ * Um teto de 60 MB — que foi a primeira tentativa, por palpite — recusava
+ * QUATRO DOS SETE. Fica igual ao `LIMITE_FINAL_BYTES`: e o mesmo tipo de
+ * arquivo, um catalogo fechado, e aceitar 100 MB como peca final e 60 MB como
+ * referencia nao teria explicacao.
+ */
+export const LIMITE_PDF_BYTES = 100 * 1024 * 1024;
 
 export interface IArmazenamento {
   /** Grava e devolve a CHAVE. Quem chama guarda a chave, e so ela. */

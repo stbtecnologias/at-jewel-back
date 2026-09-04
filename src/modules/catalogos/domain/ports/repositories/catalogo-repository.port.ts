@@ -27,6 +27,17 @@ export interface ReferenciaItem {
   valor: string;
   /** Chave no armazenamento. So existe para IMAGEM. */
   arquivoId: string | null;
+  /**
+   * MIME do arquivo. Ja era guardado; passou a sair na resposta porque a tela
+   * precisa distinguir a pagina escaneada do PDF — uma vira miniatura, o outro
+   * vira cartao de arquivo, e `<img src="...pdf">` nao desenha nada.
+   */
+  mime: string | null;
+  /**
+   * O que foi pedido DESTE arquivo. So faz sentido em referencia com arquivo —
+   * na de texto, o texto ja e a observacao. Ver a migracao 49.
+   */
+  observacao: string | null;
   ordem: number;
 }
 
@@ -55,26 +66,35 @@ export interface AtualizarFotoData {
 }
 
 /**
- * O VALOR DA PARCELA — e onde ele mora.
+ * O VALOR DA PARCELA.
  *
  * ==========================================================================
- * DUAS CONTAS, E SABER QUAL USAR DEPENDE DE UM NULL.
+ * SEM JURO INFORMADO, NAO HA JURO. Decidido com o Lucas em 04/09/2026:
+ *
+ *   "se ela nao passar nada do whats sobre juros, vai ser o valor geral —
+ *    1000 reais a peca. Se ela mandar apenas 10x, por padrao e sem juros.
+ *    Se ela colocar, ai aplica."
  *
  *   juros informado   total = a_vista * (1 + juros/100)
- *   juros NULL        total = a_vista / 0,80 (10X) ou / 0,90 (6X)
+ *   juros ausente     total = a_vista
  *
- * A segunda e a regra da casa, levantada em 25 de 25 pecas em 20/08/2026 e
- * conferida de novo em 01/09 contra a pagina impressa: R$35.920,00 a vista
- * sai como 10 X R$4.490,00.
+ * ISTO SUBSTITUI A REGRA DA CASA que vigorou ate aqui: dividir o a vista por
+ * 0,80 em 10X e por 0,90 em 6X — 25% embutidos sem ninguem ter pedido. Ela
+ * tinha sido levantada em 25 de 25 pecas em 20/08/2026 e conferida contra a
+ * pagina impressa, entao era verdadeira sobre os catalogos ANTIGOS; deixou de
+ * ser a regra da casa por decisao, e nao por engano de leitura.
  *
- * E ELAS NAO SAO A MESMA COISA. Dividir por 0,80 equivale a um juro de 25%,
- * nao de 20%. Por isso `juros_percentual` NULL continua caindo na regra
- * antiga em vez de ser traduzido para um percentual — traduzir mudaria o
- * preco impresso das pecas ja cadastradas.
+ * CONSEQUENCIA ACEITA: peca ja cadastrada com `juros_percentual` NULL passa a
+ * ser impressa mais barata — R$35.920,00 em 10X saia 10 X R$4.490,00 e passa
+ * a sair 10 X R$3.592,00. Nao ha migracao de dados: quem quiser o acrescimo
+ * antigo escreve o percentual na legenda.
  *
- * ESTA FUNCAO TEM DOIS GEMEOS: um no front (`esboco.tsx`) e outro implicito
- * em cada lugar que exibe parcela. Nao ha pacote compartilhado entre os
- * repositorios; mudou aqui, mude la.
+ * NULL e 0 passaram a dar o mesmo numero, e a coluna continua distinguindo os
+ * dois de proposito — um e "ninguem informou", o outro e "foi dito que nao
+ * tem". A distincao deixou de mudar a conta; nao deixou de ser informacao.
+ *
+ * ESTA FUNCAO TEM UM GEMEO no front (`esboco.tsx`). Nao ha pacote
+ * compartilhado entre os repositorios; mudou aqui, mude la.
  * ==========================================================================
  */
 export function valorDaParcela(
@@ -85,10 +105,10 @@ export function valorDaParcela(
   // `== null` COBRE undefined DE PROPOSITO. O valor chega de JSON em alguns
   // caminhos, e ali um campo ausente e `undefined`, nao `null` — com `===` ele
   // cairia na multiplicacao e produziria NaN, que vira "R$NaN" impresso na
-  // pagina. O lado seguro de errar aqui e cair na regra da casa.
+  // pagina. O lado seguro de errar aqui e nao acrescentar nada.
   const total =
     jurosPercentual == null
-      ? precoAVista / (parcelas === 6 ? 0.9 : 0.8)
+      ? precoAVista
       : precoAVista * (1 + jurosPercentual / 100);
 
   return total / parcelas;
@@ -127,6 +147,22 @@ export interface CatalogoItem {
   totalFotos: number;
   finalOrigem: OrigemFinal | null;
   createdAt: Date;
+
+  /**
+   * Referencia escolhida como capa. `null` = automatica.
+   *
+   * Vem na LISTAGEM tambem porque o card precisa dela — e e o motivo de a
+   * resolucao morar no repositorio: lista e detalhe leem a mesma regra e nao
+   * tem como discordar sobre qual imagem e a capa.
+   */
+  capaReferenciaId: string | null;
+
+  /**
+   * Chave da imagem que a tela desenha como capa — JA RESOLVIDA: a escolhida,
+   * se houver; senao a primeira referencia de imagem; `null` se nao houver
+   * imagem nenhuma, e ai a tela desenha o esboco.
+   */
+  capaArquivoId: string | null;
 }
 
 /** Detalhe: a linha, mais tudo que pendura nela. */
@@ -235,6 +271,28 @@ export interface ICatalogoRepository {
   /** Busca pelo numero visivel ('0042'). E por ele que a agente pergunta. */
   buscarPorNumero(numero: string): Promise<CatalogoDetalhe | null>;
   atualizar(id: string, dados: AtualizarCatalogoData): Promise<CatalogoDetalhe>;
+  /**
+   * Marca (ou desmarca, com `null`) a referencia que serve de capa.
+   *
+   * Metodo proprio, fora do `atualizar`, porque o corpo daquele vem de um DTO
+   * que o usuario preenche: um `capaReferenciaId` la aceitaria o id de uma
+   * referencia de OUTRO catalogo. Aqui da para exigir que ela seja deste, e e
+   * o que o use case faz.
+   */
+  definirCapa(id: string, referenciaId: string | null): Promise<CatalogoDetalhe>;
+  /**
+   * A nota daquele arquivo. `null` apaga.
+   *
+   * Recebe o `catalogoId` junto do id da referencia de proposito: sem ele, a
+   * rota aceitaria anotar a referencia de outra colecao — a mesma armadilha da
+   * capa. Devolve `null` quando o par nao existe, e quem chama vira isso em
+   * 404.
+   */
+  anotarReferencia(
+    catalogoId: string,
+    referenciaId: string,
+    observacao: string | null,
+  ): Promise<ReferenciaItem | null>;
   remover(id: string): Promise<void>;
 
   /**

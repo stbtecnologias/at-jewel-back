@@ -4,8 +4,11 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import {
   AnexarReferenciaUseCase,
+  AnotarReferenciaUseCase,
   AtualizarCatalogoUseCase,
   BuscarCatalogoUseCase,
+  CorrigirParcelamentoUseCase,
+  DefinirCapaUseCase,
   CriarCatalogoUseCase,
   CurarFotoUseCase,
   ListarCatalogosUseCase,
@@ -54,6 +57,9 @@ import { MidiaController } from './infrastructure/http/controllers/midia.control
     BuscarCatalogoUseCase,
     CriarCatalogoUseCase,
     AtualizarCatalogoUseCase,
+    DefinirCapaUseCase,
+    AnotarReferenciaUseCase,
+    CorrigirParcelamentoUseCase,
     RemoverCatalogoUseCase,
     AnexarReferenciaUseCase,
     RemoverReferenciaUseCase,

@@ -24,6 +24,44 @@ import { CatalogoFotoOrmEntity } from '../entities/catalogo-foto.orm-entity';
 import { CatalogoReferenciaOrmEntity } from '../entities/catalogo-referencia.orm-entity';
 import { CatalogoOrmEntity } from '../entities/catalogo.orm-entity';
 
+interface AnexoParaCapa {
+  id: string;
+  arquivoId: string | null;
+  mime: string | null;
+  ordem: number;
+}
+
+/**
+ * A REGRA DA CAPA, escrita uma vez só.
+ *
+ *   1. a referência ESCOLHIDA, se ela ainda existe e é imagem
+ *   2. senão, a primeira imagem por ordem de envio
+ *   3. senão, nada — e a tela desenha o esboço
+ *
+ * Mora aqui, e não em cada consulta, porque listagem e detalhe precisam da
+ * mesma resposta: um card mostrando uma capa e a tela do catálogo mostrando
+ * outra seria pior do que não ter capa nenhuma.
+ *
+ * PDF NUNCA É CAPA. O use case já impede escolher um, mas a regra é repetida
+ * aqui de propósito: se um PDF chegar a esta coluna por qualquer caminho, o
+ * resultado é cair na próxima imagem — e não um `<img src="...pdf">`, que
+ * desenha um quadro vazio.
+ */
+function escolherCapa(
+  capaReferenciaId: string | null,
+  anexos: AnexoParaCapa[],
+): string | null {
+  const imagens = anexos
+    .filter((r) => r.arquivoId && !(r.mime ?? '').includes('pdf'))
+    .sort((a, b) => a.ordem - b.ordem);
+
+  if (capaReferenciaId) {
+    const escolhida = imagens.find((r) => r.id === capaReferenciaId);
+    if (escolhida) return escolhida.arquivoId;
+  }
+  return imagens[0]?.arquivoId ?? null;
+}
+
 @Injectable()
 export class CatalogoRepository implements ICatalogoRepository {
   constructor(
@@ -85,14 +123,20 @@ export class CatalogoRepository implements ICatalogoRepository {
     // `take` limitaria LINHAS e nao catalogos, e uma colecao de 30 fotos comeria
     // a pagina inteira sozinha.
     const ids = linhas.map((l) => l.id);
-    const [contagem, origens] = await Promise.all([
+    const [contagem, origens, anexos] = await Promise.all([
       this.contarFotos(ids),
       this.origemDoFinal(ids),
+      this.anexosDosCatalogos(ids),
     ]);
 
     return {
       itens: linhas.map((l) =>
-        this.paraItem(l, contagem.get(l.id) ?? 0, origens.get(l.id) ?? null),
+        this.paraItem(
+          l,
+          contagem.get(l.id) ?? 0,
+          origens.get(l.id) ?? null,
+          escolherCapa(l.capaReferenciaId, anexos.get(l.id) ?? []),
+        ),
       ),
       total,
     };
@@ -108,6 +152,42 @@ export class CatalogoRepository implements ICatalogoRepository {
    * `DISTINCT ON` é o jeito do Postgres de dizer "a primeira linha de cada
    * grupo" — aqui, a mais recente de cada catálogo.
    */
+  /**
+   * Os arquivos anexados de cada catalogo da pagina, para a capa.
+   *
+   * Numa consulta so, no mesmo molde da contagem e da origem do final: com 50
+   * catalogos na tela, uma ida por linha seriam 50 idas ao banco para pintar
+   * uma miniatura.
+   *
+   * TRAZ TODOS OS ANEXOS, e nao so o primeiro: a capa pode ser uma escolhida
+   * la no meio, e decidir isso no SQL exigiria um `DISTINCT ON` com ordenacao
+   * condicional — mais dificil de ler do que filtrar em memoria uma lista que
+   * tem meia duzia de itens por catalogo.
+   */
+  private async anexosDosCatalogos(
+    ids: string[],
+  ): Promise<Map<string, AnexoParaCapa[]>> {
+    if (ids.length === 0) return new Map();
+
+    const linhas = await this.repoReferencias.manager.query<
+      { catalogo_id: string; id: string; arquivo_id: string | null; mime: string | null; ordem: number }[]
+    >(
+      `SELECT catalogo_id, id, arquivo_id, mime, ordem
+         FROM catalogo_referencias
+        WHERE catalogo_id = ANY($1) AND arquivo_id IS NOT NULL
+        ORDER BY catalogo_id, ordem`,
+      [ids],
+    );
+
+    const mapa = new Map<string, AnexoParaCapa[]>();
+    for (const l of linhas) {
+      const lista = mapa.get(l.catalogo_id) ?? [];
+      lista.push({ id: l.id, arquivoId: l.arquivo_id, mime: l.mime, ordem: Number(l.ordem) });
+      mapa.set(l.catalogo_id, lista);
+    }
+    return mapa;
+  }
+
   private async origemDoFinal(
     ids: string[],
   ): Promise<Map<string, OrigemFinal>> {
@@ -152,6 +232,37 @@ export class CatalogoRepository implements ICatalogoRepository {
   async buscarPorNumero(numero: string): Promise<CatalogoDetalhe | null> {
     const linha = await this.repo.findOne({ where: { numero } });
     return linha ? this.montarDetalhe(linha) : null;
+  }
+
+  async anotarReferencia(
+    catalogoId: string,
+    referenciaId: string,
+    observacao: string | null,
+  ): Promise<ReferenciaItem | null> {
+    // O `catalogo_id` entra no WHERE, e nao numa checagem depois: assim o
+    // UPDATE simplesmente nao encontra a linha quando a referencia e de outra
+    // colecao, em vez de depender de alguem lembrar de comparar.
+    const linha = await this.repoReferencias.findOne({
+      where: { id: referenciaId, catalogoId },
+    });
+    if (!linha) return null;
+
+    linha.observacao = observacao;
+    return this.paraReferencia(await this.repoReferencias.save(linha));
+  }
+
+  async definirCapa(
+    id: string,
+    referenciaId: string | null,
+  ): Promise<CatalogoDetalhe> {
+    // UPDATE de uma coluna só. O `atualizar` monta a linha inteira a partir de
+    // um DTO do usuário; misturar a capa ali abriria caminho para apontar a
+    // capa de um catálogo para a referência de outro.
+    await this.repo.update({ id }, { capaReferenciaId: referenciaId });
+
+    const detalhe = await this.buscarPorId(id);
+    if (!detalhe) throw new NotFoundException('Catálogo não encontrado');
+    return detalhe;
   }
 
   async atualizar(
@@ -393,7 +504,14 @@ export class CatalogoRepository implements ICatalogoRepository {
     const atual = versoes[0] ?? null;
 
     return {
-      ...this.paraItem(linha, fotos.length, atual?.origem ?? null),
+      ...this.paraItem(
+        linha,
+        fotos.length,
+        atual?.origem ?? null,
+        // As referencias ja estao carregadas aqui — a MESMA funcao da listagem
+        // decide, entao as duas telas nao tem como discordar sobre a capa.
+        escolherCapa(linha.capaReferenciaId, referencias),
+      ),
       referencias: referencias.map((r) => this.paraReferencia(r)),
       fotos: fotos.map((f) => this.paraFoto(f)),
       finais: versoes,
@@ -410,6 +528,7 @@ export class CatalogoRepository implements ICatalogoRepository {
     linha: CatalogoOrmEntity,
     totalFotos: number,
     finalOrigem: OrigemFinal | null,
+    capaArquivoId: string | null,
   ): CatalogoItem {
     return {
       id: linha.id,
@@ -422,6 +541,8 @@ export class CatalogoRepository implements ICatalogoRepository {
       totalFotos,
       finalOrigem,
       createdAt: linha.createdAt,
+      capaReferenciaId: linha.capaReferenciaId,
+      capaArquivoId,
     };
   }
 
@@ -446,6 +567,8 @@ export class CatalogoRepository implements ICatalogoRepository {
       tipo: linha.tipo,
       valor: linha.valor,
       arquivoId: linha.arquivoId,
+      mime: linha.mime,
+      observacao: linha.observacao,
       ordem: linha.ordem,
     };
   }

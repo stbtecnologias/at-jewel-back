@@ -50,6 +50,13 @@ export class CatalogoOrmEntity {
   @Column({ name: 'final_arquivo_id', type: 'text', nullable: true })
   finalArquivoId: string | null;
 
+  // A referencia escolhida como capa. NULL = automatica (a primeira imagem).
+  // Sem `@ManyToOne`: a coluna e lida em lote junto com a contagem de fotos, e
+  // uma relacao aqui faria o TypeORM carregar a referencia inteira em toda
+  // listagem — ver a migracao 48.
+  @Column({ name: 'capa_referencia_id', type: 'uuid', nullable: true })
+  capaReferenciaId: string | null;
+
   @Column({ name: 'final_nome_arquivo', type: 'text', nullable: true })
   finalNomeArquivo: string | null;
 
