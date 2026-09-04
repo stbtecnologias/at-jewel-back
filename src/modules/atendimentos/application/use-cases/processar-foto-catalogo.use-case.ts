@@ -62,9 +62,14 @@ const RE_JUROS = /(\d{1,3})\s*%/;
 /**
  * `sem juros`, `s/ juros`, `sem acrescimo` — juro ZERO, e nao ausencia dele.
  *
- * A diferenca importa: sem indicacao nenhuma vale a regra da casa (dividir por
- * 0,80), que equivale a 25% de juro. "Sem juros" e o contrario disso, e
- * precisa de um jeito de ser dito.
+ * DESDE 04/09/2026 OS DOIS DAO O MESMO NUMERO: ausencia de juro passou a valer
+ * zero, no lugar da regra da casa que dividia por 0,80 e embutia 25%. Entao
+ * dizer "sem juros" nao muda mais a conta.
+ *
+ * A forma continua sendo reconhecida, e nao e sobra: escrever `10x sem juros`
+ * na legenda registra que alguem CONFERIU o parcelamento daquela peca, e o
+ * silencio nao registra nada. Quando o preco sair errado, essa diferenca e a
+ * primeira coisa que se procura.
  */
 const RE_SEM_JUROS =
   /\bsem\s*juros\b|\bs\s*\/?\s*juros\b|\bsem\s*acr[eé]scimo\b/i;
@@ -470,7 +475,7 @@ export class ProcessarFotoCatalogoUseCase {
       PASTA_PENDENTES,
     );
 
-    const analise = this.lerLegenda(msg.legenda, abertos);
+    const analise = await this.lerLegenda(msg.legenda, abertos);
     const catalogo = analise.catalogo ?? this.sessao.catalogoAtual(msg.de);
 
     if (!catalogo) {
@@ -524,7 +529,7 @@ export class ProcessarFotoCatalogoUseCase {
     texto: string,
   ): Promise<RespostaFoto> {
     const abertos = await this.catalogos.listarAbertos();
-    const analise = this.lerLegenda(texto, abertos);
+    const analise = await this.lerLegenda(texto, abertos);
 
     if (!analise.catalogo) {
       return {
@@ -990,28 +995,89 @@ export class ProcessarFotoCatalogoUseCase {
   }
 
   /**
+   * ACHAR O CÓDIGO DA PEÇA NA LEGENDA — perguntando ao banco, não adivinhando.
+   *
+   * ==========================================================================
+   * POR QUE A PERGUNTA É INVERTIDA.
+   *
+   * Até 04/09/2026 isto era uma expressão regular: duas letras seguidas de
+   * dígitos, o padrão `CO26185` tirado dos catálogos impressos. Medido contra a
+   * produção, ele reconhecia 5.919 dos 6.938 códigos — e errava os outros de
+   * três jeitos diferentes:
+   *
+   *   9 códigos TÊM ESPAÇO      `TABUA QUEIJO  LAGUIO`, `CHIC STAYS`
+   *   6 códigos têm 1 CARACTERE `1`, `2`
+   *   alguns não têm DÍGITO     `PINGENTE`, `VASOITA`
+   *
+   * Não existe recorte por formato que cubra isso. Então a pergunta deixou de
+   * ser "esta palavra parece um código?" e passou a ser "qual dos códigos que
+   * eu tenho aparece aqui?".
+   *
+   * E O PIOR CASO NÃO ERA DEIXAR DE RECONHECER. Era reconhecer errado: como
+   * `1-25-3A-2` não casava, ele sobrava no texto, e a busca do NÚMERO DO
+   * CATÁLOGO mordia o `1` da frente. Sete peças reais da produção caem nisso,
+   * e o catálogo #0001 existe — a foto ia para a coleção errada com uma
+   * confirmação dizendo que deu certo.
+   * ==========================================================================
+   */
+  private async acharCodigo(
+    bruto: string,
+  ): Promise<{ codigo: string | null; resto: string }> {
+    if (!bruto) return { codigo: null, resto: bruto };
+
+    // Já vêm do mais longo para o mais curto: numa legenda com `1-25-3A-2`
+    // casa também o `1`, e quem vale é o maior.
+    const candidatos = await this.produtos.buscarCodigosPresentesEm(bruto);
+
+    for (const candidato of candidatos) {
+      const pos = posicaoComBorda(bruto, candidato);
+      if (pos < 0) continue;
+
+      return {
+        codigo: candidato.toUpperCase(),
+        resto:
+          bruto.slice(0, pos) + ' ' + bruto.slice(pos + candidato.length),
+      };
+    }
+
+    // NENHUM CÓDIGO NOSSO NA LEGENDA — cai no formato de sempre.
+    //
+    // Isto não é apego ao código velho: `catalogo_fotos.codigo_erp` é SEM
+    // chave estrangeira de propósito, porque a foto pode chegar antes de a
+    // peça sincronizar do ERP. Recusar o desconhecido quebraria justamente a
+    // peça nova, que é a que vai para catálogo novo.
+    const m = bruto.match(RE_CODIGO);
+    if (!m) return { codigo: null, resto: bruto };
+
+    return {
+      codigo: m[1].toUpperCase(),
+      resto: bruto.replace(m[0], ' '),
+    };
+  }
+
+  /**
    * Lê catálogo e código de um texto livre.
    *
    * A ORDEM IMPORTA: o código sai PRIMEIRO. `BR26252` tem dígitos dentro, e
    * procurar o número do catálogo antes acharia "26252" ali e mandaria a foto
    * para um catálogo que não existe — ou, pior, para um que existe.
    */
-  private lerLegenda(
+  private async lerLegenda(
     texto: string,
     abertos: CatalogoAberto[],
-  ): {
+  ): Promise<{
     catalogo: CatalogoAberto | null;
     codigo: string | null;
     parcelas: number | null;
     /** Juro em %. `null` = nao informado, vale a regra da casa. */
     juros: number | null;
     pedidoDeEstilo: string | null;
-  } {
+  }> {
     const bruto = (texto ?? '').trim();
 
-    const mCodigo = bruto.match(RE_CODIGO);
-    const codigo = mCodigo ? mCodigo[1].toUpperCase() : null;
-    let resto = mCodigo ? bruto.replace(mCodigo[0], ' ') : bruto;
+    const achado = await this.acharCodigo(bruto);
+    const codigo = achado.codigo;
+    let resto = achado.resto;
 
     const mParcelas = resto.match(RE_PARCELAS);
     const parcelas = mParcelas ? Number(mParcelas[1]) : null;
@@ -1317,4 +1383,42 @@ function normalizar(texto: string): string {
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * Onde `alvo` aparece em `texto` COM BORDA — ou -1.
+ *
+ * Borda é: o que vem antes e depois não pode ser letra nem dígito. Sem isso, o
+ * código `1` — que existe, seis peças o têm — casaria dentro de `CO26185`, e
+ * toda legenda passaria a ter um código.
+ *
+ * NÃO USA `\b` DE EXPRESSÃO REGULAR, e a diferença importa: `\b` considera
+ * hífen e barra como separadores, então `1-25-3A-2` teria borda no meio dele
+ * mesmo e o `1` casaria ali dentro. Aqui a borda é a ausência de alfanumérico,
+ * que é o que separa um código de outro numa legenda escrita por gente.
+ *
+ * Compara em MAIÚSCULA porque a legenda vem como a pessoa digitou e os códigos
+ * da base estão todos em caixa alta (conferido: 6.938 de 6.938).
+ */
+function posicaoComBorda(texto: string, alvo: string): number {
+  const t = texto.toUpperCase();
+  const a = alvo.toUpperCase();
+  if (!a) return -1;
+
+  const alfanumerico = (c: string | undefined) =>
+    c !== undefined && /[A-Z0-9]/.test(c);
+
+  // Percorre TODAS as ocorrências: o código pode aparecer primeiro no meio de
+  // outra palavra e depois sozinho.
+  let de = 0;
+  for (;;) {
+    const i = t.indexOf(a, de);
+    if (i < 0) return -1;
+
+    const antes = i > 0 ? t[i - 1] : undefined;
+    const depois = i + a.length < t.length ? t[i + a.length] : undefined;
+    if (!alfanumerico(antes) && !alfanumerico(depois)) return i;
+
+    de = i + 1;
+  }
 }
