@@ -6,6 +6,7 @@ import { BuscarOperacaoPorIdErpUseCase } from './application/use-cases/buscar-op
 import { BuscarOperacaoUseCase } from './application/use-cases/buscar-operacao.use-case';
 import { CriarOperacaoUseCase } from './application/use-cases/criar-operacao.use-case';
 import { ListarOperacoesUseCase } from './application/use-cases/listar-operacoes.use-case';
+import { RemoverOperacaoUseCase } from './application/use-cases/remover-operacao.use-case';
 import { SincronizarOperacaoUseCase } from './application/use-cases/sincronizar-operacao.use-case';
 import { OPERACAO_REPOSITORY } from './domain/ports/injection-tokens';
 import { OperacaoOrmEntity } from './infrastructure/database/typeorm/entities/operacao.orm-entity';
@@ -24,6 +25,7 @@ import { OperacoesController } from './infrastructure/http/controllers/operacoes
     BuscarOperacaoPorIdErpUseCase,
     ListarOperacoesUseCase,
     AtualizarOperacaoUseCase,
+    RemoverOperacaoUseCase,
     { provide: OPERACAO_REPOSITORY, useClass: OperacaoRepository },
   ],
   // Exportado para o MovimentacoesModule: a ingestao resolve `operacao_id`

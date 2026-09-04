@@ -138,6 +138,16 @@ export class MovimentacaoRepository implements IMovimentacaoRepository {
     };
   }
 
+  /**
+   * Exclusao fisica. Nao apaga os filhos aqui de proposito: o
+   * `ON DELETE CASCADE` da migracao 46 faz isso no banco, numa operacao so —
+   * e continua valendo para quem apagar por SQL, que uma limpeza em codigo
+   * nao alcancaria.
+   */
+  async remover(id: string): Promise<void> {
+    await this.repo.delete(id);
+  }
+
   // -------------------------------------------------------------------------
   // Mapeamento
   // -------------------------------------------------------------------------

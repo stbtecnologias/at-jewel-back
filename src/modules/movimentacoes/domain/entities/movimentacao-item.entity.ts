@@ -1,3 +1,5 @@
+import { paraCentavos } from '../../../../shared/dinheiro/centavos';
+
 /**
  * Linha do documento do ERP — `MovimentacaoProduto` do lado de la.
  *
@@ -52,9 +54,15 @@ export class MovimentacaoItem {
     return new MovimentacaoItem(props);
   }
 
-  /** Total da linha. Nao e coluna: e derivavel e nao chega do ERP. */
+  /**
+   * Total da linha. Nao e coluna: e derivavel e nao chega do ERP.
+   *
+   * Arredondado ao centavo. `quantidade` e DECIMAL(10,4) — joia vendida por
+   * peso existe —, entao o produto pode cair entre centavos, e somar linhas
+   * assim acumularia ruido no total do documento.
+   */
   get total(): number {
-    return this.quantidade * this.valorUnitario;
+    return paraCentavos(this.quantidade * this.valorUnitario) / 100;
   }
 
   toPublic(): Record<string, unknown> {

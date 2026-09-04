@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -20,6 +21,7 @@ import { BuscarOperacaoPorIdErpUseCase } from '../../../application/use-cases/bu
 import { BuscarOperacaoUseCase } from '../../../application/use-cases/buscar-operacao.use-case';
 import { CriarOperacaoUseCase } from '../../../application/use-cases/criar-operacao.use-case';
 import { ListarOperacoesUseCase } from '../../../application/use-cases/listar-operacoes.use-case';
+import { RemoverOperacaoUseCase } from '../../../application/use-cases/remover-operacao.use-case';
 import { SincronizarOperacaoUseCase } from '../../../application/use-cases/sincronizar-operacao.use-case';
 import { AtualizarOperacaoDto } from '../dto/atualizar-operacao.dto';
 import { CriarOperacaoDto } from '../dto/criar-operacao.dto';
@@ -37,10 +39,11 @@ import { SincronizarOperacaoDto } from '../dto/sincronizar-operacao.dto';
 // migracao 33: quem le a movimentacao precisa da operacao para saber o que ela
 // e. As permissoes foram concedidas na migracao 46, junto com as tabelas.
 //
-// SEM DELETE, e nao por esquecimento: `movimentacoes.operacao_id` e ON DELETE
-// RESTRICT, entao apagar uma operacao com documento pendurado ja e recusado
-// pelo banco — a rota so produziria um 500 do Postgres. O caminho certo e
-// PATCH com `ativo: false`, que preserva o historico.
+// O DELETE existe desde 04/09/2026, para limpar o que nao devia ter entrado
+// durante a integracao. Ele NAO e o caminho para descontinuar uma operacao:
+// `movimentacoes.operacao_id` e ON DELETE RESTRICT, entao operacao com
+// documento pendurado devolve 409 — e esta certo. Descontinuar e PATCH com
+// `ativo: false`, que preserva o historico.
 @Controller('operacoes')
 export class OperacoesController {
   constructor(
@@ -50,6 +53,7 @@ export class OperacoesController {
     private readonly buscarPorIdErp: BuscarOperacaoPorIdErpUseCase,
     private readonly listar: ListarOperacoesUseCase,
     private readonly atualizar: AtualizarOperacaoUseCase,
+    private readonly remover: RemoverOperacaoUseCase,
   ) {}
 
   @Get()
@@ -127,5 +131,16 @@ export class OperacoesController {
       idErp: dto.idErpOperacao,
     });
     return atualizada.toPublic();
+  }
+
+  // Pelo NOSSO UUID, como em movimentacoes. Devolve 409 — nao 500 — quando ha
+  // movimentacao vinculada, com o texto dizendo que o caminho e `ativo: false`.
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(JwtOrApiKeyGuard)
+  @Permissions('movimentacoes:write')
+  @RequireScopes('movimentacoes:write')
+  async removerOperacao(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
+    await this.remover.execute(id);
   }
 }

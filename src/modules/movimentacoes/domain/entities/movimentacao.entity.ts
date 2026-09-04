@@ -1,3 +1,4 @@
+import { somarEmReais } from '../../../../shared/dinheiro/centavos';
 import { MovimentacaoItem } from './movimentacao-item.entity';
 import { MovimentacaoPagamento } from './movimentacao-pagamento.entity';
 
@@ -177,14 +178,20 @@ export class Movimentacao {
       : (props.entidadeOrigemIdErp ?? null);
   }
 
-  /** Soma das linhas. Confere com `valor` nas 24 do dump — mas nao e imposta. */
+  /**
+   * Soma das linhas. Confere com `valor` nas 24 do dump — mas nao e imposta.
+   *
+   * Somada em CENTAVOS. Estes dois campos existem para serem COMPARADOS com o
+   * `valor` — e a conferencia "o que chegou bate com o que saiu do ERP" —, e
+   * igualdade sobre float com ruido da falso. Ver `shared/dinheiro/centavos`.
+   */
   get totalDosItens(): number {
-    return this.itens.reduce((acc, i) => acc + i.total, 0);
+    return somarEmReais(this.itens.map((i) => i.total));
   }
 
   /** Soma do que ja foi recebido. Quase nunca igual a `valor`. */
   get totalDosPagamentos(): number {
-    return this.pagamentos.reduce((acc, p) => acc + p.valor, 0);
+    return somarEmReais(this.pagamentos.map((p) => p.valor));
   }
 
   toPublic(): Record<string, unknown> {
