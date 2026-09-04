@@ -10,8 +10,19 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { LIMITE_BYTES } from '../../../../catalogos/domain/ports/armazenamento.port';
+import { Permissions } from '../../../../auth/infrastructure/http/decorators/permissions.decorator';
+import { JwtAuthGuard } from '../../../../auth/infrastructure/http/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../../../../auth/infrastructure/http/guards/permissions.guard';
+import {
+  FotoProdutoUseCase,
+  type ArquivoRecebido,
+} from '../../../application/use-cases/foto-produto.use-case';
 import { RequireScopes } from '../../../../auth/infrastructure/http/decorators/scopes.decorator';
 import { JwtOrApiKeyGuard } from '../../../../auth/infrastructure/http/guards/jwt-or-api-key.guard';
 import { AlertasEstoqueUseCase } from '../../../application/use-cases/alertas-estoque.use-case';
@@ -43,6 +54,7 @@ export class ProdutosController {
     private readonly removerProduto: RemoverProdutoUseCase,
     private readonly facetasProdutos: FacetasProdutosUseCase,
     private readonly alertasEstoque: AlertasEstoqueUseCase,
+    private readonly fotoProduto: FotoProdutoUseCase,
   ) {}
 
   @Get()
@@ -139,6 +151,40 @@ export class ProdutosController {
       fotoUrl: dto.foto_url,
       ativo: dto.ativo,
     });
+  }
+
+  /**
+   * A foto propria da peca — a que ganha da foto do ERP.
+   *
+   * GUARDA DIFERENTE DO RESTO DESTE CONTROLLER, e de proposito: as demais
+   * rotas usam `JwtOrApiKeyGuard`, que aceita chave de API. Aqui nao ha
+   * integracao que suba foto, e o `JwtOrApiKeyGuard` com `@Permissions` teria
+   * um buraco — no ramo da chave ele so confere `@RequireScopes`, entao
+   * qualquer chave valida passaria. Painel so, entao guarda de painel.
+   *
+   * `limits` no interceptor porque sem ele o multer le o arquivo inteiro para
+   * a memoria antes de qualquer validacao nossa.
+   */
+  @Post(':id/foto')
+  @HttpCode(HttpStatus.CREATED)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('produtos:foto')
+  @UseInterceptors(
+    FileInterceptor('arquivo', { limits: { fileSize: LIMITE_BYTES } }),
+  )
+  async subirFoto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() arquivo: ArquivoRecebido | undefined,
+  ) {
+    return this.fotoProduto.subir(id, arquivo);
+  }
+
+  /** Tira a foto nossa. A peca volta a exibir a do ERP, se houver. */
+  @Delete(':id/foto')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('produtos:foto')
+  async removerFoto(@Param('id', ParseUUIDPipe) id: string) {
+    return this.fotoProduto.remover(id);
   }
 
   @Delete(':id')

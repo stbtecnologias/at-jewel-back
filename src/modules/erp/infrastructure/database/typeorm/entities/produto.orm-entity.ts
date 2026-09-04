@@ -68,6 +68,12 @@ export class ProdutoOrmEntity {
   @Column({ name: 'foto_url', type: 'varchar', length: 500, nullable: true })
   fotoUrl: string | null;
 
+  // A foto NOSSA, no armazenamento. Coluna separada da `foto_url` porque o
+  // `upsertByCodigoErp` escreve o produto inteiro e apagaria a nossa quando o
+  // ERP sincronizasse a peca sem mandar foto — ver a migracao 47.
+  @Column({ name: 'foto_arquivo_id', type: 'varchar', length: 500, nullable: true })
+  fotoArquivoId: string | null;
+
   @Column({ name: 'ativo', type: 'boolean', default: true })
   ativo: boolean;
 

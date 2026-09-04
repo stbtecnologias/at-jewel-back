@@ -31,6 +31,40 @@ export class ProdutoRepository implements IProdutoRepository {
     return this.toDomain(saved);
   }
 
+  /** UPDATE de uma coluna so — ver o porque no `toOrm`. */
+  async definirFotoArquivo(id: string, chave: string | null): Promise<void> {
+    await this.repo.update({ id }, { fotoArquivoId: chave });
+  }
+
+  async buscarCodigosPresentesEm(texto: string): Promise<string[]> {
+    const limpo = (texto ?? '').trim();
+    if (!limpo) return [];
+
+    // `position`, e NAO `LIKE`: existe `MESA_PERSONAL` na base, e o `_` e
+    // curinga do LIKE — ele casaria com `MESAXPERSONAL`. `position` compara
+    // texto puro.
+    //
+    // O `<> ''` nao e zelo: uma peca tem codigo VAZIO (string em branco, nao
+    // NULL). Sem ele, a posicao de '' em qualquer texto e 1, e essa peca
+    // casaria com toda legenda que chegasse.
+    //
+    // VARRE A TABELA, e tudo bem: sao ~7.000 linhas, e isto roda uma vez por
+    // foto que chega pelo WhatsApp. Indice nao ajudaria — a busca e por
+    // conteudo DENTRO do texto recebido, nao por prefixo do codigo.
+    const linhas = await this.repo.manager.query<{ codigo_erp: string }[]>(
+      `SELECT codigo_erp
+         FROM produtos
+        WHERE codigo_erp IS NOT NULL
+          AND codigo_erp <> ''
+          AND position(upper(codigo_erp) in upper($1)) > 0
+        ORDER BY length(codigo_erp) DESC, codigo_erp
+        LIMIT 50`,
+      [limpo],
+    );
+
+    return linhas.map((l) => l.codigo_erp);
+  }
+
   async findByCodigoErp(codigoErp: string): Promise<Produto | null> {
     const entity = await this.repo.findOneBy({ codigoErp });
     return entity ? this.toDomain(entity) : null;
@@ -120,7 +154,7 @@ export class ProdutoRepository implements IProdutoRepository {
   }
 
   async facetas(): Promise<FacetasProduto> {
-    const [fornecedores, categorias, familias] = await Promise.all([
+    const [fornecedores, categorias, familias, pedras, colecoes, cores] = await Promise.all([
       this.repo.manager.query<{ v: string }[]>(
         `SELECT DISTINCT referencia_fornecedor AS v FROM produtos
          WHERE referencia_fornecedor IS NOT NULL AND referencia_fornecedor <> '' ORDER BY 1`,
@@ -131,11 +165,29 @@ export class ProdutoRepository implements IProdutoRepository {
       this.repo.manager.query<{ v: string }[]>(
         `SELECT DISTINCT familia AS v FROM produtos WHERE familia <> '' ORDER BY 1`,
       ),
+      // As tres seguintes alimentam o cadastro manual de peca. Sao colunas de
+      // TEXTO LIVRE, sem tabela de dominio: a lista de opcoes e a propria base
+      // dizendo o que ja existe.
+      this.repo.manager.query<{ v: string }[]>(
+        `SELECT DISTINCT tipo_pedra AS v FROM produtos
+         WHERE tipo_pedra IS NOT NULL AND tipo_pedra <> '' ORDER BY 1`,
+      ),
+      this.repo.manager.query<{ v: string }[]>(
+        `SELECT DISTINCT colecao AS v FROM produtos
+         WHERE colecao IS NOT NULL AND colecao <> '' ORDER BY 1`,
+      ),
+      this.repo.manager.query<{ v: string }[]>(
+        `SELECT DISTINCT cor AS v FROM produtos
+         WHERE cor IS NOT NULL AND cor <> '' ORDER BY 1`,
+      ),
     ]);
     return {
       fornecedores: fornecedores.map((r) => r.v),
       categorias: categorias.map((r) => r.v),
       familias: familias.map((r) => r.v),
+      pedras: pedras.map((r) => r.v),
+      colecoes: colecoes.map((r) => r.v),
+      cores: cores.map((r) => r.v),
     };
   }
 
@@ -173,6 +225,14 @@ export class ProdutoRepository implements IProdutoRepository {
     return { estoqueBaixo, giroLento };
   }
 
+  /**
+   * A foto propria NAO passa por aqui, e a ausencia e deliberada.
+   *
+   * Este mapeamento alimenta o `upsertByCodigoErp`, que e o caminho do ERP.
+   * Listar `fotoArquivoId` aqui faria toda sincronizacao do Safira escrever
+   * nela — NULL, na pratica, porque o ERP nao conhece o campo — e a foto que a
+   * loja subiu sumiria sem aviso. Quem escreve nela e o `definirFotoArquivo`.
+   */
   private toOrm(p: Produto): Partial<ProdutoOrmEntity> {
     return {
       idErp: p.idErp,
@@ -222,6 +282,7 @@ export class ProdutoRepository implements IProdutoRepository {
       valorVenda: Number(o.valorVenda),
       observacao: o.observacao,
       fotoUrl: o.fotoUrl,
+      fotoArquivoId: o.fotoArquivoId,
       ativo: o.ativo,
       estoqueAtual: o.estoqueAtual ?? 0,
       dataEntradaEstoque: o.dataEntradaEstoque,

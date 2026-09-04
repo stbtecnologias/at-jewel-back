@@ -20,6 +20,12 @@ export interface ProdutoProps {
   valorVenda: number;
   observacao?: string | null;
   fotoUrl?: string | null;
+  /**
+   * Chave da foto NOSSA no armazenamento (`produtos/CO26185/uuid.jpg`).
+   * Distinta de `fotoUrl`, que e do ERP — ver a migracao 47. Tem precedencia
+   * sobre ela na hora de exibir.
+   */
+  fotoArquivoId?: string | null;
   ativo: boolean;
   estoqueAtual?: number | null;
   dataEntradaEstoque?: Date | null;
@@ -48,6 +54,7 @@ export class Produto {
   readonly valorVenda: number;
   readonly observacao: string | null;
   readonly fotoUrl: string | null;
+  readonly fotoArquivoId: string | null;
   readonly ativo: boolean;
   readonly estoqueAtual: number;
   readonly dataEntradaEstoque: Date | null;
@@ -75,6 +82,7 @@ export class Produto {
     this.valorVenda = props.valorVenda;
     this.observacao = props.observacao ?? null;
     this.fotoUrl = props.fotoUrl ?? null;
+    this.fotoArquivoId = props.fotoArquivoId ?? null;
     this.ativo = props.ativo;
     this.estoqueAtual = props.estoqueAtual ?? 0;
     this.dataEntradaEstoque = props.dataEntradaEstoque ?? null;

@@ -114,6 +114,14 @@ const MANIFESTO = {
   // referencia movimentacoes, que referencia operacoes: se ela existe, as
   // outras tres existem.
   '46_movimentacoes.sql':                 { tipo: 'tabela',     alvo: 'movimentacoes_pagamentos' },
+  '47_produto_foto_propria.sql':          { tipo: 'coluna',     alvo: 'produtos.foto_arquivo_id' },
+  '48_catalogo_capa.sql':                 { tipo: 'coluna',     alvo: 'catalogos.capa_referencia_id' },
+  '49_referencia_observacao.sql':         { tipo: 'coluna',     alvo: 'catalogo_referencias.observacao' },
+  '51_clientes_read_all.sql':             { tipo: 'permissao',  alvo: 'ADMIN|clientes:read_all' },
+  '52_ocorrencia_cliente_fotos.sql':      { tipo: 'tabela',     alvo: 'ocorrencia_fotos' },
+  // 50 nao cria objeto nenhum: so troca o COMMENT de uma coluna. Fica de fora
+  // pelo mesmo motivo da 43 — nenhum marcador serve, e inventar um 'comentario'
+  // para uma migracao unica seria mais maquinario do que ela merece.
 };
 
 // ---------------------------------------------------------------------------

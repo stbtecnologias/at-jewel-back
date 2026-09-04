@@ -20,6 +20,11 @@ export const PERMISSOES: PermissaoDef[] = [
   { chave: 'movimentacoes:write', label: 'Classificar operações e corrigir o de-para do ERP', grupo: 'Vendas' },
   { chave: 'produtos:read', label: 'Ver produtos', grupo: 'Produtos' },
   { chave: 'produtos:write', label: 'Editar produtos', grupo: 'Produtos' },
+  // SEPARADA de `produtos:write` de proposito. Subir a foto de uma peca e
+  // trabalho de quem fotografa e de quem cuida da imagem da marca; mexer em
+  // preco, cadastro e apagamento nao e. MARKETING precisa da primeira e nao
+  // deve ter a segunda — com uma chave so, teria as duas.
+  { chave: 'produtos:foto', label: 'Subir e trocar a foto do produto', grupo: 'Produtos' },
   { chave: 'ocorrencias:read', label: 'Ver ocorrências', grupo: 'Produtos' },
   { chave: 'ocorrencias:write', label: 'Registrar ocorrências', grupo: 'Produtos' },
   { chave: 'consignacoes:read', label: 'Ver consignações', grupo: 'Produtos' },
@@ -38,7 +43,12 @@ export const PERMISSOES: PermissaoDef[] = [
   { chave: 'demandas:read', label: 'Ver demandas', grupo: 'Demandas' },
   { chave: 'demandas:write', label: 'Abrir demandas', grupo: 'Demandas' },
   { chave: 'demandas:manage', label: 'Responder e gerir demandas', grupo: 'Demandas' },
-  { chave: 'clientes:read', label: 'Ver clientes (agregado)', grupo: 'Clientes' },
+  { chave: 'clientes:read', label: 'Ver clientes (a própria carteira)', grupo: 'Clientes' },
+  // O PAR DA `vendas:read_all`, e pelo mesmo motivo: ate 04/09/2026
+  // `clientes:read` sozinha entregava a carteira INTEIRA — nome, telefone,
+  // e-mail e limite de credito de todo mundo. Quem so tem `clientes:read`
+  // passa a ver os clientes da PROPRIA vendedora.
+  { chave: 'clientes:read_all', label: 'Ver clientes de todas as vendedoras', grupo: 'Clientes' },
   { chave: 'clientes:write', label: 'Criar, editar e remover clientes', grupo: 'Clientes' },
   { chave: 'analytics:read', label: 'Ver analytics', grupo: 'Analytics' },
   { chave: 'metas:read', label: 'Ver metas', grupo: 'Metas' },
