@@ -6,6 +6,8 @@ import type { IDefeitoRepository } from '../../domain/ports/repositories/defeito
 
 export interface CriarDefeitoInput {
   produtoId: string;
+  /** De quem era a peca. Opcional: defeito de fornecedor nao passou por ninguem. */
+  clienteId?: string | null;
   tipo: TipoDefeito;
   descricao: string;
   data: Date;

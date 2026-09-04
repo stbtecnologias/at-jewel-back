@@ -12,6 +12,11 @@ export class AtualizarDefeitoDto {
   @IsUUID()
   produto_id?: string;
 
+  /** `null` desvincula o cliente. Ausente nao mexe. */
+  @IsOptional()
+  @IsUUID()
+  cliente_id?: string | null;
+
   @IsOptional()
   @IsEnum(TIPOS_DEFEITO)
   tipo?: TipoDefeito;
