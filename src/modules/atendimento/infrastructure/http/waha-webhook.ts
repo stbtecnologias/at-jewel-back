@@ -64,6 +64,82 @@ export interface MensagemWhatsapp {
 }
 
 /**
+ * De QUAL sessao veio o evento.
+ *
+ * ==========================================================================
+ * ESTE CAMPO PASSOU A IMPORTAR EM 08/09/2026.
+ *
+ * Ate aqui havia UMA sessao, entao a resposta era sempre a mesma e ninguem
+ * precisava perguntar. Agora ha uma sessao por vendedora, e a diferenca e de
+ * vida ou morte: a sessao da LOJA fala com a IA; a de uma vendedora e SO
+ * LEITURA, porque do outro lado esta uma cliente conversando com a vendedora
+ * de verdade — e a Anastasia respondendo por cima disso seria a IA falando no
+ * lugar dela, numa conversa que nao e dela.
+ *
+ * Quem decide o que fazer com esta informacao e o controller.
+ * ==========================================================================
+ *
+ * @returns o nome da sessao, ou `null` quando o payload nao traz.
+ */
+export function sessaoDoEvento(body: unknown): string | null {
+  const b = (body ?? {}) as WahaWebhookBody;
+  return typeof b.session === 'string' && b.session !== '' ? b.session : null;
+}
+
+/**
+ * O contato que passou pelo numero — quem falou com quem, e quando.
+ *
+ * ==========================================================================
+ * DIFERENTE DE `extrairMensagemRecebida`, ESTE OLHA OS DOIS SENTIDOS.
+ *
+ * Aquele descarta `fromMe` de proposito: no canal da loja, mensagem nossa nao
+ * deve ser processada de novo. Aqui a mensagem da vendedora IMPORTA — cliente
+ * que escreve e nao recebe resposta e justamente o que a gestao precisa ver,
+ * e sem o lado dela os dois casos ficariam identicos na regua.
+ *
+ * Quando `fromMe`, o outro lado esta em `to` e nao em `from`.
+ * ==========================================================================
+ *
+ * @returns null quando o evento nao e um contato pessoa-a-pessoa: nao e
+ *          mensagem, e de grupo, ou o identificador nao e um telefone.
+ */
+export function contatoDoEvento(body: unknown): {
+  telefone: string;
+  daVendedora: boolean;
+  em: Date;
+} | null {
+  const b = (body ?? {}) as WahaWebhookBody & {
+    payload?: { to?: string; timestamp?: number };
+  };
+
+  if (b.event && b.event !== 'message') return null;
+
+  const payload = b.payload ?? {};
+  const daVendedora = payload.fromMe === true;
+  const outroLado = daVendedora ? payload.to : payload.from;
+  if (typeof outroLado !== 'string' || !outroLado) return null;
+
+  // Grupo nao e atendimento. E `@lid` tambem sai: o identificador escondido do
+  // WhatsApp nao contem telefone, e traduzi-lo exigiria consultar a sessao DA
+  // VENDEDORA — coisa que o gateway, preso ao numero da loja, nao sabe fazer.
+  if (!outroLado.endsWith('@c.us')) return null;
+
+  const digitos = outroLado.replace(/@.*$/, '');
+  if (!/^\d{10,15}$/.test(digitos)) return null;
+
+  return {
+    telefone: digitos,
+    daVendedora,
+    // O WAHA manda o timestamp em SEGUNDOS. Sem ele, a hora de agora — que
+    // erra por segundos, e nao por horas.
+    em:
+      typeof payload.timestamp === 'number'
+        ? new Date(payload.timestamp * 1000)
+        : new Date(),
+  };
+}
+
+/**
  * Extrai uma mensagem RECEBIDA a partir do corpo do webhook do WAHA. Retorna
  * null quando o evento deve ser ignorado:
  * - nao e evento de mensagem;

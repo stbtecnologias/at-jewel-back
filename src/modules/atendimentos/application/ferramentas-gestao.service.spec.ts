@@ -15,6 +15,7 @@ describe('FerramentasGestaoService', () => {
   let carteira: { semComprar: jest.Mock; maioresCompradores: jest.Mock };
   let agendarGestao: { execute: jest.Mock };
   let auditoria: { listar: jest.Mock; detalhe: jest.Mock };
+  let linha: { doDia: jest.Mock };
   let vendedoras: {
     listar: jest.Mock;
     buscarPorCodigoErp: jest.Mock;
@@ -51,6 +52,7 @@ describe('FerramentasGestaoService', () => {
       listar: jest.fn().mockResolvedValue({ itens: [], total: 0 }),
       detalhe: jest.fn(),
     };
+    linha = { doDia: jest.fn().mockResolvedValue([]) };
     vendedoras = {
       listar: jest.fn().mockResolvedValue([]),
       buscarPorCodigoErp: jest.fn().mockResolvedValue(null),
@@ -66,6 +68,8 @@ describe('FerramentasGestaoService', () => {
       carteira as never,
       agendarGestao as never,
       auditoria as never,
+      // ConsultarLinhaDoTempoUseCase — o resumo do dia da vendedora.
+      linha as never,
       { execute: jest.fn() } as never,
       vendedoras as never,
       clientes as never,

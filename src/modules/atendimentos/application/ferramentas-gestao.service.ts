@@ -7,6 +7,7 @@ import type {
   GestaoEncaminharLeadHandler,
   GestaoLeadsHandler,
   GestaoVendedorasHandler,
+  GestaoDiaDaVendedoraHandler,
   GestaoFeedbacksHandler,
   GestaoLeituraResultado,
   GestaoMetasHandler,
@@ -30,6 +31,8 @@ import { ConsultarCarteiraVendedoraUseCase } from './use-cases/consultar-carteir
 import { ConsultarDesempenhoVendedoraUseCase } from './use-cases/consultar-desempenho-vendedora.use-case';
 import { ResolverVendedoraPorNomeUseCase } from './use-cases/resolver-vendedora-por-nome.use-case';
 import { ConsultarAuditoriaUseCase } from './use-cases/consultar-auditoria.use-case';
+import { ConsultarLinhaDoTempoUseCase } from './use-cases/consultar-linha-do-tempo.use-case';
+import type { PontoDaLinha } from '../domain/ports/repositories/atendimento-repository.port';
 import { EncaminharLeadUseCase } from './use-cases/encaminhar-lead.use-case';
 
 const MAXIMO_CLIENTES_HOMONIMOS = 5;
@@ -66,6 +69,7 @@ export interface FerramentasGestao {
   gestaoCarteira: GestaoCarteiraHandler;
   gestaoMelhores: GestaoMelhoresHandler;
   gestaoFeedbacks: GestaoFeedbacksHandler;
+  gestaoDiaDaVendedora: GestaoDiaDaVendedoraHandler;
 }
 
 /**
@@ -96,6 +100,7 @@ export class FerramentasGestaoService {
     private readonly carteira: ConsultarCarteiraVendedoraUseCase,
     private readonly agendarGestao: AgendarContatoGestaoUseCase,
     private readonly auditoria: ConsultarAuditoriaUseCase,
+    private readonly linha: ConsultarLinhaDoTempoUseCase,
     private readonly encaminharLead: EncaminharLeadUseCase,
     @Inject(VENDEDORA_REPOSITORY)
     private readonly vendedoras: IVendedoraRepository,
@@ -368,6 +373,31 @@ export class FerramentasGestaoService {
 
         return { status: achados.length > 1 ? 'AMBIGUO' : 'OK', linhas };
       },
+      /**
+       * O DIA DE UMA VENDEDORA NUMA FRASE — a pergunta "como esta o canal da
+       * Marina hoje".
+       *
+       * ====================================================================
+       * ISTO NAO LE O WHATSAPP DELA. LE O REGISTRO DO QUE PASSOU POR ELE.
+       *
+       * A diferenca importa e nao e sutil. Os numeros aqui — com quantas
+       * clientes falou, o que marcou, o que vendeu, o que ficou devendo — sao
+       * EXATOS e custam uma consulta. Dizer O QUE a cliente quer exigiria ler
+       * o texto das conversas, que e outra coisa: custa por conversa lida e
+       * ainda nao existe.
+       *
+       * Quem responder "a Marina esta negociando um anel" a partir DESTES
+       * dados estaria inventando. O que estes dados sustentam e "a Marina
+       * falou com quatro clientes e marcou duas".
+       * ====================================================================
+       */
+      gestaoDiaDaVendedora: async ({ vendedora, dia }) =>
+        this.comVendedora(vendedora, async (id) => {
+          const pontos = await this.linha.doDia(id, dia);
+          if (pontos.length === 0) return [];
+          return resumoDoDia(pontos);
+        }),
+
     };
   }
 
@@ -534,4 +564,114 @@ function esperaLegivel(desde: Date, agora = new Date()): string {
   if (dias <= 0) return 'hoje';
   if (dias === 1) return 'há 1 dia';
   return `há ${dias} dias`;
+}
+
+/**
+ * Os pontos de um dia viram as linhas que a gestao le.
+ *
+ * ==========================================================================
+ * CONTA PESSOAS, E NAO MENSAGENS.
+ *
+ * "Falou com 12" quando foram tres clientes e doze idas e vindas seria uma
+ * leitura errada com cara de numero. O que a gestao pergunta e com QUANTAS
+ * pessoas, entao o que se conta sao clientes distintos.
+ *
+ * O QUE FICA DE FORA: o conteudo. Nenhuma linha aqui diz o que a cliente
+ * quer — isso sai de LER a conversa, e nao de contar os pontos.
+ * ==========================================================================
+ */
+export function resumoDoDia(pontos: PontoDaLinha[]): string[] {
+  const linhas: string[] = [];
+
+  const clientesFalados = new Set(
+    pontos
+      .filter(
+        (p) => p.tipo === 'CONTATO_CLIENTE' || p.tipo === 'RESPOSTA_VENDEDORA',
+      )
+      .map((p) => p.clienteId)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const escreveram = new Set(
+    pontos
+      .filter((p) => p.tipo === 'CONTATO_CLIENTE')
+      .map((p) => p.clienteId)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const respondidas = new Set(
+    pontos
+      .filter((p) => p.tipo === 'RESPOSTA_VENDEDORA')
+      .map((p) => p.clienteId)
+      .filter((id): id is string => Boolean(id)),
+  );
+
+  if (clientesFalados.size > 0) {
+    linhas.push(
+      `Falou com ${clientesFalados.size} ${clientesFalados.size === 1 ? 'cliente' : 'clientes'} pelo WhatsApp.`,
+    );
+  }
+
+  // QUEM ESCREVEU E NAO FOI RESPONDIDA. E o numero que a gestao procura sem
+  // saber pedir, e o unico aqui que aponta uma falha.
+  const semResposta = [...escreveram].filter((id) => !respondidas.has(id));
+  if (semResposta.length > 0) {
+    linhas.push(
+      `${semResposta.length} ${semResposta.length === 1 ? 'escreveu' : 'escreveram'} e ainda nao ${semResposta.length === 1 ? 'recebeu' : 'receberam'} resposta dela.`,
+    );
+  }
+
+  // Os compromissos MARCADOS no dia — com hora, que e o que a pergunta pede.
+  const marcados = pontos
+    .filter((p) => p.combinadoEm && p.tipo !== 'CONSIGNACAO')
+    .map((p) => ({ quando: p.combinadoEm as Date, cliente: p.clienteNome }));
+  if (marcados.length > 0) {
+    marcados.sort((a, b) => a.quando.getTime() - b.quando.getTime());
+    linhas.push(
+      `Marcou ${marcados.length} ${marcados.length === 1 ? 'contato' : 'contatos'}: ` +
+        marcados
+          .map(
+            (m) => `${m.cliente ?? 'cliente'} ${formatarQuando(m.quando)}`,
+          )
+          .join('; ') +
+        '.',
+    );
+  }
+
+  const vendas = pontos.filter((p) => p.tipo === 'VENDA');
+  if (vendas.length > 0) {
+    const total = vendas.reduce((s, v) => s + (v.valor ?? 0), 0);
+    linhas.push(
+      `Vendeu ${vendas.length} ${vendas.length === 1 ? 'vez' : 'vezes'}, ${moeda(total)} no total.`,
+    );
+  }
+
+  const fechados = pontos.filter((p) => p.tipo === 'FECHAMENTO');
+  const comVenda = fechados.filter((p) => p.desfecho === 'VENDA').length;
+  if (fechados.length > 0) {
+    linhas.push(
+      `Fechou ${fechados.length} ${fechados.length === 1 ? 'atendimento' : 'atendimentos'}` +
+        (comVenda > 0 ? `, ${comVenda} em venda.` : ', nenhum em venda.'),
+    );
+  }
+
+  // O UNICO PONTO VERMELHO DA REGUA, e por isso vem por ultimo e nomeado: e
+  // prazo vencido sem ninguem responder, nao e "deu ruim".
+  const vencidos = pontos.filter((p) => p.tipo === 'EXPIRADA');
+  if (vencidos.length > 0) {
+    const clientes = new Set(
+      vencidos.map((p) => p.clienteNome).filter(Boolean),
+    );
+    linhas.push(
+      `${vencidos.length} ${vencidos.length === 1 ? 'cobranca venceu' : 'cobrancas venceram'} sem resposta` +
+        (clientes.size > 0 ? ` (${[...clientes].join(', ')}).` : '.'),
+    );
+  }
+
+  const encaminhados = pontos.filter((p) => p.tipo === 'ENCAMINHADO').length;
+  if (encaminhados > 0) {
+    linhas.push(
+      `Recebeu ${encaminhados} ${encaminhados === 1 ? 'cliente encaminhado' : 'clientes encaminhados'}.`,
+    );
+  }
+
+  return linhas;
 }

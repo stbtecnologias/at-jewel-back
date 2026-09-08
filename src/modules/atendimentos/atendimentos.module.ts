@@ -24,6 +24,10 @@ import { ProcessarFotoCatalogoUseCase } from './application/use-cases/processar-
 import { ResolverVendedoraPorNomeUseCase } from './application/use-cases/resolver-vendedora-por-nome.use-case';
 import { RotearMensagemInternaUseCase } from './application/use-cases/rotear-mensagem-interna.use-case';
 import { ConsultarAuditoriaUseCase } from './application/use-cases/consultar-auditoria.use-case';
+import { ConsultarLinhaDoTempoUseCase } from './application/use-cases/consultar-linha-do-tempo.use-case';
+import { ReabrirAtendimentoUseCase } from './application/use-cases/reabrir-atendimento.use-case';
+import { EncerrarPorSilencioUseCase } from './application/use-cases/encerrar-por-silencio.use-case';
+import { RegistrarContatoWhatsappUseCase } from './application/use-cases/registrar-contato-whatsapp.use-case';
 import { AtendimentosController } from './infrastructure/http/controllers/atendimentos.controller';
 import { ProcessarRelatoVendedoraUseCase } from './application/use-cases/processar-relato-vendedora.use-case';
 import { FerramentasGestaoService } from './application/ferramentas-gestao.service';
@@ -35,6 +39,7 @@ import { PendenciasScheduler } from './infrastructure/schedule/pendencias.schedu
 import { ATENDIMENTO_REPOSITORY } from './domain/ports/injection-tokens';
 import { AtendimentoInteracaoOrmEntity } from './infrastructure/database/typeorm/entities/atendimento-interacao.orm-entity';
 import { AtendimentoOrmEntity } from './infrastructure/database/typeorm/entities/atendimento.orm-entity';
+import { ClientePerfilOrmEntity } from '../clientes/infrastructure/database/typeorm/entities/cliente-perfil.orm-entity';
 import { AtendimentoRepository } from './infrastructure/database/typeorm/repositories/atendimento.repository';
 
 /**
@@ -45,7 +50,15 @@ import { AtendimentoRepository } from './infrastructure/database/typeorm/reposit
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([AtendimentoOrmEntity, AtendimentoInteracaoOrmEntity]),
+    // ClientePerfilOrmEntity entra so para a Linha do Tempo decifrar o
+    // WhatsApp da cliente e levar o ponto ate a conversa. Registrar a
+    // entidade AQUI e o que da o repositorio ao `AtendimentoRepository` —
+    // sem isto o modulo nem carrega.
+    TypeOrmModule.forFeature([
+      AtendimentoOrmEntity,
+      AtendimentoInteracaoOrmEntity,
+      ClientePerfilOrmEntity,
+    ]),
     // O agendador precisa do nome do cliente, do WhatsApp da vendedora e do
     // gateway de envio. Nenhum destes importa atendimentos — sem ciclo.
     ClientesModule,
@@ -97,6 +110,10 @@ import { AtendimentoRepository } from './infrastructure/database/typeorm/reposit
     ProcessarMensagemGestaoUseCase,
     RotearMensagemInternaUseCase,
     ConsultarAuditoriaUseCase,
+    ConsultarLinhaDoTempoUseCase,
+    ReabrirAtendimentoUseCase,
+    EncerrarPorSilencioUseCase,
+    RegistrarContatoWhatsappUseCase,
   ],
   // A leitura de gestao sobre os atendimentos. So JWT: o que sai daqui e o
   // relato da vendedora, e nao ha integracao que precise dele.
@@ -108,6 +125,9 @@ import { AtendimentoRepository } from './infrastructure/database/typeorm/reposit
     ATENDIMENTO_REPOSITORY,
     ProcessarMensagemInternaUseCase,
     RotearMensagemInternaUseCase,
+    // O webhook do modulo `atendimento` (singular) registra por aqui o que
+    // passa no numero corporativo de cada vendedora.
+    RegistrarContatoWhatsappUseCase,
     // O painel usa AS MESMAS ferramentas da gestao que o WhatsApp usa. Um
     // lugar so, para as duas portas nao divergirem na primeira correcao.
     FerramentasGestaoService,

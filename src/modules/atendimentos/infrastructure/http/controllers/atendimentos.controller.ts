@@ -3,6 +3,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -10,6 +11,8 @@ import { Permissions } from '../../../../auth/infrastructure/http/decorators/per
 import { JwtAuthGuard } from '../../../../auth/infrastructure/http/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../../../auth/infrastructure/http/guards/permissions.guard';
 import { ConsultarAuditoriaUseCase } from '../../../application/use-cases/consultar-auditoria.use-case';
+import { ConsultarLinhaDoTempoUseCase } from '../../../application/use-cases/consultar-linha-do-tempo.use-case';
+import { ReabrirAtendimentoUseCase } from '../../../application/use-cases/reabrir-atendimento.use-case';
 import { FiltroAuditoriaDto } from '../dto/filtro-auditoria.dto';
 
 /**
@@ -29,7 +32,11 @@ import { FiltroAuditoriaDto } from '../dto/filtro-auditoria.dto';
 @Controller('atendimentos')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class AtendimentosController {
-  constructor(private readonly auditoria: ConsultarAuditoriaUseCase) {}
+  constructor(
+    private readonly auditoria: ConsultarAuditoriaUseCase,
+    private readonly linha: ConsultarLinhaDoTempoUseCase,
+    private readonly reabrirUC: ReabrirAtendimentoUseCase,
+  ) {}
 
   /**
    * Os numeros do topo e a coluna de vendedoras, numa consulta so.
@@ -67,6 +74,21 @@ export class AtendimentosController {
     );
   }
 
+  /**
+   * A Linha do Tempo do dia — MEL-14.
+   *
+   * Declarada ANTES de `:id` pelo mesmo motivo de `resumo` e `serie`: o Nest
+   * casa rotas na ordem em que aparecem.
+   *
+   * @param dia `YYYY-MM-DD`. Sem ele, hoje — e, se hoje estiver parado, o
+   *        ultimo dia com movimento (a resposta diz qual, em `dia`/`recuado`).
+   */
+  @Get('linha-do-tempo')
+  @Permissions('atendimentos:read')
+  async linhaDoTempo(@Query('dia') dia?: string) {
+    return this.linha.execute(/^\d{4}-\d{2}-\d{2}$/.test(dia ?? '') ? dia : undefined);
+  }
+
   @Get()
   @Permissions('atendimentos:read')
   async listar(@Query() f: FiltroAuditoriaDto) {
@@ -86,5 +108,18 @@ export class AtendimentosController {
   @Permissions('atendimentos:read')
   async detalhe(@Param('id', ParseUUIDPipe) id: string) {
     return this.auditoria.detalhe(id);
+  }
+  /**
+   * Desfaz um fechamento — a rede embaixo do MEL-15.
+   *
+   * `atendimentos:write` e nao `:read`: e a UNICA escrita de atendimento
+   * pelo painel, e nasceu porque a leitura da conversa vai fechar episodio
+   * sozinha. Ver a migracao 54.
+   */
+  @Post(':id/reabrir')
+  @Permissions('atendimentos:write')
+  async reabrir(@Param('id', ParseUUIDPipe) id: string) {
+    await this.reabrirUC.execute(id);
+    return { ok: true };
   }
 }

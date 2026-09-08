@@ -54,6 +54,17 @@ export class CriarVendedoraDto {
   @MaxLength(20)
   whatsappInterno?: string;
 
+  /**
+   * O numero CORPORATIVO — o chip da empresa. E o unico dos dois que o
+   * sistema enxerga: pareado no painel, deixa a IA acompanhar o atendimento
+   * sem a vendedora precisar contar nada. O interno e o celular pessoal
+   * dela, e dele nao lemos nada.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  whatsappExterno?: string;
+
   @IsOptional()
   @IsUUID()
   adminUserId?: string;

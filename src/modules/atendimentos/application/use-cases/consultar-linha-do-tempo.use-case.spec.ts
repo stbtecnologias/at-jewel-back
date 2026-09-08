@@ -1,0 +1,180 @@
+import { ConsultarLinhaDoTempoUseCase } from './consultar-linha-do-tempo.use-case';
+import type { PontoDaLinha } from '../../domain/ports/repositories/atendimento-repository.port';
+
+/**
+ * A LINHA DO TEMPO DIZ TAMBEM O QUE NAO ACONTECEU.
+ *
+ * Duas regras aqui nao sao detalhe de tela, sao o sentido da leitura:
+ *
+ *   1. faixa VAZIA aparece — uma vendedora sem nenhum ponto o dia inteiro e
+ *      informacao, e das fortes. Escondendo, ausencia vira silencio;
+ *   2. o recuo para o ultimo dia com movimento so vale quando NINGUEM pediu um
+ *      dia. Se alguem escolheu 07/09, 07/09 vazio e a resposta correta —
+ *      trocar por baixo seria mentir sobre o que ele esta olhando.
+ */
+describe('ConsultarLinhaDoTempoUseCase', () => {
+  const HOJE = new Date(2026, 8, 8, 14, 30); // 08/09/2026, uma terca
+
+  let repo: { linhaDoTempo: jest.Mock; ultimoDiaComMovimento: jest.Mock };
+  let vendedoras: { listar: jest.Mock };
+  let uc: ConsultarLinhaDoTempoUseCase;
+
+  function ponto(vendedoraId: string, nome: string, hora: number): PontoDaLinha {
+    return {
+      id: `interacao:${vendedoraId}-${hora}`,
+      tipo: 'RELATO',
+      vendedoraId,
+      vendedoraNome: nome,
+      em: new Date(2026, 8, 8, hora, 0),
+      clienteId: 'cli-1',
+      clienteNome: 'Karina',
+      combinadoEm: null,
+      valor: null,
+      desfecho: null,
+      atendimentoId: 'at-1',
+      sessao: null,
+      chatId: null,
+      relato: 'foi bem',
+    };
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(HOJE);
+    repo = {
+      linhaDoTempo: jest.fn().mockResolvedValue([]),
+      ultimoDiaComMovimento: jest.fn().mockResolvedValue(null),
+    };
+    vendedoras = { listar: jest.fn().mockResolvedValue([]) };
+    uc = new ConsultarLinhaDoTempoUseCase(repo as never, vendedoras as never);
+  });
+
+  afterEach(() => jest.useRealTimers());
+
+  it('sem dia pedido, olha hoje — da meia-noite a meia-noite', async () => {
+    await uc.execute();
+
+    const [de, ate] = repo.linhaDoTempo.mock.calls[0];
+    expect(de).toEqual(new Date(2026, 8, 8, 0, 0, 0, 0));
+    expect(ate).toEqual(new Date(2026, 8, 9, 0, 0, 0, 0));
+  });
+
+  /**
+   * `new Date('2026-09-08')` daria meia-noite em UTC, que aqui e 21h do dia 7
+   * — e a tela mostraria o dia anterior a partir das 21h. Este teste existe
+   * para a correcao nao ser desfeita por parecer verbosa.
+   */
+  it('interpreta o dia pedido no fuso local, e nao em UTC', async () => {
+    await uc.execute('2026-09-08');
+
+    const [de] = repo.linhaDoTempo.mock.calls[0];
+    expect(de.getDate()).toBe(8);
+    expect(de.getHours()).toBe(0);
+  });
+
+  describe('o recuo para o ultimo dia com movimento', () => {
+    it('recua quando hoje esta parado e ninguem pediu dia', async () => {
+      repo.linhaDoTempo.mockResolvedValueOnce([]).mockResolvedValueOnce([
+        ponto('v1', 'Marina', 9),
+      ]);
+      repo.ultimoDiaComMovimento.mockResolvedValue(new Date(2026, 7, 26));
+
+      const r = await uc.execute();
+
+      expect(r.dia).toBe('2026-08-26');
+      expect(r.recuado).toBe(true);
+      expect(r.faixas[0].pontos).toHaveLength(1);
+    });
+
+    it('NAO recua quando o dia foi pedido a dedo', async () => {
+      repo.ultimoDiaComMovimento.mockResolvedValue(new Date(2026, 7, 26));
+
+      const r = await uc.execute('2026-09-07');
+
+      expect(r.dia).toBe('2026-09-07');
+      expect(r.recuado).toBe(false);
+      expect(repo.ultimoDiaComMovimento).not.toHaveBeenCalled();
+    });
+
+    it('nao recua quando ha movimento hoje', async () => {
+      repo.linhaDoTempo.mockResolvedValue([ponto('v1', 'Marina', 9)]);
+
+      const r = await uc.execute();
+
+      expect(r.recuado).toBe(false);
+      expect(repo.ultimoDiaComMovimento).not.toHaveBeenCalled();
+    });
+
+    it('sem nenhum movimento na base, fica no dia de hoje', async () => {
+      const r = await uc.execute();
+      expect(r.dia).toBe('2026-09-08');
+      expect(r.recuado).toBe(false);
+    });
+  });
+
+  describe('as faixas', () => {
+    it('toda vendedora ativa tem faixa, mesmo sem ponto nenhum', async () => {
+      vendedoras.listar.mockResolvedValue([
+        { id: 'v1', nome: 'Marina' },
+        { id: 'v2', nome: 'Bianca' },
+      ]);
+      repo.linhaDoTempo.mockResolvedValue([ponto('v1', 'Marina', 9)]);
+
+      const r = await uc.execute();
+
+      expect(r.faixas).toHaveLength(2);
+      expect(r.faixas.map((f) => f.vendedoraNome)).toEqual(['Bianca', 'Marina']);
+      // Pelo nome: a Bianca vem primeiro, e e ela quem esta sem ponto.
+      const bianca = r.faixas.find((f) => f.vendedoraNome === 'Bianca');
+      expect(bianca?.pontos).toEqual([]);
+    });
+
+    /**
+     * ALFABETICA, e nao por movimento. Ordenar por atividade fazia as faixas
+     * dancarem todo dia — a mesma pessoa mudando de linha conforme o
+     * movimento, e ninguem conseguindo dizer "a Marina e a terceira".
+     */
+    it('ordena pelo nome, e nao por quantidade de pontos', async () => {
+      vendedoras.listar.mockResolvedValue([
+        { id: 'v1', nome: 'Marina' },
+        { id: 'v2', nome: 'Bianca' },
+        { id: 'v3', nome: 'Ana' },
+      ]);
+      repo.linhaDoTempo.mockResolvedValue([
+        ponto('v2', 'Bianca', 9),
+        ponto('v2', 'Bianca', 10),
+        ponto('v1', 'Marina', 11),
+      ]);
+
+      const r = await uc.execute();
+
+      // A Ana vem primeiro mesmo sem nenhum ponto, e a Bianca por ultimo
+      // mesmo tendo dois: a posicao e do nome, nao do movimento.
+      expect(r.faixas.map((f) => f.vendedoraNome)).toEqual([
+        'Ana',
+        'Bianca',
+        'Marina',
+      ]);
+    });
+
+    /** O dia dela aconteceu. Apagar a faixa reescreveria o passado. */
+    it('quem foi desligada mas teve movimento continua aparecendo', async () => {
+      vendedoras.listar.mockResolvedValue([{ id: 'v1', nome: 'Marina' }]);
+      repo.linhaDoTempo.mockResolvedValue([ponto('v9', 'Renata (saiu)', 9)]);
+
+      const r = await uc.execute();
+
+      expect(r.faixas.map((f) => f.vendedoraNome)).toEqual([
+        'Marina',
+        'Renata (saiu)',
+      ]);
+    });
+
+    it('vendedora sem id na base nao vira faixa fantasma', async () => {
+      vendedoras.listar.mockResolvedValue([{ id: undefined, nome: 'Sem id' }]);
+
+      const r = await uc.execute();
+
+      expect(r.faixas).toEqual([]);
+    });
+  });
+});

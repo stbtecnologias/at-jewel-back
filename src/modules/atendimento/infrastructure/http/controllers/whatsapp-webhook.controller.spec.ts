@@ -23,6 +23,8 @@ describe('WhatsappWebhookController — porta dos dois publicos', () => {
   let whatsapp: { resolverRemetente: jest.Mock; enviarTexto: jest.Mock };
   let triagem: { disponivel: jest.Mock; encaminhar: jest.Mock };
   let config: { get: jest.Mock };
+  let conexoes: { sessaoDaLoja: string; vendedoraDaSessao: jest.Mock };
+  let registrarContato: { execute: jest.Mock };
   let controller: WhatsappWebhookController;
 
   beforeEach(() => {
@@ -36,9 +38,18 @@ describe('WhatsappWebhookController — porta dos dois publicos', () => {
       encaminhar: jest.fn().mockResolvedValue(undefined),
     };
     config = { get: jest.fn().mockReturnValue('production') };
+    conexoes = {
+      sessaoDaLoja: 'default',
+      vendedoraDaSessao: jest.fn().mockReturnValue('vd-1'),
+    };
+    registrarContato = {
+      execute: jest.fn().mockResolvedValue({ registrado: true, atendimentoId: 'at-1', tipo: 'CONTATO_CLIENTE' }),
+    };
 
     controller = new WhatsappWebhookController(
       triagem as never,
+      conexoes as never,
+      registrarContato as never,
       processar as never,
       config as never,
       whatsapp as never,
@@ -149,5 +160,83 @@ describe('WhatsappWebhookController — porta dos dois publicos', () => {
     expect(r).toEqual({ ok: true, encaminhado: 'triagem' });
 
     liberar();
+  });
+
+  /**
+   * ======================================================================
+   * A SESSAO DA VENDEDORA NAO RECEBE RESPOSTA. NUNCA.
+   *
+   * Do outro lado do numero corporativo da Marina esta uma CLIENTE, e a
+   * vendedora que fala com ela e a Marina. Se a IA responder ali, ela fala
+   * por cima de uma pessoa, numa conversa que nao e nossa — e a cliente nao
+   * tem como saber que trocou de interlocutor no meio.
+   *
+   * Estes testes existem porque a falha seria SILENCIOSA: tudo devolve 200,
+   * ninguem reclama, e a descoberta viria pela cliente estranhando.
+   * ======================================================================
+   */
+  describe('so a sessao da loja fala', () => {
+    const DA_VENDEDORA = {
+      event: 'message',
+      session: 'vend-11111111-2222-3333-4444-555555555555',
+      payload: { from: '558598888777@c.us', body: 'oi, tem esse anel?' },
+    };
+
+    it('registra o contato, mas nao roteia, nao responde e nao chama a triagem', async () => {
+      const r = await controller.webhook(DA_VENDEDORA);
+
+      expect(registrarContato.execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          vendedoraId: 'vd-1',
+          telefone: '558598888777',
+          daVendedora: false,
+        }),
+      );
+      expect(r).toEqual({ ok: true, registrado: true, motivo: 'CONTATO_CLIENTE' });
+      expect(processar.execute).not.toHaveBeenCalled();
+      expect(triagem.encaminhar).not.toHaveBeenCalled();
+      expect(whatsapp.enviarTexto).not.toHaveBeenCalled();
+    });
+
+    /** A checagem vem ANTES do roteador — nem o LID chega a ser resolvido,
+     *  que ja seria uma chamada ao WAHA por conta de mensagem alheia. */
+    it('sai antes de resolver o remetente', async () => {
+      await controller.webhook(DA_VENDEDORA);
+      expect(whatsapp.resolverRemetente).not.toHaveBeenCalled();
+    });
+
+    /** Payload sem `session` e o formato antigo, de quando havia uma sessao
+     *  so. Recusar quebraria o canal inteiro por versao de payload. */
+    it('payload sem session continua sendo tratado como da loja', async () => {
+      processar.execute.mockResolvedValue({
+        resposta: null,
+        motivo: 'ignorado_remetente_desconhecido',
+      });
+
+      await controller.webhook({
+        event: 'message',
+        payload: { from: '558598888777@c.us', body: 'oi' },
+      });
+
+      expect(processar.execute).toHaveBeenCalled();
+    });
+
+    /** O nome da sessao da loja vem do env, e nao e sempre "default". */
+    it('respeita o WAHA_SESSION configurado', async () => {
+      conexoes.sessaoDaLoja = 'atjewel';
+      processar.execute.mockResolvedValue({
+        resposta: null,
+        motivo: 'ignorado_remetente_desconhecido',
+      });
+
+      // Com a loja em "atjewel", o antigo "default" deixa de ser dela:
+      // vira sessao de vendedora, entao REGISTRA em vez de rotear.
+      await controller.webhook(CORPO);
+      expect(registrarContato.execute).toHaveBeenCalled();
+      expect(processar.execute).not.toHaveBeenCalled();
+
+      await controller.webhook({ ...CORPO, session: 'atjewel' });
+      expect(processar.execute).toHaveBeenCalled();
+    });
   });
 });

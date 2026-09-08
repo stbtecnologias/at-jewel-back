@@ -31,7 +31,12 @@ export type TipoInteracao =
   | 'COBRANCA'
   | 'RELATO'
   | 'REAGENDAMENTO'
-  | 'NOTA';
+  | 'NOTA'
+  // Do WhatsApp corporativo da vendedora (migracao 53). Sao dois e nao um
+  // porque a diferenca E o indicativo: cliente que escreve e nao recebe
+  // resposta e exatamente o que a gestao precisa enxergar.
+  | 'CONTATO_CLIENTE'
+  | 'RESPOSTA_VENDEDORA';
 
 /** Interacoes que EXIGEM `notificarEm` — espelha o CHECK da migracao 35. */
 export const TIPOS_AGENDAVEIS: readonly TipoInteracao[] = ['LEMBRETE', 'COBRANCA'] as const;

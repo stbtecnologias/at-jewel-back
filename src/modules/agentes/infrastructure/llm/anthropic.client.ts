@@ -372,6 +372,27 @@ const GESTAO_CARTEIRA_CLIENTE_TOOL: Anthropic.Tool = {
   },
 };
 
+const GESTAO_DIA_DA_VENDEDORA_TOOL: Anthropic.Tool = {
+  name: 'dia_da_vendedora',
+  description:
+    'O DIA DE UMA VENDEDORA num resumo: com quantas clientes ela falou pelo WhatsApp, quantas escreveram e ainda nao foram respondidas, os contatos que ela marcou e para que horas, o que vendeu, o que fechou e o que venceu sem resposta. Use para "como esta o canal da Marina", "como foi o dia da Bianca", "a Renata falou com alguem hoje". ATENCAO: isto NAO le o texto das conversas dela — os numeros sao exatos, mas nao ha como dizer O QUE a cliente quer. Nao invente conteudo de conversa.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      vendedora: {
+        type: 'string',
+        description: 'Nome da vendedora, como falado.',
+      },
+      dia: {
+        type: 'string',
+        description:
+          'Dia no formato AAAA-MM-DD. Omita para hoje. Nao recua sozinho para um dia com movimento: dia parado responde "nada".',
+      },
+    },
+    required: ['vendedora'],
+  },
+};
+
 const GESTAO_FEEDBACKS_TOOL: Anthropic.Tool = {
   name: 'feedbacks_de_vendedora',
   description:
@@ -580,6 +601,8 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoMelhores) tools.push(GESTAO_MELHORES_TOOL);
     if (params.gestaoAgendar) tools.push(GESTAO_AGENDAR_TOOL);
     if (params.gestaoFeedbacks) tools.push(GESTAO_FEEDBACKS_TOOL);
+    if (params.gestaoDiaDaVendedora)
+      tools.push(GESTAO_DIA_DA_VENDEDORA_TOOL);
     if (params.registrarRelato) tools.push(RELATO_TOOL);
     if (params.consultarVendas) tools.push(VENDAS_TOOL);
     if (params.consultarMetas) tools.push(METAS_TOOL);
@@ -819,6 +842,21 @@ export class AnthropicClient implements ILlmClient {
               dias: typeof e.dias === 'number' ? e.dias : undefined,
             });
             return textoDosFeedbacks(r, Boolean(e.cliente));
+          }),
+        );
+      } else if (
+        toolUse.name === 'dia_da_vendedora' &&
+        params.gestaoDiaDaVendedora
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as { vendedora?: string; dia?: string };
+            const dia = String(e.dia ?? "");
+            const r = await params.gestaoDiaDaVendedora!({
+              vendedora: String(e.vendedora ?? "").slice(0, 80),
+              dia: /^d{4}-d{2}-d{2}$/.test(dia) ? dia : undefined,
+            });
+            return textoDoDiaDaVendedora(r);
           }),
         );
       } else if (toolUse.name === 'listar_leads' && params.gestaoLeads) {
@@ -1296,6 +1334,41 @@ export class AnthropicClient implements ILlmClient {
  * as tres se comportam igual — inclusive na ambiguidade, que e onde um palpite
  * sairia caro.
  */
+/**
+ * O resumo do dia vira instrucao para o modelo.
+ *
+ * A ultima frase existe porque a tentacao do modelo, com numeros na mao, e
+ * completar a historia: "ela deve estar negociando um anel". Estes dados nao
+ * sustentam isso — eles contam pontos, nao leem conversa.
+ */
+function textoDoDiaDaVendedora(r: GestaoLeituraResultado): string {
+  if (r.status === 'AMBIGUA') {
+    return (
+      `Mais de uma vendedora com esse nome: ${(r.nomes ?? []).join(", ")}. ` +
+      'Pergunte de qual se trata. NAO escolha uma.'
+    );
+  }
+  if (r.status === 'NAO_ENCONTRADA') {
+    const equipe = (r.nomes ?? []).join(", ");
+    return equipe
+      ? `Nao ha vendedora com esse nome. A equipe ativa e: ${equipe}. Diga isso e pergunte qual delas.`
+      : 'Nao ha vendedora com esse nome. Diga isso em uma frase.';
+  }
+  if (r.linhas.length === 0) {
+    return (
+      `Nao ha nenhum registro de ${r.vendedora} nesse dia. Diga isso em uma ` +
+      'frase. NAO conclua que ela nao trabalhou: pode ser que o numero dela ' +
+      'ainda nao esteja pareado no painel.'
+    );
+  }
+  return (
+    `O dia de ${r.vendedora}:\n${r.linhas.map((l) => `- ${l}`).join("\n")}\n\n` +
+    'Conte isso como quem esta contando o dia dela, em texto corrido. Repasse ' +
+    'os numeros exatamente como estao. NAO diga o que as clientes queriam nem ' +
+    'o assunto das conversas — isto aqui nao le o texto delas.'
+  );
+}
+
 /**
  * O envelope dos FEEDBACKS.
  *

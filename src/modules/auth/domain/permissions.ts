@@ -34,6 +34,12 @@ export const PERMISSOES: PermissaoDef[] = [
   // Um par cobre as tres tabelas do assunto: saldo, grupos e locais.
   { chave: 'estoque:read', label: 'Ver estoque, grupos e locais', grupo: 'Produtos' },
   { chave: 'estoque:write', label: 'Editar estoque, grupos e locais', grupo: 'Produtos' },
+  // ATENDIMENTOS. A leitura existe em role_permissions desde a migracao 38 e
+  // NUNCA esteve neste catalogo — ou seja, ninguem conseguia conceder nem
+  // revogar pela tela de Papeis. Entrou aqui em 08/09/2026, junto com a
+  // escrita que o reabrir exige.
+  { chave: 'atendimentos:read', label: 'Ver os atendimentos da equipe e o que a vendedora relatou', grupo: 'Atendimento' },
+  { chave: 'atendimentos:write', label: 'Reabrir atendimento fechado por engano', grupo: 'Atendimento' },
   { chave: 'catalogo:read', label: 'Ver catálogos e as fotos que os compõem', grupo: 'Catálogo' },
   { chave: 'catalogo:write', label: 'Criar catálogos, referências e receber fotos', grupo: 'Catálogo' },
   { chave: 'empresas:read', label: 'Ver empresas do grupo', grupo: 'Cadastros' },
