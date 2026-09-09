@@ -81,7 +81,7 @@ export class AtendimentosController {
    * casa rotas na ordem em que aparecem.
    *
    * @param dia `YYYY-MM-DD`. Sem ele, hoje — e, se hoje estiver parado, o
-   *        ultimo dia com movimento (a resposta diz qual, em `dia`/`recuado`).
+   *        dia de hoje, mesmo vazio (a resposta diz qual, em `dia`).
    */
   @Get('linha-do-tempo')
   @Permissions('atendimentos:read')

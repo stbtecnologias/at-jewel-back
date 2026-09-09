@@ -71,43 +71,34 @@ describe('ConsultarLinhaDoTempoUseCase', () => {
     expect(de.getHours()).toBe(0);
   });
 
-  describe('o recuo para o ultimo dia com movimento', () => {
-    it('recua quando hoje esta parado e ninguem pediu dia', async () => {
-      repo.linhaDoTempo.mockResolvedValueOnce([]).mockResolvedValueOnce([
-        ponto('v1', 'Marina', 9),
-      ]);
+  // O recuo automatico existiu ate 09/09/2026 e foi removido: a tela abria no
+  // ultimo dia com movimento — o 26 — e quem olhava de relance lia aquilo como
+  // hoje. Estes testes protegem a regra que ficou no lugar.
+  describe('o dia mostrado', () => {
+    it('sem dia pedido, abre em HOJE mesmo com a base parada', async () => {
+      repo.linhaDoTempo.mockResolvedValue([]);
       repo.ultimoDiaComMovimento.mockResolvedValue(new Date(2026, 7, 26));
 
       const r = await uc.execute();
 
-      expect(r.dia).toBe('2026-08-26');
-      expect(r.recuado).toBe(true);
-      expect(r.faixas[0].pontos).toHaveLength(1);
+      expect(r.dia).toBe('2026-09-08');
+      expect(repo.ultimoDiaComMovimento).not.toHaveBeenCalled();
     });
 
-    it('NAO recua quando o dia foi pedido a dedo', async () => {
-      repo.ultimoDiaComMovimento.mockResolvedValue(new Date(2026, 7, 26));
+    it('hoje vazio devolve as faixas vazias, e nao outro dia', async () => {
+      repo.linhaDoTempo.mockResolvedValue([]);
 
+      const r = await uc.execute();
+
+      expect(r.dia).toBe('2026-09-08');
+      expect(r.faixas.every((f) => f.pontos.length === 0)).toBe(true);
+    });
+
+    it('respeita o dia pedido a dedo', async () => {
       const r = await uc.execute('2026-09-07');
 
       expect(r.dia).toBe('2026-09-07');
-      expect(r.recuado).toBe(false);
       expect(repo.ultimoDiaComMovimento).not.toHaveBeenCalled();
-    });
-
-    it('nao recua quando ha movimento hoje', async () => {
-      repo.linhaDoTempo.mockResolvedValue([ponto('v1', 'Marina', 9)]);
-
-      const r = await uc.execute();
-
-      expect(r.recuado).toBe(false);
-      expect(repo.ultimoDiaComMovimento).not.toHaveBeenCalled();
-    });
-
-    it('sem nenhum movimento na base, fica no dia de hoje', async () => {
-      const r = await uc.execute();
-      expect(r.dia).toBe('2026-09-08');
-      expect(r.recuado).toBe(false);
     });
   });
 

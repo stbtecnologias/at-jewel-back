@@ -15,10 +15,8 @@ export interface FaixaDaLinha {
 }
 
 export interface LinhaDoTempo {
-  /** O dia efetivamente mostrado, em ISO. Pode nao ser o pedido — ver abaixo. */
+  /** O dia mostrado, em ISO. E sempre o pedido — ou hoje. */
   dia: string;
-  /** true quando o dia veio do "ultimo dia com movimento", e nao do pedido. */
-  recuado: boolean;
   faixas: FaixaDaLinha[];
 }
 
@@ -47,36 +45,25 @@ export class ConsultarLinhaDoTempoUseCase {
   ) {}
 
   /**
-   * @param dia `YYYY-MM-DD`. Sem ele, hoje.
+   * @param dia `YYYY-MM-DD`. Sem ele, HOJE — sempre.
    *
    * ========================================================================
-   * SEM DIA PEDIDO E DIA VAZIO, RECUA PARA O ULTIMO COM MOVIMENTO.
+   * ABRE NO DIA DE HOJE, MESMO VAZIO.
    *
-   * A tela aberta numa segunda de manha mostraria uma regua vazia, e regua
-   * vazia parece defeito — a pessoa conclui que a Linha do Tempo nao funciona
-   * e nunca mais volta. Recuando, ela ve dados de verdade na primeira vez, e
-   * o cabecalho diz em letras claras QUE DIA e aquele.
+   * Ate 09/09/2026 esta tela recuava sozinha para o ultimo dia com movimento
+   * quando hoje estava parado. A intencao era boa — regua vazia parece
+   * defeito. O efeito na pratica foi pior: a tela abria no dia 26 e quem
+   * olhava de relance lia aquilo como HOJE, porque e nisso que se acredita ao
+   * abrir uma tela chamada "Linha do tempo · hoje".
    *
-   * So vale quando o dia NAO foi pedido. Se alguem escolheu 07/09 a dedo,
-   * 07/09 vazio e a resposta certa — trocar o dia por baixo seria mentir
-   * sobre o que ele esta olhando.
+   * Dia parado e uma informacao, e das fortes. Mostrar outro dia no lugar dela
+   * troca um vazio honesto por um numero errado. Quem quiser ver o dia 26
+   * escolhe o dia 26 — a navegacao por data continua ali.
    * ========================================================================
    */
   async execute(dia?: string): Promise<LinhaDoTempo> {
-    const pedido = dia ? diaDe(dia) : hoje();
-    let alvo = pedido;
-    let recuado = false;
-
-    let pontos = await this.repo.linhaDoTempo(alvo, somaUmDia(alvo));
-
-    if (!dia && pontos.length === 0) {
-      const ultimo = await this.repo.ultimoDiaComMovimento();
-      if (ultimo && ultimo.getTime() !== alvo.getTime()) {
-        alvo = ultimo;
-        recuado = true;
-        pontos = await this.repo.linhaDoTempo(alvo, somaUmDia(alvo));
-      }
-    }
+    const alvo = dia ? diaDe(dia) : hoje();
+    const pontos = await this.repo.linhaDoTempo(alvo, somaUmDia(alvo));
 
     const ativas = await this.vendedoras.listar({ ativo: true });
 
@@ -123,22 +110,16 @@ export class ConsultarLinhaDoTempoUseCase {
     // ======================================================================
     faixas.sort((a, b) => a.vendedoraNome.localeCompare(b.vendedoraNome, 'pt-BR'));
 
-    return { dia: emIso(alvo), recuado, faixas };
+    return { dia: emIso(alvo), faixas };
   }
 
   /**
-   * Os pontos de UMA vendedora num dia — sem recuo.
+   * Os pontos de UMA vendedora num dia.
    *
-   * ========================================================================
-   * SEM RECUO DE PROPOSITO, AO CONTRARIO DO `execute`.
-   *
-   * La o recuo existe porque a TELA aberta num dia parado pareceria quebrada.
-   * Aqui quem pergunta e a gestao, com uma pergunta datada: "como foi o dia da
-   * Marina hoje". Responder com anteontem sem ela pedir seria a pior resposta
-   * possivel — parece certa, e esta errada.
-   *
-   * Dia vazio devolve lista vazia, e quem chama diz "nada hoje".
-   * ========================================================================
+   * Quem pergunta e a gestao, com uma pergunta datada: "como foi o dia da
+   * Marina hoje". Dia vazio devolve lista vazia, e quem chama diz "nada
+   * hoje" — responder com anteontem sem ela pedir seria a pior resposta
+   * possivel, porque parece certa e esta errada.
    */
   async doDia(vendedoraId: string, dia?: string): Promise<PontoDaLinha[]> {
     const alvo = dia ? diaDe(dia) : hoje();
