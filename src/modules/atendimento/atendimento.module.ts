@@ -10,6 +10,10 @@ import { WahaAdminClient } from './infrastructure/whatsapp/waha-admin.client';
 import { TriagemClient } from './infrastructure/whatsapp/triagem.client';
 import { ConexoesService } from './application/conexoes.service';
 import { WhatsappGatewayModule } from './whatsapp-gateway.module';
+import { ClientesModule } from '../clientes/clientes.module';
+import { LeadsModule } from '../leads/leads.module';
+import { LerConversaWhatsappUseCase } from './application/ler-conversa-whatsapp.use-case';
+import { LeituraConversasScheduler } from './infrastructure/schedule/leitura-conversas.scheduler';
 
 /**
  * Modulo de atendimento por WhatsApp (Anastasia). Orquestracao no backend
@@ -29,6 +33,10 @@ import { WhatsappGatewayModule } from './whatsapp-gateway.module';
     WhatsappGatewayModule,
     AtendimentosModule,
     VendedorasModule,
+    // O leitor de conversas (MEL-15): resolve a cliente pelo numero e abre
+    // lead quando o numero e desconhecido e o assunto e da loja.
+    ClientesModule,
+    LeadsModule,
   ],
   controllers: [WhatsappWebhookController, WhatsappAdminController],
   providers: [
@@ -38,6 +46,10 @@ import { WhatsappGatewayModule } from './whatsapp-gateway.module';
     // O repasse para a triagem: quem o canal interno nao reconhece e cliente,
     // e cliente e do `atwpp`. Ver o comentario da classe.
     TriagemClient,
+    // MEL-15: le o que passou no numero corporativo e faz o atendimento
+    // evoluir sozinho. NAO responde nada — ver a classe.
+    LerConversaWhatsappUseCase,
+    LeituraConversasScheduler,
   ],
 })
 export class AtendimentoModule {}

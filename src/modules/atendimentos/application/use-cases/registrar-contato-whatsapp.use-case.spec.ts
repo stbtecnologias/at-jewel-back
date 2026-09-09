@@ -23,6 +23,7 @@ describe('RegistrarContatoWhatsappUseCase', () => {
     criarInteracao: jest.Mock;
   };
   let buscarCliente: { execute: jest.Mock };
+  let conversas: { registrarMensagem: jest.Mock };
   let uc: RegistrarContatoWhatsappUseCase;
 
   const ENTRADA = {
@@ -40,8 +41,10 @@ describe('RegistrarContatoWhatsappUseCase', () => {
       criarInteracao: jest.fn().mockResolvedValue({ id: 'i-1' }),
     };
     buscarCliente = { execute: jest.fn().mockResolvedValue({ id: 'cli-1' }) };
+    conversas = { registrarMensagem: jest.fn().mockResolvedValue(undefined) };
     uc = new RegistrarContatoWhatsappUseCase(
       repo as never,
+      conversas as never,
       buscarCliente as never,
     );
   });

@@ -56,6 +56,15 @@ export interface MensagemChat {
  * controllers passam.
  * ==========================================================================
  */
+/**
+ * O evento que a sessao de uma vendedora escuta.
+ *
+ * `message` traz so o que CHEGA. `message.any` traz os dois sentidos — e o que
+ * ela ENVIA e metade do dado: prospeccao ativa ("mandei o catalogo para dezoito
+ * clientes") nao existe sem isso. Ver `configDaLoja`.
+ */
+const EVENTO_DA_VENDEDORA = 'message.any';
+
 @Injectable()
 export class WahaAdminClient {
   private readonly logger = new Logger(WahaAdminClient.name);
@@ -165,16 +174,90 @@ export class WahaAdminClient {
       // reautentica. Depois do restart a sessao pede QR novamente.
       await this.req('POST', `/api/sessions/${enc(sessao)}/restart`);
     }
+    await this.garantirEventos(sessao);
     return this.status(sessao);
   }
 
   /**
-   * A config de webhook da sessao da LOJA, para a sessao nova nascer igual.
+   * Conserta a sessao que JA EXISTE e escuta o evento errado.
    *
-   * Copiar em vez de montar de env tem uma razao pratica: a URL do webhook e
-   * o token ja estao certos naquela sessao, nos dois ambientes. Montar de
-   * novo aqui criaria uma segunda fonte da verdade — e uma sessao apontando
-   * para o lugar errado nao da erro, so fica muda.
+   * A config so e aplicada na CRIACAO. As sessoes pareadas antes de 09/09/2026
+   * nasceram copiando o `message` da loja e ficariam surdas para o que a
+   * vendedora envia — para sempre, porque ninguem recria uma sessao so por
+   * isso. Esta chamada arruma no proximo "conectar".
+   *
+   * NAO TOCA NA SESSAO DA LOJA: la `message` e o certo, e sobrescrever faria a
+   * agente reprocessar as proprias respostas.
+   *
+   * Idempotente por comparacao: so escreve quando o que esta la difere. Uma
+   * escrita a toa a cada clique reiniciaria a sessao sem motivo.
+   */
+  private async garantirEventos(sessao: string): Promise<void> {
+    const loja = this.config.get<string>('WAHA_SESSION') ?? 'default';
+    if (sessao === loja) return;
+
+    try {
+      const resp = await this.req('GET', `/api/sessions/${enc(sessao)}`);
+      if (!resp.ok) return;
+      const dados = (await resp.json()) as {
+        config?: { webhooks?: Array<Record<string, unknown>> };
+      };
+      const webhooks = dados.config?.webhooks;
+      // Sem webhook nao ha o que consertar: quem cria e o caminho da criacao.
+      if (!Array.isArray(webhooks) || webhooks.length === 0) return;
+
+      const jaEsta = webhooks.every(
+        (w) =>
+          Array.isArray(w.events) &&
+          w.events.length === 1 &&
+          w.events[0] === EVENTO_DA_VENDEDORA,
+      );
+      if (jaEsta) return;
+
+      await this.req('PUT', `/api/sessions/${enc(sessao)}`, {
+        config: {
+          ...dados.config,
+          webhooks: webhooks.map((w) => ({ ...w, events: [EVENTO_DA_VENDEDORA] })),
+        },
+      });
+      this.logger.log(
+        `Sessao "${sessao}" passou a escutar ${EVENTO_DA_VENDEDORA} — o que ela envia tambem vira registro.`,
+      );
+    } catch (err) {
+      // Falhar aqui nao pode impedir a conexao: o pior e a captura continuar
+      // pela metade, que e o estado de antes.
+      this.logger.warn(
+        `Nao consegui ajustar os eventos de "${sessao}": ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
+
+  /**
+   * A config da sessao nova: o ENDERECO vem da loja, os EVENTOS nao.
+   *
+   * Copiar o endereco em vez de montar de env tem uma razao pratica: a URL do
+   * webhook e o token ja estao certos naquela sessao, nos dois ambientes.
+   * Montar de novo aqui criaria uma segunda fonte da verdade — e uma sessao
+   * apontando para o lugar errado nao da erro, so fica muda.
+   *
+   * ==========================================================================
+   * MAS OS EVENTOS SAO TROCADOS PARA `message.any`, E ISSO E O PONTO.
+   *
+   * A loja escuta `message`, que no WAHA e SO MENSAGEM RECEBIDA. Faz sentido
+   * la: o que sai pelo numero da loja foi a propria agente que escreveu, e
+   * reprocessar isso seria conversar sozinha.
+   *
+   * No numero da vendedora o que sai E O DADO. "A Aline mandou o catalogo
+   * para dezoito pessoas hoje" so existe se as mensagens dela chegarem — e
+   * com `message`, elas nao chegam. Copiar a config da loja inteira deixava a
+   * captura pela metade: registrava quem procurou a vendedora e perdia quem a
+   * vendedora procurou. Corrigido em 09/09/2026, depois de o Lucas mostrar uma
+   * prospeccao que nao virou registro nenhum.
+   *
+   * `message.any` traz os dois sentidos; `contatoDoEvento` le `to` quando a
+   * mensagem e dela. O nome do evento foi conferido contra o servidor: nome
+   * invalido devolve 400, e este devolve 200.
+   * ==========================================================================
    *
    * Se a loja nao tiver webhook (instalacao nova, ou alguem apagou), a sessao
    * nasce sem — e o pior que acontece e o contato nao virar ponto na Linha do
@@ -186,7 +269,7 @@ export class WahaAdminClient {
       const resp = await this.req('GET', `/api/sessions/${enc(loja)}`);
       if (!resp.ok) throw new Error(String(resp.status));
       const dados = (await resp.json()) as {
-        config?: { webhooks?: unknown[] };
+        config?: { webhooks?: Array<Record<string, unknown>> };
       };
       const webhooks = dados.config?.webhooks;
       if (!Array.isArray(webhooks) || webhooks.length === 0) {
@@ -195,7 +278,9 @@ export class WahaAdminClient {
         );
         return {};
       }
-      return { webhooks };
+      return {
+        webhooks: webhooks.map((w) => ({ ...w, events: [EVENTO_DA_VENDEDORA] })),
+      };
     } catch (err) {
       this.logger.warn(
         `Nao consegui ler a config de "${loja}": ${err instanceof Error ? err.message : err}`,

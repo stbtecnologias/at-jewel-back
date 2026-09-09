@@ -1,7 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { BuscarClientePorWhatsappUseCase } from '../../../clientes/application/use-cases/buscar-cliente-por-whatsapp.use-case';
-import { ATENDIMENTO_REPOSITORY } from '../../domain/ports/injection-tokens';
+import {
+  ATENDIMENTO_REPOSITORY,
+  CONVERSA_WHATSAPP_REPOSITORY,
+} from '../../domain/ports/injection-tokens';
 import type { IAtendimentoRepository } from '../../domain/ports/repositories/atendimento-repository.port';
+import type { IConversaWhatsappRepository } from '../../domain/ports/repositories/conversa-whatsapp-repository.port';
 import type { TipoInteracao } from '../../domain/entities/enums';
 
 export interface ContatoNoWhatsapp {
@@ -32,6 +36,16 @@ export type ResultadoContato =
 const JANELA_MESMO_CONTATO_MIN = 15;
 
 /**
+ * Quanto tempo depois da ultima mensagem a conversa e lida — MEL-15.
+ *
+ * Regra do Lucas em 08/09/2026: uma hora depois de a conversa PARAR. Cada
+ * mensagem nova empurra este relogio, entao nada e lido no meio da troca —
+ * quando ainda nao ha desfecho para extrair. O teto de quem nunca para esta no
+ * UPSERT do repositorio.
+ */
+const MINUTOS_ATE_LER = 60;
+
+/**
  * A conversa no numero corporativo da vendedora vira interacao do atendimento
  * — MEL-14 e MEL-17.
  *
@@ -59,11 +73,41 @@ export class RegistrarContatoWhatsappUseCase {
   constructor(
     @Inject(ATENDIMENTO_REPOSITORY)
     private readonly repo: IAtendimentoRepository,
+    @Inject(CONVERSA_WHATSAPP_REPOSITORY)
+    private readonly conversas: IConversaWhatsappRepository,
     private readonly buscarCliente: BuscarClientePorWhatsappUseCase,
   ) {}
 
   async execute(entrada: ContatoNoWhatsapp): Promise<ResultadoContato> {
     const cliente = await this.buscarCliente.execute(entrada.telefone);
+
+    // ======================================================================
+    // A FILA DE LEITURA VEM ANTES DO DESCARTE, E ESSA ORDEM E O CONSERTO.
+    //
+    // Ate 09/09/2026 numero desconhecido morria no `return` logo abaixo, e com
+    // ele iam embora a cliente nova e a que trocou de telefone —
+    // indistinguiveis do entregador enquanto ninguem LE a conversa.
+    //
+    // Enfileirar aqui separa as duas perguntas: "registro o ponto agora?"
+    // continua exigindo cadastro, e "vale a pena ler isto depois?" passa a
+    // valer para todo mundo. Quem julga e o LerConversaWhatsappUseCase.
+    //
+    // Falha aqui NAO derruba o registro do ponto: a fila e melhoria, o ponto e
+    // o que a Timeline mostra hoje.
+    // ======================================================================
+    try {
+      await this.conversas.registrarMensagem({
+        vendedoraId: entrada.vendedoraId,
+        chatId: `${entrada.telefone}@c.us`,
+        em: entrada.em,
+        lerEm: new Date(entrada.em.getTime() + MINUTOS_ATE_LER * 60_000),
+        clienteId: cliente?.id ?? null,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Contato registrado, mas a conversa nao entrou na fila de leitura: ${err instanceof Error ? err.message : err}`,
+      );
+    }
 
     // ======================================================================
     // NUMERO DESCONHECIDO NAO VIRA CADASTRO.

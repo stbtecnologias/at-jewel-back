@@ -36,11 +36,16 @@ import { MemoriaConversaService } from './application/memoria-conversa.service';
 import { SessaoCatalogoService } from './application/sessao-catalogo.service';
 import { AgendarContatoGestaoUseCase } from './application/use-cases/agendar-contato-gestao.use-case';
 import { PendenciasScheduler } from './infrastructure/schedule/pendencias.scheduler';
-import { ATENDIMENTO_REPOSITORY } from './domain/ports/injection-tokens';
+import {
+  ATENDIMENTO_REPOSITORY,
+  CONVERSA_WHATSAPP_REPOSITORY,
+} from './domain/ports/injection-tokens';
 import { AtendimentoInteracaoOrmEntity } from './infrastructure/database/typeorm/entities/atendimento-interacao.orm-entity';
 import { AtendimentoOrmEntity } from './infrastructure/database/typeorm/entities/atendimento.orm-entity';
 import { ClientePerfilOrmEntity } from '../clientes/infrastructure/database/typeorm/entities/cliente-perfil.orm-entity';
 import { AtendimentoRepository } from './infrastructure/database/typeorm/repositories/atendimento.repository';
+import { ConversaWhatsappOrmEntity } from './infrastructure/database/typeorm/entities/conversa-whatsapp.orm-entity';
+import { ConversaWhatsappRepository } from './infrastructure/database/typeorm/repositories/conversa-whatsapp.repository';
 
 /**
  * Episodios de atendimento (migracao 35) e a linha do tempo de cada um.
@@ -57,6 +62,7 @@ import { AtendimentoRepository } from './infrastructure/database/typeorm/reposit
     TypeOrmModule.forFeature([
       AtendimentoOrmEntity,
       AtendimentoInteracaoOrmEntity,
+      ConversaWhatsappOrmEntity,
       ClientePerfilOrmEntity,
     ]),
     // O agendador precisa do nome do cliente, do WhatsApp da vendedora e do
@@ -86,6 +92,10 @@ import { AtendimentoRepository } from './infrastructure/database/typeorm/reposit
   ],
   providers: [
     { provide: ATENDIMENTO_REPOSITORY, useClass: AtendimentoRepository },
+    {
+      provide: CONVERSA_WHATSAPP_REPOSITORY,
+      useClass: ConversaWhatsappRepository,
+    },
     DispararPendenciasUseCase,
     ConsultarAgendaVendedoraUseCase,
     ConsultarDesempenhoVendedoraUseCase,
@@ -123,6 +133,9 @@ import { AtendimentoRepository } from './infrastructure/database/typeorm/reposit
   // escreveu e vendedora, gestao ou ninguem.
   exports: [
     ATENDIMENTO_REPOSITORY,
+    // A fila de conversas a ler: o webhook do modulo `atendimento`
+    // (singular) enfileira, e o leitor de la consome.
+    CONVERSA_WHATSAPP_REPOSITORY,
     ProcessarMensagemInternaUseCase,
     RotearMensagemInternaUseCase,
     // O webhook do modulo `atendimento` (singular) registra por aqui o que
