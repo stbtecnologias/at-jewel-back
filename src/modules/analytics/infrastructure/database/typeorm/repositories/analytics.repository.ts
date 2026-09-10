@@ -82,11 +82,11 @@ export class AnalyticsRepository implements IAnalyticsRepository {
         let whereDemo = '';
         if (filtro?.sexo != null) {
           params.push(filtro.sexo);
-          whereDemo += ` AND COALESCE(cp.sexo::text, 'NAO_INFORMADO') = $${params.length}`;
+          whereDemo += ` AND COALESCE(cp.sexo::text, 'NAO_INFORMADO') = ANY($${params.length}::text[])`;
         }
         if (filtro?.origem != null) {
           params.push(filtro.origem);
-          whereDemo += ` AND COALESCE(cp.origem_contato::text, 'Nao informado') = $${params.length}`;
+          whereDemo += ` AND COALESCE(cp.origem_contato::text, 'Nao informado') = ANY($${params.length}::text[])`;
         }
         if (filtro?.faixaEtaria != null) {
           params.push(filtro.faixaEtaria);
@@ -153,11 +153,11 @@ export class AnalyticsRepository implements IAnalyticsRepository {
     // para que filtrar por "NAO_INFORMADO"/"Nao informado" case as linhas NULL.
     if (filtro?.sexo != null) {
       params.push(filtro.sexo);
-      where += ` AND COALESCE(cp.sexo::text, 'NAO_INFORMADO') = $${params.length}`;
+      where += ` AND COALESCE(cp.sexo::text, 'NAO_INFORMADO') = ANY($${params.length}::text[])`;
     }
     if (filtro?.origem != null) {
       params.push(filtro.origem);
-      where += ` AND COALESCE(cp.origem_contato::text, 'Nao informado') = $${params.length}`;
+      where += ` AND COALESCE(cp.origem_contato::text, 'Nao informado') = ANY($${params.length}::text[])`;
     }
     if (filtro?.faixaEtaria != null) {
       params.push(filtro.faixaEtaria);
@@ -191,11 +191,11 @@ export class AnalyticsRepository implements IAnalyticsRepository {
     }
     if (filtro?.sexo != null) {
       params.push(filtro.sexo);
-      where += ` AND COALESCE(cp.sexo::text, 'NAO_INFORMADO') = $${params.length}`;
+      where += ` AND COALESCE(cp.sexo::text, 'NAO_INFORMADO') = ANY($${params.length}::text[])`;
     }
     if (filtro?.origem != null) {
       params.push(filtro.origem);
-      where += ` AND COALESCE(cp.origem_contato::text, 'Nao informado') = $${params.length}`;
+      where += ` AND COALESCE(cp.origem_contato::text, 'Nao informado') = ANY($${params.length}::text[])`;
     }
     if (filtro?.faixaEtaria != null) {
       params.push(filtro.faixaEtaria);

@@ -14,6 +14,7 @@ import { ReceitaMensalUseCase } from '../../../application/use-cases/receita-men
 import { ResumoPeriodoUseCase } from '../../../application/use-cases/resumo-periodo.use-case';
 import { TopProdutosUseCase } from '../../../application/use-cases/top-produtos.use-case';
 import type { FiltroAnalitico } from '../../../domain/ports/repositories/analytics-repository.port';
+import { listaEntrada } from '../../../../../shared/http/query-transforms';
 
 // Converte as query strings do filtro comum das telas de Analytics num
 // FiltroAnalitico. Retorna undefined quando TUDO esta vazio. Periodo so vale
@@ -22,8 +23,8 @@ import type { FiltroAnalitico } from '../../../domain/ports/repositories/analyti
 function parseFiltro(
   de?: string,
   ate?: string,
-  sexo?: string,
-  origem?: string,
+  sexo?: string | string[],
+  origem?: string | string[],
   faixa?: string,
   idadeMin?: string,
   idadeMax?: string,
@@ -37,8 +38,12 @@ function parseFiltro(
       filtro.dataFim = dataFim;
     }
   }
-  if (sexo) filtro.sexo = sexo;
-  if (origem) filtro.origem = origem;
+  // `?sexo=F&sexo=M` chega como array; `?sexo=F` como string. O helper cobre
+  // as duas, mais a lista por virgula, e devolve `undefined` quando vazio.
+  const sexos = listaEntrada(sexo) as string[] | undefined;
+  const origens = listaEntrada(origem) as string[] | undefined;
+  if (sexos) filtro.sexo = sexos;
+  if (origens) filtro.origem = origens;
   if (faixa) filtro.faixaEtaria = faixa;
   if (idadeMin) {
     const min = Number(idadeMin);
@@ -76,8 +81,8 @@ export class AnalyticsController {
   async resumo(
     @Query('data_inicio') dataInicio?: string,
     @Query('data_fim') dataFim?: string,
-    @Query('sexo') sexo?: string,
-    @Query('origem') origem?: string,
+    @Query('sexo') sexo?: string | string[],
+    @Query('origem') origem?: string | string[],
     @Query('faixa') faixa?: string,
     @Query('idade_min') idadeMin?: string,
     @Query('idade_max') idadeMax?: string,
@@ -97,8 +102,8 @@ export class AnalyticsController {
     @Query('limit') limit?: string,
     @Query('data_inicio') dataInicio?: string,
     @Query('data_fim') dataFim?: string,
-    @Query('sexo') sexo?: string,
-    @Query('origem') origem?: string,
+    @Query('sexo') sexo?: string | string[],
+    @Query('origem') origem?: string | string[],
     @Query('faixa') faixa?: string,
     @Query('idade_min') idadeMin?: string,
     @Query('idade_max') idadeMax?: string,
@@ -113,8 +118,8 @@ export class AnalyticsController {
   async giro(
     @Query('data_inicio') dataInicio?: string,
     @Query('data_fim') dataFim?: string,
-    @Query('sexo') sexo?: string,
-    @Query('origem') origem?: string,
+    @Query('sexo') sexo?: string | string[],
+    @Query('origem') origem?: string | string[],
     @Query('faixa') faixa?: string,
     @Query('idade_min') idadeMin?: string,
     @Query('idade_max') idadeMax?: string,
@@ -130,8 +135,8 @@ export class AnalyticsController {
   async giroPorFamilia(
     @Query('data_inicio') dataInicio?: string,
     @Query('data_fim') dataFim?: string,
-    @Query('sexo') sexo?: string,
-    @Query('origem') origem?: string,
+    @Query('sexo') sexo?: string | string[],
+    @Query('origem') origem?: string | string[],
     @Query('faixa') faixa?: string,
     @Query('idade_min') idadeMin?: string,
     @Query('idade_max') idadeMax?: string,
@@ -145,8 +150,8 @@ export class AnalyticsController {
   async pagamento(
     @Query('data_inicio') dataInicio?: string,
     @Query('data_fim') dataFim?: string,
-    @Query('sexo') sexo?: string,
-    @Query('origem') origem?: string,
+    @Query('sexo') sexo?: string | string[],
+    @Query('origem') origem?: string | string[],
     @Query('faixa') faixa?: string,
     @Query('idade_min') idadeMin?: string,
     @Query('idade_max') idadeMax?: string,
@@ -165,8 +170,8 @@ export class AnalyticsController {
   async origem(
     @Query('data_inicio') dataInicio?: string,
     @Query('data_fim') dataFim?: string,
-    @Query('sexo') sexo?: string,
-    @Query('origem') origem?: string,
+    @Query('sexo') sexo?: string | string[],
+    @Query('origem') origem?: string | string[],
     @Query('faixa') faixa?: string,
     @Query('idade_min') idadeMin?: string,
     @Query('idade_max') idadeMax?: string,
@@ -180,8 +185,8 @@ export class AnalyticsController {
   async demo(
     @Query('data_inicio') dataInicio?: string,
     @Query('data_fim') dataFim?: string,
-    @Query('sexo') sexo?: string,
-    @Query('origem') origem?: string,
+    @Query('sexo') sexo?: string | string[],
+    @Query('origem') origem?: string | string[],
     @Query('faixa') faixa?: string,
     @Query('idade_min') idadeMin?: string,
     @Query('idade_max') idadeMax?: string,
@@ -197,8 +202,8 @@ export class AnalyticsController {
   @Get('datas-comemorativas')
   async datas(
     @Query('ano') ano?: string,
-    @Query('sexo') sexo?: string,
-    @Query('origem') origem?: string,
+    @Query('sexo') sexo?: string | string[],
+    @Query('origem') origem?: string | string[],
     @Query('faixa') faixa?: string,
     @Query('idade_min') idadeMin?: string,
     @Query('idade_max') idadeMax?: string,

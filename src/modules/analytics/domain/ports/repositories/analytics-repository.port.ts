@@ -124,8 +124,13 @@ export interface Periodo {
 export interface FiltroAnalitico {
   dataInicio?: Date;
   dataFim?: Date;
-  sexo?: string;
-  origem?: string;
+  /**
+   * LISTAS desde 10/09/2026 — a tela passou a aceitar selecao multipla.
+   * Vazio nunca chega: o controller transforma em `undefined`, que e "sem
+   * recorte". Uma lista vazia significaria "nenhum valor serve".
+   */
+  sexo?: string[];
+  origem?: string[];
   faixaEtaria?: string;
   idadeMin?: number;
   idadeMax?: number;
