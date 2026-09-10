@@ -7,10 +7,16 @@ export interface FiltroVenda {
   /** data_venda <= este valor (inclusivo). */
   dataAte?: Date;
   clienteId?: string;
-  vendedoraId?: string;
-  status?: StatusVenda;
-  /** Considera apenas vendas que tenham ao menos um pagamento nesta forma. */
-  formaPagamento?: FormaPagamento;
+  /**
+   * Os tres filtros abaixo sao LISTAS desde 10/09/2026: a tela passou a aceitar
+   * selecao multipla. Lista vazia nunca chega aqui — o DTO transforma em
+   * `undefined`, que e "sem filtro". Uma lista vazia significaria "nenhum valor
+   * serve" e devolveria zero linhas.
+   */
+  vendedoraId?: string[];
+  status?: StatusVenda[];
+  /** Vendas com ao menos um pagamento em QUALQUER uma destas formas. */
+  formaPagamento?: FormaPagamento[];
   /** Paginacao: itens por pagina. */
   limit?: number;
   /** Paginacao: deslocamento. */

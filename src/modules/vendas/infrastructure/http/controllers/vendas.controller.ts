@@ -102,7 +102,7 @@ export class VendasController {
       dataDe: filtros.dataDe ? new Date(filtros.dataDe) : undefined,
       dataAte: filtros.dataAte ? new Date(filtros.dataAte) : undefined,
       clienteId: filtros.clienteId,
-      vendedoraId: restrito ?? filtros.vendedoraId,
+      vendedoraId: restrito ? [restrito] : filtros.vendedoraId,
       status: filtros.status,
       formaPagamento: filtros.formaPagamento,
       limit: filtros.limit,
@@ -123,8 +123,9 @@ export class VendasController {
     return this.resumo.execute({
       dataDe: filtros.dataDe ? new Date(filtros.dataDe) : undefined,
       dataAte: filtros.dataAte ? new Date(filtros.dataAte) : undefined,
-      vendedoraId: restrito ?? filtros.vendedoraId,
+      vendedoraId: restrito ? [restrito] : filtros.vendedoraId,
       status: filtros.status,
+      formaPagamento: filtros.formaPagamento,
     });
   }
 

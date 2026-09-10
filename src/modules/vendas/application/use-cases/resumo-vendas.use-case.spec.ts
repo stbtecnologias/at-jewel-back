@@ -37,13 +37,13 @@ describe('ResumoVendasUseCase', () => {
     const resultado = await useCase.execute({
       dataDe,
       dataAte,
-      vendedoraId: 'vend1',
+      vendedoraId: ['vend1'],
     });
 
     expect(repo.resumoAgregado).toHaveBeenCalledWith({
       dataDe,
       dataAte,
-      vendedoraId: 'vend1',
+      vendedoraId: ['vend1'],
     });
     expect(resultado).toEqual({
       totalVendas: 3,
@@ -53,6 +53,24 @@ describe('ResumoVendasUseCase', () => {
       porStatus: { concluida: 3, cancelada: 1, pendente: 2 },
       periodo: { de: dataDe, ate: dataAte },
     });
+  });
+
+  // O filtro de forma de pagamento chegava ate `GET /vendas` mas nao ate aqui:
+  // o DTO do resumo nao o declarava, e o `forbidNonWhitelisted` derrubava a
+  // chamada inteira com "property formaPagamento should not exist" — os
+  // big-numbers zeravam enquanto a tabela abaixo mostrava as vendas em PIX.
+  it('repassa formaPagamento ao repository', async () => {
+    repo.resumoAgregado.mockResolvedValue({
+      totalVendas: 1,
+      receitaTotal: 250,
+      ticketMedio: 250,
+      totalItens: 1,
+      porStatus: { concluida: 1, cancelada: 0, pendente: 0 },
+    });
+
+    await useCase.execute({ formaPagamento: ['pix'] });
+
+    expect(repo.resumoAgregado).toHaveBeenCalledWith({ formaPagamento: ['pix'] });
   });
 
   it('sem filtros de periodo retorna periodo { de: null, ate: null }', async () => {
@@ -81,7 +99,7 @@ describe('ResumoVendasUseCase', () => {
       porStatus: { concluida: 2, cancelada: 0, pendente: 0 },
     });
 
-    const resultado = await useCase.execute({ status: 'concluida' });
+    const resultado = await useCase.execute({ status: ['concluida'] });
 
     expect(resultado.receitaTotal).toBe(500);
     expect(resultado.porStatus).toEqual({

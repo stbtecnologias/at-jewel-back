@@ -51,7 +51,7 @@ export class ConsultarDesempenhoVendedoraUseCase {
     const { de, ate } = janela(periodo, agora);
 
     const resumo = await this.resumoVendas.execute({
-      vendedoraId,
+      vendedoraId: [vendedoraId],
       dataDe: de,
       dataAte: ate,
     });
