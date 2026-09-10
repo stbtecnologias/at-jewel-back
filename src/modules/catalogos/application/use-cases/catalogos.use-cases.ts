@@ -12,7 +12,8 @@ import type {
 } from '../../domain/entities/enums';
 import {
   LIMITE_BYTES,
-  MIMES_IMAGEM,
+  LIMITE_PDF_BYTES,
+  MIMES_REFERENCIA,
   PASTA_REFERENCIAS,
   pastaDoCatalogo,
   type IArmazenamento,
@@ -229,11 +230,22 @@ export class AnexarReferenciaUseCase {
       throw new BadRequestException('Nenhum arquivo enviado');
     const catalogo = await this.exigirCatalogo(catalogoId);
 
+    // VALIDA TODOS ANTES DE GRAVAR QUALQUER UM.
+    //
+    // Validar dentro do laco parecia igual e nao era: com cinco arquivos e o
+    // quarto recusado, tres ja tinham sido gravados e a pessoa recebia um erro
+    // com metade do trabalho feito — sem saber qual metade. Aconteceu em
+    // 04/09/2026 na criacao de catalogo, e o efeito foi pior ainda porque o
+    // front so mandava as referencias de TEXTO depois destas: uma recusa aqui
+    // levava junto o que a pessoa tinha digitado.
+    //
+    // Duas passadas custam nada — a lista tem no maximo 20 itens em memoria.
+    for (const arquivo of arquivos) this.validar(arquivo);
+
     const criadas: ReferenciaItem[] = [];
     // Em serie, e nao em paralelo: a ordem das referencias e a ordem em que
     // foram enviadas, e `criarReferencia` calcula MAX(ordem)+1.
     for (const arquivo of arquivos) {
-      this.validar(arquivo);
       const chave = await this.armazenamento.guardar(
         {
           conteudo: arquivo.buffer,
@@ -257,15 +269,21 @@ export class AnexarReferenciaUseCase {
 
   private validar(arquivo: ArquivoRecebido): void {
     if (
-      !MIMES_IMAGEM.includes(arquivo.mimetype as (typeof MIMES_IMAGEM)[number])
+      !MIMES_REFERENCIA.includes(
+        arquivo.mimetype as (typeof MIMES_REFERENCIA)[number],
+      )
     ) {
       throw new BadRequestException(
-        `Formato não aceito (${arquivo.mimetype}). Envie JPEG, PNG ou WebP.`,
+        `"${arquivo.originalname}" não é um formato aceito (${arquivo.mimetype}). Envie JPEG, PNG, WebP ou PDF.`,
       );
     }
-    if (arquivo.size > LIMITE_BYTES) {
+    // O TETO DEPENDE DO TIPO. PDF de catalogo fechado nao cabe no limite
+    // pensado para foto de celular — ver `LIMITE_PDF_BYTES`.
+    const teto =
+      arquivo.mimetype === 'application/pdf' ? LIMITE_PDF_BYTES : LIMITE_BYTES;
+    if (arquivo.size > teto) {
       throw new BadRequestException(
-        `Arquivo acima de ${Math.round(LIMITE_BYTES / 1024 / 1024)} MB`,
+        `"${arquivo.originalname}" tem ${Math.round(arquivo.size / 1024 / 1024)} MB — o limite é ${Math.round(teto / 1024 / 1024)} MB.`,
       );
     }
   }
@@ -278,6 +296,165 @@ export class AnexarReferenciaUseCase {
     const existe = await this.repositorio.buscarPorId(id);
     if (!existe) throw new NotFoundException('Catálogo não encontrado');
     return existe;
+  }
+}
+
+/**
+ * Escolher a capa entre as referencias que ja foram anexadas.
+ *
+ * NAO E UPLOAD: a capa e sempre uma imagem que ja esta no catalogo. Foi o que
+ * o Lucas pediu em 04/09/2026 — "a pessoa poderia escolher uma capa das
+ * referencias que enviou".
+ */
+@Injectable()
+export class DefinirCapaUseCase {
+  constructor(
+    @Inject(CATALOGO_REPOSITORY)
+    private readonly repositorio: ICatalogoRepository,
+  ) {}
+
+  async execute(
+    catalogoId: string,
+    referenciaId: string | null,
+  ): Promise<CatalogoDetalhe> {
+    const catalogo = await this.repositorio.buscarPorId(catalogoId);
+    if (!catalogo) throw new NotFoundException('Catálogo não encontrado');
+
+    // `null` volta ao automatico — a primeira imagem. Sai antes das checagens
+    // porque nao ha o que checar.
+    if (referenciaId === null) {
+      return this.repositorio.definirCapa(catalogoId, null);
+    }
+
+    // A REFERENCIA PRECISA SER DESTE CATALOGO. Sem isto, um id valido de outra
+    // colecao seria aceito, e o card passaria a mostrar a imagem dela — o
+    // banco nao impede, porque a chave estrangeira so exige que a referencia
+    // exista.
+    const referencia = catalogo.referencias.find((r) => r.id === referenciaId);
+    if (!referencia) {
+      throw new BadRequestException(
+        'Essa referência não pertence a este catálogo',
+      );
+    }
+
+    if (!referencia.arquivoId || (referencia.mime ?? '').includes('pdf')) {
+      throw new BadRequestException(
+        'A capa precisa ser uma imagem — texto e PDF não servem',
+      );
+    }
+
+    return this.repositorio.definirCapa(catalogoId, referenciaId);
+  }
+}
+
+/** Limite da nota. Frase curta, nao briefing — o briefing e a referencia de texto. */
+const MAX_OBSERVACAO = 500;
+
+/**
+ * A observacao DE UM arquivo — "desta aqui, quero o fundo branco".
+ *
+ * NAO VAI PARA A IA, e isso e deliberado: nenhuma referencia visual vai (ver o
+ * `tratar-foto.use-case.ts`). A nota existe para quem monta o catalogo, e por
+ * isso acompanha o arquivo na exportacao.
+ */
+@Injectable()
+export class AnotarReferenciaUseCase {
+  constructor(
+    @Inject(CATALOGO_REPOSITORY)
+    private readonly repositorio: ICatalogoRepository,
+  ) {}
+
+  async execute(
+    catalogoId: string,
+    referenciaId: string,
+    observacao: string | null,
+  ): Promise<ReferenciaItem> {
+    const limpo = observacao?.trim() ?? '';
+    if (limpo.length > MAX_OBSERVACAO) {
+      throw new BadRequestException(
+        `A observação passa de ${MAX_OBSERVACAO} caracteres`,
+      );
+    }
+
+    // VAZIO VIRA NULL, e nao string vazia: as duas coisas significam "sem
+    // observacao", e guardar as duas faria a tela ter que tratar os dois casos
+    // para sempre.
+    const anotada = await this.repositorio.anotarReferencia(
+      catalogoId,
+      referenciaId,
+      limpo || null,
+    );
+    if (!anotada) throw new NotFoundException('Referência não encontrada');
+    return anotada;
+  }
+}
+
+/** Teto de parcelas. Acima disso e erro de digitacao, nao condicao de venda. */
+const MAX_PARCELAS = 24;
+/** Teto de juro. 300% e absurdo; serve so para barrar o dedo escorregando. */
+const MAX_JUROS = 300;
+
+/**
+ * CORRIGIR O PARCELAMENTO DE UMA PECA JA NO CATALOGO.
+ *
+ * Ate 04/09/2026 parcelas e juro entravam SO pela legenda do WhatsApp. Digitar
+ * `12x` quando era `10x` nao tinha conserto: a saida era tirar a peca do
+ * catalogo e mandar a foto de novo, gastando uma geracao de imagem para
+ * arrumar um numero.
+ *
+ * Isso pesa mais desde que se sabe que o leitor de legenda erra: uma peca em
+ * sete tem o codigo mal reconhecido, e a legenda inteira e reinterpretada a
+ * partir dai.
+ *
+ * O PRECO A VISTA NAO ENTRA AQUI, de proposito: ele vem do ERP e e a unica
+ * coisa nesta tela com dono de fora. Deixar edita-lo criaria uma segunda
+ * verdade que a proxima sincronizacao nao saberia resolver.
+ */
+@Injectable()
+export class CorrigirParcelamentoUseCase {
+  constructor(
+    @Inject(CATALOGO_REPOSITORY)
+    private readonly repositorio: ICatalogoRepository,
+  ) {}
+
+  async execute(
+    catalogoId: string,
+    fotoId: string,
+    dados: { parcelas?: number | null; jurosPercentual?: number | null },
+  ): Promise<FotoItem> {
+    const catalogo = await this.repositorio.buscarPorId(catalogoId);
+    if (!catalogo) throw new NotFoundException('Catálogo não encontrado');
+
+    // A FOTO PRECISA SER DESTE CATALOGO. `atualizarFoto` grava por id e nao
+    // olha a colecao — sem esta checagem, um id valido de outro catalogo seria
+    // aceito e o preco mudaria na coleccao errada.
+    const foto = catalogo.fotos.find((f) => f.id === fotoId);
+    if (!foto) throw new NotFoundException('Foto não encontrada neste catálogo');
+
+    if (dados.parcelas !== undefined && dados.parcelas !== null) {
+      if (!Number.isInteger(dados.parcelas) || dados.parcelas < 1) {
+        throw new BadRequestException('Parcelas precisa ser um número inteiro a partir de 1');
+      }
+      if (dados.parcelas > MAX_PARCELAS) {
+        throw new BadRequestException(`No máximo ${MAX_PARCELAS} parcelas`);
+      }
+    }
+
+    if (dados.jurosPercentual !== undefined && dados.jurosPercentual !== null) {
+      if (dados.jurosPercentual < 0 || dados.jurosPercentual > MAX_JUROS) {
+        throw new BadRequestException(`O juro precisa ficar entre 0 e ${MAX_JUROS}%`);
+      }
+    }
+
+    // `null` no juro NAO e a mesma coisa que 0 no registro, ainda que a conta
+    // de o mesmo numero: um e "ninguem informou", o outro e "foi conferido e
+    // nao tem". Por isso os dois chegam ate aqui sem serem confundidos.
+    return this.repositorio.atualizarFoto(fotoId, {
+      ...(dados.parcelas !== undefined ? { parcelas: dados.parcelas } : {}),
+      ...(dados.jurosPercentual !== undefined
+        ? { jurosPercentual: dados.jurosPercentual }
+        : {}),
+    });
   }
 }
 

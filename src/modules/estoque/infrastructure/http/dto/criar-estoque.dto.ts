@@ -1,11 +1,19 @@
-import { IsInt, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import {
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 
 /**
  * Corpo de POST /estoque e de PUT /estoque.
  *
- * Exatamente UM dos quatro locais deve vir preenchido — o DTO nao tem
- * como expressar isso, entao a regra e validada no use case (mensagem util) e
- * garantida pelo CHECK do banco (ultima linha de defesa).
+ * Ate a migracao 57 havia quatro campos de local — `localEstoqueId`,
+ * `fornecedorId`, `clienteId` e `vendedoraId` — e exatamente um devia vir
+ * preenchido. O DTO nao conseguia expressar isso, entao a regra vivia no use
+ * case, repetida em tres deles. Sobrou um campo so, obrigatorio: a regra passou
+ * a caber no proprio DTO, e a validacao a mao saiu.
  */
 export class CriarEstoqueDto {
   // ID da linha de saldo na tabela do ERP: chave tecnica, imutavel. E ele que
@@ -31,24 +39,13 @@ export class CriarEstoqueDto {
   @IsUUID()
   produtoId: string;
 
-  @IsOptional()
+  // Onde a peca esta. Obrigatorio desde a 57 — o saldo mora sempre num local
+  // nosso.
   @IsUUID()
-  localEstoqueId?: string;
+  localEstoqueId: string;
 
-  @IsOptional()
-  @IsUUID()
-  fornecedorId?: string;
-
-  @IsOptional()
-  @IsUUID()
-  clienteId?: string;
-
-  @IsOptional()
-  @IsUUID()
-  vendedoraId?: string;
-
-  // SEM @Min(0): quantidade negativa e estado valido — e o que a casa deve ao
-  // fornecedor ou ao cliente (partida dobrada do ERP).
+  // SEM @Min(0): quantidade negativa e estado valido — e o que a casa deve
+  // (partida dobrada do ERP). Ver a entidade de dominio.
   @IsInt()
   quantidade: number;
 }

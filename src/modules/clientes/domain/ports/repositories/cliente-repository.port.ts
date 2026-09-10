@@ -154,6 +154,16 @@ export interface IClienteRepository {
    * usa buscarPorId com `incluirPerfil` true.
    */
   listar(filtros: FiltroCliente): Promise<Cliente[]>;
+  /**
+   * O `codigo_erp` da vendedora vinculada a esta conta de painel, ou `null`.
+   *
+   * E o CODIGO, e nao o id, porque o cliente aponta para a vendedora por
+   * `vendedora_codigo_erp` — o vinculo veio do ERP assim, e traduzir aqui
+   * exigiria um join a mais em toda consulta so para desfazer no fim.
+   */
+  resolverVendedoraCodigoErpPorAdminUser(
+    adminUserId: string,
+  ): Promise<string | null>;
 
   atualizar(cliente: Cliente): Promise<Cliente>;
 

@@ -5,22 +5,20 @@ export interface FiltroEstoque {
   grupoEstoqueId?: string;
   produtoId?: string;
   localEstoqueId?: string;
-  fornecedorId?: string;
-  clienteId?: string;
-  vendedoraId?: string;
-  /** Só linhas negativas — o que a casa deve a terceiros. */
+  /** Só linhas negativas — o que a casa deve. */
   apenasNegativos?: boolean;
 }
 
-/** As quatro dimensoes que identificam um saldo. */
+/**
+ * As quatro dimensoes que identificam um saldo, e sao as mesmas da
+ * `uq_estoque_chave`. Eram cinco ate a migracao 57, quando o local deixou de
+ * ser "uma das quatro colunas" e virou obrigatorio.
+ */
 export interface ChaveEstoque {
   empresaId: string;
   grupoEstoqueId: string;
   produtoId: string;
-  localEstoqueId?: string | null;
-  fornecedorId?: string | null;
-  clienteId?: string | null;
-  vendedoraId?: string | null;
+  localEstoqueId: string;
 }
 
 export interface IEstoqueRepository {

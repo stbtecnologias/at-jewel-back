@@ -21,6 +21,15 @@ export interface FacetasProduto {
   fornecedores: string[];
   categorias: string[];
   familias: string[];
+  /**
+   * Tipos de pedra JA USADOS. Nao ha cadastro de pedras — `tipo_pedra` e texto
+   * livre no produto —, entao a lista e o que a propria base ensina.
+   */
+  pedras: string[];
+  /** Colecoes ja usadas. Mesma logica das pedras. */
+  colecoes: string[];
+  /** Cores ja usadas. Mesma logica. */
+  cores: string[];
 }
 
 export interface ProdutoAlerta {
@@ -41,11 +50,39 @@ export interface AlertasEstoque {
 export interface IProdutoRepository {
   upsertByCodigoErp(produto: Produto): Promise<Produto>;
   findByCodigoErp(codigoErp: string): Promise<Produto | null>;
+  /**
+   * QUAIS DOS NOSSOS CODIGOS APARECEM NESTE TEXTO — a pergunta invertida.
+   *
+   * Nasceu do leitor de legenda do WhatsApp. Ele reconhecia codigo pela FORMA
+   * (duas letras seguidas de digitos), e a base real desmente qualquer forma:
+   * medido na producao em 04/09/2026, dos 6.938 codigos ha 9 COM ESPACO dentro
+   * (`TABUA QUEIJO  LAGUIO`), 6 de UM caractere (`1`, `2`) e alguns sem digito
+   * nenhum (`PINGENTE`, `VASOITA`). Nenhum recorte por formato cobre isso.
+   *
+   * Devolve do MAIS LONGO para o mais curto, e a ordem e a regra: numa legenda
+   * com `1-25-3A-2` casa tambem o `1`, e quem vale e o maior.
+   *
+   * QUEM CHAMA AINDA PRECISA CONFERIR A BORDA. Esta consulta acha o codigo em
+   * qualquer posicao, inclusive no meio de outra palavra — o `1` esta dentro de
+   * `CO26185`. A checagem de borda fica em quem chama porque depende do que
+   * conta como separador naquele texto, e nao da tabela.
+   */
+  buscarCodigosPresentesEm(texto: string): Promise<string[]>;
   /** Identidade no ERP — imutavel, ao contrario do `codigo_erp`. */
   findByIdErp(idErp: string): Promise<Produto | null>;
   findAll(filtros: FiltroProduto): Promise<Produto[]>;
   findById(id: string): Promise<Produto | null>;
   save(produto: Produto): Promise<Produto>;
+  /**
+   * Grava SO a chave da foto propria. `null` limpa, e a peca volta a exibir a
+   * foto do ERP.
+   *
+   * Metodo proprio, e nao um campo no `save`, porque `save` e `upsert` passam
+   * pelo mesmo mapeamento que o ERP usa — e um dia alguem faria a foto subida
+   * pela loja viajar junto com uma sincronizacao. Aqui o UPDATE toca uma
+   * coluna so, e nao ha como levar outra no caminho.
+   */
+  definirFotoArquivo(id: string, chave: string | null): Promise<void>;
   // Persiste varios produtos numa unica transacao (all-or-nothing).
   saveMany(produtos: Produto[]): Promise<Produto[]>;
   remover(id: string): Promise<void>;

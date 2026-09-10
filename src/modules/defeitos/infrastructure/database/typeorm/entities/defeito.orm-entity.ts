@@ -17,6 +17,12 @@ export class DefeitoOrmEntity {
   @Column({ name: 'produto_id', type: 'uuid' })
   produtoId: string;
 
+  // De quem era a peca. NULL quando nao passou por cliente — defeito de
+  // fornecedor, quebra em loja. Ver a migracao 52.
+  @Index()
+  @Column({ name: 'cliente_id', type: 'uuid', nullable: true })
+  clienteId: string | null;
+
   @Index()
   @Column({
     type: 'enum',

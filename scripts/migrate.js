@@ -114,6 +114,18 @@ const MANIFESTO = {
   // referencia movimentacoes, que referencia operacoes: se ela existe, as
   // outras tres existem.
   '46_movimentacoes.sql':                 { tipo: 'tabela',     alvo: 'movimentacoes_pagamentos' },
+  '47_produto_foto_propria.sql':          { tipo: 'coluna',     alvo: 'produtos.foto_arquivo_id' },
+  '48_catalogo_capa.sql':                 { tipo: 'coluna',     alvo: 'catalogos.capa_referencia_id' },
+  '49_referencia_observacao.sql':         { tipo: 'coluna',     alvo: 'catalogo_referencias.observacao' },
+  '51_clientes_read_all.sql':             { tipo: 'permissao',  alvo: 'ADMIN|clientes:read_all' },
+  '52_ocorrencia_cliente_fotos.sql':      { tipo: 'tabela',     alvo: 'ocorrencia_fotos' },
+  '53_interacao_contato_whatsapp.sql':    { tipo: 'enum',       alvo: 'tipo_interacao|CONTATO_CLIENTE' },
+  '54_atendimentos_write.sql':             { tipo: 'permissao',  alvo: 'ADMIN|atendimentos:write' },
+  // Migracao de DADOS: nao cria objeto, preenche coluna. Nenhum marcador do
+  // manifesto descreve isso — fica de fora pelo mesmo motivo da 50.
+  // 50 nao cria objeto nenhum: so troca o COMMENT de uma coluna. Fica de fora
+  // pelo mesmo motivo da 43 — nenhum marcador serve, e inventar um 'comentario'
+  // para uma migracao unica seria mais maquinario do que ela merece.
 };
 
 // ---------------------------------------------------------------------------
@@ -320,6 +332,19 @@ async function existeMarcador(client, { tipo, alvo }) {
       const { rows } = await client.query(
         `SELECT 1 FROM role_permissions WHERE role_chave = $1 AND permissao = $2`,
         [papel, permissao],
+      );
+      return rows.length > 0;
+    }
+    // Migracao que so acrescenta valor a um ENUM do Postgres. Alvo no
+    // formato 'tipo|valor' — mesmo separador do 'permissao', pelo mesmo
+    // motivo de nao usar dois-pontos.
+    case 'enum': {
+      const [nomeDoTipo, valor] = alvo.split('|');
+      const { rows } = await client.query(
+        `SELECT 1 FROM pg_enum e
+           JOIN pg_type t ON t.oid = e.enumtypid
+          WHERE t.typname = $1 AND e.enumlabel = $2`,
+        [nomeDoTipo, valor],
       );
       return rows.length > 0;
     }

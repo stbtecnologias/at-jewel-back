@@ -11,15 +11,26 @@
  * a obrigacao — por isso nao ha validacao de nao-negatividade nem aqui nem no
  * banco.
  *
- * CONTRAPARTE: exatamente UMA de local, fornecedor, cliente ou vendedora. No
- * ERP essa dimensao e uma coluna de texto so, que guarda `Armario 01`, `Ana` e
- * `Fornecedor 1` misturados. Aqui cada uma e uma FK de verdade, e o invariante
- * de "exatamente uma" e garantido pelo CHECK `chk_estoque_local` — mas
- * tambem e validado aqui, para a chamada falhar com mensagem util antes de
- * chegar ao banco.
+ * ==========================================================================
+ * O SALDO TEM UM DONO SO: UM LOCAL NOSSO. (migracao 57, 10/09/2026)
+ *
+ * Ate a 56 eram quatro donos possiveis, exatamente um por linha: local,
+ * fornecedor, cliente ou vendedora. O integrador pediu para enviar so o local,
+ * e as outras tres colunas foram apagadas.
+ *
+ * O QUE ISSO CUSTOU: a segunda perna da partida dobrada acima nao tem mais
+ * onde morar — nao ha coluna para dizer A QUEM se deve. Negativo continua
+ * valido e continua significando obrigacao; o que se perde e o destinatario.
+ * Como remarcar isso ficou EM ABERTO com o integrador, e o caminho natural e o
+ * GRUPO de estoque, que ja diz a situacao do saldo e ja tem `Consignado`.
+ *
+ * Sumiram junto `localTipo` e `localId`: eram GENERATED no banco e existiam so
+ * para a UNIQUE composta pegar (tres das quatro colunas ficavam nulas, e no
+ * Postgres nulos nunca colidem entre si). Com um dono so, seriam a constante
+ * 'LOCAL' e uma copia do `localEstoqueId` — nao carregam informacao, e sairam
+ * tambem da resposta da API.
+ * ==========================================================================
  */
-export type LocalTipo = 'LOCAL' | 'FORNECEDOR' | 'CLIENTE' | 'VENDEDORA';
-
 export interface EstoqueProps {
   id?: string;
   /** Identidade no ERP: chave da tabela LA, imutavel. Chave da sincronizacao. */
@@ -29,14 +40,9 @@ export interface EstoqueProps {
   empresaId: string;
   grupoEstoqueId: string;
   produtoId: string;
-  localEstoqueId?: string | null;
-  fornecedorId?: string | null;
-  clienteId?: string | null;
-  vendedoraId?: string | null;
+  /** Onde a peca esta. Obrigatorio desde a migracao 57. */
+  localEstoqueId: string;
   quantidade: number;
-  /** Derivadas pelo banco (GENERATED). Nunca sao enviadas na escrita. */
-  localTipo?: LocalTipo;
-  localId?: string;
   atualizadoEm?: Date;
   criadoEm?: Date;
 }
@@ -48,13 +54,8 @@ export class Estoque {
   readonly empresaId: string;
   readonly grupoEstoqueId: string;
   readonly produtoId: string;
-  readonly localEstoqueId: string | null;
-  readonly fornecedorId: string | null;
-  readonly clienteId: string | null;
-  readonly vendedoraId: string | null;
+  readonly localEstoqueId: string;
   readonly quantidade: number;
-  readonly localTipo: LocalTipo | undefined;
-  readonly localId: string | undefined;
   readonly atualizadoEm: Date | undefined;
   readonly criadoEm: Date | undefined;
 
@@ -65,38 +66,14 @@ export class Estoque {
     this.empresaId = props.empresaId;
     this.grupoEstoqueId = props.grupoEstoqueId;
     this.produtoId = props.produtoId;
-    this.localEstoqueId = props.localEstoqueId ?? null;
-    this.fornecedorId = props.fornecedorId ?? null;
-    this.clienteId = props.clienteId ?? null;
-    this.vendedoraId = props.vendedoraId ?? null;
+    this.localEstoqueId = props.localEstoqueId;
     this.quantidade = props.quantidade;
-    this.localTipo = props.localTipo;
-    this.localId = props.localId;
     this.atualizadoEm = props.atualizadoEm;
     this.criadoEm = props.criadoEm;
   }
 
   static create(props: EstoqueProps): Estoque {
     return new Estoque(props);
-  }
-
-  /**
-   * Quantos locais vieram preenchidos. O invariante e "exatamente uma";
-   * o chamador decide a excecao a lancar, porque a mensagem util depende do
-   * contexto (criacao, atualizacao ou sincronizacao).
-   */
-  static contarLocais(props: {
-    localEstoqueId?: string | null;
-    fornecedorId?: string | null;
-    clienteId?: string | null;
-    vendedoraId?: string | null;
-  }): number {
-    return [
-      props.localEstoqueId,
-      props.fornecedorId,
-      props.clienteId,
-      props.vendedoraId,
-    ].filter((v) => v !== null && v !== undefined && v !== '').length;
   }
 
   toPublic(): Record<string, unknown> {
@@ -108,11 +85,6 @@ export class Estoque {
       grupoEstoqueId: this.grupoEstoqueId,
       produtoId: this.produtoId,
       localEstoqueId: this.localEstoqueId,
-      fornecedorId: this.fornecedorId,
-      clienteId: this.clienteId,
-      vendedoraId: this.vendedoraId,
-      localTipo: this.localTipo,
-      localId: this.localId,
       quantidade: this.quantidade,
       atualizadoEm: this.atualizadoEm,
       criadoEm: this.criadoEm,

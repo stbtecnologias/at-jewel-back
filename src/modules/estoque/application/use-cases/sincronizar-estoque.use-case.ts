@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { Estoque } from '../../domain/entities/estoque.entity';
 import { ESTOQUE_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { IEstoqueRepository } from '../../domain/ports/repositories/estoque-repository.port';
@@ -10,6 +10,9 @@ import type { CriarEstoqueInput } from './criar-estoque.use-case';
  * sobre a chave, e nao um POST que conflita na segunda rodada.
  *
  * Idempotente: N chamadas iguais deixam o banco no mesmo estado de uma.
+ *
+ * A validacao de "exatamente um local" saiu com a migracao 57 — ver
+ * `CriarEstoqueUseCase`. O `localEstoqueId` obrigatorio do DTO faz o trabalho.
  */
 @Injectable()
 export class SincronizarEstoqueUseCase {
@@ -19,11 +22,6 @@ export class SincronizarEstoqueUseCase {
   ) {}
 
   async execute(input: CriarEstoqueInput): Promise<Estoque> {
-    if (Estoque.contarLocais(input) !== 1) {
-      throw new BadRequestException(
-        'Informe exatamente um local: localEstoqueId, fornecedorId, clienteId ou vendedoraId',
-      );
-    }
     return this.repo.upsert(Estoque.create(input));
   }
 }

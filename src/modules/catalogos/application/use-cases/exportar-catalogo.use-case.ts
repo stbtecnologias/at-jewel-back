@@ -174,6 +174,7 @@ export class ExportarCatalogoUseCase {
     referencias: ReferenciaItem[],
   ): Promise<void> {
     const imagens = referencias.filter((r) => r.tipo === 'IMAGEM' && r.arquivoId);
+    const anotadas: { nome: string; observacao: string }[] = [];
 
     for (const [i, ref] of imagens.entries()) {
       const lida = await this.armazenamento.ler(ref.arquivoId!);
@@ -185,9 +186,30 @@ export class ExportarCatalogoUseCase {
       const base = this.semAcento(ref.valor.replace(/\.[^.]+$/, '')) || 'pagina';
       const extensao =
         lida.mime === 'image/jpeg' ? 'jpg' : lida.mime.split('/')[1] || 'png';
-      zip.append(lida.conteudo, {
-        name: `referencias/${ordem}-${base}.${extensao}`,
-      });
+      const nome = `${ordem}-${base}.${extensao}`;
+      zip.append(lida.conteudo, { name: `referencias/${nome}` });
+
+      if (ref.observacao?.trim()) {
+        anotadas.push({ nome, observacao: ref.observacao.trim() });
+      }
+    }
+
+    // AS NOTAS VAO JUNTO, ou nao servem para nada.
+    //
+    // A observacao de cada arquivo e escrita no painel por quem pediu a peca, e
+    // quem vai le-la e quem MONTA o catalogo — que trabalha a partir deste zip
+    // e nao abre o painel. Guardada so no banco, ela seria escrita para
+    // ninguem.
+    //
+    // Arquivo a parte, e nao no nome do arquivo: nome nao aguenta uma frase, e
+    // renomear quebraria a correspondencia com o que a tela mostra.
+    //
+    // SO EXISTE SE HOUVER NOTA. Um `observacoes.txt` vazio faria quem abre o
+    // zip procurar o que nao esta la.
+    if (anotadas.length > 0) {
+      const linhas = anotadas.map((a) => [a.nome, '  ' + a.observacao].join('\n'));
+      const texto = ['OBSERVACOES DAS REFERENCIAS', '', ...linhas, ''].join('\n');
+      zip.append(BOM + texto, { name: 'referencias/observacoes.txt' });
     }
   }
 

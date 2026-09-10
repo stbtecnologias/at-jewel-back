@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
+import { CatalogosModule } from '../catalogos/catalogos.module';
 import { AlertasEstoqueUseCase } from './application/use-cases/alertas-estoque.use-case';
 import { AtualizarProdutoUseCase } from './application/use-cases/atualizar-produto.use-case';
 import { BuscarProdutoUseCase } from './application/use-cases/buscar-produto.use-case';
@@ -13,11 +14,22 @@ import { RemoverProdutoUseCase } from './application/use-cases/remover-produto.u
 import { PRODUTO_REPOSITORY } from '../erp/domain/ports/injection-tokens';
 import { ProdutoOrmEntity } from '../erp/infrastructure/database/typeorm/entities/produto.orm-entity';
 import { ProdutoRepository } from '../erp/infrastructure/database/typeorm/repositories/produto.repository';
+import { FotoProdutoUseCase } from './application/use-cases/foto-produto.use-case';
+import { FotoErpService } from './infrastructure/foto-erp/foto-erp.service';
+import { FotoErpController } from './infrastructure/http/controllers/foto-erp.controller';
 import { ProdutosController } from './infrastructure/http/controllers/produtos.controller';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([ProdutoOrmEntity]), AuthModule],
-  controllers: [ProdutosController],
+  // CatalogosModule entra pelo ARMAZENAMENTO, que ele exporta. A porta e a
+  // mesma para foto de catalogo e foto de produto — o que muda e a pasta — e
+  // duplicar o provider aqui criaria um segundo cliente de S3 e uma segunda
+  // decisao de disco-ou-bucket para manter em sincronia.
+  imports: [
+    TypeOrmModule.forFeature([ProdutoOrmEntity]),
+    AuthModule,
+    CatalogosModule,
+  ],
+  controllers: [ProdutosController, FotoErpController],
   providers: [
     ListarProdutosUseCase,
     BuscarProdutoUseCase,
@@ -28,6 +40,8 @@ import { ProdutosController } from './infrastructure/http/controllers/produtos.c
     RemoverProdutoUseCase,
     FacetasProdutosUseCase,
     AlertasEstoqueUseCase,
+    FotoProdutoUseCase,
+    FotoErpService,
     { provide: PRODUTO_REPOSITORY, useClass: ProdutoRepository },
   ],
   // O canal interno de WhatsApp consulta catalogo pela vendedora.

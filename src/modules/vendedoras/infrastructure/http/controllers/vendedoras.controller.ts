@@ -181,6 +181,7 @@ export class VendedorasController {
       especialidades: dto.especialidades,
       email: dto.email,
       whatsappInterno: dto.whatsappInterno,
+      whatsappExterno: dto.whatsappExterno,
       adminUserId: dto.adminUserId,
     });
     return v.toPublic();
@@ -199,10 +200,12 @@ export class VendedorasController {
       nome: dto.nome,
       tipo: dto.tipo,
       ativo: dto.ativo,
+      codigoErp: dto.codigoErp,
       statusDisponibilidade: dto.statusDisponibilidade,
       especialidades: dto.especialidades,
       email: dto.email,
       whatsappInterno: dto.whatsappInterno,
+      whatsappExterno: dto.whatsappExterno,
       adminUserId: dto.adminUserId,
     });
     return v.toPublic();

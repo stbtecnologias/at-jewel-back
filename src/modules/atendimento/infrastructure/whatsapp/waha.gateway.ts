@@ -1,11 +1,28 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { IWhatsappGateway } from '../../domain/ports/whatsapp-gateway.port';
+import { montarUrlDeArquivo } from './arquivo-do-waha';
 
 /**
  * Gateway de WhatsApp via WAHA (WhatsApp HTTP API, self-hosted).
  * Envia mensagens pela send API do WAHA, autenticando por `X-Api-Key`.
  * Config via env: WAHA_BASE_URL, WAHA_API_KEY, WAHA_SESSION.
+ *
+ * ==========================================================================
+ * ESTE ARQUIVO CONTINUA PRESO A UMA SESSAO SO, E ISSO E UMA GARANTIA.
+ *
+ * Em 08/09/2026 as sessoes viraram varias — uma por vendedora, alem da loja —
+ * e o `WahaAdminClient` passou a receber qual delas como argumento. Aqui NAO.
+ *
+ * A diferenca e que este e o objeto que FALA. Enquanto ele so souber enviar
+ * pelo `WAHA_SESSION`, nao existe caminho de codigo — nem por engano, nem por
+ * uma tool de agente mal escrita amanha — capaz de mandar mensagem pelo numero
+ * de uma vendedora. A limitacao E o mecanismo de seguranca.
+ *
+ * E a terceira das tres camadas descritas em `WahaAdminClient.conectar`. Se um
+ * dia for preciso enviar por outra sessao, isso e uma decisao de produto sobre
+ * a IA falar no lugar de uma pessoa — nao um parametro a mais.
+ * ==========================================================================
  */
 @Injectable()
 export class WahaGateway implements IWhatsappGateway {
@@ -206,29 +223,3 @@ export class WahaGateway implements IWhatsappGateway {
   }
 }
 
-/**
- * Recompoe a URL do arquivo sobre o host que NOS alcancamos.
- *
- * O WAHA devolve `http://waha:3000/api/files/...` — hostname da rede Docker
- * dele, que daqui nao resolve. Ficamos so com o caminho.
- *
- * E o caminho e conferido de proposito. O `url` chega de um payload externo;
- * mesmo com o webhook protegido por token, aceitar qualquer caminho faria este
- * metodo buscar o que mandassem, com a nossa `X-Api-Key` no cabecalho. Aceitar
- * so `/api/files/` custa uma linha e fecha isso.
- *
- * @returns a URL a usar, ou `null` se o caminho nao for de arquivo do WAHA.
- */
-function montarUrlDeArquivo(baseUrl: string, url: string): string | null {
-  let caminho: string;
-  try {
-    const u = new URL(url);
-    caminho = u.pathname + u.search;
-  } catch {
-    // Veio caminho relativo em vez de URL completa — tambem serve.
-    caminho = url.startsWith('/') ? url : `/${url}`;
-  }
-
-  if (!caminho.startsWith('/api/files/')) return null;
-  return `${baseUrl.replace(/\/$/, '')}${caminho}`;
-}

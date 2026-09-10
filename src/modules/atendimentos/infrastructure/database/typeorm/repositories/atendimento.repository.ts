@@ -15,7 +15,9 @@ import type {
   IAtendimentoRepository,
   Interacao,
   LinhaResumoVendedora,
+  PontoDaLinha,
   ResumoAuditoria,
+  TipoPonto,
 } from '../../../../domain/ports/repositories/atendimento-repository.port';
 import { ETAPAS_ATENDIMENTO } from '../../../../domain/ports/repositories/atendimento-repository.port';
 import type {
@@ -26,6 +28,7 @@ import type {
 } from '../../../../domain/entities/enums';
 import { AtendimentoInteracaoOrmEntity } from '../entities/atendimento-interacao.orm-entity';
 import { AtendimentoOrmEntity } from '../entities/atendimento.orm-entity';
+import { ClientePerfilOrmEntity } from '../../../../../clientes/infrastructure/database/typeorm/entities/cliente-perfil.orm-entity';
 import { escaparCuringas } from '../../../../../../shared/database/sql/escapar-curingas';
 
 @Injectable()
@@ -35,6 +38,11 @@ export class AtendimentoRepository implements IAtendimentoRepository {
     private readonly repo: Repository<AtendimentoOrmEntity>,
     @InjectRepository(AtendimentoInteracaoOrmEntity)
     private readonly interacoes: Repository<AtendimentoInteracaoOrmEntity>,
+    // So para decifrar o WhatsApp da cliente na linha do tempo: e o que
+    // permite o ponto de conversa levar ate a conversa. A coluna e cifrada,
+    // entao SQL cru devolveria o texto embaralhado.
+    @InjectRepository(ClientePerfilOrmEntity)
+    private readonly perfis: Repository<ClientePerfilOrmEntity>,
   ) {}
 
   async buscarAbertoPorCliente(clienteId: string): Promise<Atendimento | null> {
@@ -181,6 +189,58 @@ export class AtendimentoRepository implements IAtendimentoRepository {
 
   async fechar(atendimentoId: string, desfecho: DesfechoAtendimento): Promise<void> {
     await this.repo.update({ id: atendimentoId }, { fechadoEm: new Date(), desfecho });
+  }
+
+  async reabrir(atendimentoId: string): Promise<void> {
+    // Os DOIS voltam a nulo juntos: o CHECK da migracao 35 exige que
+    // `fechado_em` e `desfecho` estejam ambos preenchidos ou ambos vazios.
+    await this.repo.update(
+      { id: atendimentoId },
+      { fechadoEm: null, desfecho: null },
+    );
+  }
+
+  /**
+   * Ver a porta para a regra. Aqui vale registrar o SQL:
+   *
+   * O `JOIN LATERAL` traz a hora do ultimo contato pelo corporativo — e o
+   * `ult.quando IS NOT NULL` e o que exclui quem nunca teve contato por la,
+   * que e a maioria e nao pode ser fechada por esta regra.
+   *
+   * Os dois `NOT EXISTS` sao as duas excecoes: compromisso marcado no futuro,
+   * e pendencia nossa ainda em aberto.
+   */
+  async listarSilenciosos(horas: number, limite: number): Promise<string[]> {
+    const linhas: { id: string }[] = await this.repo.manager.query(
+      `
+      SELECT a.id
+      FROM atendimentos a
+      JOIN LATERAL (
+        SELECT max(COALESCE(i.ocorrido_em, i.criado_em)) AS quando
+        FROM atendimento_interacoes i
+        WHERE i.atendimento_id = a.id
+          AND i.tipo IN ('CONTATO_CLIENTE', 'RESPOSTA_VENDEDORA')
+      ) ult ON TRUE
+      WHERE a.fechado_em IS NULL
+        AND ult.quando IS NOT NULL
+        AND ult.quando < now() - make_interval(hours => $1)
+        AND NOT EXISTS (
+          SELECT 1 FROM atendimento_interacoes c
+          WHERE c.atendimento_id = a.id
+            AND c.combinado_em IS NOT NULL
+            AND c.combinado_em > now()
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM atendimento_interacoes p
+          WHERE p.atendimento_id = a.id
+            AND p.status IN ('PENDENTE', 'ENVIADA', 'AGUARDANDO_RESPOSTA')
+        )
+      ORDER BY ult.quando ASC
+      LIMIT $2
+      `,
+      [horas, limite],
+    );
+    return linhas.map((l) => l.id);
   }
 
   async listarInteracoes(atendimentoId: string): Promise<Interacao[]> {
@@ -390,6 +450,228 @@ export class AtendimentoRepository implements IAtendimentoRepository {
     return [...baldes.values()].sort((a, b) => b.inicio.getTime() - a.inicio.getTime());
   }
 
+  /**
+   * A LINHA DO TEMPO — MEL-14.
+   *
+   * ========================================================================
+   * CINCO FONTES, UMA REGUA.
+   *
+   * Nao ha tabela de eventos: cada UNION abaixo le uma tabela que ja grava o
+   * acontecimento por conta propria. Ver `PontoDaLinha` para o porque.
+   *
+   *   1. atendimento_interacoes  — o dia a dia: encaminhamento, agendamento,
+   *      lembrete, cobranca, relato, remarcacao, nota
+   *   2. as mesmas interacoes com status EXPIRADA — o unico ponto VERMELHO:
+   *      nao e "deu ruim", e "venceu e ninguem respondeu"
+   *   3. atendimentos fechados    — o desfecho do episodio
+   *   4. vendas                   — a venda registrada
+   *   5. consignacoes             — a peca que saiu com a vendedora
+   *
+   * `defeitos_devolucoes` FICOU DE FORA, e nao por escolha: a tabela nao tem
+   * `vendedora_id`. Nao ha como dizer de quem e a ocorrencia, e chutar pelo
+   * produto seria inventar atribuicao.
+   * ========================================================================
+   *
+   * QUAL INSTANTE POE O PONTO NA REGUA: `ocorrido_em` quando existe (foi
+   * quando aconteceu de verdade), senao `notificar_em` (foi quando era para
+   * acontecer), senao `criado_em`. O `combinado_em` NUNCA posiciona — ele e o
+   * horario marcado COM A CLIENTE, que costuma ser outro dia, e usa-lo poria
+   * o ponto num dia em que a vendedora nao fez nada.
+   */
+  async linhaDoTempo(de: Date, ate: Date): Promise<PontoDaLinha[]> {
+    const linhas: LinhaDaLinhaSql[] = await this.repo.manager.query(
+      `
+      WITH janela AS (SELECT $1::timestamptz AS de, $2::timestamptz AS ate)
+
+      -- 1 + 2. As interacoes do periodo.
+      SELECT
+        'interacao:' || i.id            AS id,
+        CASE
+          WHEN i.status = 'EXPIRADA'    THEN 'EXPIRADA'
+          WHEN i.tipo = 'ENCAMINHADO'   THEN 'ENCAMINHADO'
+          WHEN i.tipo = 'REAGENDAMENTO' THEN 'REAGENDAMENTO'
+          WHEN i.tipo = 'RELATO'        THEN 'RELATO'
+          WHEN i.tipo = 'NOTA'          THEN 'NOTA'
+          WHEN i.tipo = 'CONTATO_CLIENTE'    THEN 'CONTATO_CLIENTE'
+          WHEN i.tipo = 'RESPOSTA_VENDEDORA' THEN 'RESPOSTA_VENDEDORA'
+          WHEN i.tipo = 'LEMBRETE'      THEN 'LEMBRETE'
+          -- COBRANCA com horario marcado e, na pratica, um agendamento.
+          WHEN i.combinado_em IS NOT NULL THEN 'AGENDAMENTO'
+          ELSE 'COBRANCA'
+        END                             AS tipo,
+        a.vendedora_id                  AS vendedora_id,
+        vd.nome                         AS vendedora_nome,
+        COALESCE(i.ocorrido_em, i.notificar_em, i.criado_em) AS em,
+        a.cliente_id                    AS cliente_id,
+        cl.nome                         AS cliente_nome,
+        i.combinado_em                  AS combinado_em,
+        NULL::numeric                   AS valor,
+        NULL::text                      AS desfecho,
+        a.id                            AS atendimento_id
+      FROM atendimento_interacoes i
+      JOIN atendimentos a  ON a.id = i.atendimento_id
+      JOIN vendedoras vd   ON vd.id = a.vendedora_id
+      JOIN clientes cl     ON cl.id = a.cliente_id
+      , janela j
+      WHERE COALESCE(i.ocorrido_em, i.notificar_em, i.criado_em) >= j.de
+        AND COALESCE(i.ocorrido_em, i.notificar_em, i.criado_em) <  j.ate
+
+      UNION ALL
+
+      -- 3. O episodio que se fechou.
+      SELECT
+        'fechamento:' || a.id, 'FECHAMENTO',
+        a.vendedora_id, vd.nome,
+        a.fechado_em,
+        a.cliente_id, cl.nome,
+        NULL::timestamptz, NULL::numeric,
+        a.desfecho::text,
+        a.id
+      FROM atendimentos a
+      JOIN vendedoras vd ON vd.id = a.vendedora_id
+      JOIN clientes cl   ON cl.id = a.cliente_id
+      , janela j
+      WHERE a.fechado_em >= j.de AND a.fechado_em < j.ate
+
+      UNION ALL
+
+      -- 4. A venda registrada. Sem cliente: 'vendas' nao aponta para ele.
+      SELECT
+        'venda:' || v.id, 'VENDA',
+        v.vendedora_id, vd.nome,
+        v.data_venda,
+        NULL::uuid, NULL::text,
+        NULL::timestamptz, v.valor_total,
+        NULL::text, NULL::uuid
+      FROM vendas v
+      JOIN vendedoras vd ON vd.id = v.vendedora_id
+      , janela j
+      WHERE v.data_venda >= j.de AND v.data_venda < j.ate
+        AND v.vendedora_id IS NOT NULL
+
+      UNION ALL
+
+      -- 5. A peca que saiu com ela.
+      SELECT
+        'consignacao:' || c.id, 'CONSIGNACAO',
+        c.vendedora_id, vd.nome,
+        c.data_saida,
+        NULL::uuid, NULL::text,
+        c.data_prevista_retorno, NULL::numeric,
+        NULL::text, NULL::uuid
+      FROM consignacoes c
+      JOIN vendedoras vd ON vd.id = c.vendedora_id
+      , janela j
+      WHERE c.data_saida >= j.de AND c.data_saida < j.ate
+        AND c.vendedora_id IS NOT NULL
+
+      ORDER BY em ASC
+      `,
+      [de, ate],
+    );
+
+    // O RELATO PASSA PELO ORM, NUNCA PELO SQL ACIMA: a coluna e cifrada, e o
+    // SQL cru devolveria o texto embaralhado. Mesmo motivo (e mesmo padrao)
+    // de `listarAuditoria`. Uma consulta so — nao e N+1.
+    const idsDeInteracao = linhas
+      .filter((l) => l.id.startsWith('interacao:'))
+      .map((l) => l.id.slice('interacao:'.length));
+    const relatos = await this.relatosDasInteracoes(idsDeInteracao);
+
+    // O CHAT SO INTERESSA AOS PONTOS DE CONVERSA. Buscar o telefone de toda
+    // cliente do dia seria decifrar PII a toa — e um agendamento nao tem
+    // conversa atras dele para abrir.
+    const idsDeConversa = [
+      ...new Set(
+        linhas
+          .filter(
+            (l) =>
+              l.tipo === 'CONTATO_CLIENTE' || l.tipo === 'RESPOSTA_VENDEDORA',
+          )
+          .map((l) => l.cliente_id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const chats = await this.chatsDosClientes(idsDeConversa);
+
+    return linhas.map((l) => ({
+      id: l.id,
+      tipo: l.tipo,
+      vendedoraId: l.vendedora_id,
+      vendedoraNome: l.vendedora_nome,
+      em: l.em,
+      clienteId: l.cliente_id,
+      clienteNome: l.cliente_nome,
+      combinadoEm: l.combinado_em,
+      valor: l.valor == null ? null : Number(l.valor),
+      desfecho: l.desfecho,
+      atendimentoId: l.atendimento_id,
+      relato: relatos.get(l.id.slice('interacao:'.length)) ?? null,
+      // `vend-<uuid>` e o mesmo nome que o `ConexoesService` monta. Aqui ele
+      // e reconstruido em vez de importado para nao amarrar este modulo ao
+      // de atendimento — se o formato mudar, muda nos dois.
+      sessao: chats.has(l.cliente_id ?? "")
+        ? `vend-${l.vendedora_id}`
+        : null,
+      chatId: chats.get(l.cliente_id ?? '') ?? null,
+    }));
+  }
+
+  /**
+   * O dia mais recente em que ALGUEM fez alguma coisa.
+   *
+   * Serve so para o recuo do `ConsultarLinhaDoTempoUseCase`: sem ele, abrir a
+   * tela num dia parado mostraria uma regua vazia, que parece defeito. Olha
+   * as mesmas cinco fontes da linha, mas so pela data — e barato.
+   */
+  async ultimoDiaComMovimento(): Promise<Date | null> {
+    const linhas: { dia: Date | null }[] = await this.repo.manager.query(`
+      SELECT max(dia)::timestamptz AS dia FROM (
+        SELECT max(date_trunc('day', COALESCE(i.ocorrido_em, i.notificar_em, i.criado_em))) AS dia
+          FROM atendimento_interacoes i
+        UNION ALL
+        SELECT max(date_trunc('day', a.fechado_em)) FROM atendimentos a
+        UNION ALL
+        SELECT max(date_trunc('day', v.data_venda)) FROM vendas v WHERE v.vendedora_id IS NOT NULL
+        UNION ALL
+        SELECT max(date_trunc('day', c.data_saida)) FROM consignacoes c WHERE c.vendedora_id IS NOT NULL
+      ) t
+    `);
+    return linhas[0]?.dia ?? null;
+  }
+
+  /**
+   * O chat de cada cliente: o WhatsApp dela no formato do WhatsApp.
+   *
+   * Passa pelo ORM porque a coluna e cifrada. Uma consulta so para a janela
+   * inteira — nao e N+1.
+   */
+  private async chatsDosClientes(ids: string[]): Promise<Map<string, string>> {
+    if (ids.length === 0) return new Map();
+    const perfis = await this.perfis.find({ where: { clienteId: In(ids) } });
+    const mapa = new Map<string, string>();
+    for (const p of perfis) {
+      const digitos = (p.whatsapp ?? '').replace(/D/g, '');
+      if (!digitos) continue;
+      // O WAHA identifica a conversa por `<numero com DDI>@c.us`. Sem DDI o
+      // chat simplesmente nao existe do lado dele.
+      const comDdi = digitos.startsWith('55') ? digitos : `55${digitos}`;
+      mapa.set(p.clienteId, `${comDdi}@c.us`);
+    }
+    return mapa;
+  }
+
+  /** O relato de cada interacao, decifrado pelo ORM. Vazio se nao houver ids. */
+  private async relatosDasInteracoes(
+    ids: string[],
+  ): Promise<Map<string, string>> {
+    if (ids.length === 0) return new Map();
+    const linhas = await this.interacoes.find({ where: { id: In(ids) } });
+    const mapa = new Map<string, string>();
+    for (const i of linhas) if (i.relato) mapa.set(i.id, i.relato);
+    return mapa;
+  }
+
   /** O relato mais recente de cada atendimento, decifrado pelo ORM. */
   private async ultimosRelatos(ids: string[]): Promise<Map<string, string>> {
     const linhas = await this.interacoes.find({
@@ -403,6 +685,21 @@ export class AtendimentoRepository implements IAtendimentoRepository {
     }
     return mapa;
   }
+}
+
+/** Linha crua da uniao da linha do tempo. */
+interface LinhaDaLinhaSql {
+  id: string;
+  tipo: TipoPonto;
+  vendedora_id: string;
+  vendedora_nome: string;
+  em: Date;
+  cliente_id: string | null;
+  cliente_nome: string | null;
+  combinado_em: Date | null;
+  valor: string | null;
+  desfecho: string | null;
+  atendimento_id: string | null;
 }
 
 /** Linha crua da view, com os nomes ja juntados. */

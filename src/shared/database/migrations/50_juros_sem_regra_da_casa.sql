@@ -1,0 +1,35 @@
+-- ============================================================
+-- A.T. JEWEL — Migracao 50: ausencia de juro passa a valer ZERO
+--
+-- NAO MUDA DADO NENHUM. Muda o COMENTARIO da coluna, que passou a
+-- descrever uma regra que nao existe mais.
+--
+-- Ate 04/09/2026, `juros_percentual` NULL significava "ninguem
+-- informou, use a regra da casa" — dividir o a vista por 0,80 em
+-- 10X e por 0,90 em 6X, o que embute 25%. A regra tinha sido
+-- levantada em 25 de 25 pecas dos catalogos impressos, entao era
+-- verdadeira sobre o que a casa fazia.
+--
+-- Decisao do Lucas em 04/09/2026: sem juro informado, NAO HA JURO.
+--
+--   "se ela nao passar nada do whats sobre juros, vai ser o valor
+--    geral — 1000 reais a peca. Se ela mandar apenas 10x, por
+--    padrao e sem juros. Se ela colocar, ai aplica."
+--
+-- CONSEQUENCIA, e ela foi aceita de olhos abertos: peca ja
+-- cadastrada com NULL passa a ser impressa mais barata. R$35.920,00
+-- em 10X saia 10 X R$4.490,00 e passa a sair 10 X R$3.592,00.
+-- Nao ha correcao de dados porque nao ha dado errado — o que mudou
+-- foi a conta feita na hora de exibir. Quem quiser o acrescimo
+-- escreve o percentual na legenda.
+--
+-- NULL E 0 passaram a dar o mesmo numero e a coluna continua
+-- distinguindo os dois: um e "ninguem informou", o outro e "foi
+-- dito que nao tem". Deixou de mudar a conta; nao deixou de ser
+-- informacao.
+--
+-- Origem: [SYS] — dado operacional. Sem PII.
+-- ============================================================
+
+COMMENT ON COLUMN catalogo_fotos.juros_percentual IS
+  '[SYS] Juro do parcelamento em %, sobre o a vista. 0 = dito que nao tem. NULL = nao informado. Desde 04/09/2026 os dois valem ZERO na conta.';

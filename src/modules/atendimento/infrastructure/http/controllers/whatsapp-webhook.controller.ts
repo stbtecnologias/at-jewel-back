@@ -11,9 +11,11 @@ import { ConfigService } from '@nestjs/config';
 import { RotearMensagemInternaUseCase } from '../../../../atendimentos/application/use-cases/rotear-mensagem-interna.use-case';
 import { WHATSAPP_GATEWAY } from '../../../domain/ports/injection-tokens';
 import type { IWhatsappGateway } from '../../../domain/ports/whatsapp-gateway.port';
-import { extrairMensagemRecebida } from '../waha-webhook';
+import { contatoDoEvento, extrairMensagemRecebida, sessaoDoEvento } from '../waha-webhook';
 import { WahaAuthGuard } from '../guards/waha-auth.guard';
 import { TriagemClient } from '../../whatsapp/triagem.client';
+import { ConexoesService } from '../../../application/conexoes.service';
+import { RegistrarContatoWhatsappUseCase } from '../../../../atendimentos/application/use-cases/registrar-contato-whatsapp.use-case';
 
 /**
  * Webhook que o WAHA chama a cada evento de WhatsApp. Rota PUBLICA (sem JWT),
@@ -29,6 +31,8 @@ export class WhatsappWebhookController {
 
   constructor(
     private readonly triagem: TriagemClient,
+    private readonly conexoes: ConexoesService,
+    private readonly registrarContato: RegistrarContatoWhatsappUseCase,
     private readonly processar: RotearMensagemInternaUseCase,
     private readonly config: ConfigService,
     @Inject(WHATSAPP_GATEWAY)
@@ -39,6 +43,29 @@ export class WhatsappWebhookController {
   @UseGuards(WahaAuthGuard)
   @HttpCode(200)
   async webhook(@Body() body: unknown) {
+    // ======================================================================
+    // A PRIMEIRA PERGUNTA E "DE QUEM E ESTE NUMERO?", E ELA VEM ANTES DE TUDO.
+    //
+    // So a sessao da LOJA fala com a IA. A mensagem que passa pelo numero de
+    // uma vendedora e REGISTRADA e nunca respondida: do outro lado esta uma
+    // cliente conversando com a vendedora de verdade, e responder ali seria a
+    // Anastasia falando por cima dela, numa conversa que nao e nossa.
+    //
+    // CAPTURAR NAO E RESPONDER, e o desvio abaixo e a linha que separa as
+    // duas coisas: `registrarSemResponder` nao chama agente nenhum e nao
+    // envia nada. A outra garantia esta no `WahaGateway`, que so sabe enviar
+    // pelo `WAHA_SESSION` — nao existe caminho de codigo capaz de falar pelo
+    // numero dela, nem por engano.
+    //
+    // Sem `session` no payload, o evento e tratado como da loja: e o formato
+    // antigo, de quando havia uma sessao so, e recusar quebraria o canal
+    // inteiro por causa de uma versao de payload.
+    // ======================================================================
+    const sessao = sessaoDoEvento(body);
+    if (sessao !== null && sessao !== this.conexoes.sessaoDaLoja) {
+      return this.registrarSemResponder(sessao, body);
+    }
+
     const msg = extrairMensagemRecebida(body);
     // Evento ignorado (status, ack, mensagem nossa, grupo, etc.): apenas ack.
     if (!msg) return { ok: true, ignorado: true };
@@ -98,4 +125,50 @@ export class WhatsappWebhookController {
       return { ok: true, erro: true };
     }
   }
+  /**
+   * A mensagem que passou pelo numero de uma vendedora: registra e cala.
+   *
+   * ======================================================================
+   * NENHUM AGENTE E CHAMADO AQUI, E NENHUMA MENSAGEM SAI.
+   *
+   * Este metodo existe justamente para ser o caminho CURTO — dele nao se
+   * alcanca o roteador, a triagem nem o `enviarTexto`. Quem for mexer aqui um
+   * dia: acrescentar uma resposta neste ponto quebra a decisao de 08/09/2026,
+   * que e a IA nao falar no lugar da vendedora com a cliente dela.
+   * ======================================================================
+   *
+   * O CONTEUDO da mensagem nao e lido nem gravado. So o fato: quem falou,
+   * quando, e em que atendimento — ver `RegistrarContatoWhatsappUseCase`.
+   */
+  private async registrarSemResponder(sessao: string, body: unknown) {
+    const vendedoraId = this.conexoes.vendedoraDaSessao(sessao);
+    if (!vendedoraId) {
+      // Sessao que nao e da loja nem casa com `vend-<uuid>`. Nao deveria
+      // existir; se existir, o silencio continua sendo a resposta certa.
+      return { ok: true, ignorado: true, motivo: 'sessao_desconhecida' };
+    }
+
+    const contato = contatoDoEvento(body);
+    if (!contato) {
+      return { ok: true, ignorado: true, motivo: 'evento_sem_contato' };
+    }
+
+    try {
+      const r = await this.registrarContato.execute({
+        vendedoraId,
+        telefone: contato.telefone,
+        daVendedora: contato.daVendedora,
+        em: contato.em,
+      });
+      return r.registrado
+        ? { ok: true, registrado: true, motivo: r.tipo }
+        : { ok: true, ignorado: true, motivo: r.motivo };
+    } catch (err) {
+      // 200 mesmo em erro, como no ramo da loja: o WAHA reenviaria o evento e
+      // a rajada de retentativas seria pior que o ponto perdido.
+      this.logger.error(`Falha ao registrar contato no WhatsApp: ${String(err)}`);
+      return { ok: true, erro: true };
+    }
+  }
+
 }

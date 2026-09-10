@@ -14,6 +14,8 @@ export interface VendedoraProps {
   emailHash?: string | null;
   whatsappInterno?: string | null;
   whatsappInternoHash?: string | null;
+  whatsappExterno?: string | null;
+  whatsappExternoHash?: string | null;
   adminUserId?: string | null;
   criadoEm?: Date;
   atualizadoEm?: Date;
@@ -35,6 +37,33 @@ export class Vendedora {
   readonly whatsappInterno: string | null;
   readonly whatsappInternoHash: string | null;
 
+  /**
+   * O numero CORPORATIVO — o chip que a empresa entregou.
+   *
+   * ======================================================================
+   * A DIFERENCA PARA O INTERNO NAO E O INTERLOCUTOR. E A VISIBILIDADE.
+   *
+   * A migracao 39 descreveu como "interno fala com a IA, externo fala com o
+   * cliente", e isso esta incompleto: a cliente fala com ela nos DOIS — o
+   * interno e o celular PESSOAL, e ela atende por ele tambem.
+   *
+   * O que separa um do outro e o que o sistema enxerga (Lucas, 08/09/2026):
+   *
+   *   interno     — nao lemos nada. O que se sabe dali e o que ela CONTA a
+   *                 Elena quando perguntamos.
+   *   corporativo — e nosso, fica pareado no painel, e a IA acompanha o
+   *                 atendimento sem precisar perguntar nada a ela.
+   *
+   * E por isso que SO o corporativo vira sessao de WhatsApp. Ler o celular
+   * pessoal de alguem seria outra conversa, e ninguem a teve.
+   * ======================================================================
+   *
+   * A coluna existe desde a migracao 39 (25/08) e ficou morta ate 08/09:
+   * nao havia onde digitar.
+   */
+  readonly whatsappExterno: string | null;
+  readonly whatsappExternoHash: string | null;
+
   readonly adminUserId: string | null;
   readonly criadoEm: Date | undefined;
   readonly atualizadoEm: Date | undefined;
@@ -52,6 +81,8 @@ export class Vendedora {
     this.emailHash = props.emailHash ?? null;
     this.whatsappInterno = props.whatsappInterno ?? null;
     this.whatsappInternoHash = props.whatsappInternoHash ?? null;
+    this.whatsappExterno = props.whatsappExterno ?? null;
+    this.whatsappExternoHash = props.whatsappExternoHash ?? null;
     this.adminUserId = props.adminUserId ?? null;
     this.criadoEm = props.criadoEm;
     this.atualizadoEm = props.atualizadoEm;
@@ -73,6 +104,7 @@ export class Vendedora {
       especialidades: this.especialidades,
       email: this.email,
       whatsappInterno: this.whatsappInterno,
+      whatsappExterno: this.whatsappExterno,
       adminUserId: this.adminUserId,
       criadoEm: this.criadoEm,
       atualizadoEm: this.atualizadoEm,

@@ -142,7 +142,8 @@ describe('MontarCatalogoUseCase', () => {
     const pdf = pdfGravado();
 
     expect(pdf).toContain('R$35.920,00 a vista');
-    expect(pdf).toContain('10 X R$4.490,00');
+    // 35.920 / 10, sem acréscimo: a divisão por 0,80 caiu em 04/09/2026.
+    expect(pdf).toContain('10 X R$3.592,00');
   });
 
   it('o descritivo sai no padrão impresso, em caixa alta', async () => {
@@ -208,7 +209,7 @@ describe('MontarCatalogoUseCase', () => {
     expect(pdf).not.toContain('a vista');
   });
 
-  it('o juro informado manda na parcela, e o NULL cai na regra da casa', async () => {
+  it('o juro informado manda na parcela; sem ele, não há acréscimo', async () => {
     repo.buscarPorId.mockResolvedValue(
       CATALOGO([
         FOTO({ id: 'f-1', codigoErp: 'COM', precoAVista: 44900, parcelas: 12, jurosPercentual: 15 }),
@@ -219,10 +220,12 @@ describe('MontarCatalogoUseCase', () => {
     await useCase.execute('cat-1');
     const pdf = pdfGravado();
 
-    // 44.900 x 1,15 / 12
+    // 44.900 x 1,15 / 12 — o percentual escrito na legenda.
     expect(pdf).toContain('12 X R$4.302,92');
-    // 44.900 / 0,80 / 10 — a regra antiga, que NAO foi traduzida para %.
-    expect(pdf).toContain('10 X R$5.612,50');
+    // 44.900 / 10, e nada mais. Até 04/09/2026 esta linha saía R$5.612,50,
+    // porque o valor era dividido por 0,80 antes.
+    expect(pdf).toContain('10 X R$4.490,00');
+    expect(pdf).not.toContain('R$5.612,50');
   });
 
   it('mais de oito peças abrem uma página nova', async () => {

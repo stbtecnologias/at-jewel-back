@@ -8,6 +8,7 @@ import { BuscarClienteUseCase } from './application/use-cases/buscar-cliente.use
 import { BuscarClientePorIdErpUseCase } from './application/use-cases/buscar-cliente-por-id-erp.use-case';
 import { BuscarClientePorWhatsappUseCase } from './application/use-cases/buscar-cliente-por-whatsapp.use-case';
 import { BuscarHistoricoClienteUseCase } from './application/use-cases/buscar-historico-cliente.use-case';
+import { EscopoClientesService } from './application/escopo-clientes.service';
 import { CriarClienteUseCase } from './application/use-cases/criar-cliente.use-case';
 import { DistribuicaoTiersUseCase } from './application/use-cases/distribuicao-tiers.use-case';
 import { ListarClientesUseCase } from './application/use-cases/listar-clientes.use-case';
@@ -33,6 +34,7 @@ import { ClientesController } from './infrastructure/http/controllers/clientes.c
   controllers: [ClientesController],
   providers: [
     CriarClienteUseCase,
+    EscopoClientesService,
     BuscarClienteUseCase,
     BuscarClientePorIdErpUseCase,
     BuscarClientePorWhatsappUseCase,

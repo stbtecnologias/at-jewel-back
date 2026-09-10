@@ -291,4 +291,127 @@ export interface IAtendimentoRepository {
     filtros: Pick<FiltroAuditoria, 'de' | 'ate' | 'etapa' | 'vendedoraId'>,
     granularidade: GranularidadeSerie,
   ): Promise<BucketAuditoria[]>;
+
+  /**
+   * Tudo o que aconteceu com cada vendedora dentro de uma janela, ponto a
+   * ponto e com hora — a materia-prima da Linha do Tempo (MEL-14).
+   *
+   * Diferente de `serieAuditoria`, que CONTA por balde. Aqui nada e agregado:
+   * cada linha e um acontecimento, porque a tela plota acontecimentos.
+   */
+  linhaDoTempo(de: Date, ate: Date): Promise<PontoDaLinha[]>;
+
+  /**
+   * Desfaz o fechamento: `fechado_em` e `desfecho` voltam a nulo.
+   *
+   * ======================================================================
+   * ISTO E A REDE EMBAIXO DO FECHAMENTO AUTOMATICO.
+   *
+   * Ate 08/09/2026 nao existia — e nao precisava: quem fechava era a
+   * vendedora, dizendo "vendi", e ela errar sobre a propria venda e raro.
+   *
+   * Com a leitura da conversa fechando sozinha (MEL-15), um engano do modelo
+   * tira o atendimento da fila: para de ser cobrado, some das pendencias, e
+   * a cliente cai do acompanhamento. Sem erro nenhum na tela — o atendimento
+   * so some. Poder desfazer e o que torna o fechamento automatico aceitavel.
+   * ======================================================================
+   */
+  reabrir(atendimentoId: string): Promise<void>;
+
+  /**
+   * Atendimentos que morreram no silencio do numero CORPORATIVO.
+   *
+   * ======================================================================
+   * SO VALE ONDE DA PARA VER O SILENCIO.
+   *
+   * A regra exige ter havido contato pelo corporativo (CONTATO_CLIENTE ou
+   * RESPOSTA_VENDEDORA). No celular pessoal nao lemos nada, entao "silencio"
+   * ali nao significa coisa alguma — pode ser uma negociacao inteira
+   * acontecendo sem o sistema ver. Fechar por isso seria dar baixa em
+   * atendimento vivo.
+   *
+   * Nao entram os que tem COMPROMISSO FUTURO (`combinado_em > now`): parou de
+   * falar porque combinou de voltar sexta nao e abandono. Nem os que tem
+   * pendencia em aberto — ali o fluxo de cobranca ja esta cuidando, e fechar
+   * cortaria a pergunta que a Elena ja fez.
+   * ======================================================================
+   *
+   * @param horas silencio minimo. 48 pela regra da casa (`HORAS_RETOMADA`).
+   */
+  listarSilenciosos(horas: number, limite: number): Promise<string[]>;
+
+  /** O dia mais recente com qualquer movimento. Ver o recuo no use case. */
+  ultimoDiaComMovimento(): Promise<Date | null>;
+}
+
+/** O que um ponto da linha do tempo significa. */
+export type TipoPonto =
+  | 'ENCAMINHADO'
+  | 'AGENDAMENTO'
+  | 'LEMBRETE'
+  | 'COBRANCA'
+  | 'RELATO'
+  | 'REAGENDAMENTO'
+  | 'NOTA'
+  | 'CONTATO_CLIENTE'
+  | 'RESPOSTA_VENDEDORA'
+  | 'EXPIRADA'
+  | 'FECHAMENTO'
+  | 'VENDA'
+  | 'CONSIGNACAO';
+
+/**
+ * Um acontecimento na regua de uma vendedora.
+ *
+ * ==========================================================================
+ * NADA AQUI E ESCRITO POR UM EMISSOR NOVO — E TUDO PROJECAO.
+ *
+ * A tentacao seria criar uma tabela `linha_do_tempo` e sair instrumentando
+ * cada use case para gravar nela. Isso teria dois defeitos graves: o historico
+ * comecaria em zero (as 85 interacoes ja gravadas ficariam de fora), e todo
+ * recurso novo poderia esquecer de emitir — e ninguem nota um evento que nao
+ * aparece.
+ *
+ * Lendo do que ja existe, a linha nasce com o passado inteiro e nao pode
+ * dessincronizar: se o atendimento tem a interacao, a linha tem o ponto.
+ * ==========================================================================
+ */
+export interface PontoDaLinha {
+  /** Unico dentro da janela: `interacao:<uuid>`, `venda:<uuid>`... */
+  id: string;
+  tipo: TipoPonto;
+  vendedoraId: string;
+  vendedoraNome: string;
+  /** A hora em que o ponto cai na regua. */
+  em: Date;
+  clienteId: string | null;
+  clienteNome: string | null;
+  /** O horario COMBINADO com a cliente — o "para as 15h de quinta". */
+  combinadoEm: Date | null;
+  /** So onde ha: venda, consignacao. */
+  valor: number | null;
+  /** VENDA | SEM_VENDA | INATIVIDADE, nos pontos de fechamento. */
+  desfecho: string | null;
+  /** O atendimento de origem, para quem quiser abrir a auditoria. */
+  atendimentoId: string | null;
+  /**
+   * O CHAT DE ONDE O PONTO VEIO, quando ele veio do WhatsApp corporativo.
+   *
+   * ====================================================================
+   * SO NOS PONTOS DE CONVERSA, e null em todo o resto.
+   *
+   * Um agendamento feito pela gestao ou uma venda registrada nao tem chat
+   * nenhum atras — mandar um id ali faria a tela oferecer um caminho que
+   * nao leva a lugar algum.
+   *
+   * `sessao` e o nome no WAHA (`vend-<uuid>`), `chatId` e o telefone da
+   * cliente no formato do WhatsApp. Com os dois, a aba Conversas abre
+   * exatamente aquela conversa.
+   * ====================================================================
+   */
+  sessao: string | null;
+  chatId: string | null;
+
+  /** O que a vendedora escreveu. Cifrado no banco; chega decifrado. */
+  relato: string | null;
 }

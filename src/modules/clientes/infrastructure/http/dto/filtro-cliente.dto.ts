@@ -53,3 +53,39 @@ export class FiltroClienteDto {
   @Max(200)
   limit?: number;
 }
+
+/**
+ * Filtro da LISTAGEM DA TABELA — parente do de cima, com um teto muito maior.
+ *
+ * O teto de 200 do `FiltroClienteDto` existe porque cada linha do `GET
+ * /clientes` carrega telefone, e-mail e limite de credito: era um seletor, e
+ * seletor nao precisa da base inteira.
+ *
+ * A LISTAGEM DA TABELA NAO CARREGA NADA DISSO — devolve codigo, nome, nome
+ * fantasia, situacao e a vendedora, e mais nada. Sem PII na resposta, o motivo
+ * do teto baixo desaparece; o que sobra e o teto de tamanho de resposta, e por
+ * isso ele existe mesmo assim.
+ */
+export class FiltroListagemClienteDto {
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  ativo?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  nome?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  vendedoraCodigoErp?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(5000)
+  limit?: number;
+}

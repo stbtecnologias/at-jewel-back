@@ -20,6 +20,26 @@ export interface IVendedoraRepository {
   buscarPorCodigoErp(codigoErp: string): Promise<Vendedora | null>;
   buscarPorEmailHash(hash: string): Promise<Vendedora | null>;
   buscarPorWhatsappHash(hash: string): Promise<Vendedora | null>;
+  /**
+   * O proximo codigo da casa: `AT-0001`, `AT-0002`...
+   *
+   * ====================================================================
+   * POR QUE UM CODIGO NOSSO, NUMA COLUNA CHAMADA `codigo_erp`.
+   *
+   * A coluna nasceu quando o ERP era o dono do cadastro, e o nome ficou.
+   * Mas ela nao e "o codigo do ERP" — e A CHAVE DA CARTEIRA: a FK
+   * `fk_clientes_vendedora_codigo` liga cliente a vendedora por ela. Sem
+   * codigo, a vendedora nao pode ter cliente nenhum.
+   *
+   * Com o cadastro passando a nascer no CRM, alguem precisa gerar. O
+   * prefixo `AT-` diz a origem de relance: o que comeca assim e nosso.
+   *
+   * E TROCAR DEPOIS E SEGURO: a FK tem ON UPDATE CASCADE. No dia em que o
+   * ERP trouxer o codigo real dela, trocar leva a carteira junto.
+   * ====================================================================
+   */
+  proximoCodigoInterno(): Promise<string>;
+
   listar(filtros: FiltroVendedora): Promise<Vendedora[]>;
   atualizar(vendedora: Vendedora): Promise<Vendedora>;
 

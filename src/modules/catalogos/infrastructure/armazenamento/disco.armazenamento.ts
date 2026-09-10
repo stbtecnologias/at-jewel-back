@@ -8,11 +8,18 @@ import type {
   IArmazenamento,
 } from '../../domain/ports/armazenamento.port';
 
-/** O disco nao guarda o MIME; deriva-se da extensao, que nos mesmos geramos. */
+/**
+ * O disco nao guarda o MIME; deriva-se da extensao, que nos mesmos geramos.
+ *
+ * O `.pdf` E OBRIGATORIO AQUI, e nao um capricho: referencia de catalogo passou
+ * a aceitar PDF, e o padrao desta funcao e `image/jpeg`. Sem a linha, um PDF
+ * sairia rotulado como JPEG e o navegador nao desenharia nada.
+ */
 function mimePorExtensao(chave: string): string {
   const ext = extname(chave).toLowerCase();
   if (ext === '.png') return 'image/png';
   if (ext === '.webp') return 'image/webp';
+  if (ext === '.pdf') return 'application/pdf';
   return 'image/jpeg';
 }
 
@@ -20,6 +27,7 @@ const EXTENSAO_POR_MIME: Record<string, string> = {
   'image/jpeg': '.jpg',
   'image/png': '.png',
   'image/webp': '.webp',
+  'application/pdf': '.pdf',
 };
 
 /**

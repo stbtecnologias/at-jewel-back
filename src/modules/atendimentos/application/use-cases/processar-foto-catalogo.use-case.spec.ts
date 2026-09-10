@@ -26,22 +26,43 @@ describe('ProcessarFotoCatalogoUseCase — leitura da legenda', () => {
         lerLegenda: (
           t: string,
           a: CatalogoAberto[],
-        ) => {
+        ) => Promise<{
           catalogo: CatalogoAberto | null;
           codigo: string | null;
           parcelas: number | null;
           juros: number | null;
           pedidoDeEstilo: string | null;
-        };
+        }>;
       }
     ).lerLegenda(texto, ABERTOS);
   }
 
+  /** Os codigos que a base "tem" neste bloco de testes. */
+  let codigosDaBase: string[];
+
   beforeEach(() => {
+    codigosDaBase = [];
+
+    // O REPOSITORIO PASSOU A PARTICIPAR DA LEITURA. Antes o codigo era
+    // reconhecido por formato e este parametro era `{}`; agora o leitor
+    // pergunta ao banco quais dos codigos dele aparecem na legenda.
+    //
+    // O mock imita a consulta de verdade: casa por conteudo, ignora caixa e
+    // devolve do mais longo para o mais curto. A BORDA nao e conferida aqui —
+    // ela e responsabilidade de quem chama, e e justamente o que os testes
+    // precisam exercitar.
+    const produtos = {
+      buscarCodigosPresentesEm: jest.fn(async (texto: string) =>
+        codigosDaBase
+          .filter((c) => texto.toUpperCase().includes(c.toUpperCase()))
+          .sort((a, b) => b.length - a.length),
+      ),
+    };
+
     useCase = new ProcessarFotoCatalogoUseCase(
       {} as never,
       {} as never,
-      {} as never,
+      produtos as never,
       {} as never,
       new SessaoCatalogoService(),
       // O tratamento pela IA nao participa destes testes: eles exercitam a
@@ -51,63 +72,67 @@ describe('ProcessarFotoCatalogoUseCase — leitura da legenda', () => {
     );
   });
 
-  it('numero e codigo juntos — o caso que a gente pede que seja usado', () => {
-    const r = ler('0002 BR26252');
+  it('numero e codigo juntos — o caso que a gente pede que seja usado', async () => {
+    codigosDaBase = ['BR26252'];
+    const r = await ler('0002 BR26252');
     expect(r.catalogo?.numero).toBe('0002');
     expect(r.codigo).toBe('BR26252');
   });
 
-  it('o codigo NAO e confundido com o numero do catalogo', () => {
+  it('o codigo NAO e confundido com o numero do catalogo', async () => {
     // Sem a extracao do codigo primeiro, o `26252` de dentro de BR26252 seria
     // lido como numero de catalogo.
-    const r = ler('BR26252');
+    codigosDaBase = ['BR26252'];
+    const r = await ler('BR26252');
     expect(r.codigo).toBe('BR26252');
     expect(r.catalogo).toBeNull();
   });
 
-  it('aceita o numero sem os zeros a esquerda e com cerquilha', () => {
-    expect(ler('#2 CO26185').catalogo?.numero).toBe('0002');
-    expect(ler('2').catalogo?.numero).toBe('0002');
+  it('aceita o numero sem os zeros a esquerda e com cerquilha', async () => {
+    codigosDaBase = ['CO26185'];
+    expect((await ler('#2 CO26185')).catalogo?.numero).toBe('0002');
+    expect((await ler('2')).catalogo?.numero).toBe('0002');
   });
 
-  it('reconhece pelo nome, sem acento e em minusculas', () => {
-    expect(ler('catalogo inverno').catalogo?.numero).toBe('0003');
-    expect(ler('ROSA PINK').catalogo?.numero).toBe('0002');
+  it('reconhece pelo nome, sem acento e em minusculas', async () => {
+    expect((await ler('catalogo inverno')).catalogo?.numero).toBe('0003');
+    expect((await ler('ROSA PINK')).catalogo?.numero).toBe('0002');
   });
 
-  it('nome ambiguo nao decide sozinho — cai na pergunta', () => {
+  it('nome ambiguo nao decide sozinho — cai na pergunta', async () => {
     // "catálogo" casa com os dois; melhor perguntar do que chutar.
-    expect(ler('catalogo').catalogo).toBeNull();
+    expect((await ler('catalogo')).catalogo).toBeNull();
   });
 
-  it('le o parcelamento quando informado, e ignora o resto', () => {
-    const r = ler('0003 CO26185 6x');
+  it('le o parcelamento quando informado, e ignora o resto', async () => {
+    codigosDaBase = ['CO26185'];
+    const r = await ler('0003 CO26185 6x');
     expect(r.catalogo?.numero).toBe('0003');
     expect(r.codigo).toBe('CO26185');
     expect(r.parcelas).toBe(6);
   });
 
-  it('sem parcelamento na legenda devolve nulo — quem decide o padrao e o fluxo', () => {
-    expect(ler('0002 BR26252').parcelas).toBeNull();
+  it('sem parcelamento na legenda devolve nulo — quem decide o padrao e o fluxo', async () => {
+    expect((await ler('0002 BR26252')).parcelas).toBeNull();
   });
 
-  it('legenda vazia nao inventa nada', () => {
-    const r = ler('');
+  it('legenda vazia nao inventa nada', async () => {
+    const r = await ler('');
     expect(r.catalogo).toBeNull();
     expect(r.codigo).toBeNull();
     expect(r.parcelas).toBeNull();
   });
 
-  it('numero de catalogo que nao esta aberto nao casa', () => {
-    expect(ler('0099 BR26252').catalogo).toBeNull();
+  it('numero de catalogo que nao esta aberto nao casa', async () => {
+    expect((await ler('0099 BR26252')).catalogo).toBeNull();
   });
 
   // -------------------------------------------------------------------------
   // O juro do parcelamento
   // -------------------------------------------------------------------------
 
-  it('le o juro em porcentagem', () => {
-    const r = ler('0002 BR26252 12x 15%');
+  it('le o juro em porcentagem', async () => {
+    const r = await ler('0002 BR26252 12x 15%');
     expect(r.parcelas).toBe(12);
     expect(r.juros).toBe(15);
     // E o `15` NAO pode virar numero de catalogo: parcelas e juro saem do
@@ -115,28 +140,96 @@ describe('ProcessarFotoCatalogoUseCase — leitura da legenda', () => {
     expect(r.catalogo?.numero).toBe('0002');
   });
 
-  it('"sem juros" e ZERO, e nao ausencia', () => {
-    // A diferenca decide o preco: sem indicacao vale a regra da casa, que
-    // equivale a 25% de acrescimo. "Sem juros" e o oposto disso.
-    expect(ler('0002 BR26252 10x sem juros').juros).toBe(0);
-    expect(ler('0002 BR26252 10x s/ juros').juros).toBe(0);
+  it('"sem juros" e ZERO, e nao ausencia', async () => {
+    // Desde 04/09/2026 os dois dao o MESMO numero — ausencia passou a valer
+    // zero. A forma continua reconhecida porque registra que alguem conferiu.
+    expect((await ler('0002 BR26252 10x sem juros')).juros).toBe(0);
+    expect((await ler('0002 BR26252 10x s/ juros')).juros).toBe(0);
   });
 
-  it('sem dizer nada, o juro fica NULO — vale a regra da casa', () => {
-    expect(ler('0002 BR26252 10x').juros).toBeNull();
+  it('sem dizer nada, o juro fica NULO', async () => {
+    expect((await ler('0002 BR26252 10x')).juros).toBeNull();
   });
 
-  it('a ordem das partes nao importa', () => {
-    const r = ler('15% BR26252 12x 0002');
+  it('a ordem das partes nao importa', async () => {
+    codigosDaBase = ['BR26252'];
+    const r = await ler('15% BR26252 12x 0002');
     expect(r.codigo).toBe('BR26252');
     expect(r.parcelas).toBe(12);
     expect(r.juros).toBe(15);
     expect(r.catalogo?.numero).toBe('0002');
   });
 
-  it('o juro nao vira pedido de estilo', () => {
+  it('o juro nao vira pedido de estilo', async () => {
     // Sobrando na legenda, "15%" iria para a IA como instrucao de imagem.
-    expect(ler('0002 BR26252 12x 15%').pedidoDeEstilo).toBeNull();
+    expect((await ler('0002 BR26252 12x 15%')).pedidoDeEstilo).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // O CODIGO VEM DO BANCO, NAO DO FORMATO — medido na producao em 04/09/2026.
+  //
+  // O leitor antigo reconhecia `[A-Z]{2}` mais digitos, e cobria 5.919 dos
+  // 6.938 codigos. Os outros 1.019 nao tem formato em comum: ha codigo com
+  // ESPACO, de UM caractere e sem digito nenhum.
+  // -------------------------------------------------------------------------
+
+  it('O CASO QUE MANDAVA FOTO PARA A COLECAO ERRADA: codigo com hifen', async () => {
+    // `1-25-3A-2` e um codigo real da producao. Ele nao casa com o formato
+    // antigo, entao sobrava na legenda — e a busca do NUMERO DO CATALOGO
+    // mordia o `1` da frente, mandando a foto para o catalogo #0001, que
+    // existe. Sem erro, sem pergunta, com uma confirmacao dizendo que deu
+    // certo. Sao sete pecas reais nessa situacao.
+    codigosDaBase = ['1-25-3A-2', '1'];
+    const r = await ler('0002 1-25-3A-2 10x');
+
+    expect(r.codigo).toBe('1-25-3A-2');
+    expect(r.catalogo?.numero).toBe('0002');
+  });
+
+  it('o mais LONGO ganha — o codigo curto esta dentro do comprido', async () => {
+    // Na legenda `1-25-3A-2` casam os dois codigos. Pegar o primeiro que
+    // aparecesse deixaria `-25-3A-2` no texto e o `25` viraria catalogo.
+    codigosDaBase = ['1', '1-25-3A-2'];
+    expect((await ler('1-25-3A-2')).codigo).toBe('1-25-3A-2');
+  });
+
+  it('codigo COM ESPACO — sao 9 na base, e nenhum deles cabia numa palavra', async () => {
+    codigosDaBase = ['TABUA QUEIJO  LAGUIO'];
+    const r = await ler('0002 TABUA QUEIJO  LAGUIO 10x');
+
+    expect(r.codigo).toBe('TABUA QUEIJO  LAGUIO');
+    expect(r.catalogo?.numero).toBe('0002');
+  });
+
+  it('codigo SEM DIGITO — `PINGENTE` e um codigo de verdade', async () => {
+    codigosDaBase = ['PINGENTE'];
+    expect((await ler('0002 pingente')).codigo).toBe('PINGENTE');
+  });
+
+  it('codigo de UM caractere so casa quando esta sozinho', async () => {
+    // O `1` esta DENTRO de `CO26185`. Sem exigir borda, toda legenda com um
+    // digito passaria a ter esse codigo.
+    codigosDaBase = ['1'];
+
+    // Aqui o `CO26185` e reconhecido pelo formato de reserva, e nao pelo
+    // banco. O que este teste prova e que o `1` NAO ganhou.
+    expect((await ler('0002 CO26185')).codigo).toBe('CO26185');
+
+    // Sozinho, com espaco dos dois lados, ele e o codigo.
+    expect((await ler('0002 1')).codigo).toBe('1');
+  });
+
+  it('caixa da legenda nao importa — os codigos da base estao em maiuscula', async () => {
+    codigosDaBase = ['CO26185'];
+    expect((await ler('0002 co26185')).codigo).toBe('CO26185');
+  });
+
+  it('PECA QUE AINDA NAO SINCRONIZOU cai no formato antigo', async () => {
+    // `catalogo_fotos.codigo_erp` e sem chave estrangeira DE PROPOSITO: a foto
+    // pode chegar antes de a peca existir. Recusar o desconhecido quebraria a
+    // peca nova — que e justamente a que vai para catalogo novo.
+    codigosDaBase = [];
+    expect((await ler('0002 BR99999')).codigo).toBe('BR99999');
   });
 });
 
@@ -177,7 +270,10 @@ describe('ProcessarFotoCatalogoUseCase — aprovacao da foto tratada', () => {
     removerFoto: jest.Mock;
   };
   let armazenamento: { remover: jest.Mock };
-  let produtos: { findByCodigoErp: jest.Mock };
+  let produtos: {
+    findByCodigoErp: jest.Mock;
+    buscarCodigosPresentesEm: jest.Mock;
+  };
   let tratar: { execute: jest.Mock };
   let sessao: SessaoCatalogoService;
   let useCase: ProcessarFotoCatalogoUseCase;
@@ -191,7 +287,14 @@ describe('ProcessarFotoCatalogoUseCase — aprovacao da foto tratada', () => {
       removerFoto: jest.fn().mockResolvedValue(undefined),
     };
     armazenamento = { remover: jest.fn().mockResolvedValue(undefined) };
-    produtos = { findByCodigoErp: jest.fn().mockResolvedValue(null) };
+    produtos = {
+      findByCodigoErp: jest.fn().mockResolvedValue(null),
+      // VAZIO POR PADRAO: nenhum codigo da base aparece na legenda, entao o
+      // leitor cai no reconhecimento por FORMATO — que e o caminho que estes
+      // testes sempre exerceram. Quem quiser exercer a busca no banco manda
+      // `mockResolvedValue([...])` no proprio teste.
+      buscarCodigosPresentesEm: jest.fn().mockResolvedValue([]),
+    };
     tratar = { execute: jest.fn().mockResolvedValue(null) };
     sessao = new SessaoCatalogoService();
 
@@ -460,7 +563,10 @@ describe('ProcessarFotoCatalogoUseCase — a peca pela descricao', () => {
   });
 
   let catalogos: { atualizarFoto: jest.Mock };
-  let produtos: { findByCodigoErp: jest.Mock };
+  let produtos: {
+    findByCodigoErp: jest.Mock;
+    buscarCodigosPresentesEm: jest.Mock;
+  };
   let listar: { execute: jest.Mock };
   let sessao: SessaoCatalogoService;
   let useCase: ProcessarFotoCatalogoUseCase;
@@ -473,6 +579,7 @@ describe('ProcessarFotoCatalogoUseCase — a peca pela descricao', () => {
         .mockResolvedValue(
           PRODUTO('CB512', 'ANEL ESMERALDA GOTA OB 18K', 18900),
         ),
+      buscarCodigosPresentesEm: jest.fn().mockResolvedValue([]),
     };
     listar = { execute: jest.fn().mockResolvedValue([]) };
     sessao = new SessaoCatalogoService();

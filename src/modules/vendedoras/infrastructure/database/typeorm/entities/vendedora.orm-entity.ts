@@ -65,6 +65,25 @@ export class VendedoraOrmEntity {
   })
   whatsappInternoHash: string | null;
 
+  // O CORPORATIVO. Mesma cifragem e mesmo hash do interno — telefone e PII,
+  // e os dois sao. Ver a migracao 39 e o comentario na entidade de dominio.
+  @Column({
+    name: 'whatsapp_externo',
+    type: 'text',
+    nullable: true,
+    transformer: encryptedTransformer,
+  })
+  whatsappExterno: string | null;
+
+  @Column({
+    name: 'whatsapp_externo_hash',
+    type: 'varchar',
+    length: 64,
+    unique: true,
+    nullable: true,
+  })
+  whatsappExternoHash: string | null;
+
   @Column({ name: 'admin_user_id', type: 'uuid', nullable: true })
   adminUserId: string | null;
 

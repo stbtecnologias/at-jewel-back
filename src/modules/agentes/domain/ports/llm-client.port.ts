@@ -338,6 +338,19 @@ export type GestaoCarteiraDoClienteHandler = (input: {
  * ultimos feedbacks dela no periodo, com teto — e o `total` junto, porque dez
  * de trinta pareceriam os trinta.
  */
+/**
+ * O DIA DE UMA VENDEDORA numa frase — "como esta o canal da Marina hoje".
+ *
+ * NAO le o WhatsApp dela: le o REGISTRO do que passou por ele. Os numeros
+ * sao exatos e custam uma consulta; dizer O QUE a cliente quer exigiria ler
+ * o texto das conversas, que e outra frente.
+ */
+export type GestaoDiaDaVendedoraHandler = (input: {
+  vendedora: string;
+  /** `YYYY-MM-DD`. Sem ele, hoje. NAO recua para um dia com movimento. */
+  dia?: string;
+}) => Promise<GestaoLeituraResultado>;
+
 export type GestaoFeedbacksHandler = (input: {
   vendedora: string;
   /** Nome (ou parte) do cliente. Restringe a UM episodio. */
@@ -399,6 +412,7 @@ export interface ChatParams {
   gestaoMelhores?: GestaoMelhoresHandler;
   gestaoAgendar?: GestaoAgendarHandler;
   gestaoFeedbacks?: GestaoFeedbacksHandler;
+  gestaoDiaDaVendedora?: GestaoDiaDaVendedoraHandler;
   /**
    * Habilita `gerar_grafico`. Default true, que preserva o painel.
    *

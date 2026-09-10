@@ -41,6 +41,46 @@ describe('GlobalExceptionFilter', () => {
     process.env = ORIGINAL_ENV;
   });
 
+  describe('erro de upload (multer)', () => {
+    function erroMulter(code: string): Error {
+      const e = new Error('File too large');
+      e.name = 'MulterError';
+      (e as Error & { code: string }).code = code;
+      return e;
+    }
+
+    it('vira 413 com mensagem legivel, e nao 500', () => {
+      const { host, status, json } = makeHost('POST', '/catalogos/x/referencias/imagens');
+      filter.catch(erroMulter('LIMIT_FILE_SIZE'), host);
+
+      expect(status).toHaveBeenCalledWith(HttpStatus.PAYLOAD_TOO_LARGE);
+      expect(json).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Arquivo grande demais para este envio.' }),
+      );
+    });
+
+    it('em producao a mensagem SOBREVIVE — nao e erro interno para mascarar', () => {
+      process.env.NODE_ENV = 'production';
+      const { host, json } = makeHost('POST', '/catalogos/x/referencias/imagens');
+      filter.catch(erroMulter('LIMIT_FILE_SIZE'), host);
+
+      // Sem o ramo proprio, isto virava "Erro interno do servidor" e a pessoa
+      // nunca saberia que bastava mandar um arquivo menor.
+      expect(json).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Arquivo grande demais para este envio.' }),
+      );
+    });
+
+    it('arquivos demais tem mensagem propria', () => {
+      const { host, json } = makeHost('POST', '/x');
+      filter.catch(erroMulter('LIMIT_FILE_COUNT'), host);
+
+      expect(json).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Arquivos demais num envio só.' }),
+      );
+    });
+  });
+
   it('mantem shape consistente para NotFoundException', () => {
     const { host, status, json } = makeHost();
     filter.catch(new NotFoundException('Cliente xyz nao existe'), host);

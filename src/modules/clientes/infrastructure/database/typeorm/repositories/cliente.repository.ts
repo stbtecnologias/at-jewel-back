@@ -400,6 +400,16 @@ export class ClienteRepository implements IClienteRepository {
     }));
   }
 
+  async resolverVendedoraCodigoErpPorAdminUser(
+    adminUserId: string,
+  ): Promise<string | null> {
+    const linhas = await this.repo.manager.query<{ codigo_erp: string }[]>(
+      `SELECT codigo_erp FROM vendedoras WHERE admin_user_id = $1 LIMIT 1`,
+      [adminUserId],
+    );
+    return linhas[0]?.codigo_erp ?? null;
+  }
+
   async listar(filtros: FiltroCliente): Promise<Cliente[]> {
     const where: FindOptionsWhere<ClienteOrmEntity> = {};
     if (filtros.ativo !== undefined) where.ativo = filtros.ativo;

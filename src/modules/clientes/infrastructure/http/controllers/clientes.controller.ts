@@ -11,6 +11,7 @@ import {
   Patch,
   Post,
   Query,
+  Request,
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
@@ -21,6 +22,8 @@ import { JwtAuthGuard } from '../../../../auth/infrastructure/http/guards/jwt-au
 import { JwtOrApiKeyGuard } from '../../../../auth/infrastructure/http/guards/jwt-or-api-key.guard';
 import { PermissionsGuard } from '../../../../auth/infrastructure/http/guards/permissions.guard';
 import { ScopesGuard } from '../../../../auth/infrastructure/http/guards/scopes.guard';
+import type { JwtPayload } from '../../../../auth/infrastructure/http/strategies/jwt.strategy';
+import { EscopoClientesService } from '../../../application/escopo-clientes.service';
 import { AtualizarClienteUseCase } from '../../../application/use-cases/atualizar-cliente.use-case';
 import { AtualizarPerfilClienteUseCase } from '../../../application/use-cases/atualizar-perfil-cliente.use-case';
 import { BuscarClienteUseCase } from '../../../application/use-cases/buscar-cliente.use-case';
@@ -35,7 +38,10 @@ import { RemoverClienteUseCase } from '../../../application/use-cases/remover-cl
 import { AtualizarClienteDto } from '../dto/atualizar-cliente.dto';
 import { AtualizarPerfilClienteDto } from '../dto/atualizar-perfil-cliente.dto';
 import { CriarClienteDto } from '../dto/criar-cliente.dto';
-import { FiltroClienteDto } from '../dto/filtro-cliente.dto';
+import {
+  FiltroClienteDto,
+  FiltroListagemClienteDto,
+} from '../dto/filtro-cliente.dto';
 import { HistoricoClienteQueryDto } from '../dto/historico-cliente.dto';
 import { LookupClienteDto } from '../dto/lookup-cliente.dto';
 import { MonitoramentoSlaQueryDto } from '../dto/monitoramento-sla.dto';
@@ -51,6 +57,7 @@ export class ClientesController {
   constructor(
     private readonly criar: CriarClienteUseCase,
     private readonly buscar: BuscarClienteUseCase,
+    private readonly escopo: EscopoClientesService,
     private readonly buscarPorIdErp: BuscarClientePorIdErpUseCase,
     private readonly buscarPorWhatsapp: BuscarClientePorWhatsappUseCase,
     private readonly listar: ListarClientesUseCase,
@@ -106,9 +113,82 @@ export class ClientesController {
   @UseGuards(JwtOrApiKeyGuard)
   @Permissions('clientes:read')
   @RequireScopes('clientes:read')
-  async listarClientes(@Query() filtros: FiltroClienteDto) {
-    const clientes = await this.listar.execute(filtros);
+  async listarClientes(
+    @Query() filtros: FiltroClienteDto,
+    @Request() req: { user?: JwtPayload },
+  ) {
+    const clientes = await this.listar.execute({
+      ...filtros,
+      ...(await this.recorte(req)),
+    });
     return clientes.map((c) => c.toPublic());
+  }
+
+  /**
+   * O recorte por vendedora, no formato do filtro — MEL-23.
+   *
+   * SO VALE PARA GENTE. Nas rotas com `JwtOrApiKeyGuard`, uma chamada por
+   * chave de API nao tem `req.user`: e uma integracao, nao uma pessoa, e ela
+   * nao tem carteira. Aplicar o recorte ali quebraria o consumidor sem
+   * proteger ninguem — o que limita a chave e o scope dela.
+   */
+  private async recorte(req: {
+    user?: JwtPayload;
+  }): Promise<{ vendedoraCodigoErp?: string }> {
+    if (!req.user) return {};
+    const restrito = await this.escopo.codigoErpRestrito(req.user);
+    return restrito ? { vendedoraCodigoErp: restrito } : {};
+  }
+
+  /**
+   * A LISTAGEM DA TABELA DO PAINEL — reduzida de proposito.
+   *
+   * Rota propria em vez de um parametro no `GET /clientes`, por duas razoes
+   * que andam juntas:
+   *
+   * 1. O `toPublic()` daquela devolve telefone, e-mail, limite de credito e as
+   *    duas observacoes. Uma tabela de 200 linhas nao precisa de nada disso, e
+   *    uma tela aberta na loja fica visivel para quem passa.
+   * 2. Justamente por causa da PII, aquela rota tem teto de 200 — o que faria
+   *    a tabela mentir com 201 clientes. Sem PII, o teto pode subir.
+   *
+   * SO PAINEL: `JwtAuthGuard`, e nao `JwtOrApiKeyGuard`. Nenhuma integracao
+   * precisa disto, e o guard misto aceitaria qualquer chave valida — no ramo
+   * da chave ele so confere `@RequireScopes`, que aqui nao existe.
+   */
+  @Get('listagem')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('clientes:read')
+  async listagem(
+    @Query() filtros: FiltroListagemClienteDto,
+    @Request() req: { user: JwtPayload },
+  ) {
+    const restrito = await this.escopo.codigoErpRestrito(req.user);
+    const clientes = await this.listar.execute({
+      ...filtros,
+      // O recorte GANHA do filtro da tela: sem isto, digitar o código de outra
+      // vendedora na query devolveria a carteira dela.
+      ...(restrito ? { vendedoraCodigoErp: restrito } : {}),
+      limit: filtros.limit ?? 5000,
+    });
+    return clientes.map((c) => ({
+      id: c.id,
+      codigoErp: c.codigoErp,
+      nome: c.nome,
+      nomeFantasia: c.nomeFantasia,
+      ativo: c.ativo,
+      vendedoraCodigoErp: c.vendedoraCodigoErp,
+      // O TELEFONE ENTRA, e o resto da PII continua fora.
+      //
+      // Pedido pelo Lucas em 04/09: quem abre a lista quer ligar. Cabe porque
+      // o recorte do MEL-23 ja limita QUEM ve cada linha — a vendedora ve os
+      // telefones da carteira dela, que sao os clientes que ela atende.
+      //
+      // E-mail, limite de credito e as duas observacoes continuam fora: nada
+      // disso se usa numa lista, e cada campo a mais e um campo que aparece na
+      // tela aberta em cima do balcao.
+      telefone1: c.telefone1,
+    }));
   }
 
   // Throttle estrito (20 req/min/IP): lookup por whatsapp e o endpoint de
@@ -158,8 +238,12 @@ export class ClientesController {
   @UseGuards(JwtOrApiKeyGuard)
   @Permissions('clientes:read')
   @RequireScopes('clientes:read')
-  async buscarPeloIdErp(@Param('id') idErp: string) {
+  async buscarPeloIdErp(
+    @Param('id') idErp: string,
+    @Request() req: { user?: JwtPayload },
+  ) {
     const cliente = await this.buscarPorIdErp.execute(idErp);
+    await this.exigirNoEscopo(req, cliente.vendedoraCodigoErp);
     return cliente.toPublic();
   }
 
@@ -167,9 +251,33 @@ export class ClientesController {
   @UseGuards(JwtOrApiKeyGuard)
   @Permissions('clientes:read')
   @RequireScopes('clientes:read')
-  async buscarPorId(@Param('id', ParseUUIDPipe) id: string) {
+  async buscarPorId(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Request() req: { user?: JwtPayload },
+  ) {
     const cliente = await this.buscar.execute(id);
+    await this.exigirNoEscopo(req, cliente.vendedoraCodigoErp);
     return cliente.toPublic();
+  }
+
+  /**
+   * A checagem das rotas de DETALHE, que buscam pelo id e so depois podem
+   * comparar.
+   *
+   * RESPONDE 404, E NAO 403. Um 403 confirmaria que aquele id existe — e com
+   * ele da para varrer a base descobrindo quais clientes pertencem a outras
+   * vendedoras, mesmo sem ler nenhum. "Nao encontrado" e a verdade que a
+   * pessoa tem direito de saber.
+   */
+  private async exigirNoEscopo(
+    req: { user?: JwtPayload },
+    vendedoraCodigoErp: string | null,
+  ): Promise<void> {
+    if (!req.user) return;
+    const restrito = await this.escopo.codigoErpRestrito(req.user);
+    if (!this.escopo.podeVer(restrito, vendedoraCodigoErp)) {
+      throw new NotFoundException('Cliente não encontrado');
+    }
   }
 
   // Historico de compras do cliente para o dashboard. Apenas dados de venda
@@ -181,7 +289,12 @@ export class ClientesController {
   async historico(
     @Param('id', ParseUUIDPipe) id: string,
     @Query() query: HistoricoClienteQueryDto,
+    @Request() req: { user: JwtPayload },
   ) {
+    // O histórico é de compras, sem PII — mas dizer QUAIS compras um cliente
+    // fez já é dizer que ele existe e é de alguém. Mesmo recorte.
+    const cliente = await this.buscar.execute(id);
+    await this.exigirNoEscopo(req, cliente.vendedoraCodigoErp);
     return this.buscarHistorico.execute(id, {
       limit: query.limit,
       offset: query.offset,
@@ -206,6 +319,8 @@ export class ClientesController {
       email: dto.email,
       whatsapp: dto.whatsapp,
       origemContato: dto.origemContato,
+      observacaoGeral: dto.observacaoGeral,
+      vendedoraCodigoErp: dto.vendedoraCodigoErp,
     });
     return cliente.toPublic();
   }
