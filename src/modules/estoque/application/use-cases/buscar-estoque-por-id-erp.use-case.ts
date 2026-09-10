@@ -21,7 +21,9 @@ export class BuscarEstoquePorIdErpUseCase {
   async execute(idErp: string): Promise<Estoque> {
     const registro = await this.repo.buscarPorIdErp(idErp);
     if (!registro) {
-      throw new NotFoundException(`Saldo de estoque com id_erp ${idErp} nao encontrado`);
+      throw new NotFoundException(
+        `Saldo de estoque com id_erp ${idErp} nao encontrado`,
+      );
     }
     return registro;
   }

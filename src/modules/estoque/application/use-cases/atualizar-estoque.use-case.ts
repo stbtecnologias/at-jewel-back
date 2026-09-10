@@ -21,7 +21,8 @@ export class AtualizarEstoqueUseCase {
 
   async execute(id: string, input: AtualizarEstoqueInput): Promise<Estoque> {
     const atual = await this.repo.buscarPorId(id);
-    if (!atual) throw new NotFoundException(`Saldo de estoque ${id} nao encontrado`);
+    if (!atual)
+      throw new NotFoundException(`Saldo de estoque ${id} nao encontrado`);
 
     return this.repo.atualizar(
       Estoque.create({
@@ -31,9 +32,6 @@ export class AtualizarEstoqueUseCase {
         produtoId: atual.produtoId,
         codigoErp: atual.codigoErp,
         localEstoqueId: atual.localEstoqueId,
-        fornecedorId: atual.fornecedorId,
-        clienteId: atual.clienteId,
-        vendedoraId: atual.vendedoraId,
         quantidade: input.quantidade,
       }),
     );

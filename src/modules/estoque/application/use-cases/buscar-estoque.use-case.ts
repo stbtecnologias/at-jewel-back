@@ -12,7 +12,8 @@ export class BuscarEstoqueUseCase {
 
   async execute(id: string): Promise<Estoque> {
     const registro = await this.repo.buscarPorId(id);
-    if (!registro) throw new NotFoundException(`Saldo de estoque ${id} nao encontrado`);
+    if (!registro)
+      throw new NotFoundException(`Saldo de estoque ${id} nao encontrado`);
     return registro;
   }
 }

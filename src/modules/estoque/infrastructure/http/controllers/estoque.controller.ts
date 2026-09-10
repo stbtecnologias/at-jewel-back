@@ -104,7 +104,10 @@ export class EstoqueController {
   @Permissions('estoque:write')
   @RequireScopes('estoque:write')
   async sincronizarEstoque(@Body() dto: CriarEstoqueDto) {
-    const e = await this.sincronizar.execute({ ...dto, idErp: dto.idErpEstoque });
+    const e = await this.sincronizar.execute({
+      ...dto,
+      idErp: dto.idErpEstoque,
+    });
     return e.toPublic();
   }
 

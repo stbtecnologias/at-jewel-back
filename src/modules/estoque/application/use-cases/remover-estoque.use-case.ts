@@ -19,7 +19,8 @@ export class RemoverEstoqueUseCase {
 
   async execute(id: string): Promise<void> {
     const atual = await this.repo.buscarPorId(id);
-    if (!atual) throw new NotFoundException(`Saldo de estoque ${id} nao encontrado`);
+    if (!atual)
+      throw new NotFoundException(`Saldo de estoque ${id} nao encontrado`);
     await this.repo.remover(id);
   }
 }

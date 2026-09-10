@@ -18,21 +18,17 @@ export class FiltroEstoqueDto {
   @IsUUID()
   localEstoqueId?: string;
 
+  /**
+   * `?apenasNegativos=true` — o saldo negativo, que e o que a casa deve.
+   *
+   * Ate a migracao 57 dava para perguntar A QUEM, filtrando por fornecedor,
+   * cliente ou vendedora. Nao da mais: o saldo tem um dono so, e o negativo
+   * diz que se deve sem dizer a quem.
+   */
   @IsOptional()
-  @IsUUID()
-  fornecedorId?: string;
-
-  @IsOptional()
-  @IsUUID()
-  clienteId?: string;
-
-  @IsOptional()
-  @IsUUID()
-  vendedoraId?: string;
-
-  /** `?apenasNegativos=true` — o que a casa deve a terceiros. */
-  @IsOptional()
-  @Transform(({ value }) => (value === 'true' ? true : value === 'false' ? false : value))
+  @Transform(({ value }) =>
+    value === 'true' ? true : value === 'false' ? false : value,
+  )
   @IsBoolean()
   apenasNegativos?: boolean;
 }

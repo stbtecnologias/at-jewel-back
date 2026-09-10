@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { FindOptionsWhere, IsNull, LessThan, Repository } from 'typeorm';
+import { FindOptionsWhere, LessThan, Repository } from 'typeorm';
 import { Estoque } from '../../../../domain/entities/estoque.entity';
 import {
   ChaveEstoque,
@@ -28,9 +28,13 @@ export class EstoqueRepository implements IEstoqueRepository {
   }
 
   /**
-   * Busca pela chave de negocio. Os locais ausentes entram como
-   * `IsNull()` explicito: sem isso o TypeORM ignoraria a coluna e a consulta
-   * casaria com linhas de OUTRO local do mesmo produto.
+   * Busca pela chave de negocio — as mesmas quatro colunas da
+   * `uq_estoque_chave`.
+   *
+   * Ate a migracao 57 os tres locais ausentes precisavam entrar como `IsNull()`
+   * explicito: sem isso o TypeORM ignorava a coluna e a consulta casava com
+   * linha de OUTRO local do mesmo produto. Com um local so, e obrigatorio, o
+   * cuidado deixou de fazer sentido.
    */
   async buscarPorChave(chave: ChaveEstoque): Promise<Estoque | null> {
     const row = await this.repo.findOne({
@@ -38,10 +42,7 @@ export class EstoqueRepository implements IEstoqueRepository {
         empresaId: chave.empresaId,
         grupoEstoqueId: chave.grupoEstoqueId,
         produtoId: chave.produtoId,
-        localEstoqueId: chave.localEstoqueId ?? IsNull(),
-        fornecedorId: chave.fornecedorId ?? IsNull(),
-        clienteId: chave.clienteId ?? IsNull(),
-        vendedoraId: chave.vendedoraId ?? IsNull(),
+        localEstoqueId: chave.localEstoqueId,
       },
     });
     return row ? this.toDomain(row) : null;
@@ -53,14 +54,13 @@ export class EstoqueRepository implements IEstoqueRepository {
     if (filtros.grupoEstoqueId) where.grupoEstoqueId = filtros.grupoEstoqueId;
     if (filtros.produtoId) where.produtoId = filtros.produtoId;
     if (filtros.localEstoqueId) where.localEstoqueId = filtros.localEstoqueId;
-    if (filtros.fornecedorId) where.fornecedorId = filtros.fornecedorId;
-    if (filtros.clienteId) where.clienteId = filtros.clienteId;
-    if (filtros.vendedoraId) where.vendedoraId = filtros.vendedoraId;
     if (filtros.apenasNegativos) where.quantidade = LessThan(0);
 
+    // Ordenava por `local_tipo` em segundo, coluna que a 57 apagou. O local
+    // continua desempatando, agora pelo proprio id.
     const rows = await this.repo.find({
       where,
-      order: { produtoId: 'ASC', localTipo: 'ASC' },
+      order: { produtoId: 'ASC', localEstoqueId: 'ASC' },
     });
     return rows.map((r) => this.toDomain(r));
   }
@@ -82,9 +82,8 @@ export class EstoqueRepository implements IEstoqueRepository {
 
   /**
    * INSERT ... ON CONFLICT DO UPDATE. Query escrita a mao porque o `orUpdate`
-   * do QueryBuilder monta conflito por lista de colunas, e a chave composta
-   * inclui `local_tipo`/`local_id`, que sao GENERATED e nao podem
-   * aparecer num INSERT.
+   * do QueryBuilder monta conflito por lista de colunas, e a chave e uma
+   * CONSTRAINT nomeada.
    *
    * DOIS CAMINHOS, conforme a origem do dado:
    *
@@ -107,9 +106,6 @@ export class EstoqueRepository implements IEstoqueRepository {
       e.grupoEstoqueId,
       e.produtoId,
       e.localEstoqueId,
-      e.fornecedorId,
-      e.clienteId,
-      e.vendedoraId,
       e.quantidade,
     ];
 
@@ -120,24 +116,21 @@ export class EstoqueRepository implements IEstoqueRepository {
            grupo_estoque_id = EXCLUDED.grupo_estoque_id,
            produto_id       = EXCLUDED.produto_id,
            local_estoque_id = EXCLUDED.local_estoque_id,
-           fornecedor_id    = EXCLUDED.fornecedor_id,
-           cliente_id       = EXCLUDED.cliente_id,
-           vendedora_id     = EXCLUDED.vendedora_id,
            quantidade       = EXCLUDED.quantidade,
            atualizado_em    = now()`
       : `ON CONFLICT ON CONSTRAINT uq_estoque_chave DO UPDATE SET
            quantidade    = EXCLUDED.quantidade,
            atualizado_em = now()`;
 
-    const linhas = (await this.repo.query(
+    const linhas = await this.repo.query(
       `INSERT INTO estoque
          (id_erp, codigo_erp, empresa_id, grupo_estoque_id, produto_id,
-          local_estoque_id, fornecedor_id, cliente_id, vendedora_id, quantidade)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          local_estoque_id, quantidade)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        ${conflito}
        RETURNING id`,
       valores,
-    )) as { id: string }[];
+    );
 
     return this.toDomain(await this.repo.findOneByOrFail({ id: linhas[0].id }));
   }
@@ -150,9 +143,6 @@ export class EstoqueRepository implements IEstoqueRepository {
       grupoEstoqueId: e.grupoEstoqueId,
       produtoId: e.produtoId,
       localEstoqueId: e.localEstoqueId,
-      fornecedorId: e.fornecedorId,
-      clienteId: e.clienteId,
-      vendedoraId: e.vendedoraId,
       quantidade: e.quantidade,
     };
   }
@@ -166,12 +156,7 @@ export class EstoqueRepository implements IEstoqueRepository {
       grupoEstoqueId: o.grupoEstoqueId,
       produtoId: o.produtoId,
       localEstoqueId: o.localEstoqueId,
-      fornecedorId: o.fornecedorId,
-      clienteId: o.clienteId,
-      vendedoraId: o.vendedoraId,
       quantidade: Number(o.quantidade),
-      localTipo: o.localTipo,
-      localId: o.localId,
       criadoEm: o.criadoEm,
       atualizadoEm: o.atualizadoEm,
     });
