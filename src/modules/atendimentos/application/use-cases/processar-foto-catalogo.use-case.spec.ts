@@ -817,3 +817,528 @@ describe('ProcessarFotoCatalogoUseCase — o texto solto de quem cuida do catalo
     expect(catalogos.listarEmAprovacao).toHaveBeenCalledWith(QUEM);
   });
 });
+
+/**
+ * O PRINT DO YERLON, 10/09/2026 — HML-16.
+ *
+ *   16:42  "Quero adicionar fotos ao catálogo #0001"  -> Anastasia: "fora do meu alcance"
+ *   16:43  foto                                        -> "De qual catálogo é?" (ele tinha dito)
+ *   —      sem resposta                                -> a foto sumiu calada
+ *   13:33  "Ok" (a "código anotado")                   -> Anastasia: "Como posso te ajudar?"
+ *   13:34  "Aprova"                                    -> Anastasia: "Aprovar o quê?"
+ *   13:34  "Aprovo"                                    -> aprovada
+ *
+ * Decisao do Lucas em 11/09: toda afirmacao aprova, e em qualquer ordem. O
+ * que estes testes protegem e o par que a decisao cria — aceitar tudo o que e
+ * afirmacao, sem aceitar a afirmacao que chegou ANTES da foto.
+ */
+describe('ProcessarFotoCatalogoUseCase — em qualquer ordem (o print do Yerlon)', () => {
+  const DE = '558585351045@c.us';
+  const QUEM = 'Yerlon Magalhães';
+  const T = 1_757_521_640_000; // quando a foto tratada saiu
+
+  const FOTO = (id: string, codigo: string | null) =>
+    ({
+      id,
+      catalogoId: 'uuid-3',
+      posicao: 1,
+      codigoErp: codigo,
+      descricao: null,
+      precoAVista: null,
+      parcelas: null,
+      origem: 'WHATSAPP',
+      remetente: QUEM,
+      arquivoOriginalId: 'catalogo/0003/originais/a.jpg',
+      arquivoId: 'catalogo/0003/fotos/a.png',
+      status: 'EM_APROVACAO',
+      versoes: 1,
+      aprovadoPor: null,
+      aprovadoEm: null,
+    }) as never;
+
+  const ABERTOS = [
+    { id: 'uuid-1', numero: '0001', nome: 'Catalogo Rosa Pink' },
+    { id: 'uuid-2', numero: '0002', nome: 'Teste' },
+    { id: 'uuid-3', numero: '0003', nome: 'Verão 2027' },
+  ];
+
+  let catalogos: {
+    listarAbertos: jest.Mock;
+    listarEmAprovacao: jest.Mock;
+    atualizarFoto: jest.Mock;
+    removerFoto: jest.Mock;
+  };
+  let armazenamento: { remover: jest.Mock; ler: jest.Mock };
+  let produtos: {
+    findByCodigoErp: jest.Mock;
+    buscarCodigosPresentesEm: jest.Mock;
+  };
+  let whatsapp: { enviarTexto: jest.Mock; enviarImagem: jest.Mock };
+  let tratar: { execute: jest.Mock };
+  let sessao: SessaoCatalogoService;
+  let useCase: ProcessarFotoCatalogoUseCase;
+
+  beforeEach(() => {
+    catalogos = {
+      listarAbertos: jest.fn().mockResolvedValue(ABERTOS),
+      listarEmAprovacao: jest.fn().mockResolvedValue([FOTO('f-1', 'AN24435')]),
+      atualizarFoto: jest.fn().mockResolvedValue({ status: 'EM_APROVACAO' }),
+      removerFoto: jest.fn().mockResolvedValue(undefined),
+    };
+    armazenamento = {
+      remover: jest.fn().mockResolvedValue(undefined),
+      ler: jest
+        .fn()
+        .mockResolvedValue({ conteudo: Buffer.from('png'), mime: 'image/png' }),
+    };
+    produtos = {
+      findByCodigoErp: jest.fn().mockResolvedValue({
+        descricaoEtiqueta: 'ANEL MASCULINO ESMERALDA OB 18K',
+        valorVenda: 26990,
+      }),
+      buscarCodigosPresentesEm: jest.fn().mockResolvedValue([]),
+    };
+    whatsapp = {
+      enviarTexto: jest.fn().mockResolvedValue(undefined),
+      enviarImagem: jest.fn().mockResolvedValue(undefined),
+    };
+    tratar = { execute: jest.fn() };
+    sessao = new SessaoCatalogoService();
+
+    useCase = new ProcessarFotoCatalogoUseCase(
+      catalogos as never,
+      armazenamento as never,
+      produtos as never,
+      whatsapp as never,
+      sessao,
+      tratar as never,
+      { execute: jest.fn().mockResolvedValue([]) } as never,
+    );
+  });
+
+  const aprovou = () =>
+    catalogos.atualizarFoto.mock.calls.some(
+      ([, dados]) => (dados as { status?: string }).status === 'APROVADA',
+    );
+
+  // -------------------------------------------------------------------------
+  // O vocabulário — toda afirmação aprova
+  // -------------------------------------------------------------------------
+
+  it('"Aprova" APROVA — o defeito do print', async () => {
+    const r = await useCase.aprovacao(DE, QUEM, 'Aprova');
+
+    expect(r?.motivo).toBe('foto_aprovada');
+    expect(r?.resposta).toContain('AN24435 aprovada');
+  });
+
+  it.each([
+    'Ok',
+    'ok, obrigado',
+    'sim',
+    'Aprovada',
+    'pode aprovar',
+    'Gostei!',
+    'show de bola',
+    'top',
+    'ficou lindo',
+    'Beleza',
+    'certo',
+    '👍',
+    '👍🏽',
+    '✅',
+    '👌',
+  ])('"%s" aprova', async (palavra) => {
+    const r = await useCase.aprovacao(DE, QUEM, palavra);
+    expect(r?.motivo).toBe('foto_aprovada');
+  });
+
+  it('"ok, MAS muda o fundo" nao publica — refaz', async () => {
+    // A lista maior de afirmacoes nao pode publicar justamente a foto que a
+    // pessoa pediu para mudar.
+    tratar.execute.mockResolvedValue(null);
+
+    const r = await useCase.aprovacao(DE, QUEM, 'ok, mas muda o fundo');
+
+    expect(aprovou()).toBe(false);
+    expect(r?.motivo).toBe('foto_em_ajuste');
+    expect(tratar.execute).toHaveBeenCalledWith('f-1', 'o fundo');
+  });
+
+  it('"ok, mas quanto vendi?" nao publica nem vira ajuste', async () => {
+    const r = await useCase.aprovacao(DE, QUEM, 'ok, mas quanto vendi hoje?');
+
+    expect(r).toBeNull();
+    expect(aprovou()).toBe(false);
+    expect(tratar.execute).not.toHaveBeenCalled();
+  });
+
+  it('"pode refazer com fundo branco" NAO aprova — "pode" sozinho ficou de fora', async () => {
+    await useCase.aprovacao(DE, QUEM, 'pode refazer com fundo branco');
+    expect(aprovou()).toBe(false);
+  });
+
+  it('"bom dia" NAO aprova — "bom" sozinho ficou de fora', async () => {
+    await useCase.aprovacao(DE, QUEM, 'bom dia');
+    expect(aprovou()).toBe(false);
+  });
+
+  it('negativa continua negativa: "não gostei" nao aprova', async () => {
+    tratar.execute.mockResolvedValue(null);
+    await useCase.aprovacao(DE, QUEM, 'não gostei');
+    expect(aprovou()).toBe(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // O relógio — a afirmação só vale para foto que já tinha chegado
+  // -------------------------------------------------------------------------
+
+  it('"Ok" ESCRITO ANTES de a foto sair NAO aprova — o risco do print', async () => {
+    // 13:33 do print: o "Ok" respondia a "código anotado". A foto saiu depois.
+    sessao.marcarEnviada(DE, 'f-1', T);
+
+    const r = await useCase.aprovacao(DE, QUEM, 'Ok', T - 60_000);
+
+    expect(aprovou()).toBe(false);
+    // E recibo: sem resposta — nem aprovacao, nem "Como posso te ajudar?".
+    expect(r?.resposta).toBeNull();
+    expect(r?.motivo).toBe('recibo_antes_da_foto');
+  });
+
+  it('"Ok" escrito DEPOIS de a foto sair aprova', async () => {
+    sessao.marcarEnviada(DE, 'f-1', T);
+
+    const r = await useCase.aprovacao(DE, QUEM, 'Ok', T + 5_000);
+
+    expect(r?.motivo).toBe('foto_aprovada');
+  });
+
+  it('a folga cobre o carimbo em segundos do WhatsApp', async () => {
+    // O WhatsApp carimba em segundos: uma resposta de T+0,9s chega como T.
+    sessao.marcarEnviada(DE, 'f-1', T + 900);
+
+    const r = await useCase.aprovacao(DE, QUEM, 'Ok', T);
+
+    expect(r?.motivo).toBe('foto_aprovada');
+  });
+
+  it('com a foto A CAMINHO, nada aprova — o banco ja diz EM_APROVACAO', async () => {
+    // O `tratar` grava EM_APROVACAO antes de a imagem sair.
+    sessao.marcarEmEnvio(DE, 'f-1');
+
+    const r = await useCase.aprovacao(DE, QUEM, 'aprovo', Date.now());
+
+    expect(aprovou()).toBe(false);
+    expect(r?.motivo).toBe('recibo_antes_da_foto');
+  });
+
+  it('sem registro de envio (restart), aprova — a foto saiu antes da memoria', async () => {
+    // A memoria e RAM. Recusar aqui deixaria a pessoa sem saida.
+    const r = await useCase.aprovacao(DE, QUEM, 'Ok', T);
+    expect(r?.motivo).toBe('foto_aprovada');
+  });
+
+  it('aprova a mais antiga QUE ELA VIU, e nao a que ainda esta a caminho', async () => {
+    catalogos.listarEmAprovacao.mockResolvedValue([
+      FOTO('f-1', 'AN24435'),
+      FOTO('f-2', 'AN24372'),
+    ]);
+    sessao.marcarEmEnvio(DE, 'f-1'); // refazendo
+    sessao.marcarEnviada(DE, 'f-2', T);
+
+    await useCase.aprovacao(DE, QUEM, 'ok', T + 5_000);
+
+    expect(catalogos.atualizarFoto).toHaveBeenCalledTimes(1);
+    const [id] = catalogos.atualizarFoto.mock.calls[0] as [string];
+    expect(id).toBe('f-2');
+  });
+
+  it('a foto tratada sai marcada: "a caminho" durante, "vista" depois', async () => {
+    let vistaDuranteOTratamento: boolean | null = null;
+    tratar.execute.mockImplementation(() => {
+      vistaDuranteOTratamento = sessao.foiVista(DE, 'f-1', Date.now());
+      return Promise.resolve({
+        foto: { ...(FOTO('f-1', null) as object), status: 'EM_APROVACAO' },
+        recado: null,
+      });
+    });
+
+    await (
+      useCase as unknown as {
+        tratarEAvisar: (
+          id: string,
+          p: string | null,
+          c: string,
+        ) => Promise<void>;
+      }
+    ).tratarEAvisar('f-1', null, DE);
+
+    expect(vistaDuranteOTratamento).toBe(false);
+    expect(sessao.foiVista(DE, 'f-1', Date.now())).toBe(true);
+    // Sem codigo, a legenda NAO pergunta de novo: so avisa que o "aprovo"
+    // pode vir antes.
+    const [, , , legenda] = whatsapp.enviarImagem.mock.calls[0] as [
+      string,
+      Buffer,
+      string,
+      string,
+    ];
+    expect(legenda).toContain('ainda sem o código');
+    expect(legenda).not.toContain('?');
+  });
+
+  // -------------------------------------------------------------------------
+  // A dica — uma vez só
+  // -------------------------------------------------------------------------
+
+  it('resposta curta que nao entendi ganha a dica, UMA vez', async () => {
+    const primeira = await useCase.aprovacao(DE, QUEM, 'Aprovadíssimo demais');
+    expect(primeira?.motivo).toBe('aprovacao_dica');
+    expect(primeira?.resposta).toContain('"aprovo"');
+
+    // A segunda vai para os agentes, como sempre foi.
+    expect(await useCase.aprovacao(DE, QUEM, 'hmm talvez')).toBeNull();
+  });
+
+  it('pergunta NAO ganha dica — "quanto vendi?" continua da Anastasia', async () => {
+    expect(await useCase.aprovacao(DE, QUEM, 'quanto vendi?')).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // A aprovação antes do código
+  // -------------------------------------------------------------------------
+
+  it('"aprovo" ANTES do codigo fica guardado, e o codigo publica de uma vez', async () => {
+    catalogos.listarEmAprovacao.mockResolvedValue([FOTO('f-1', null)]);
+
+    const antes = await useCase.aprovacao(DE, QUEM, 'aprovo');
+    expect(antes?.motivo).toBe('aprovacao_sem_codigo');
+    expect(antes?.resposta).toContain('assim que tiver o código');
+    expect(aprovou()).toBe(false);
+
+    const depois = await useCase.codigo(DE, 'AN24435', QUEM);
+
+    expect(depois?.motivo).toBe('foto_aprovada');
+    expect(depois?.resposta).toContain('já está no catálogo');
+    expect(catalogos.atualizarFoto).toHaveBeenLastCalledWith(
+      'f-1',
+      expect.objectContaining({ status: 'APROVADA', aprovadoPor: QUEM }),
+    );
+  });
+
+  it('se ela mandou refazer no meio, o codigo NAO publica a imagem nova', async () => {
+    catalogos.listarEmAprovacao.mockResolvedValue([FOTO('f-1', null)]);
+    await useCase.aprovacao(DE, QUEM, 'aprovo');
+
+    // Entre o "aprovo" e o codigo, a foto voltou a ser tratada.
+    catalogos.atualizarFoto.mockResolvedValue({ status: 'PROCESSANDO' });
+    const r = await useCase.codigo(DE, 'AN24435', QUEM);
+
+    expect(aprovou()).toBe(false);
+    expect(r?.motivo).toBe('codigo_anotado');
+  });
+
+  it('sem "aprovo" antes, o codigo so anota — como sempre', async () => {
+    sessao.esperarCodigo(DE, 'f-1', '#0003 Verão 2027');
+
+    const r = await useCase.codigo(DE, 'AN24435', QUEM);
+
+    expect(r?.motivo).toBe('codigo_anotado');
+    expect(aprovou()).toBe(false);
+  });
+
+  it('"sim" com a lista de UMA peca na tela responde a lista, nao aprova', async () => {
+    catalogos.listarEmAprovacao.mockResolvedValue([FOTO('f-1', null)]);
+    sessao.esperarCodigo(DE, 'f-1', 'essa foto');
+    sessao.oferecerEscolha(DE, [
+      { codigo: 'AN24435', descricao: 'ANEL MASCULINO', preco: 26990 },
+    ]);
+
+    // null = "nao era comigo": o roteador leva o "sim" para `buscarPeca`.
+    expect(await useCase.aprovacao(DE, QUEM, 'sim')).toBeNull();
+    expect(aprovou()).toBe(false);
+  });
+
+  it('o "aprovo" com a lista na tela nao apaga a lista', async () => {
+    // A mesma foto: a marca de aprovada entra, e o "2" que vier em seguida
+    // ainda tem onde entrar.
+    catalogos.listarEmAprovacao.mockResolvedValue([FOTO('f-1', null)]);
+    sessao.esperarCodigo(DE, 'f-1', 'essa foto');
+    sessao.oferecerEscolha(DE, [
+      { codigo: 'AN24429', descricao: 'ANEL OVAL', preco: 38223 },
+      { codigo: 'AN24435', descricao: 'ANEL MASCULINO', preco: 26990 },
+    ]);
+
+    await useCase.aprovacao(DE, QUEM, 'aprovo');
+    const r = await useCase.buscarPeca(DE, '2', QUEM);
+
+    expect(r?.motivo).toBe('foto_aprovada');
+  });
+
+  // -------------------------------------------------------------------------
+  // A intenção antes da foto
+  // -------------------------------------------------------------------------
+
+  it.each([
+    'Quero adicionar fotos ao catálogo #0001',
+    'vou mandar as fotos',
+    'preciso enviar umas imagens',
+  ])('"%s" fala de mandar foto', (texto) => {
+    expect(useCase.falaDeMandarFoto(texto)).toBe(true);
+  });
+
+  it.each(['quanto o catálogo vendeu?', 'bom dia', 'manda o relatório'])(
+    '"%s" NAO fala de mandar foto',
+    (texto) => {
+      expect(useCase.falaDeMandarFoto(texto)).toBe(false);
+    },
+  );
+
+  it('a intencao com o numero LEMBRA o catalogo — a foto nao pergunta de novo', async () => {
+    const r = await useCase.intencao(
+      DE,
+      'Quero adicionar fotos ao catálogo #0001',
+    );
+
+    expect(r.motivo).toBe('catalogo_intencao');
+    expect(r.resposta).toContain('#0001 Catalogo Rosa Pink');
+    expect(sessao.catalogoAtual(DE)?.numero).toBe('0001');
+    expect(useCase.conversaAberta(DE)).toBe(true);
+  });
+
+  it('a intencao sem numero pergunta o catalogo, e abre a conversa', async () => {
+    const r = await useCase.intencao(DE, 'vou mandar as fotos');
+
+    expect(r.resposta).toContain('De qual catálogo é?');
+    expect(useCase.conversaAberta(DE)).toBe(true);
+  });
+
+  it('sem catalogo aberto, a intencao diz isso', async () => {
+    catalogos.listarAbertos.mockResolvedValue([]);
+    const r = await useCase.intencao(DE, 'vou mandar as fotos');
+    expect(r.motivo).toBe('catalogo_nenhum_aberto');
+  });
+
+  // -------------------------------------------------------------------------
+  // A conversa aberta: recibo, catálogo e código antes da foto
+  // -------------------------------------------------------------------------
+
+  it('sem conversa aberta, nada e do catalogo', async () => {
+    expect(await useCase.continuarConversa(DE, 'Ok')).toBeNull();
+  });
+
+  it('com a conversa aberta, "Ok" e recibo', async () => {
+    sessao.abrirConversa(DE);
+    const r = await useCase.continuarConversa(DE, 'Ok');
+    expect(r).toEqual({ resposta: null, motivo: 'catalogo_recibo' });
+  });
+
+  it('"#0003" antes da foto fica lembrado', async () => {
+    sessao.abrirConversa(DE);
+
+    const r = await useCase.continuarConversa(DE, '#0003');
+
+    expect(r?.motivo).toBe('catalogo_lembrado');
+    expect(sessao.catalogoAtual(DE)?.numero).toBe('0003');
+  });
+
+  it('o nome do catalogo tambem vale: "Verão 2027"', async () => {
+    sessao.abrirConversa(DE);
+    const r = await useCase.continuarConversa(DE, 'Verão 2027');
+    expect(sessao.catalogoAtual(DE)?.numero).toBe('0003');
+    expect(r?.motivo).toBe('catalogo_lembrado');
+  });
+
+  it('numero sozinho e catalogo, nunca codigo — a base tem o codigo `2`', async () => {
+    sessao.abrirConversa(DE);
+    produtos.buscarCodigosPresentesEm.mockResolvedValue(['2']);
+
+    await useCase.continuarConversa(DE, '2');
+
+    expect(sessao.catalogoAtual(DE)?.numero).toBe('0002');
+    expect(sessao.retirarCodigoAdiantado(DE)).toBeNull();
+  });
+
+  it('"CO26185 6x" antes da foto fica guardado para a proxima', async () => {
+    sessao.abrirConversa(DE);
+
+    const r = await useCase.continuarConversa(DE, 'CO26185 6x');
+
+    expect(r?.motivo).toBe('codigo_adiantado');
+    expect(sessao.retirarCodigoAdiantado(DE)).toEqual({
+      codigoErp: 'CO26185',
+      parcelas: 6,
+      juros: null,
+    });
+  });
+
+  it('"vendas da loja 2" NAO e referencia — segue para a Anastasia', async () => {
+    sessao.abrirConversa(DE);
+
+    expect(await useCase.continuarConversa(DE, 'vendas da loja 2')).toBeNull();
+    expect(sessao.catalogoAtual(DE)).toBeNull();
+  });
+
+  it('o codigo mandado com a foto esperando catalogo e anotado nela', async () => {
+    sessao.pendurar(DE, {
+      arquivoId: 'catalogo/pendentes/x.jpg',
+      mime: 'image/jpeg',
+      codigoErp: null,
+      parcelas: null,
+    });
+
+    const r = await useCase.resposta(DE, QUEM, 'AN24435');
+
+    expect(r.motivo).toBe('codigo_antes_do_catalogo');
+    expect(r.resposta).toContain('Falta só o catálogo');
+  });
+
+  // -------------------------------------------------------------------------
+  // A foto que expira avisa
+  // -------------------------------------------------------------------------
+
+  it('a foto que ficou sem catalogo AVISA quando expira, em vez de sumir', async () => {
+    const agora = Date.now();
+    const relogio = jest.spyOn(Date, 'now').mockReturnValue(agora);
+    try {
+      sessao.pendurar(DE, {
+        arquivoId: 'catalogo/pendentes/pc.jpg',
+        mime: 'image/jpeg',
+        codigoErp: null,
+        parcelas: null,
+      });
+
+      // Meia hora e um minuto depois, sem resposta.
+      relogio.mockReturnValue(agora + 31 * 60 * 1000);
+      await (
+        useCase as unknown as { varrerExpiradas: () => Promise<void> }
+      ).varrerExpiradas();
+
+      expect(armazenamento.remover).toHaveBeenCalledWith(
+        'catalogo/pendentes/pc.jpg',
+      );
+      expect(whatsapp.enviarTexto).toHaveBeenCalledWith(
+        DE,
+        expect.stringContaining('descartei'),
+      );
+    } finally {
+      relogio.mockRestore();
+    }
+  });
+
+  it('a foto que ainda esta no prazo NAO e descartada', async () => {
+    sessao.pendurar(DE, {
+      arquivoId: 'catalogo/pendentes/pc.jpg',
+      mime: 'image/jpeg',
+      codigoErp: null,
+      parcelas: null,
+    });
+
+    await (
+      useCase as unknown as { varrerExpiradas: () => Promise<void> }
+    ).varrerExpiradas();
+
+    expect(armazenamento.remover).not.toHaveBeenCalled();
+    expect(whatsapp.enviarTexto).not.toHaveBeenCalled();
+  });
+});

@@ -42,6 +42,29 @@ describe('extrairMensagemRecebida', () => {
     expect(r?.audio).toBeUndefined();
   });
 
+  it('traz o carimbo de quando a mensagem foi ESCRITA, em milissegundos', () => {
+    // O relogio da aprovacao do catalogo (11/09/2026): uma afirmacao so
+    // aprova foto que ja tinha chegado quando a pessoa escreveu. O WAHA manda
+    // em segundos.
+    const r = extrairMensagemRecebida({
+      event: 'message',
+      payload: {
+        from: '558586467241@c.us',
+        body: 'Aprova',
+        timestamp: 1757521640,
+      },
+    });
+    expect(r?.em).toBe(1_757_521_640_000);
+  });
+
+  it('sem carimbo no payload, `em` fica ausente — quem usa cai na hora de agora', () => {
+    const r = extrairMensagemRecebida({
+      event: 'message',
+      payload: { from: '558586467241@c.us', body: 'Aprova' },
+    });
+    expect(r?.em).toBeUndefined();
+  });
+
   it('extrai o audio de uma mensagem de voz, com a URL do arquivo', () => {
     const r = extrairMensagemRecebida(audioReal);
     expect(r?.de).toBe('212515032166435@lid');

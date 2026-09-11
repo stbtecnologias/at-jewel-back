@@ -29,6 +29,11 @@ export interface MensagemDoCanal {
    * o WhatsApp manda as duas coisas no mesmo campo do payload.
    */
   imagem?: ImagemInterna;
+  /**
+   * Quando a mensagem foi ESCRITA (ms), pelo carimbo do WhatsApp. E o relogio
+   * da aprovacao do catalogo — ver `ProcessarFotoCatalogoUseCase.aprovacao`.
+   */
+  em?: number;
 }
 
 export interface RespostaDoCanal {
@@ -134,8 +139,14 @@ export class RotearMensagemInternaUseCase {
     // Anastasia, ela responde "0002" como pergunta sobre vendas e "BR26252"
     // como codigo que nao diz nada — as duas coisas ja aconteceram.
     //
-    // AS TRES CONDICOES SAO CONSULTAS EM MEMORIA, e e isso que preserva a
-    // ordem vendedora-antes-de-gestao: sem elas, todo texto do canal faria um
+    // E DESDE 11/09/2026, A CONVERSA ABERTA. Decisao do Lucas: a pessoa manda
+    // as coisas na ordem que quiser. Com a conversa do catalogo em curso, o
+    // "Ok" que e recibo, o "#0003" e o codigo mandados ANTES da foto tambem
+    // sao do catalogo — no print do Yerlon, o "Ok" caiu na Anastasia e voltou
+    // "Oi, Yerlon! Como posso te ajudar?".
+    //
+    // AS CONDICOES SAO CONSULTAS EM MEMORIA, e e isso que preserva a ordem
+    // vendedora-antes-de-gestao: sem elas, todo texto do canal faria um
     // lookup de admin antes do de vendedora.
     // ---------------------------------------------------------------------
     const esperandoCatalogo = this.canalCatalogo.temFotoEsperando(msg.de);
@@ -143,7 +154,8 @@ export class RotearMensagemInternaUseCase {
     if (
       esperandoCatalogo ||
       esperandoCodigo ||
-      this.canalCatalogo.temFotoEmAprovacao(msg.de)
+      this.canalCatalogo.temFotoEmAprovacao(msg.de) ||
+      this.canalCatalogo.conversaAberta(msg.de)
     ) {
       const quem = await this.identificarAdmin.execute(
         telefone,
@@ -163,6 +175,7 @@ export class RotearMensagemInternaUseCase {
             const anotado = await this.canalCatalogo.codigo(
               msg.de,
               textoResolvido,
+              nome,
             );
             if (anotado) return anotado;
           }
@@ -171,6 +184,7 @@ export class RotearMensagemInternaUseCase {
             msg.de,
             nome,
             textoResolvido,
+            msg.em,
           );
           // `null` = o texto nao era resposta de aprovacao. Uma pergunta sobre
           // vendas feita com foto pendurada segue para a Anastasia como
@@ -188,9 +202,20 @@ export class RotearMensagemInternaUseCase {
             const escolhida = await this.canalCatalogo.buscarPeca(
               msg.de,
               textoResolvido,
+              nome,
             );
             if (escolhida) return escolhida;
           }
+
+          // O RECIBO E A REFERENCIA ADIANTADA, por ultimo. Aqui ja se sabe
+          // que o texto nao era resposta a nenhuma pergunta aberta — e a
+          // conversa so fica com ele se ele for INTEIRO do catalogo ("Ok",
+          // "#0003", "CO26185"). O resto segue para os agentes.
+          const continuou = await this.canalCatalogo.continuarConversa(
+            msg.de,
+            textoResolvido,
+          );
+          if (continuou) return continuou;
         }
       }
     }
@@ -243,9 +268,31 @@ export class RotearMensagemInternaUseCase {
 
     // O CHAO DO CANAL DO CATALOGO. Tudo que era assunto dele ja foi tentado
     // la em cima — responder o catalogo, mandar o codigo, aprovar, buscar a
-    // peca. Aqui chega o que sobrou, e a resposta e dizer o que este canal faz.
+    // peca. Aqui chega o que sobrou, e a resposta e dizer o que este canal faz
+    // — ou, se a pessoa disse que quer mandar foto, abrir a conversa.
     if (doCatalogo) {
-      return this.canalCatalogo.conversa(msg.de, doCatalogo.nome ?? '');
+      return this.canalCatalogo.falaDeMandarFoto(texto)
+        ? this.canalCatalogo.intencao(msg.de, texto)
+        : this.canalCatalogo.conversa(msg.de, doCatalogo.nome ?? '');
+    }
+
+    // ---------------------------------------------------------------------
+    // A GESTAO QUE QUER MANDAR FOTO. Em 10/09 o Yerlon, ADM, escreveu "Quero
+    // adicionar fotos ao catálogo #0001" e a Anastasia respondeu que catalogo
+    // "fica fora do meu alcance". O canal que sabia fazer nunca ouviu.
+    //
+    // DEPOIS DA VENDEDORA, e isto nao e detalhe: a vendedora ja saiu la em
+    // cima para a Elena, entao a ordem que protege o canal restrito nao muda.
+    // A consulta de permissao so acontece quando o texto FALA de mandar foto,
+    // que e teste em memoria — o resto da gestao nao paga nada a mais. E o
+    // canal do catalogo nao enxerga venda: ninguem ganha dado por esta porta.
+    // ---------------------------------------------------------------------
+    if (admin && this.canalCatalogo.falaDeMandarFoto(texto)) {
+      const podeCatalogo = await this.identificarAdmin.execute(
+        telefone,
+        PERMISSAO_CATALOGO,
+      );
+      if (podeCatalogo) return this.canalCatalogo.intencao(msg.de, texto);
     }
 
     if (vendedora) {

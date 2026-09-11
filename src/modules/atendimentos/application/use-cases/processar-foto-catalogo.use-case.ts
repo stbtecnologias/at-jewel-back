@@ -24,6 +24,7 @@ import type { IProdutoRepository } from '../../../erp/domain/ports/repositories/
 import { ListarProdutosUseCase } from '../../../produtos/application/use-cases/listar-produtos.use-case';
 import {
   SessaoCatalogoService,
+  type CodigoEsperado,
   type FotoPendente,
   type OpcaoPeca,
 } from '../sessao-catalogo.service';
@@ -120,10 +121,11 @@ const MAX_OPCOES = 6;
  * numero seria cobrar senha de quem eu mesmo chamei — a regra que ja custou
  * tres defeitos em 31/08.
  *
- * SEGURO PORQUE A APROVACAO VEM ANTES: `sim` com foto tratada esperando
- * veredito e consumido por `aprovacao` no roteador, e nunca chega aqui.
- * Isto so ve o `sim` que sobrou — e nesse ponto ele so pode ser sobre a
- * lista.
+ * COM A LISTA DE UMA PECA NA TELA, O `sim` E DELA — mesmo com foto tratada
+ * esperando veredito. Desde 11/09/2026 `aprovacao` devolve esse `sim` para
+ * ca em vez de le-lo como aprovacao: a ultima pergunta feita foi "É ela?", e
+ * uma pergunta por vez. Se a aprovacao ja tinha vindo antes, o codigo
+ * escolhido publica junto — ver `anotarCodigo`.
  */
 const PALAVRAS_CONFIRMA = [
   'sim',
@@ -172,20 +174,91 @@ const PALAVRAS_APROVA = [
   'aprovado',
   'aprovada',
   'aprovar',
-  'ok',
-  'okay',
-  'perfeito',
+  // "APROVA" NAO ESTAVA AQUI, e foi o defeito do HML-16. Em 10/09 o Yerlon
+  // respondeu "Aprova" a foto tratada, a palavra nao casou, e a frase caiu na
+  // Anastasia — que respondeu "Aprovar o quê?". So a segunda tentativa, com
+  // "Aprovo", passou.
+  //
+  // Decisao do Lucas em 11/09: TODA palavra de afirmacao aprova. O que impede
+  // um "ok" de publicar foto que a pessoa nao viu nao e mais a lista curta — e
+  // o relogio, em `aprovacao`.
+  'aprova',
+  'aprove',
+  'pode aprovar',
+  'pode colocar',
+  'pode por',
   'pode ir',
   'pode publicar',
-  'ficou bom',
-  'ficou otimo',
+  'pode ser',
+  'pode sim',
+  'ok',
+  'okay',
+  'okey',
+  'sim',
+  'isso',
   'isso mesmo',
+  'exato',
+  'certo',
+  'certinho',
+  'perfeito',
+  'perfeita',
+  'otimo',
+  'otima',
+  'show',
+  'top',
+  'massa',
+  'bacana',
+  'legal',
+  'lindo',
+  'linda',
+  'amei',
+  'gostei',
+  'adorei',
+  'ficou bom',
+  'ficou boa',
+  'ficou otimo',
+  'ficou otima',
+  'ficou lindo',
+  'ficou linda',
+  'ficou perfeito',
+  'ficou perfeita',
+  'ficou show',
   'ta bom',
+  'ta boa',
   'ta otimo',
+  'ta otima',
+  'ta perfeito',
+  'ta lindo',
+  'ta linda',
+  'esta bom',
   'beleza',
   'blz',
-  'sim',
+  'fechado',
+  'joia',
+  'uhum',
+  'aham',
 ];
+
+// DE FORA, DE PROPOSITO: "pode" sozinho e "bom" sozinho. A palavra so precisa
+// ABRIR a frase, e "pode refazer com fundo branco" e "bom dia" abririam com
+// elas — o primeiro publicaria o que a pessoa mandou refazer.
+
+/**
+ * O joinha, o certo, o palminha. SAO LIDOS ANTES DO `normalizar`, que apaga
+ * tudo que nao e letra ou digito: por ele, "👍" vira texto vazio e nunca casou
+ * com nada. Vale a mensagem feita SO de emoji de aprovacao (com tom de pele e
+ * variacao); "👍 mas muda o fundo" tem letra, e vai pelo caminho das palavras.
+ */
+const RE_EMOJI_APROVA =
+  /^(?:\s*(?:\u{1F44D}|\u{1F44C}|\u{2705}|\u{2714}|\u{1F44F}|\u{1F64C}|\u{1F4AF}|\u{1F525}|\u{2764}|\u{1F60D}|\u{1F970}|\u{1F929})(?:\u{1F3FB}|\u{1F3FC}|\u{1F3FD}|\u{1F3FE}|\u{1F3FF})?\u{FE0F}?)+\s*$/u;
+
+/**
+ * "ok, MAS muda o fundo" nao e aprovacao — e ressalva. O que vem depois do
+ * "mas" decide: se for pedido de ajuste ou descarte, vale ele; se for outra
+ * coisa, nao e veredito nenhum. Sem isso, a lista maior de afirmacoes
+ * publicaria justamente a foto que a pessoa pediu para mudar.
+ */
+const RE_RESSALVA = /^(mas|porem|so que)\b\s*/;
 
 /**
  * Pedido de mudanca. O que vem DEPOIS da palavra e a instrucao para a IA.
@@ -257,6 +330,10 @@ type Veredito =
  * agentes, que e o lado seguro de errar.
  */
 function lerVeredito(texto: string): Veredito {
+  if (RE_EMOJI_APROVA.test(texto.trim())) {
+    return { tipo: 'APROVA', todas: false };
+  }
+
   const n = normalizar(texto);
   if (!n) return { tipo: 'NENHUM' };
 
@@ -267,7 +344,20 @@ function lerVeredito(texto: string): Veredito {
     return { tipo: 'DESCARTA', todas: RE_TODAS.test(n) };
   }
 
-  if (PALAVRAS_APROVA.some((p) => n === p || n.startsWith(`${p} `))) {
+  // A MAIS LONGA que casar, pelo mesmo motivo do ajuste abaixo: o que sobra
+  // depois dela e onde se procura a ressalva.
+  const aprova = PALAVRAS_APROVA.filter(
+    (p) => n === p || n.startsWith(`${p} `),
+  ).sort((a, b) => b.length - a.length)[0];
+  if (aprova) {
+    const resto = n.slice(aprova.length).trim();
+    const ressalva = resto.match(RE_RESSALVA);
+    if (ressalva) {
+      const depois = lerVeredito(resto.slice(ressalva[0].length));
+      return depois.tipo === 'AJUSTA' || depois.tipo === 'DESCARTA'
+        ? depois
+        : { tipo: 'NENHUM' };
+    }
     return { tipo: 'APROVA', todas: RE_TODAS.test(n) };
   }
 
@@ -296,6 +386,86 @@ function limparPedido(resto: string): string | null {
     .trim();
   return limpo.length >= 3 ? limpo : null;
 }
+
+/**
+ * Resposta CURTA a foto tratada: ate tres palavras, e sem ser pergunta.
+ *
+ * E a fronteira da dica "responde aprovo, ajusta ou descarta". O vocabulario e
+ * fechado para um "quanto vendi hoje?" digitado com foto pendurada chegar na
+ * Anastasia — e a pergunta continua chegando: tem "?". O que ganha a dica e o
+ * "Aprova" que a lista nao conhecia, que foi o caso do Yerlon.
+ */
+function ehRespostaCurta(texto: string): boolean {
+  if (texto.includes('?')) return false;
+  const n = normalizar(texto);
+  return n.length > 0 && n.split(' ').length <= 3;
+}
+
+/**
+ * Palavras que so ligam a frase. Tiradas elas, "e o 0003" e "0003".
+ */
+const PALAVRAS_DE_LIGACAO = new Set([
+  'e',
+  'o',
+  'a',
+  'os',
+  'as',
+  'do',
+  'da',
+  'de',
+  'dos',
+  'das',
+  'no',
+  'na',
+  'pro',
+  'pra',
+  'para',
+  'ao',
+  'eh',
+  'esse',
+  'essa',
+  'este',
+  'esta',
+  'numero',
+  'num',
+  'vai',
+  'vao',
+  'sao',
+  'foto',
+  'fotos',
+  'catalogo',
+  'cat',
+  'codigo',
+  'ref',
+  'referencia',
+  'peca',
+]);
+
+/** O que sobrou do texto e so ligacao — nao ha outro assunto nele. */
+function soLigacao(resto: string): boolean {
+  return normalizar(resto)
+    .split(' ')
+    .filter(Boolean)
+    .every((p) => PALAVRAS_DE_LIGACAO.has(p));
+}
+
+/**
+ * ===========================================================================
+ * "QUERO MANDAR FOTO PRO CATALOGO" — A INTENCAO ANTES DA FOTO.
+ *
+ * Em 10/09 o Yerlon, ADM, escreveu "Quero adicionar fotos ao catálogo #0001".
+ * Texto de ADM e da Anastasia, e ela respondeu que catalogo "fica fora do meu
+ * alcance". Estava certa sobre si — e o canal que sabia fazer nunca ouviu.
+ *
+ * POR PALAVRA, SEM LLM, como o resto do modulo: e classificacao de uma frase.
+ * Pede FOTO e, junto, CATALOGO ou um verbo de envio. So "catalogo" nao basta:
+ * "quanto o catalogo vendeu?" e pergunta de gestao.
+ * ===========================================================================
+ */
+const RE_FALA_FOTO = /\b(foto|fotos|imagem|imagens)\b/;
+const RE_FALA_CATALOGO = /\b(catalogo|catalogos)\b/;
+const RE_FALA_ENVIO =
+  /\b(mandar|mando|manda|enviar|envio|envia|adicionar|adiciono|colocar|coloco|botar|subir|incluir)\b/;
 
 /**
  * A imagem como a APLICACAO a conhece. Espelha o que o webhook extrai, mas
@@ -349,6 +519,9 @@ export interface RespostaFoto {
 export class ProcessarFotoCatalogoUseCase {
   private readonly logger = new Logger(ProcessarFotoCatalogoUseCase.name);
 
+  /** O temporizador da varredura das fotos vencidas. Um so, reagendado. */
+  private varredura: ReturnType<typeof setTimeout> | null = null;
+
   constructor(
     @Inject(CATALOGO_REPOSITORY)
     private readonly catalogos: ICatalogoRepository,
@@ -382,6 +555,13 @@ export class ProcessarFotoCatalogoUseCase {
     pedidoDeEstilo: string | null,
     chat: string,
   ): Promise<void> {
+    // "A CAMINHO" DESDE ANTES DE TRATAR. O `tratar` grava EM_APROVACAO no
+    // banco antes de a imagem sair, e nesse intervalo o banco diz "pode
+    // aprovar" sobre uma foto que ninguem viu. E o intervalo em que o "Ok" de
+    // uma mensagem anterior publicaria o que nao foi visto — ver `foiVista`.
+    this.sessao.marcarEmEnvio(chat, fotoId);
+    let enviada = false;
+
     try {
       const r = await this.tratar.execute(fotoId, pedidoDeEstilo);
       if (!r) return;
@@ -407,13 +587,26 @@ export class ProcessarFotoCatalogoUseCase {
         tratada.mime,
         // A peca vai NOMEADA porque a fila pode ter varias: sem o codigo, um
         // "aprovo" solto seria um chute sobre qual imagem ela esta olhando.
-        `${r.foto.codigoErp ? `${r.foto.codigoErp} — ficou assim.` : 'Ficou assim.'}\n` +
-          '"aprovo" põe no catálogo · "ajusta" e o quê refaz · "descarta" joga fora.',
+        //
+        // SEM CODIGO, A LEGENDA NAO PERGUNTA DE NOVO. O codigo ja foi pedido
+        // quando a foto foi guardada; repetir a pergunta aqui abriria duas ao
+        // mesmo tempo. Ela so avisa que o "aprovo" pode vir antes — o codigo
+        // que chegar depois publica junto.
+        r.foto.codigoErp
+          ? `${r.foto.codigoErp} — ficou assim.\n` +
+              '"aprovo" põe no catálogo · "ajusta" e o quê refaz · "descarta" joga fora.'
+          : 'Ficou assim — ainda sem o código da peça.\n' +
+              '"aprovo" e ela entra assim que o código chegar · "ajusta" e o quê refaz · "descarta" joga fora.',
       );
+
+      this.sessao.marcarEnviada(chat, fotoId);
+      enviada = true;
     } catch (err) {
       this.logger.error(
         `Falha ao tratar/avisar a foto ${fotoId}: ${String(err)}`,
       );
+    } finally {
+      if (!enviada) this.sessao.desistirDoEnvio(chat, fotoId);
     }
   }
 
@@ -478,13 +671,23 @@ export class ProcessarFotoCatalogoUseCase {
     const analise = await this.lerLegenda(msg.legenda, abertos);
     const catalogo = analise.catalogo ?? this.sessao.catalogoAtual(msg.de);
 
+    // O CODIGO QUE CHEGOU ANTES DA FOTO — "CO26185" mandado sozinho, com a
+    // conversa aberta. Vale so quando a legenda nao trouxe um: o que vem
+    // escrito na propria foto e mais especifico que o que veio antes dela.
+    const adiantado = analise.codigo
+      ? null
+      : this.sessao.retirarCodigoAdiantado(msg.de);
+    const codigoErp = analise.codigo ?? adiantado?.codigoErp ?? null;
+    const parcelas = analise.parcelas ?? adiantado?.parcelas ?? null;
+    const juros = analise.juros ?? adiantado?.juros ?? null;
+
     if (!catalogo) {
       const pendurou = this.sessao.pendurar(msg.de, {
         arquivoId: chave,
         mime,
-        codigoErp: analise.codigo,
-        parcelas: analise.parcelas,
-        juros: analise.juros,
+        codigoErp,
+        parcelas,
+        juros,
         pedidoDeEstilo: analise.pedidoDeEstilo,
       });
       if (!pendurou) {
@@ -495,6 +698,9 @@ export class ProcessarFotoCatalogoUseCase {
           motivo: 'fila_cheia',
         };
       }
+      // Quem nao responder vai ser AVISADO quando a foto expirar — ver
+      // `varrerExpiradas`. O relogio comeca aqui.
+      this.agendarVarredura();
       return {
         resposta: this.perguntarCatalogo(abertos),
         motivo: 'aguardando_catalogo',
@@ -508,9 +714,9 @@ export class ProcessarFotoCatalogoUseCase {
       {
         arquivoId: chave,
         mime,
-        codigoErp: analise.codigo,
-        parcelas: analise.parcelas,
-        juros: analise.juros,
+        codigoErp,
+        parcelas,
+        juros,
         pedidoDeEstilo: analise.pedidoDeEstilo,
         em: Date.now(),
       },
@@ -532,6 +738,25 @@ export class ProcessarFotoCatalogoUseCase {
     const analise = await this.lerLegenda(texto, abertos);
 
     if (!analise.catalogo) {
+      // O CODIGO ANTES DO CATALOGO. Perguntei o catalogo e veio o codigo da
+      // peca: e resposta a outra pergunta, mas e informacao boa — e a ordem e
+      // de quem fala (decisao do Lucas em 11/09). Anoto na foto que espera, e
+      // pergunto so o que ainda falta.
+      if (analise.codigo) {
+        const completadas = this.sessao.completarPendentes(de, {
+          codigoErp: analise.codigo,
+          parcelas: analise.parcelas,
+          juros: analise.juros,
+        });
+        if (completadas > 0) {
+          return {
+            resposta:
+              `Anotei o código ${analise.codigo}. Falta só o catálogo — ` +
+              this.perguntarCatalogo(abertos),
+            motivo: 'codigo_antes_do_catalogo',
+          };
+        }
+      }
       return {
         resposta: 'Não achei esse catálogo. ' + this.perguntarCatalogo(abertos),
         motivo: 'catalogo_nao_reconhecido',
@@ -591,8 +816,14 @@ export class ProcessarFotoCatalogoUseCase {
    *
    * Devolve `null` quando o texto NAO tem cara de codigo — ai era outra coisa,
    * e segue para os agentes.
+   *
+   * @param nomeRemetente quem aprova, se a aprovacao ja tiver vindo antes.
    */
-  async codigo(de: string, texto: string): Promise<RespostaFoto | null> {
+  async codigo(
+    de: string,
+    texto: string,
+    nomeRemetente = '',
+  ): Promise<RespostaFoto | null> {
     const pendente = this.sessao.codigoPendente(de);
     if (!pendente) return null;
 
@@ -607,6 +838,7 @@ export class ProcessarFotoCatalogoUseCase {
       pendente,
       m[1].toUpperCase(),
       texto.replace(m[0], ' '),
+      nomeRemetente,
     );
   }
 
@@ -645,7 +877,11 @@ export class ProcessarFotoCatalogoUseCase {
    * `aprovacao`, entao um `aprovo` com foto tratada esperando veredito nunca
    * chega aqui como termo de busca.
    */
-  async buscarPeca(de: string, texto: string): Promise<RespostaFoto | null> {
+  async buscarPeca(
+    de: string,
+    texto: string,
+    nomeRemetente = '',
+  ): Promise<RespostaFoto | null> {
     const pendente = this.sessao.codigoPendente(de);
     if (!pendente) return null;
 
@@ -664,6 +900,7 @@ export class ProcessarFotoCatalogoUseCase {
             pendente,
             opcoes[i - 1].codigo,
             limpo.slice(escolha[0].length),
+            nomeRemetente,
           );
         }
 
@@ -679,7 +916,13 @@ export class ProcessarFotoCatalogoUseCase {
       }
 
       if (opcoes.length === 1 && PALAVRAS_CONFIRMA.includes(limpo)) {
-        return this.anotarCodigo(de, pendente, opcoes[0].codigo, '');
+        return this.anotarCodigo(
+          de,
+          pendente,
+          opcoes[0].codigo,
+          '',
+          nomeRemetente,
+        );
       }
     }
 
@@ -726,11 +969,14 @@ export class ProcessarFotoCatalogoUseCase {
    * confere no fim.
    *
    * @param nomeRemetente rotulo do staff, resolvido pelo telefone.
+   * @param escritaEm quando a mensagem foi ESCRITA, pelo carimbo do WhatsApp.
+   *   Sem ele, a hora de agora — que so erra para o lado de aceitar.
    */
   async aprovacao(
     de: string,
     nomeRemetente: string,
     texto: string,
+    escritaEm: number = Date.now(),
   ): Promise<RespostaFoto | null> {
     const fila = await this.catalogos.listarEmAprovacao(nomeRemetente.trim());
     if (fila.length === 0) {
@@ -741,6 +987,22 @@ export class ProcessarFotoCatalogoUseCase {
     }
 
     const veredito = lerVeredito(texto);
+
+    // ==========================================================================
+    // O RELOGIO: SO CONTA A FOTO QUE A PESSOA JA TINHA VISTO QUANDO ESCREVEU.
+    //
+    // Decisao do Lucas em 11/09/2026: toda palavra de afirmacao aprova — "ok",
+    // "sim", "gostei", o joinha. O risco que isso abre esta no print do Yerlon:
+    // o "Ok" das 13:33 era resposta a "codigo anotado", e a foto tratada chegou
+    // as 13:34. Chegando alguns segundos antes, aquele "Ok" teria publicado uma
+    // foto que ele nao viu.
+    //
+    // A protecao deixou de ser a palavra e passou a ser a ORDEM NO TEMPO.
+    // Afirmacao escrita antes de a foto sair nao e sobre ela.
+    // ==========================================================================
+    const vistas = fila.filter((f) =>
+      this.sessao.foiVista(de, f.id, escritaEm),
+    );
 
     // EU ACABEI DE PERGUNTAR O QUE MUDAR — então isto é a resposta, e não
     // precisa da palavra de comando. Vale só quando o texto não é, por si, um
@@ -755,7 +1017,29 @@ export class ProcessarFotoCatalogoUseCase {
       };
     }
 
-    if (veredito.tipo === 'NENHUM') return null;
+    if (veredito.tipo === 'NENHUM') {
+      // ========================================================================
+      // A DICA, UMA VEZ SO. Ate 11/09 tudo que nao estava na lista caia na
+      // Anastasia, que nao sabe que ha foto esperando — e respondia "Aprovar o
+      // quê?". Resposta curta, logo depois de a foto chegar, quase sempre e
+      // sobre ela; entao eu digo como responder.
+      //
+      // Mas SO UMA VEZ por foto, e so para resposta curta e sem "?": a
+      // segunda frase que eu nao entender vai para os agentes, como sempre
+      // foi. E o vocabulario fechado continua protegendo o "quanto vendi
+      // hoje?" — ele tem ponto de interrogacao.
+      // ========================================================================
+      const alvo = vistas[0];
+      if (alvo && ehRespostaCurta(texto) && this.sessao.darDica(de, alvo.id)) {
+        return {
+          resposta:
+            `Não entendi se é sobre ${this.rotulo(alvo)}. Responde "aprovo" ` +
+            'que ela entra no catálogo, "ajusta" e o que mudar, ou "descarta".',
+          motivo: 'aprovacao_dica',
+        };
+      }
+      return null;
+    }
 
     if (veredito.tipo === 'DESCARTA') {
       const alvos = veredito.todas ? fila : [fila[0]];
@@ -798,7 +1082,23 @@ export class ProcessarFotoCatalogoUseCase {
       };
     }
 
-    const alvos = veredito.todas ? fila : [fila[0]];
+    // "SIM" COM A LISTA DE UMA PECA SO NA TELA RESPONDE A LISTA. A ultima
+    // pergunta que eu fiz foi "É ela?", e uma pergunta por vez: o "sim" e
+    // dela. Segue para `buscarPeca`, que anota o codigo — e, se a aprovacao
+    // ja tinha vindo antes, publica junto.
+    const opcoes = this.sessao.escolhaPendente(de);
+    if (opcoes?.length === 1 && PALAVRAS_CONFIRMA.includes(normalizar(texto))) {
+      return null;
+    }
+
+    // Nenhuma foto vista quando a pessoa escreveu: a afirmacao era sobre outra
+    // coisa — o "Ok" a "codigo anotado". E RECIBO, e recibo nao pede resposta:
+    // nem aprovacao, nem a Anastasia perguntando "Como posso te ajudar?".
+    if (vistas.length === 0) {
+      return { resposta: null, motivo: 'recibo_antes_da_foto' };
+    }
+
+    const alvos = veredito.todas ? vistas : [vistas[0]];
 
     // ==========================================================================
     // SEM CÓDIGO NÃO ENTRA NO CATÁLOGO.
@@ -812,14 +1112,26 @@ export class ProcessarFotoCatalogoUseCase {
     // peça na mão e o código à vista. Na montagem, dias depois, ninguém sabe
     // mais de qual peça era aquela foto.
     // ==========================================================================
+    //
+    // A APROVAÇÃO FICA GUARDADA, e isto é de 11/09/2026. Até aqui a pessoa
+    // ouvia "falta o código", mandava o código, e tinha de dizer "aprovo" DE
+    // NOVO — três mensagens para uma intenção. Agora a marca vai junto da foto
+    // que espera o código, e o código que chegar anota e publica de uma vez.
+    // A regra de cima continua de pé: a foto só entra COM código.
+    // ==========================================================================
     const semCodigo = alvos.filter((f) => !f.codigoErp);
     if (semCodigo.length > 0) {
       // Marca a primeira, para o código que vier em seguida encontrá-la.
-      this.sessao.esperarCodigo(de, semCodigo[0].id, 'essa foto');
+      this.sessao.esperarCodigo(
+        de,
+        semCodigo[0].id,
+        'essa foto',
+        semCodigo.length === 1 && alvos.length === 1,
+      );
       return {
         resposta:
-          semCodigo.length === 1
-            ? 'Essa foto ainda está sem código. Me manda o código da peça — ou descreve ela ("anel de esmeralda"), que eu procuro. Aí é só dizer "aprovo".'
+          semCodigo.length === 1 && alvos.length === 1
+            ? 'Anotado — ela entra no catálogo assim que tiver o código. Me manda o código da peça, ou descreve ela ("anel de esmeralda") que eu procuro.'
             : `${semCodigo.length} dessas fotos estão sem código. Me manda o código de cada uma antes de aprovar.`,
         motivo: 'aprovacao_sem_codigo',
       };
@@ -833,7 +1145,8 @@ export class ProcessarFotoCatalogoUseCase {
       });
     }
 
-    const restantes = fila.slice(alvos.length);
+    const aprovadas = new Set(alvos.map((f) => f.id));
+    const restantes = fila.filter((f) => !aprovadas.has(f.id));
     if (restantes.length === 0) this.sessao.esquecerAprovacao(de);
 
     return {
@@ -853,6 +1166,168 @@ export class ProcessarFotoCatalogoUseCase {
    */
   temFotoEmAprovacao(de: string): boolean {
     return this.sessao.temEmAprovacao(de);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Em qualquer ordem — decisao do Lucas em 11/09/2026
+  // ---------------------------------------------------------------------------
+
+  /** Ha conversa de catalogo aberta com este remetente? So memoria, sem banco. */
+  conversaAberta(de: string): boolean {
+    return this.sessao.conversaAberta(de);
+  }
+
+  /**
+   * O texto diz que a pessoa quer mandar foto? Ver `RE_FALA_FOTO`. So memoria:
+   * o roteador pergunta isto antes de decidir se paga uma consulta ao banco.
+   */
+  falaDeMandarFoto(texto: string): boolean {
+    const n = normalizar(texto);
+    return (
+      RE_FALA_FOTO.test(n) &&
+      (RE_FALA_CATALOGO.test(n) || RE_FALA_ENVIO.test(n))
+    );
+  }
+
+  /**
+   * "Quero adicionar fotos ao catálogo #0001" — a conversa aberta pela
+   * INTENCAO, antes da foto.
+   *
+   * ==========================================================================
+   * O CASO DO YERLON, 10/09/2026, 16:42. Ele disse o que queria e qual
+   * catalogo; a frase foi para a Anastasia, que respondeu que catalogo "fica
+   * fora do meu alcance"; e a foto que ele mandou em seguida perguntou "De qual
+   * catálogo é?" — o que ele tinha acabado de dizer.
+   *
+   * Agora o que foi dito fica: o catalogo e lembrado para a proxima foto, e o
+   * codigo, se vier, tambem. A resposta pede so o que falta.
+   * ==========================================================================
+   */
+  async intencao(de: string, texto: string): Promise<RespostaFoto> {
+    const abertos = await this.catalogos.listarAbertos();
+    if (abertos.length === 0) {
+      return {
+        resposta:
+          'Não há nenhum catálogo liberado para receber fotos agora. ' +
+          'Crie ou libere um no painel e me chama de novo.',
+        motivo: 'catalogo_nenhum_aberto',
+      };
+    }
+
+    this.sessao.abrirConversa(de);
+    const analise = await this.lerLegenda(texto, abertos);
+
+    if (analise.codigo) {
+      this.sessao.adiantarCodigo(de, {
+        codigoErp: analise.codigo,
+        parcelas: analise.parcelas,
+        juros: analise.juros,
+      });
+    }
+    const doCodigo = analise.codigo
+      ? ` O código ${analise.codigo} vale para a primeira.`
+      : ' Se souber o código da peça, põe na legenda.';
+
+    if (analise.catalogo) {
+      this.sessao.lembrarCatalogo(de, analise.catalogo);
+      return {
+        resposta: `Pode mandar — as fotos vão para o #${analise.catalogo.numero} ${analise.catalogo.nome}.${doCodigo}`,
+        motivo: 'catalogo_intencao',
+      };
+    }
+
+    // O catalogo da ultima vez, se a conversa ainda estiver no prazo: quem
+    // fotografa 20 pecas de uma colecao nao repete o numero a cada uma.
+    const lembrado = this.sessao.catalogoAtual(de);
+    if (lembrado) {
+      return {
+        resposta:
+          `Pode mandar — as fotos vão para o #${lembrado.numero} ${lembrado.nome}, ` +
+          `o último que você usou. Se for outro, me diz o número.${doCodigo}`,
+        motivo: 'catalogo_intencao',
+      };
+    }
+
+    return {
+      resposta: `Pode mandar. ${this.perguntarCatalogo(abertos)}`,
+      motivo: 'catalogo_intencao',
+    };
+  }
+
+  /**
+   * O que chega com a conversa aberta e nada pendente: o recibo, o catalogo
+   * ou o codigo mandados ANTES da foto.
+   *
+   * ==========================================================================
+   * E A ULTIMA COISA QUE O ROTEADOR TENTA, e so age sobre texto que e INTEIRO
+   * do catalogo:
+   *
+   *   "Ok", "blz", 👍   -> recibo, e recibo nao pede resposta
+   *   "#0003"           -> catalogo lembrado para a proxima foto
+   *   "CO26185 6x"      -> codigo guardado para a proxima foto
+   *
+   * O resto devolve `null` e segue para os agentes. "vendas da loja 2" tem o
+   * `2` de um catalogo, mas nao e SO isso — e continua sendo da Anastasia.
+   * ==========================================================================
+   */
+  async continuarConversa(
+    de: string,
+    texto: string,
+  ): Promise<RespostaFoto | null> {
+    if (!this.sessao.conversaAberta(de)) return null;
+
+    // O RECIBO. Em 10/09 o "Ok" do Yerlon a "codigo anotado" caiu na
+    // Anastasia, que respondeu "Oi, Yerlon! Como posso te ajudar?".
+    if (lerVeredito(texto).tipo === 'APROVA') {
+      return { resposta: null, motivo: 'catalogo_recibo' };
+    }
+
+    const abertos = await this.catalogos.listarAbertos();
+
+    // NUMERO SOZINHO E CATALOGO, NUNCA CODIGO. A base tem codigos de um
+    // caractere (`1`, `2`), e pela leitura da legenda o `2` viraria codigo de
+    // peca — quando quem manda so um numero, com a lista de catalogos na
+    // tela, esta respondendo a lista.
+    const numero = texto.trim().match(/^#?(\d{1,6})$/);
+    if (numero) {
+      const alvo = String(Number(numero[1]));
+      const catalogo = abertos.find((c) => String(Number(c.numero)) === alvo);
+      if (!catalogo) return null;
+      this.sessao.lembrarCatalogo(de, catalogo);
+      return {
+        resposta: `Certo — as próximas fotos vão para o #${catalogo.numero} ${catalogo.nome}.`,
+        motivo: 'catalogo_lembrado',
+      };
+    }
+
+    const analise = await this.lerLegenda(texto, abertos);
+    if (!analise.catalogo && !analise.codigo) return null;
+
+    // SO REFERENCIA, NENHUM OUTRO ASSUNTO. Pelo nome, o texto inteiro ja e
+    // parte do nome do catalogo — e assim que `lerLegenda` casa nome. Pelo
+    // numero ou pelo codigo, o que sobrou tem de ser so palavra de ligacao.
+    if (!analise.porNome && !soLigacao(analise.resto)) return null;
+
+    const partes: string[] = [];
+    if (analise.catalogo) {
+      this.sessao.lembrarCatalogo(de, analise.catalogo);
+      partes.push(
+        `as próximas fotos vão para o #${analise.catalogo.numero} ${analise.catalogo.nome}`,
+      );
+    }
+    if (analise.codigo) {
+      this.sessao.adiantarCodigo(de, {
+        codigoErp: analise.codigo,
+        parcelas: analise.parcelas,
+        juros: analise.juros,
+      });
+      partes.push(`o código ${analise.codigo} vale para a próxima foto`);
+    }
+
+    return {
+      resposta: `Certo — ${partes.join(', e ')}.`,
+      motivo: analise.codigo ? 'codigo_adiantado' : 'catalogo_lembrado',
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -880,6 +1355,11 @@ export class ProcessarFotoCatalogoUseCase {
    * onde hoje nao existe nenhuma.
    */
   async conversa(de: string, nomeRemetente: string): Promise<RespostaFoto> {
+    // A AJUDA ABRE A CONVERSA. A resposta lista os catalogos abertos, e o
+    // `0003` que vier em seguida e resposta a ela — sem a conversa aberta,
+    // cairia aqui de novo e receberia a mesma lista.
+    this.sessao.abrirConversa(de);
+
     const [abertos, esperando] = await Promise.all([
       this.catalogos.listarAbertos(),
       this.catalogos.listarEmAprovacao(nomeRemetente.trim()),
@@ -1072,6 +1552,10 @@ export class ProcessarFotoCatalogoUseCase {
     /** Juro em %. `null` = nao informado, vale a regra da casa. */
     juros: number | null;
     pedidoDeEstilo: string | null;
+    /** O catalogo foi achado pelo NOME — o texto inteiro que sobrou e parte dele. */
+    porNome: boolean;
+    /** O que sobrou depois de tirar codigo, parcelas, juro e numero. */
+    resto: string;
   }> {
     const bruto = (texto ?? '').trim();
 
@@ -1103,6 +1587,7 @@ export class ProcessarFotoCatalogoUseCase {
 
     // Nome: so se o numero nao resolveu. Exige 3 caracteres para "de", "do" e
     // afins nao casarem com meio catalogo.
+    let porNome = false;
     if (!catalogo) {
       const termo = normalizar(resto);
       if (termo.length >= 3) {
@@ -1110,7 +1595,10 @@ export class ProcessarFotoCatalogoUseCase {
           normalizar(c.nome).includes(termo),
         );
         // Ambiguo nao decide sozinho — cai na pergunta.
-        if (candidatos.length === 1) catalogo = candidatos[0];
+        if (candidatos.length === 1) {
+          catalogo = candidatos[0];
+          porNome = true;
+        }
       }
     }
 
@@ -1118,6 +1606,8 @@ export class ProcessarFotoCatalogoUseCase {
       catalogo,
       codigo,
       juros,
+      porNome,
+      resto,
       parcelas: parcelas && parcelas > 0 ? parcelas : null,
       // O QUE SOBROU E PEDIDO DE ESTILO. Tirados catalogo, codigo e parcelas, o
       // resto so pode ser instrucao para a imagem: "fundo rosa", "mais claro".
@@ -1156,12 +1646,14 @@ export class ProcessarFotoCatalogoUseCase {
    *
    * @param resto o que sobrou da mensagem depois do codigo ou do numero —
    *   `6x`, `15%` — lido como parcelamento.
+   * @param nomeRemetente quem aprova, quando a aprovacao veio antes.
    */
   private async anotarCodigo(
     de: string,
-    pendente: { fotoId: string; alvo: string },
+    pendente: CodigoEsperado,
     codigo: string,
     resto: string,
+    nomeRemetente: string,
   ): Promise<RespostaFoto> {
     const { descricao, preco } = await this.buscarNoErp(codigo);
 
@@ -1171,7 +1663,7 @@ export class ProcessarFotoCatalogoUseCase {
 
     // Parcelamento so faz sentido com preco. Sem ele, deixar `10x` gravado
     // faria a tela calcular parcela de um valor que nao existe.
-    await this.catalogos.atualizarFoto(pendente.fotoId, {
+    const anotada = await this.catalogos.atualizarFoto(pendente.fotoId, {
       codigoErp: codigo,
       descricao,
       precoAVista: preco,
@@ -1186,18 +1678,39 @@ export class ProcessarFotoCatalogoUseCase {
 
     this.sessao.esquecerCodigo(de);
 
+    // ==========================================================================
+    // A APROVACAO QUE CHEGOU ANTES DO CODIGO — decisao do Lucas em 11/09.
+    //
+    // A pessoa disse "aprovo" com a foto sem codigo; eu guardei. Agora que o
+    // codigo chegou, a foto fica completa e entra — sem pedir o "aprovo" de
+    // novo.
+    //
+    // CONFERE O STATUS ANTES, e pelo banco: entre o "aprovo" e o codigo a
+    // pessoa pode ter mandado refazer, e ai a imagem de agora nao e a que ela
+    // aprovou. So publica o que ainda esta EM_APROVACAO.
+    // ==========================================================================
+    const publicar = pendente.aprovada && anotada?.status === 'EM_APROVACAO';
+    if (publicar) {
+      await this.catalogos.atualizarFoto(pendente.fotoId, {
+        status: 'APROVADA',
+        aprovadoPor: nomeRemetente,
+        aprovadoEm: new Date(),
+      });
+    }
+    const fecho = publicar ? '\nAprovada — já está no catálogo.' : '';
+
     if (!descricao) {
       return {
         resposta:
           `Anotei ${codigo} na foto de ${pendente.alvo} — mas essa peça ainda não está no ` +
-          'sistema, então ficou sem descrição e sem preço.',
-        motivo: 'codigo_sem_produto',
+          `sistema, então ficou sem descrição e sem preço.${fecho}`,
+        motivo: publicar ? 'foto_aprovada' : 'codigo_sem_produto',
       };
     }
 
     return {
-      resposta: `${pendente.alvo}\n${codigo} · ${descricao}\n${this.emReais(preco)} à vista`,
-      motivo: 'codigo_anotado',
+      resposta: `${pendente.alvo}\n${codigo} · ${descricao}\n${this.emReais(preco)} à vista${fecho}`,
+      motivo: publicar ? 'foto_aprovada' : 'codigo_anotado',
     };
   }
 
@@ -1367,10 +1880,68 @@ export class ProcessarFotoCatalogoUseCase {
     if (fila.length > 0) this.sessao.marcarEmAprovacao(de);
   }
 
-  /** Apaga do disco o que expirou sem ninguem dizer a que catalogo pertencia. */
+  /**
+   * Apaga o que expirou sem ninguem dizer a que catalogo pertencia — E AVISA
+   * quem mandou.
+   *
+   * ==========================================================================
+   * A FOTO NAO SOME MAIS CALADA. Ate 11/09/2026 ela sumia: em 10/09 o Yerlon
+   * mandou uma foto, nao respondeu "de qual catalogo", e meia hora depois ela
+   * nao existia mais — sem uma palavra. Quem mandou acha que deu certo.
+   * ==========================================================================
+   *
+   * Roda em dois lugares: no comeco de cada foto (como sempre rodou) e num
+   * temporizador, porque quem esqueceu de responder nao vai mandar outra foto
+   * para disparar a varredura.
+   *
+   * Nada aqui pode estourar para fora: e limpeza, e roda tambem de dentro do
+   * fluxo de uma foto que nao tem nada a ver com as vencidas.
+   */
   private async varrerExpiradas(): Promise<void> {
-    const orfaos = this.sessao.limpar();
-    await Promise.all(orfaos.map((c) => this.armazenamento.remover(c)));
+    const vencidas = this.sessao.recolherVencidas();
+
+    for (const [chat, fotos] of vencidas) {
+      try {
+        await Promise.all(
+          fotos.map((f) => this.armazenamento.remover(f.arquivoId)),
+        );
+        await this.whatsapp.enviarTexto(
+          chat,
+          fotos.length === 1
+            ? 'A foto que você mandou ficou meia hora sem catálogo, e eu descartei — ninguém me disse de qual era. ' +
+                'Se ainda quiser, manda de novo com o número na legenda, assim: 0003.'
+            : `As ${fotos.length} fotos que você mandou ficaram meia hora sem catálogo, e eu descartei — ninguém me disse de qual eram. ` +
+                'Se ainda quiser, manda de novo com o número na legenda, assim: 0003.',
+        );
+      } catch (err) {
+        this.logger.error(
+          `Falha ao descartar/avisar fotos vencidas: ${String(err)}`,
+        );
+      }
+    }
+
+    this.agendarVarredura();
+  }
+
+  /**
+   * Agenda a proxima varredura para quando vencer a proxima sessao com foto
+   * pendurada. Sem nenhuma, nao agenda nada — o Map quase sempre esta vazio, e
+   * um `setInterval` fixo so existiria para varrer o vazio.
+   *
+   * O `unref` e para o temporizador nao segurar o processo de pe no desligar.
+   */
+  private agendarVarredura(): void {
+    if (this.varredura) clearTimeout(this.varredura);
+    this.varredura = null;
+
+    const falta = this.sessao.proximoVencimento();
+    if (falta === null) return;
+
+    this.varredura = setTimeout(() => {
+      this.varredura = null;
+      void this.varrerExpiradas();
+    }, falta + 1000);
+    this.varredura.unref?.();
   }
 }
 

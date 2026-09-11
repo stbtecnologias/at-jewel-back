@@ -1,4 +1,6 @@
 import { RotearMensagemInternaUseCase } from './rotear-mensagem-interna.use-case';
+import { ProcessarFotoCatalogoUseCase } from './processar-foto-catalogo.use-case';
+import { SessaoCatalogoService } from '../sessao-catalogo.service';
 
 /**
  * O roteador do canal interno.
@@ -42,6 +44,10 @@ describe('RotearMensagemInternaUseCase', () => {
     codigo: jest.Mock;
     buscarPeca: jest.Mock;
     conversa: jest.Mock;
+    conversaAberta: jest.Mock;
+    continuarConversa: jest.Mock;
+    falaDeMandarFoto: jest.Mock;
+    intencao: jest.Mock;
   };
   let whatsapp: { baixarMidia: jest.Mock };
   let transcricao: { transcrever: jest.Mock; disponivel: jest.Mock };
@@ -80,6 +86,13 @@ describe('RotearMensagemInternaUseCase', () => {
       conversa: jest.fn().mockResolvedValue({
         resposta: 'do catalogo',
         motivo: 'catalogo_conversa',
+      }),
+      conversaAberta: jest.fn(() => false),
+      continuarConversa: jest.fn().mockResolvedValue(null),
+      falaDeMandarFoto: jest.fn(() => false),
+      intencao: jest.fn().mockResolvedValue({
+        resposta: 'pode mandar',
+        motivo: 'catalogo_intencao',
       }),
     };
     whatsapp = { baixarMidia: jest.fn() };
@@ -357,6 +370,119 @@ describe('RotearMensagemInternaUseCase', () => {
     );
   });
 
+  /**
+   * O PRINT DO YERLON, 10/09/2026 — HML-16.
+   *
+   * Tres frases dele cairam na Anastasia, e nenhuma era para ela: a intencao
+   * ("Quero adicionar fotos ao catálogo #0001"), o recibo ("Ok") e a
+   * aprovacao ("Aprova"). Decisao do Lucas em 11/09: em qualquer ordem.
+   */
+  describe('em qualquer ordem — o print do Yerlon', () => {
+    const ADM_COM_CATALOGO = () =>
+      identificarAdmin.execute.mockResolvedValue(ADMIN);
+
+    it('a intencao do ADM vai para o catalogo, e nao para a Anastasia', async () => {
+      ADM_COM_CATALOGO();
+      canalCatalogo.falaDeMandarFoto.mockReturnValue(true);
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'Quero adicionar fotos ao catálogo #0001',
+      });
+
+      expect(r.motivo).toBe('catalogo_intencao');
+      expect(canalCatalogo.intencao).toHaveBeenCalledWith(
+        '558586467241@c.us',
+        'Quero adicionar fotos ao catálogo #0001',
+      );
+      expect(canalGestao.execute).not.toHaveBeenCalled();
+    });
+
+    it('ADM SEM permissao de catalogo continua na Anastasia', async () => {
+      // A permissao e conferida de novo, e com a de catalogo: ser ADM de
+      // gestao nao basta para abrir a conversa de fotos.
+      identificarAdmin.execute.mockImplementation(
+        (_tel: string, permissao?: string) =>
+          Promise.resolve(permissao === 'catalogo:write' ? null : ADMIN),
+      );
+      canalCatalogo.falaDeMandarFoto.mockReturnValue(true);
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'Quero adicionar fotos ao catálogo',
+      });
+
+      expect(r.resposta).toBe('da anastasia');
+      expect(canalCatalogo.intencao).not.toHaveBeenCalled();
+    });
+
+    it('a VENDEDORA que fala de foto continua na Elena — a ordem nao muda', async () => {
+      identificarVendedora.execute.mockResolvedValue(VENDEDORA);
+      canalCatalogo.falaDeMandarFoto.mockReturnValue(true);
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'posso mandar foto do catálogo pra cliente?',
+      });
+
+      expect(r.resposta).toBe('da elena');
+      expect(canalCatalogo.intencao).not.toHaveBeenCalled();
+      expect(identificarAdmin.execute).not.toHaveBeenCalled();
+    });
+
+    it('com a conversa aberta, o "Ok" e recibo e NAO chega na Anastasia', async () => {
+      // 13:33 do print: "Ok" a "codigo anotado" voltou "Oi, Yerlon! Como
+      // posso te ajudar?".
+      ADM_COM_CATALOGO();
+      canalCatalogo.conversaAberta.mockReturnValue(true);
+      canalCatalogo.continuarConversa.mockResolvedValue({
+        resposta: null,
+        motivo: 'catalogo_recibo',
+      });
+
+      const r = await useCase.execute({ de: '558586467241@c.us', texto: 'Ok' });
+
+      expect(r.resposta).toBeNull();
+      expect(r.motivo).toBe('catalogo_recibo');
+      expect(canalGestao.execute).not.toHaveBeenCalled();
+    });
+
+    it('com a conversa aberta, pergunta de venda segue para a Anastasia', async () => {
+      ADM_COM_CATALOGO();
+      canalCatalogo.conversaAberta.mockReturnValue(true);
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'quanto vendi hoje?',
+      });
+
+      expect(canalCatalogo.continuarConversa).toHaveBeenCalled();
+      expect(r.resposta).toBe('da anastasia');
+    });
+
+    it('o carimbo da mensagem chega a aprovacao — e o relogio dela', async () => {
+      ADM_COM_CATALOGO();
+      canalCatalogo.temFotoEmAprovacao.mockReturnValue(true);
+      canalCatalogo.aprovacao.mockResolvedValue({
+        resposta: 'AN24435 aprovada',
+        motivo: 'foto_aprovada',
+      });
+
+      await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'Aprova',
+        em: 1_757_521_640_000,
+      });
+
+      expect(canalCatalogo.aprovacao).toHaveBeenCalledWith(
+        '558586467241@c.us',
+        'Lucas Barbosa',
+        'Aprova',
+        1_757_521_640_000,
+      );
+    });
+  });
+
   describe('quem cuida do catálogo tem casa', () => {
     const ESTOQUISTA = { id: 'ad-9', nome: 'Faby Rocha', role: 'ESTOQUISTA' };
 
@@ -410,6 +536,19 @@ describe('RotearMensagemInternaUseCase', () => {
       expect(canalCatalogo.conversa).not.toHaveBeenCalled();
     });
 
+    it('o estoquista que diz que quer mandar foto abre a conversa', async () => {
+      soCatalogo();
+      canalCatalogo.falaDeMandarFoto.mockReturnValue(true);
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'vou mandar as fotos do verão',
+      });
+
+      expect(r.motivo).toBe('catalogo_intencao');
+      expect(canalCatalogo.conversa).not.toHaveBeenCalled();
+    });
+
     it('áudio do estoquista é transcrito — ele é da casa', async () => {
       soCatalogo();
       whatsapp.baixarMidia.mockResolvedValue({
@@ -426,5 +565,151 @@ describe('RotearMensagemInternaUseCase', () => {
 
       expect(r.motivo).toBe('catalogo_conversa');
     });
+  });
+});
+
+/**
+ * A CONVERSA DO PRINT, DE PONTA A PONTA — HML-16, 11/09/2026.
+ *
+ * Os testes de cima trocam o canal do catalogo por um dublê, e por isso nao
+ * provam que o roteador e o canal CONVERSAM. Aqui os dois sao os de verdade,
+ * com a sessao de verdade; so o banco, o armazenamento e o WhatsApp sao
+ * simulados. A sequencia e a do Yerlon, na ordem em que ele falou.
+ */
+describe('RotearMensagemInternaUseCase — a conversa do Yerlon, de ponta a ponta', () => {
+  const DE = '558585351045@c.us';
+  const YERLON = { id: 'ad-7', nome: 'Yerlon Magalhães', role: 'ADMIN' };
+
+  it('intencao, foto, "Ok" antes da foto tratada, "Aprova", codigo — e a Anastasia nunca e chamada', async () => {
+    const fotoNoBanco = {
+      id: 'f-1',
+      catalogoId: 'uuid-1',
+      codigoErp: null as string | null,
+      remetente: YERLON.nome,
+      arquivoOriginalId: 'catalogo/0001/originais/a.jpg',
+      arquivoId: 'catalogo/0001/fotos/a.png',
+      status: 'EM_APROVACAO',
+    };
+
+    const catalogos = {
+      listarAbertos: jest.fn().mockResolvedValue([
+        { id: 'uuid-1', numero: '0001', nome: 'Catalogo Rosa Pink' },
+        { id: 'uuid-3', numero: '0003', nome: 'Verão 2027' },
+      ]),
+      listarEmAprovacao: jest.fn().mockResolvedValue([]),
+      criarFoto: jest.fn().mockResolvedValue({ id: 'f-1' }),
+      atualizarFoto: jest.fn().mockResolvedValue({ status: 'EM_APROVACAO' }),
+    };
+    const armazenamento = {
+      guardar: jest.fn().mockResolvedValue('catalogo/pendentes/a.jpg'),
+      mover: jest.fn().mockResolvedValue('catalogo/0001/originais/a.jpg'),
+      ler: jest
+        .fn()
+        .mockResolvedValue({ conteudo: Buffer.from('png'), mime: 'image/png' }),
+      remover: jest.fn(),
+    };
+    const produtos = {
+      buscarCodigosPresentesEm: jest.fn().mockResolvedValue([]),
+      findByCodigoErp: jest.fn().mockResolvedValue({
+        descricaoEtiqueta: 'ANEL MASCULINO ESMERALDA OB 18K',
+        valorVenda: 26990,
+      }),
+    };
+    const whatsapp = {
+      baixarMidia: jest.fn().mockResolvedValue({
+        conteudo: Buffer.from('jpg'),
+        mimetype: 'image/jpeg',
+      }),
+      enviarTexto: jest.fn().mockResolvedValue(undefined),
+      enviarImagem: jest.fn().mockResolvedValue(undefined),
+    };
+
+    // O tratamento pela IA fica PRESO ate o teste soltar: e o intervalo em
+    // que a foto ja existe e ainda nao chegou ao celular dele.
+    let soltarTratamento: () => void = () => undefined;
+    const tratar = {
+      execute: jest.fn(
+        () =>
+          new Promise((resolve) => {
+            soltarTratamento = () => {
+              catalogos.listarEmAprovacao.mockResolvedValue([fotoNoBanco]);
+              resolve({ foto: fotoNoBanco, recado: null });
+            };
+          }),
+      ),
+    };
+
+    const canalCatalogo = new ProcessarFotoCatalogoUseCase(
+      catalogos as never,
+      armazenamento as never,
+      produtos as never,
+      whatsapp as never,
+      new SessaoCatalogoService(),
+      tratar as never,
+      { execute: jest.fn().mockResolvedValue([]) } as never,
+    );
+    const canalGestao = {
+      execute: jest
+        .fn()
+        .mockResolvedValue({ resposta: 'da anastasia', motivo: 'conversa' }),
+    };
+    const roteador = new RotearMensagemInternaUseCase(
+      { execute: jest.fn().mockResolvedValue(null) } as never,
+      { execute: jest.fn().mockResolvedValue(YERLON) } as never,
+      { execute: jest.fn() } as never,
+      canalGestao as never,
+      canalCatalogo,
+      whatsapp as never,
+      { transcrever: jest.fn(), disponivel: () => true },
+    );
+    const falar = (texto: string, extra: object = {}) =>
+      roteador.execute({ de: DE, texto, em: Date.now(), ...extra });
+    const esperarOsAssincronos = () =>
+      new Promise((resolve) => setImmediate(resolve));
+
+    // 16:42 — a intencao, com o numero.
+    const intencao = await falar('Quero adicionar fotos ao catálogo #0001');
+    expect(intencao.motivo).toBe('catalogo_intencao');
+    expect(intencao.resposta).toContain('#0001');
+
+    // 16:43 — a foto, sem legenda. NAO pergunta de novo o catalogo.
+    const foto = await falar('', {
+      imagem: { url: 'http://waha/files/a.jpg', mimetype: 'image/jpeg' },
+    });
+    expect(foto.motivo).toBe('foto_guardada');
+    expect(foto.resposta).toContain('#0001');
+
+    // 13:33 — "Ok" com a foto tratada AINDA A CAMINHO. E recibo: nao aprova,
+    // e nao chega na Anastasia.
+    const ok = await falar('Ok');
+    expect(ok.resposta).toBeNull();
+    expect(catalogos.atualizarFoto).not.toHaveBeenCalledWith(
+      'f-1',
+      expect.objectContaining({ status: 'APROVADA' }),
+    );
+
+    // A foto tratada chega ao celular.
+    soltarTratamento();
+    await esperarOsAssincronos();
+    expect(whatsapp.enviarImagem).toHaveBeenCalled();
+
+    // 13:34 — "Aprova", sem codigo ainda. A aprovacao fica guardada.
+    const aprova = await falar('Aprova');
+    expect(aprova.motivo).toBe('aprovacao_sem_codigo');
+
+    // O codigo chega: anota e publica de uma vez, sem pedir "aprovo" de novo.
+    const codigo = await falar('AN24435');
+    expect(codigo.motivo).toBe('foto_aprovada');
+    expect(codigo.resposta).toContain('já está no catálogo');
+    expect(catalogos.atualizarFoto).toHaveBeenLastCalledWith(
+      'f-1',
+      expect.objectContaining({
+        status: 'APROVADA',
+        aprovadoPor: 'Yerlon Magalhães',
+      }),
+    );
+
+    // E em nenhum momento a conversa caiu na Anastasia.
+    expect(canalGestao.execute).not.toHaveBeenCalled();
   });
 });
