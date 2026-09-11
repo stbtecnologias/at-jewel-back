@@ -37,8 +37,14 @@ export interface TierCliente {
 export interface FiltroDemografico {
   dataInicio?: Date;
   dataFim?: Date;
-  sexo?: string;
-  origem?: string;
+  /**
+   * LISTA, como no `FiltroAnalitico` — "equivalente", diz o comentario acima,
+   * e em 10/09/2026 deixou de ser: o `53b5c97` fez sexo e origem virarem lista
+   * la e esqueceu aqui. A tela de Clientes manda a lista para as duas rotas, e
+   * com dois valores esta zerava Total, Clientes Ouro e Fidelidade.
+   */
+  sexo?: string[];
+  origem?: string[];
   faixaEtaria?: string;
   idadeMin?: number;
   idadeMax?: number;

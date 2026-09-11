@@ -46,6 +46,7 @@ import { HistoricoClienteQueryDto } from '../dto/historico-cliente.dto';
 import { LookupClienteDto } from '../dto/lookup-cliente.dto';
 import { MonitoramentoSlaQueryDto } from '../dto/monitoramento-sla.dto';
 import type { FiltroDemografico } from '../../../domain/ports/repositories/cliente-repository.port';
+import { listaEntrada } from '../../../../../shared/http/query-transforms';
 
 // Estrategia de auth por endpoint:
 //  - Endpoints de operacao do agente (lookup, criar, atualizar perfil) =>
@@ -78,8 +79,11 @@ export class ClientesController {
   async tiers(
     @Query('data_inicio') dataInicio?: string,
     @Query('data_fim') dataFim?: string,
-    @Query('sexo') sexo?: string,
-    @Query('origem') origem?: string,
+    // `?sexo=F&sexo=M` chega como array; `?sexo=F`, como string. O mesmo
+    // `listaEntrada` do `/analytics` cobre as duas formas, e a lista por
+    // virgula.
+    @Query('sexo') sexo?: string | string[],
+    @Query('origem') origem?: string | string[],
     @Query('faixa') faixa?: string,
     @Query('idade_min') idadeMin?: string,
     @Query('idade_max') idadeMax?: string,
@@ -93,8 +97,10 @@ export class ClientesController {
         filtro.dataFim = df;
       }
     }
-    if (sexo) filtro.sexo = sexo;
-    if (origem) filtro.origem = origem;
+    const sexos = listaEntrada(sexo) as string[] | undefined;
+    const origens = listaEntrada(origem) as string[] | undefined;
+    if (sexos) filtro.sexo = sexos;
+    if (origens) filtro.origem = origens;
     if (faixa) filtro.faixaEtaria = faixa;
     if (idadeMin) {
       const min = Number(idadeMin);
