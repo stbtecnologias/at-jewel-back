@@ -24,6 +24,40 @@ export interface FiltroVenda {
 }
 
 /**
+ * O recorte da TELA de vendas: periodo, vendedora, status e forma de pagamento.
+ * E o que o comparativo e a serie mensal passaram a respeitar em 11/09/2026 —
+ * antes o comparativo so olhava as datas, e a serie nao olhava nada.
+ *
+ * Sem `status`, vale `concluida`: a mesma regra dos big-numbers (receita de
+ * venda cancelada nao e receita). Ver `resumoAgregado`.
+ */
+export type RecorteVenda = Pick<
+  FiltroVenda,
+  'dataDe' | 'dataAte' | 'vendedoraId' | 'status' | 'formaPagamento'
+>;
+
+/** Um mes da serie de vendas. `mes` e `YYYY-MM`, no fuso da loja. */
+export interface MesDeVendas {
+  mes: string;
+  receita: number;
+  totalVendas: number;
+}
+
+/**
+ * A serie mensal da tela de vendas — o grafico "Receita mensal × Meta" e as
+ * sparklines. Mesmo formato do `/analytics/receita-mensal`, para a tela trocar
+ * de fonte sem trocar de desenho.
+ */
+export interface SerieMensalVendas {
+  meses: MesDeVendas[];
+  /**
+   * A meta GLOBAL vigente da loja. NAO segue o recorte: nao existe "meta das
+   * vendas em PIX". A tela diz isso no card.
+   */
+  meta: number;
+}
+
+/**
  * Read-model achatado para a listagem administrativa de vendas (tabela do
  * dashboard). Diferente de `Venda.toResumo()`, ja vem enriquecido em SQL com
  * o nome da vendedora, o produto de maior valor da venda, a contagem de itens
@@ -214,12 +248,23 @@ export interface IVendaRepository {
 
   /**
    * Comparativo de desempenho por vendedora (RF-USU-02) para a gestao. Agrega
-   * vendas CONCLUIDAS e ativas por vendedora no recorte (periodo opcional),
-   * ordenado por receita desc. Exposto apenas a quem tem vendas:read_all.
+   * vendas ativas por vendedora no RECORTE DA TELA — periodo, vendedora,
+   * status (padrao `concluida`) e forma de pagamento —, ordenado por receita
+   * desc. Exposto apenas a quem tem vendas:read_all.
    */
   comparativoPorVendedora(
-    filtros: Pick<FiltroVenda, 'dataDe' | 'dataAte'>,
+    filtros: RecorteVenda,
   ): Promise<ComparativoVendedora[]>;
+
+  /**
+   * Receita e contagem por MES no recorte da tela, com os meses vazios
+   * presentes (zerados). `janela` diz de que mes a que mes desenhar; o
+   * recorte diz quais vendas entram.
+   */
+  serieMensal(
+    filtros: RecorteVenda,
+    janela: { de: Date; ate: Date },
+  ): Promise<SerieMensalVendas>;
 
   /**
    * Historico de compras de um cliente para o dashboard. Retorna a lista de

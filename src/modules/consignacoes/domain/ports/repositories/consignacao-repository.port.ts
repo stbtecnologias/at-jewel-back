@@ -60,5 +60,13 @@ export interface IConsignacaoRepository {
   // regras de transicao de estado).
   buscarPorId(id: string): Promise<Consignacao | null>;
   atualizar(id: string, dados: AtualizarConsignacaoData): Promise<ConsignacaoItem>;
-  resumo(): Promise<ResumoConsignacoes>;
+  /**
+   * Os KPIs das consignacoes ABERTAS — no recorte da lista desde 11/09/2026
+   * (status, destino, produto, periodo de saida), como INTERSECAO: "abertas"
+   * com o filtro "Destino: cliente" sao as abertas com destino cliente. Sem
+   * recorte, a casa inteira, como antes.
+   */
+  resumo(
+    filtro?: Omit<FiltroConsignacao, 'limit' | 'offset'>,
+  ): Promise<ResumoConsignacoes>;
 }

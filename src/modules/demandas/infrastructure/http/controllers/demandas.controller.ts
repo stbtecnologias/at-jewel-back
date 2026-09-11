@@ -73,10 +73,23 @@ export class DemandasController {
 
   // ATENCAO: declarar /kpis ANTES de /:id para o Nest nao casar
   // "kpis" como parametro :id.
+  //
+  // O MESMO FILTRO DA LISTA desde 11/09/2026 — os cards acompanham a tela.
   @Get('kpis')
   @Permissions('demandas:read')
-  async kpis(@Request() req: { user: JwtPayload }) {
-    return this.kpisDemandas.execute(await this.escopoSolicitante(req.user));
+  async kpis(
+    @Request() req: { user: JwtPayload },
+    @Query('status') status?: StatusDemanda,
+    @Query('tipo') tipo?: TipoDemanda,
+    @Query('dataDe') dataDe?: string,
+    @Query('dataAte') dataAte?: string,
+  ) {
+    return this.kpisDemandas.execute(await this.escopoSolicitante(req.user), {
+      status,
+      tipo,
+      dataDe: dataDe ? new Date(dataDe) : undefined,
+      dataAte: dataAte ? new Date(dataAte) : undefined,
+    });
   }
 
   @Get(':id')

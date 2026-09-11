@@ -92,9 +92,22 @@ export class AnalyticsController {
     );
   }
 
+  // Com o filtro da tela desde 11/09/2026 — sem ele, os ultimos `meses`.
   @Get('receita-mensal')
-  async receita(@Query('meses') meses?: string) {
-    return this.receitaMensal.execute(meses ? Number(meses) : undefined);
+  async receita(
+    @Query('meses') meses?: string,
+    @Query('data_inicio') dataInicio?: string,
+    @Query('data_fim') dataFim?: string,
+    @Query('sexo') sexo?: string | string[],
+    @Query('origem') origem?: string | string[],
+    @Query('faixa') faixa?: string,
+    @Query('idade_min') idadeMin?: string,
+    @Query('idade_max') idadeMax?: string,
+  ) {
+    return this.receitaMensal.execute(
+      meses ? Number(meses) : undefined,
+      parseFiltro(dataInicio, dataFim, sexo, origem, faixa, idadeMin, idadeMax),
+    );
   }
 
   @Get('top-produtos')

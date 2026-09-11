@@ -144,9 +144,17 @@ export class ConsignacaoRepository implements IConsignacaoRepository {
     return item;
   }
 
-  async resumo(): Promise<ResumoConsignacoes> {
+  async resumo(
+    filtro: Omit<FiltroConsignacao, 'limit' | 'offset'> = {},
+  ): Promise<ResumoConsignacoes> {
     // Todos os agregados das ABERTAS numa unica varredura via FILTER.
     // valor_estimado = SUM(quantidade * produtos.valor_venda).
+    //
+    // O MESMO `montarWhere` DA LISTA, desde 11/09/2026: os cards seguem o
+    // filtro da tela. Antes ignoravam — o Yerlon filtrava por destino e os
+    // tres numeros de cima ficavam iguais. E um lugar so para a regra: lista e
+    // cards nao tem como discordar sobre o que o filtro significa.
+    const { where, params } = this.montarWhere({ ...filtro, limit: 0, offset: 0 });
     const rows = await this.dataSource.query<
       { abertas: string; pecas_fora: string; valor_estimado: string }[]
     >(
@@ -157,7 +165,9 @@ export class ConsignacaoRepository implements IConsignacaoRepository {
         COALESCE(SUM(c.quantidade * p.valor_venda) FILTER (WHERE c.status = 'ABERTA'), 0)::float AS valor_estimado
       FROM consignacoes c
       LEFT JOIN produtos p ON p.id = c.produto_id
+      ${where}
       `,
+      params,
     );
     const r = rows[0];
     return {

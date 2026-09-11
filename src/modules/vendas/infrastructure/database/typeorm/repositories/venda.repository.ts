@@ -11,7 +11,9 @@ import {
   HistoricoCliente,
   IVendaRepository,
   ItemHistoricoCliente,
+  RecorteVenda,
   ResumoVendas,
+  SerieMensalVendas,
   VendaResumo,
 } from '../../../../domain/ports/repositories/venda-repository.port';
 import type { FormaPagamento, StatusVenda } from '../../../../domain/entities/enums';
@@ -21,6 +23,45 @@ import { VendaOrmEntity } from '../entities/venda.orm-entity';
 
 /** O fuso da operacao — o mesmo da auditoria. */
 const FUSO_DA_LOJA = 'America/Sao_Paulo';
+
+/**
+ * O recorte da tela de vendas em SQL posicional (alias `v`): vendas ATIVAS,
+ * status (padrao `concluida`), periodo, vendedora e forma de pagamento.
+ * Acrescenta os valores em `params` e devolve as condicoes.
+ *
+ * Um lugar so para o comparativo e a serie mensal, criado em 11/09/2026. O
+ * `resumoAgregado` monta as mesmas condicoes por conta propria, com parametros
+ * nomeados; ficou como estava porque e o numero dos big-numbers, conferido
+ * contra o banco — e as duas montagens precisam continuar dizendo o mesmo.
+ *
+ * A forma de pagamento vai por EXISTS, e nao JOIN: `pagamentos_venda` e 1:N, e
+ * o JOIN contaria duas vezes a venda paga em duas linhas da mesma forma. Ver o
+ * comentario longo no `resumoAgregado`.
+ */
+function condicoesDoRecorte(filtros: RecorteVenda, params: unknown[]): string[] {
+  params.push(filtros.status ?? (['concluida'] satisfies StatusVenda[]));
+  const conds = ['v.ativo = true', `v.status::text = ANY($${params.length}::text[])`];
+
+  if (filtros.dataDe !== undefined) {
+    params.push(filtros.dataDe);
+    conds.push(`v.data_venda >= $${params.length}`);
+  }
+  if (filtros.dataAte !== undefined) {
+    params.push(filtros.dataAte);
+    conds.push(`v.data_venda <= $${params.length}`);
+  }
+  if (filtros.vendedoraId !== undefined) {
+    params.push(filtros.vendedoraId);
+    conds.push(`v.vendedora_id = ANY($${params.length}::uuid[])`);
+  }
+  if (filtros.formaPagamento !== undefined) {
+    params.push(filtros.formaPagamento);
+    conds.push(
+      `EXISTS (SELECT 1 FROM pagamentos_venda pvf WHERE pvf.venda_id = v.id AND pvf.forma_pagamento::text = ANY($${params.length}::text[]))`,
+    );
+  }
+  return conds;
+}
 
 // Limites de paginacao para conter abuso e custo de query.
 const LIMIT_PADRAO = 50;
@@ -284,20 +325,15 @@ export class VendaRepository implements IVendaRepository {
   }
 
   async comparativoPorVendedora(
-    filtros: Pick<FiltroVenda, 'dataDe' | 'dataAte'>,
+    filtros: RecorteVenda,
   ): Promise<ComparativoVendedora[]> {
-    // Agregado por vendedora de vendas CONCLUIDAS e ativas (RF-USU-02). Sem
-    // carregar linhas; periodo opcional parametrizado. Nenhuma PII.
-    const conds: string[] = [`v.status = 'concluida'`, `v.ativo = true`];
+    // Agregado por vendedora (RF-USU-02). Sem carregar linhas; nenhuma PII.
+    //
+    // O RECORTE E O DA TELA desde 11/09/2026. Ate ai so as datas valiam: a
+    // gestao filtrava PIX, e o "Top vendedoras" continuava contando todas as
+    // formas — o DTO aceitava os filtros e o controller os descartava.
     const params: unknown[] = [];
-    if (filtros.dataDe !== undefined) {
-      params.push(filtros.dataDe);
-      conds.push(`v.data_venda >= $${params.length}`);
-    }
-    if (filtros.dataAte !== undefined) {
-      params.push(filtros.dataAte);
-      conds.push(`v.data_venda <= $${params.length}`);
-    }
+    const conds = condicoesDoRecorte(filtros, params);
     // Os agregados de itens (desconto por item e quantidade) sao pre-somados
     // por venda numa subquery para NAO inflar os agregados de header (COUNT,
     // SUM(valor_total)) por fan-out do JOIN 1:N com itens_venda.
@@ -347,6 +383,68 @@ export class VendaRepository implements IVendaRepository {
       qtdPecas: r.qtdPecas,
       clientesAtendidos: r.clientesAtendidos,
     }));
+  }
+
+  async serieMensal(
+    filtros: RecorteVenda,
+    janela: { de: Date; ate: Date },
+  ): Promise<SerieMensalVendas> {
+    // O ESQUELETO VEM DA JANELA, AS VENDAS VEM DO RECORTE. O `generate_series`
+    // garante o mes zerado na serie — sem ele, um mes sem venda simplesmente
+    // sumiria do grafico, e a linha pularia de marco para maio.
+    //
+    // O MES E O DA LOJA, como na serie diaria da auditoria: truncar
+    // `data_venda` sem dizer o fuso usaria o do servidor, em UTC, e a venda
+    // das 22h do dia 31 cairia no mes seguinte.
+    const params: unknown[] = [];
+    const conds = condicoesDoRecorte(filtros, params);
+    params.push(FUSO_DA_LOJA);
+    const iFuso = params.length;
+    params.push(janela.de, janela.ate);
+    const iDe = params.length - 1;
+    const iAte = params.length;
+
+    const meses = await this.dataSource.query<
+      { mes: string; receita: number; totalVendas: number }[]
+    >(
+      `
+      WITH serie AS (
+        SELECT m::date AS inicio
+        FROM generate_series(
+          date_trunc('month', $${iDe}::timestamptz AT TIME ZONE $${iFuso}::text),
+          date_trunc('month', $${iAte}::timestamptz AT TIME ZONE $${iFuso}::text),
+          interval '1 month'
+        ) AS m
+      ),
+      recorte AS (
+        SELECT date_trunc('month', v.data_venda AT TIME ZONE $${iFuso}::text)::date AS inicio,
+               v.valor_total
+        FROM vendas v
+        WHERE ${conds.join(' AND ')}
+      )
+      SELECT to_char(serie.inicio, 'YYYY-MM') AS mes,
+             COALESCE(SUM(recorte.valor_total), 0)::float AS receita,
+             COUNT(recorte.inicio)::int AS "totalVendas"
+      FROM serie
+      LEFT JOIN recorte ON recorte.inicio = serie.inicio
+      GROUP BY serie.inicio
+      ORDER BY serie.inicio
+      `,
+      params,
+    );
+
+    // A meta vigente da loja, a mesma do `/analytics/receita-mensal`.
+    const metaRows = await this.dataSource.query<{ meta: number }[]>(
+      `
+      SELECT COALESCE(valor_alvo, 0)::float AS meta
+      FROM metas
+      WHERE tipo = 'GLOBAL' AND prazo >= now()
+      ORDER BY criado_em DESC
+      LIMIT 1
+      `,
+    );
+
+    return { meses, meta: metaRows[0]?.meta ?? 0 };
   }
 
   async resumoAgregado(filtros: FiltroVenda): Promise<ResumoVendas> {

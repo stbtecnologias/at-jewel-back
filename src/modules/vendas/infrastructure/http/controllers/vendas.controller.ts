@@ -24,6 +24,7 @@ import { ComparativoVendedorasUseCase } from '../../../application/use-cases/com
 import { ListarVendasUseCase } from '../../../application/use-cases/listar-vendas.use-case';
 import { RegistrarVendaUseCase } from '../../../application/use-cases/registrar-venda.use-case';
 import { ResumoVendasUseCase } from '../../../application/use-cases/resumo-vendas.use-case';
+import { SerieMensalVendasUseCase } from '../../../application/use-cases/serie-mensal-vendas.use-case';
 import { FiltroResumoVendaDto } from '../dto/filtro-resumo-venda.dto';
 import { FiltroVendaDto } from '../dto/filtro-venda.dto';
 import { RegistrarVendaDto } from '../dto/registrar-venda.dto';
@@ -37,6 +38,8 @@ import { RegistrarVendaDto } from '../dto/registrar-venda.dto';
 //    enxerga as proprias vendas (vendedora vinculada ao usuario); a gestao
 //    (vendas:read_all) ve a carteira inteira e pode filtrar/comparar.
 //  - Comparativo (GET /comparativo) => JWT + 'vendas:read_all' (so gestao).
+//  - Serie mensal (GET /serie-mensal) => JWT + 'vendas:read', com o mesmo
+//    isolamento do resumo.
 //  - Detalhe (GET /:id) => JWT + role ADMIN/GERENTE (drill-down gerencial).
 @Controller('vendas')
 export class VendasController {
@@ -46,6 +49,7 @@ export class VendasController {
     private readonly buscar: BuscarVendaUseCase,
     private readonly resumo: ResumoVendasUseCase,
     private readonly comparativo: ComparativoVendedorasUseCase,
+    private readonly serieMensal: SerieMensalVendasUseCase,
     private readonly escopo: EscopoVendasService,
   ) {}
 
@@ -131,6 +135,10 @@ export class VendasController {
 
   // Comparativo de desempenho por vendedora (RF-USU-02) — so gestao.
   // Estatica, declarada antes de GET /:id.
+  //
+  // O RECORTE INTEIRO desde 11/09/2026. O DTO sempre aceitou status, forma e
+  // vendedora; esta rota os descartava e passava so as datas — o "Top
+  // vendedoras" ignorava o filtro que o resto da tela respeitava.
   @Get('comparativo')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @Permissions('vendas:read_all')
@@ -138,6 +146,29 @@ export class VendasController {
     return this.comparativo.execute({
       dataDe: filtros.dataDe ? new Date(filtros.dataDe) : undefined,
       dataAte: filtros.dataAte ? new Date(filtros.dataAte) : undefined,
+      vendedoraId: filtros.vendedoraId,
+      status: filtros.status,
+      formaPagamento: filtros.formaPagamento,
+    });
+  }
+
+  // A serie mensal da tela de vendas, no recorte da tela. Estatica, antes de
+  // GET /:id. `vendas:read` e o isolamento do resumo: a vendedora so ve a
+  // propria serie, qualquer que seja o `vendedoraId` que chegue.
+  @Get('serie-mensal')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('vendas:read')
+  async serieMensalVendas(
+    @Query() filtros: FiltroResumoVendaDto,
+    @Request() req: { user: JwtPayload },
+  ) {
+    const restrito = await this.escopo.vendedoraIdRestrito(req.user);
+    return this.serieMensal.execute({
+      dataDe: filtros.dataDe ? new Date(filtros.dataDe) : undefined,
+      dataAte: filtros.dataAte ? new Date(filtros.dataAte) : undefined,
+      vendedoraId: restrito ? [restrito] : filtros.vendedoraId,
+      status: filtros.status,
+      formaPagamento: filtros.formaPagamento,
     });
   }
 
