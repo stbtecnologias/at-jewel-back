@@ -192,13 +192,18 @@ export class ProdutoRepository implements IProdutoRepository {
   }
 
   async alertasEstoque(limiteBaixo: number, diasGiroLento: number): Promise<AlertasEstoque> {
+    // O TOTAL SAI DA MESMA CONSULTA, pelo `count(*) OVER()`: a janela conta
+    // as linhas que passaram no WHERE ANTES de o LIMIT cortar. Uma segunda
+    // consulta so para contar repetiria o filtro — e as duas copias divergiriam
+    // na primeira vez que alguem mexesse em uma so.
     const [estoqueBaixo, giroLento] = await Promise.all([
-      this.repo.manager.query<ProdutoAlerta[]>(
+      this.repo.manager.query<ProdutoAlertaComTotal[]>(
         `
         SELECT id, ${NOME_PRODUTO} AS nome, categoria, familia,
                NULLIF(referencia_fornecedor, '') AS fornecedor,
                estoque_atual AS "estoqueAtual",
-               NULL::int AS "diasEmEstoque"
+               NULL::int AS "diasEmEstoque",
+               count(*) OVER() AS total
         FROM produtos
         WHERE ativo = true AND estoque_atual <= $1
         ORDER BY estoque_atual ASC
@@ -206,12 +211,13 @@ export class ProdutoRepository implements IProdutoRepository {
         `,
         [limiteBaixo],
       ),
-      this.repo.manager.query<ProdutoAlerta[]>(
+      this.repo.manager.query<ProdutoAlertaComTotal[]>(
         `
         SELECT id, ${NOME_PRODUTO} AS nome, categoria, familia,
                NULLIF(referencia_fornecedor, '') AS fornecedor,
                estoque_atual AS "estoqueAtual",
-               EXTRACT(DAY FROM (now() - data_entrada_estoque))::int AS "diasEmEstoque"
+               EXTRACT(DAY FROM (now() - data_entrada_estoque))::int AS "diasEmEstoque",
+               count(*) OVER() AS total
         FROM produtos
         WHERE ativo = true AND estoque_atual > 0
           AND data_entrada_estoque IS NOT NULL
@@ -222,7 +228,12 @@ export class ProdutoRepository implements IProdutoRepository {
         [diasGiroLento],
       ),
     ]);
-    return { estoqueBaixo, giroLento };
+    return {
+      estoqueBaixo: estoqueBaixo.map(semTotal),
+      giroLento: giroLento.map(semTotal),
+      totalEstoqueBaixo: totalDa(estoqueBaixo),
+      totalGiroLento: totalDa(giroLento),
+    };
   }
 
   /**
@@ -303,4 +314,28 @@ function palavrasDaBusca(busca: string | undefined): string[] {
     .split(/\s+/)
     .filter((p) => p.length > 2)
     .slice(0, 4);
+}
+
+/** A linha do alerta como sai do banco: com o total da janela pendurado. */
+type ProdutoAlertaComTotal = ProdutoAlerta & { total: string | number };
+
+/** Tira o total da linha — ele e da lista, nao da peca. */
+function semTotal(l: ProdutoAlertaComTotal): ProdutoAlerta {
+  return {
+    id: l.id,
+    nome: l.nome,
+    categoria: l.categoria,
+    familia: l.familia,
+    fornecedor: l.fornecedor,
+    estoqueAtual: l.estoqueAtual,
+    diasEmEstoque: l.diasEmEstoque,
+  };
+}
+
+/**
+ * O total da janela. Toda linha carrega o mesmo; sem linha nenhuma, e zero. O
+ * Postgres devolve `count` como bigint, que chega aqui como TEXTO.
+ */
+function totalDa(linhas: ProdutoAlertaComTotal[]): number {
+  return linhas.length ? Number(linhas[0].total) : 0;
 }
