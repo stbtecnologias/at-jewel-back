@@ -22,11 +22,13 @@ import { TratarFotoUseCase } from './application/use-cases/tratar-foto.use-case'
 import {
   ARMAZENAMENTO,
   CATALOGO_REPOSITORY,
+  CONFERENCIA_FOTO,
   TRATAMENTO_IMAGEM,
 } from './domain/ports/injection-tokens';
 import { DiscoArmazenamento } from './infrastructure/armazenamento/disco.armazenamento';
 import { S3Armazenamento } from './infrastructure/armazenamento/s3.armazenamento';
 import { OpenaiTratamentoImagemClient } from './infrastructure/ia/openai-tratamento-imagem.client';
+import { AnthropicConferenciaFotoClient } from './infrastructure/ia/anthropic-conferencia-foto.client';
 import { CatalogoFinalOrmEntity } from './infrastructure/database/typeorm/entities/catalogo-final.orm-entity';
 import { CatalogoFotoOrmEntity } from './infrastructure/database/typeorm/entities/catalogo-foto.orm-entity';
 import { CatalogoReferenciaOrmEntity } from './infrastructure/database/typeorm/entities/catalogo-referencia.orm-entity';
@@ -69,6 +71,9 @@ import { MidiaController } from './infrastructure/http/controllers/midia.control
     MontarCatalogoUseCase,
     TratarFotoUseCase,
     { provide: TRATAMENTO_IMAGEM, useClass: OpenaiTratamentoImagemClient },
+    // Quem OLHA a foto antes de gerar. Ver o cabecalho da porta: sem ela, a
+    // foto de um teclado voltava como uma joia inventada.
+    { provide: CONFERENCIA_FOTO, useClass: AnthropicConferenciaFotoClient },
     { provide: CATALOGO_REPOSITORY, useClass: CatalogoRepository },
     {
       // O ADAPTADOR SAI DO AMBIENTE, e nao de um `if` espalhado pelo codigo.
@@ -87,6 +92,14 @@ import { MidiaController } from './infrastructure/http/controllers/midia.control
           : new DiscoArmazenamento(config),
     },
   ],
-  exports: [CATALOGO_REPOSITORY, ARMAZENAMENTO, TratarFotoUseCase],
+  exports: [
+    CATALOGO_REPOSITORY,
+    ARMAZENAMENTO,
+    TratarFotoUseCase,
+    // Exportado porque quem confere e o canal do WhatsApp, no modulo de
+    // atendimentos — a conferencia acontece na CHEGADA da foto, antes de ela
+    // ser gravada.
+    CONFERENCIA_FOTO,
+  ],
 })
 export class CatalogosModule {}

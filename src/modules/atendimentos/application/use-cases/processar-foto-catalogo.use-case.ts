@@ -13,7 +13,12 @@ import {
 import {
   ARMAZENAMENTO,
   CATALOGO_REPOSITORY,
+  CONFERENCIA_FOTO,
 } from '../../../catalogos/domain/ports/injection-tokens';
+import type {
+  IConferenciaFoto,
+  VereditoFoto,
+} from '../../../catalogos/domain/ports/conferencia-foto.port';
 import type {
   CatalogoAberto,
   FotoItem,
@@ -538,6 +543,9 @@ export class ProcessarFotoCatalogoUseCase {
     // colunas — "anel de esmeralda" casa com "ANEL VINTAGE ESMERALDA". Nao
     // havia por que escrever uma segunda.
     private readonly listarProdutos: ListarProdutosUseCase,
+    // Quem OLHA a foto antes de gastar a geracao — ver `foto`.
+    @Inject(CONFERENCIA_FOTO)
+    private readonly conferencia: IConferenciaFoto,
   ) {}
 
   /**
@@ -659,6 +667,34 @@ export class ProcessarFotoCatalogoUseCase {
       return {
         resposta: 'Essa imagem é grande demais. Manda uma versão menor.',
         motivo: 'imagem_grande_demais',
+      };
+    }
+
+    // ------------------------------------------------------------------
+    // A FOTO TEM UMA PECA? — 15/09/2026.
+    //
+    // O Lucas mandou a foto do canto de um notebook e recebeu de volta uma
+    // FERRADURA de metal, bem iluminada, sobre fundo branco. Nao havia
+    // ferradura nenhuma: `/images/edits` REGERA a imagem e so sabe devolver
+    // imagem — sem peca na entrada, ele produz a peca mais provavel.
+    //
+    // ENTAO A RECUSA ACONTECE AQUI, ANTES DE GRAVAR E ANTES DE GERAR: um
+    // modelo que OLHA a foto e responde em texto. Quando ele diz que nao ha
+    // peca, a conversa pede outra foto — e a geracao, que e a chamada cara,
+    // nem chega a sair.
+    //
+    // `null` = NAO DEU PARA CONFERIR (timeout, cota, chave ausente), e nao
+    // "nao serve". Nesse caso a foto segue o caminho de sempre: uma
+    // indisponibilidade do provedor nao pode fechar o canal do catalogo.
+    // ------------------------------------------------------------------
+    const veredito = await this.conferencia.conferir({
+      conteudo: arquivo.conteudo,
+      mime,
+    });
+    if (veredito && !veredito.serve) {
+      return {
+        resposta: this.pedirOutraFoto(veredito),
+        motivo: `foto_recusada_${veredito.motivo}`,
       };
     }
 
@@ -1166,6 +1202,33 @@ export class ProcessarFotoCatalogoUseCase {
    */
   temFotoEmAprovacao(de: string): boolean {
     return this.sessao.temEmAprovacao(de);
+  }
+
+  /**
+   * A resposta de quando a foto nao serve.
+   *
+   * DIZ O QUE FOI VISTO, quando o modelo soube dizer: "parece um teclado de
+   * notebook" explica a recusa melhor que qualquer frase generica, e evita o
+   * reenvio da mesma foto. Sem isso, a pessoa manda de novo e recebe a mesma
+   * recusa, sem entender.
+   *
+   * E PEDE O QUE FALTA, sempre: quem le quer saber o que fazer agora.
+   */
+  private pedirOutraFoto(veredito: VereditoFoto): string {
+    if (veredito.motivo === 'varias_pecas') {
+      return (
+        'Vi mais de uma peça nessa foto e não sei qual é a da vez. ' +
+        'Manda uma foto de cada peça, separadas.'
+      );
+    }
+
+    const viu = veredito.viu?.trim();
+    return (
+      (viu
+        ? `Não achei nenhuma peça nessa foto — o que eu vi foi ${viu}. `
+        : 'Não consegui identificar a peça nessa foto. ') +
+      'Manda de novo com a peça inteira no quadro, de frente e com boa luz.'
+    );
   }
 
   // ---------------------------------------------------------------------------

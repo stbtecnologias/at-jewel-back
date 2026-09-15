@@ -5,6 +5,16 @@ import { RecepcaoService } from '../recepcao.service';
 import { RecepcionarUseCase } from './recepcionar.use-case';
 
 /**
+ * A conferencia da foto NAO participa destes testes: null quer dizer "nao
+ * deu para conferir", e nesse caso a foto segue o caminho de sempre. Os testes
+ * da recusa ficam no bloco proprio, mais abaixo.
+ */
+const CONFERENCIA_NULA = {
+  disponivel: () => true,
+  conferir: jest.fn().mockResolvedValue(null),
+} as never;
+
+/**
  * O roteador do canal interno.
  *
  * O QUE ESTES TESTES PROTEGEM sao duas invariantes que nao aparecem lendo o
@@ -837,6 +847,7 @@ describe('RotearMensagemInternaUseCase — a conversa do Yerlon, de ponta a pont
       new SessaoCatalogoService(),
       tratar as never,
       { execute: jest.fn().mockResolvedValue([]) } as never,
+      CONFERENCIA_NULA,
     );
     const canalGestao = {
       execute: jest
