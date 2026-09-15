@@ -27,6 +27,22 @@ export class AtualizarEstoqueUseCase {
     return this.repo.atualizar(
       Estoque.create({
         id: atual.id,
+        // O `idErp` VIAJA JUNTO, e a ausencia dele aqui ERA o defeito.
+        //
+        // O `atualizar` do repositorio escreve todas as colunas que a entidade
+        // carrega. Fora deste remonte, `idErp` nascia `null` e o UPDATE apagava
+        // o id do ERP da linha. Relatado pelo integrador em 15/09/2026:
+        // "atualizo o estoque e o campo some".
+        //
+        // O ESTRAGO NAO E COSMETICO: e por `id_erp` que a sincronizacao
+        // reconhece a linha. Apagado, o `PUT /estoque` seguinte nao acha mais
+        // o registro e cai na chave (empresa+grupo+produto+local) — ou cria
+        // uma linha nova, se alguma das quatro tiver mudado.
+        //
+        // Mesma familia do defeito do upsert de produto (`f134caa`): remontar
+        // um registro campo a campo esquece justamente o campo que ninguem
+        // digita na tela.
+        idErp: atual.idErp,
         empresaId: atual.empresaId,
         grupoEstoqueId: atual.grupoEstoqueId,
         produtoId: atual.produtoId,
