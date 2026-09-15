@@ -30,31 +30,48 @@ const MAX_TOKENS = 200;
 /**
  * O QUE SE PERGUNTA — e o cuidado esta no que NAO se pergunta.
  *
- * Nao perguntamos se a foto e boa, se esta nitida ou se a joia e bonita. A
+ * Nao perguntamos se a foto e boa, se esta nitida ou se a peca e bonita. A
  * foto do estoque e tirada com celular, em cima do balcao, e e para isso que
- * o tratamento existe. A unica pergunta e se ha uma peca ali.
+ * o tratamento existe. A unica pergunta e se ha um PRODUTO ali.
+ *
+ * ==========================================================================
+ * PRODUTO, E NAO "JOIA" — decisao do Lucas em 15/09/2026.
+ *
+ * A primeira versao perguntava por joia. Mas o canal ja tratou uma GARRAFA em
+ * 01/09 (esta no comentario do tamanho da imagem, no cliente de tratamento), e
+ * o catalogo nao promete ser so de joia.
+ *
+ * E o defeito que esta conferencia existe para matar nao e "fotografaram
+ * outra categoria": e a INVENCAO, que acontece quando nao ha produto nenhum
+ * na foto. O notebook cai nos dois criterios; a garrafa so cairia no
+ * primeiro, e injustamente.
+ * ==========================================================================
  *
  * "NA DUVIDA, SERVE" ESTA ESCRITO NO PROMPT porque o custo dos dois erros e
  * diferente: recusar foto boa trava o trabalho do estoque; aceitar foto ruim
  * gasta uma geracao e cai na aprovacao humana, que ja existe.
  */
 const PERGUNTA =
-  'Você confere fotos de joias antes de elas irem para tratamento de imagem.\n\n' +
+  'Você confere fotos de produtos antes de elas irem para tratamento de ' +
+  'imagem, numa loja de joias.\n\n' +
   'Olhe a imagem e responda SÓ com um JSON, sem cercar com crase e sem ' +
   'explicação:\n' +
   '{"serve": true|false, "motivo": "sem_peca"|"varias_pecas"|null, ' +
   '"viu": "<o que aparece na foto, em até 6 palavras>"}\n\n' +
   'Critério:\n' +
-  '- serve=true quando há UMA peça de joia ou bijuteria identificável ' +
-  '(anel, brinco, colar, pulseira, pingente, piercing, aliança, relógio, ' +
-  'berloque). Foto tremida, escura, de longe, com mão segurando, com fundo ' +
-  'bagunçado ou sobre embalagem CONTINUA servindo — é isso que o tratamento ' +
-  'conserta.\n' +
-  '- serve=false, motivo "sem_peca", quando não há joia nenhuma: ' +
-  'documento, tela, teclado, ambiente, pessoa, animal, comida, print.\n' +
-  '- serve=false, motivo "varias_pecas", quando há várias peças distintas ' +
-  'e não dá para saber qual é a da vez. Par de brincos é UMA peça. ' +
-  'Peça com pedras, correntes ou pingentes é UMA peça.\n\n' +
+  '- serve=true quando há UM produto identificável sendo fotografado para ' +
+  'venda: joia ou bijuteria (anel, brinco, colar, pulseira, pingente, ' +
+  'piercing, aliança, relógio, berloque) e também qualquer outro item de ' +
+  'loja — bolsa, garrafa, acessório, embalagem, peça de decoração. ' +
+  'Foto tremida, escura, de longe, com mão segurando, com fundo bagunçado ' +
+  'ou sobre embalagem CONTINUA servindo — é isso que o tratamento conserta.\n' +
+  '- serve=false, motivo "sem_peca", quando NÃO há produto nenhum sendo ' +
+  'fotografado: documento, tela de computador ou celular, teclado, print, ' +
+  'ambiente ou cômodo, móvel de loja, pessoa, animal, comida, paisagem, ' +
+  'veículo, foto de uma foto.\n' +
+  '- serve=false, motivo "varias_pecas", quando há vários produtos distintos ' +
+  'e não dá para saber qual é o da vez. Par de brincos é UM produto. ' +
+  'Peça com pedras, correntes ou pingentes é UM produto.\n\n' +
   'NA DÚVIDA, responda serve=true.';
 
 /**

@@ -20,7 +20,12 @@ import type { ImagemDeEntrada } from './tratamento-imagem.port';
  *
  * O QUE ELA NAO E: um juiz de qualidade de foto. Foto tremida, escura ou de
  * longe continua passando — o tratamento existe justamente para isso. O que
- * ela barra e a foto que NAO TEM PECA, onde o modelo inventaria uma.
+ * ela barra e a foto que NAO TEM PRODUTO, onde o modelo inventaria um.
+ *
+ * E NAO E UM JUIZ DE CATEGORIA. O criterio e "ha um produto sendo
+ * fotografado", e nao "ha uma joia": o canal ja tratou uma garrafa em 01/09, e
+ * recusa-la seria inventar uma regra que o catalogo nunca teve. Decisao do
+ * Lucas em 15/09/2026.
  *
  * NA DUVIDA, PASSA. Um falso "nao serve" tira do estoque o direito de mandar
  * a foto que eles mandam todo dia; um falso "serve" custa uma geracao e cai
@@ -28,9 +33,9 @@ import type { ImagemDeEntrada } from './tratamento-imagem.port';
  */
 
 export type MotivoRecusa =
-  /** Nao ha joia nenhuma na imagem — o caso do notebook. */
+  /** Nao ha produto nenhum na imagem — o caso do notebook. */
   | 'sem_peca'
-  /** Ha varias pecas, e o packshot e de uma. */
+  /** Ha varios produtos distintos, e o packshot e de um. */
   | 'varias_pecas';
 
 export interface VereditoFoto {
