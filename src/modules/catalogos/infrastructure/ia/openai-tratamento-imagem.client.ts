@@ -36,6 +36,23 @@ const TIMEOUT_MS = 120_000;
  * pedra"; "nunca transforme metal branco em dourado"). Instrucao enumerada e
  * especifica sobrevive melhor que paragrafo generico.
  *
+ * ==========================================================================
+ * 15/09/2026: A REGRA DO METAL VALIA NUM SENTIDO SO, E O MODELO FOI PELO
+ * OUTRO.
+ *
+ * Teste com o colar de opala CO23322, que e ouro amarelo: nas TRES geracoes
+ * — fundo branco, bege e escuro — a corrente e o aro sairam PRATEADOS. A
+ * regra dizia "nunca transforme metal branco em dourado", e o caminho
+ * contrario estava aberto.
+ *
+ * Agora a linha proibe as duas direcoes e nomeia amarelo e rose. E entrou
+ * uma linha nova para o DESENHO DA PEDRA: opala e pedra unica, o veio dela e
+ * a identidade da peca, e o modelo repintava o padrao a cada geracao.
+ *
+ * ISTO CONTINUA SENDO MITIGACAO. A garantia so vem quando a peca parar de
+ * ser regerada — ver o recorte, no fim deste bloco.
+ * ==========================================================================
+ *
  * E O RISCO CONTINUA. Isto e mitigacao, nao garantia: o `gpt-image-1` no
  * `/images/edits` REGERA a imagem em vez de edita-la, entao preservar a peca e
  * um resultado provavel, nunca certo. Quem for conferir o catalogo tem de
@@ -50,10 +67,16 @@ const REGRA_PECA_INTOCADA =
   'saída. Ele não pode ser alterado, substituído, completado nem embelezado.\n' +
   '- NÃO ACRESCENTE PEDRAS. Se a peça enviada não tem nenhuma pedra, a imagem ' +
   'de saída não pode ter nenhuma pedra. Se tem três, tem três.\n' +
-  '- NÃO MUDE A COR DO METAL. Metal branco, prateado ou cinza permanece ' +
-  'branco, prateado ou cinza. NUNCA transforme metal branco em dourado.\n' +
+  '- NÃO MUDE A COR DO METAL, EM NENHUMA DIREÇÃO. Ouro amarelo permanece ' +
+  'AMARELO. Ouro rosé permanece ROSÉ. Metal branco, prateado ou cinza ' +
+  'permanece branco, prateado ou cinza. NUNCA transforme amarelo em branco ' +
+  'nem branco em dourado. A cor do metal é a da foto enviada, mesmo que a ' +
+  'luz do ambiente ou o fundo pedido sugiram outra.\n' +
   '- NÃO MUDE o formato, o corte, a espessura, o acabamento, os gravados nem ' +
   'as proporções entre as partes.\n' +
+  '- NÃO MUDE O DESENHO DA PEDRA. Opala, madrepérola, ágata e pedras naturais ' +
+  'têm veios e manchas ÚNICOS: copie os que estão na foto, não crie um padrão ' +
+  'novo nem "melhore" o existente.\n' +
   '- NÃO POLIR, NÃO LIMPAR, NÃO RESTAURAR. Marcas de uso, riscos e ' +
   'irregularidades da peça são dela e permanecem.\n' +
   'Esta NÃO é uma joia de catálogo idealizada: é ESTA peça específica, como ' +
@@ -77,19 +100,40 @@ const REGRA_PECA_INTOCADA =
  * varias `image[]` para `/v1/images/edits` significa "edite estas juntas".
  * Agora vai uma imagem so, e o padrao vem escrito.
  *
- * Conferido nos catalogos reais: a peca aparece recortada sobre BRANCO, de
- * frente, na altura do olho. Sem cenario, sem superficie, sem mesa.
+ * Conferido nos catalogos reais: a peca aparece recortada, de frente, na
+ * altura do olho. Sem cenario, sem superficie, sem mesa.
+ *
+ * ==========================================================================
+ * O ENQUADRAMENTO E FIXO. A COR DO FUNDO, NAO — HML-17, 15/09/2026.
+ *
+ * Ate aqui esta constante abria com "Fundo BRANCO liso e uniforme", em
+ * maiusculas, e a descricao da colecao ("cores quentes", "cor escura") entrava
+ * DEPOIS, no meio do mesmo texto. Com as duas instrucoes brigando, o modelo
+ * ficava com a primeira — e toda foto saia branca, qualquer que fosse o
+ * catalogo. Foi o que o Yerlon apontou na homologacao.
+ *
+ * O proprio codigo ja dizia a intencao certa em outro ponto: "fundo branco
+ * liso, SE A COLECAO NAO INDICAR OUTRO". O branco era para ser o padrao, e a
+ * linha o transformou em regra.
+ *
+ * Agora esta constante cuida so do que nao se negocia — de frente, na altura
+ * do olho, centralizada, sem cenario, fundo liso. A COR sai daqui e vira uma
+ * linha propria, resolvida por precedencia em `corDoFundo`.
+ * ==========================================================================
  */
-const PADRAO_PACKSHOT =
-  'Fundo BRANCO liso e uniforme. Sem cenário, sem mesa, sem superfície ' +
-  'visível, sem gradiente, sem textura e sem cor de papel. Sombra mínima ou ' +
-  'nenhuma. A peça deve aparecer DE FRENTE, na altura do olho, como produto ' +
-  'fotografado em estúdio — nunca vista de cima nem em perspectiva inclinada. ' +
-  'Centralizada, ocupando a maior parte do quadro.';
+const ENQUADRAMENTO =
+  'Sem cenário, sem mesa, sem superfície visível. Fundo liso e uniforme, sem ' +
+  'textura e sem gradiente. Sombra mínima ou nenhuma. A peça deve aparecer DE ' +
+  'FRENTE, na altura do olho, como produto fotografado em estúdio — nunca ' +
+  'vista de cima nem em perspectiva inclinada. Centralizada, ocupando a maior ' +
+  'parte do quadro.';
+
+/** O padrao da casa, e so quando ninguem disser outra coisa. */
+const FUNDO_PADRAO = 'FUNDO: BRANCO liso e uniforme.';
 
 const INSTRUCAO_BASE =
   'A imagem enviada é a foto de uma peça, tirada com celular. Produza o ' +
-  `packshot dela para catálogo: ${PADRAO_PACKSHOT} ` +
+  `packshot dela para catálogo: ${ENQUADRAMENTO} ` +
   'Não escreva texto algum na imagem.';
 
 /**
@@ -203,12 +247,45 @@ export class OpenaiTratamentoImagemClient implements ITratamentoImagem {
     }
     if (pedido.pedidoDaPessoa?.trim()) {
       partes.push(`Pedido para esta peça: ${pedido.pedidoDaPessoa.trim()}`);
-    } else {
-      partes.push('Fundo branco liso, se a coleção não indicar outro.');
     }
+
+    // A COR DO FUNDO, UMA VEZ SO E POR ULTIMO — o conserto do HML-17.
+    //
+    // O defeito nunca foi a colecao nao chegar: ela chegava, e perdia para um
+    // "Fundo BRANCO" fixo, em maiusculas, escrito antes. Agora existe uma
+    // linha de fundo apenas, e ela e a ultima coisa dita antes da regra da
+    // peca — a posicao de mais peso depois do fim.
+    partes.push(this.corDoFundo(pedido));
 
     partes.push(REGRA_PECA_INTOCADA);
     return partes.join('\n\n');
+  }
+
+  /**
+   * Quem manda no fundo, em ordem:
+   *
+   *   1. o PEDIDO da pessoa, que e sobre esta peca ("fundo rosa")
+   *   2. o PADRAO da colecao, que vale para o catalogo inteiro
+   *   3. o BRANCO, quando ninguem disse nada
+   *
+   * A precedencia fica ESCRITA no proprio texto, e nao so na ordem das
+   * frases: dizer ao modelo qual instrucao vence e o que impede as duas de
+   * coexistirem e ele escolher. Foi assim que o branco venceu por semanas.
+   */
+  private corDoFundo(pedido: PedidoDeTratamento): string {
+    if (pedido.pedidoDaPessoa?.trim()) {
+      return (
+        'FUNDO: siga o "Pedido para esta peça" acima. Ele vence o padrão da ' +
+        'coleção.'
+      );
+    }
+    if (pedido.padrao?.trim()) {
+      return (
+        'FUNDO: siga o "Padrão desta coleção" acima — cor, tom e clima. ' +
+        'Mantenha o fundo LISO e uniforme, sem cenário e sem objetos.'
+      );
+    }
+    return FUNDO_PADRAO;
   }
 
   private paraBlob(imagem: ImagemDeEntrada): Blob {

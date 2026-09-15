@@ -16,3 +16,10 @@ export const TRATAMENTO_IMAGEM = Symbol('ITratamentoImagem');
  * so, a indisponibilidade de um derrubaria o outro.
  */
 export const CONFERENCIA_FOTO = Symbol('IConferenciaFoto');
+
+/**
+ * Leitura das PAGINAS de referencia — desde 15/09/2026. Separada do
+ * tratamento e da conferencia porque e outra pergunta, feita uma vez por
+ * catalogo e nao por foto.
+ */
+export const ESTILO_CATALOGO = Symbol('IEstiloCatalogo');

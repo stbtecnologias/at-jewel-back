@@ -23,12 +23,15 @@ import {
   ARMAZENAMENTO,
   CATALOGO_REPOSITORY,
   CONFERENCIA_FOTO,
+  ESTILO_CATALOGO,
   TRATAMENTO_IMAGEM,
 } from './domain/ports/injection-tokens';
 import { DiscoArmazenamento } from './infrastructure/armazenamento/disco.armazenamento';
 import { S3Armazenamento } from './infrastructure/armazenamento/s3.armazenamento';
 import { OpenaiTratamentoImagemClient } from './infrastructure/ia/openai-tratamento-imagem.client';
 import { AnthropicConferenciaFotoClient } from './infrastructure/ia/anthropic-conferencia-foto.client';
+import { AnthropicEstiloCatalogoClient } from './infrastructure/ia/anthropic-estilo-catalogo.client';
+import { EstiloDoCatalogoService } from './application/estilo-do-catalogo.service';
 import { CatalogoFinalOrmEntity } from './infrastructure/database/typeorm/entities/catalogo-final.orm-entity';
 import { CatalogoFotoOrmEntity } from './infrastructure/database/typeorm/entities/catalogo-foto.orm-entity';
 import { CatalogoReferenciaOrmEntity } from './infrastructure/database/typeorm/entities/catalogo-referencia.orm-entity';
@@ -74,6 +77,9 @@ import { MidiaController } from './infrastructure/http/controllers/midia.control
     // Quem OLHA a foto antes de gerar. Ver o cabecalho da porta: sem ela, a
     // foto de um teclado voltava como uma joia inventada.
     { provide: CONFERENCIA_FOTO, useClass: AnthropicConferenciaFotoClient },
+    // Quem LE as paginas de referencia, e o cache que evita reler a cada foto.
+    { provide: ESTILO_CATALOGO, useClass: AnthropicEstiloCatalogoClient },
+    EstiloDoCatalogoService,
     { provide: CATALOGO_REPOSITORY, useClass: CatalogoRepository },
     {
       // O ADAPTADOR SAI DO AMBIENTE, e nao de um `if` espalhado pelo codigo.
