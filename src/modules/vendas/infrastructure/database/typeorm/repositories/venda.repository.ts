@@ -11,7 +11,9 @@ import {
   HistoricoCliente,
   IVendaRepository,
   ItemHistoricoCliente,
+  RecorteVenda,
   ResumoVendas,
+  SerieMensalVendas,
   VendaResumo,
 } from '../../../../domain/ports/repositories/venda-repository.port';
 import type { FormaPagamento, StatusVenda } from '../../../../domain/entities/enums';
@@ -21,6 +23,45 @@ import { VendaOrmEntity } from '../entities/venda.orm-entity';
 
 /** O fuso da operacao — o mesmo da auditoria. */
 const FUSO_DA_LOJA = 'America/Sao_Paulo';
+
+/**
+ * O recorte da tela de vendas em SQL posicional (alias `v`): vendas ATIVAS,
+ * status (padrao `concluida`), periodo, vendedora e forma de pagamento.
+ * Acrescenta os valores em `params` e devolve as condicoes.
+ *
+ * Um lugar so para o comparativo e a serie mensal, criado em 11/09/2026. O
+ * `resumoAgregado` monta as mesmas condicoes por conta propria, com parametros
+ * nomeados; ficou como estava porque e o numero dos big-numbers, conferido
+ * contra o banco — e as duas montagens precisam continuar dizendo o mesmo.
+ *
+ * A forma de pagamento vai por EXISTS, e nao JOIN: `pagamentos_venda` e 1:N, e
+ * o JOIN contaria duas vezes a venda paga em duas linhas da mesma forma. Ver o
+ * comentario longo no `resumoAgregado`.
+ */
+function condicoesDoRecorte(filtros: RecorteVenda, params: unknown[]): string[] {
+  params.push(filtros.status ?? (['concluida'] satisfies StatusVenda[]));
+  const conds = ['v.ativo = true', `v.status::text = ANY($${params.length}::text[])`];
+
+  if (filtros.dataDe !== undefined) {
+    params.push(filtros.dataDe);
+    conds.push(`v.data_venda >= $${params.length}`);
+  }
+  if (filtros.dataAte !== undefined) {
+    params.push(filtros.dataAte);
+    conds.push(`v.data_venda <= $${params.length}`);
+  }
+  if (filtros.vendedoraId !== undefined) {
+    params.push(filtros.vendedoraId);
+    conds.push(`v.vendedora_id = ANY($${params.length}::uuid[])`);
+  }
+  if (filtros.formaPagamento !== undefined) {
+    params.push(filtros.formaPagamento);
+    conds.push(
+      `EXISTS (SELECT 1 FROM pagamentos_venda pvf WHERE pvf.venda_id = v.id AND pvf.forma_pagamento::text = ANY($${params.length}::text[]))`,
+    );
+  }
+  return conds;
+}
 
 // Limites de paginacao para conter abuso e custo de query.
 const LIMIT_PADRAO = 50;
@@ -145,16 +186,16 @@ export class VendaRepository implements IVendaRepository {
     }
     if (filtros.vendedoraId !== undefined) {
       params.push(filtros.vendedoraId);
-      conds.push(`v.vendedora_id = $${params.length}`);
+      conds.push(`v.vendedora_id = ANY($${params.length}::uuid[])`);
     }
     if (filtros.status !== undefined) {
       params.push(filtros.status);
-      conds.push(`v.status = $${params.length}`);
+      conds.push(`v.status::text = ANY($${params.length}::text[])`);
     }
     if (filtros.formaPagamento !== undefined) {
       params.push(filtros.formaPagamento);
       conds.push(
-        `EXISTS (SELECT 1 FROM pagamentos_venda pvf WHERE pvf.venda_id = v.id AND pvf.forma_pagamento = $${params.length})`,
+        `EXISTS (SELECT 1 FROM pagamentos_venda pvf WHERE pvf.venda_id = v.id AND pvf.forma_pagamento::text = ANY($${params.length}::text[]))`,
       );
     }
 
@@ -284,20 +325,15 @@ export class VendaRepository implements IVendaRepository {
   }
 
   async comparativoPorVendedora(
-    filtros: Pick<FiltroVenda, 'dataDe' | 'dataAte'>,
+    filtros: RecorteVenda,
   ): Promise<ComparativoVendedora[]> {
-    // Agregado por vendedora de vendas CONCLUIDAS e ativas (RF-USU-02). Sem
-    // carregar linhas; periodo opcional parametrizado. Nenhuma PII.
-    const conds: string[] = [`v.status = 'concluida'`, `v.ativo = true`];
+    // Agregado por vendedora (RF-USU-02). Sem carregar linhas; nenhuma PII.
+    //
+    // O RECORTE E O DA TELA desde 11/09/2026. Ate ai so as datas valiam: a
+    // gestao filtrava PIX, e o "Top vendedoras" continuava contando todas as
+    // formas — o DTO aceitava os filtros e o controller os descartava.
     const params: unknown[] = [];
-    if (filtros.dataDe !== undefined) {
-      params.push(filtros.dataDe);
-      conds.push(`v.data_venda >= $${params.length}`);
-    }
-    if (filtros.dataAte !== undefined) {
-      params.push(filtros.dataAte);
-      conds.push(`v.data_venda <= $${params.length}`);
-    }
+    const conds = condicoesDoRecorte(filtros, params);
     // Os agregados de itens (desconto por item e quantidade) sao pre-somados
     // por venda numa subquery para NAO inflar os agregados de header (COUNT,
     // SUM(valor_total)) por fan-out do JOIN 1:N com itens_venda.
@@ -349,6 +385,68 @@ export class VendaRepository implements IVendaRepository {
     }));
   }
 
+  async serieMensal(
+    filtros: RecorteVenda,
+    janela: { de: Date; ate: Date },
+  ): Promise<SerieMensalVendas> {
+    // O ESQUELETO VEM DA JANELA, AS VENDAS VEM DO RECORTE. O `generate_series`
+    // garante o mes zerado na serie — sem ele, um mes sem venda simplesmente
+    // sumiria do grafico, e a linha pularia de marco para maio.
+    //
+    // O MES E O DA LOJA, como na serie diaria da auditoria: truncar
+    // `data_venda` sem dizer o fuso usaria o do servidor, em UTC, e a venda
+    // das 22h do dia 31 cairia no mes seguinte.
+    const params: unknown[] = [];
+    const conds = condicoesDoRecorte(filtros, params);
+    params.push(FUSO_DA_LOJA);
+    const iFuso = params.length;
+    params.push(janela.de, janela.ate);
+    const iDe = params.length - 1;
+    const iAte = params.length;
+
+    const meses = await this.dataSource.query<
+      { mes: string; receita: number; totalVendas: number }[]
+    >(
+      `
+      WITH serie AS (
+        SELECT m::date AS inicio
+        FROM generate_series(
+          date_trunc('month', $${iDe}::timestamptz AT TIME ZONE $${iFuso}::text),
+          date_trunc('month', $${iAte}::timestamptz AT TIME ZONE $${iFuso}::text),
+          interval '1 month'
+        ) AS m
+      ),
+      recorte AS (
+        SELECT date_trunc('month', v.data_venda AT TIME ZONE $${iFuso}::text)::date AS inicio,
+               v.valor_total
+        FROM vendas v
+        WHERE ${conds.join(' AND ')}
+      )
+      SELECT to_char(serie.inicio, 'YYYY-MM') AS mes,
+             COALESCE(SUM(recorte.valor_total), 0)::float AS receita,
+             COUNT(recorte.inicio)::int AS "totalVendas"
+      FROM serie
+      LEFT JOIN recorte ON recorte.inicio = serie.inicio
+      GROUP BY serie.inicio
+      ORDER BY serie.inicio
+      `,
+      params,
+    );
+
+    // A meta vigente da loja, a mesma do `/analytics/receita-mensal`.
+    const metaRows = await this.dataSource.query<{ meta: number }[]>(
+      `
+      SELECT COALESCE(valor_alvo, 0)::float AS meta
+      FROM metas
+      WHERE tipo = 'GLOBAL' AND prazo >= now()
+      ORDER BY criado_em DESC
+      LIMIT 1
+      `,
+    );
+
+    return { meses, meta: metaRows[0]?.meta ?? 0 };
+  }
+
   async resumoAgregado(filtros: FiltroVenda): Promise<ResumoVendas> {
     // Tudo agregado em SQL: nenhuma venda e carregada na memoria.
     //
@@ -357,10 +455,20 @@ export class VendaRepository implements IVendaRepository {
     // em itens_venda. A distribuicao por status vem de uma terceira query
     // agrupada. Quando `status` e informado, o recorte de receita/itens passa
     // a usar aquele status no lugar do 'concluida' padrao.
-    const statusReceita: StatusVenda = filtros.status ?? 'concluida';
+    // SEM FILTRO, O RECORTE E 'concluida' — E ISSO NAO E DESCUIDO.
+    //
+    // Receita de venda cancelada nao e receita. Por isso os big-numbers contam
+    // so o concluido enquanto ninguem escolhe outro status, e a tabela abaixo
+    // continua mostrando todas as vendas.
+    //
+    // O efeito colateral e que "Todos" e "Concluida" dao o MESMO numero nos
+    // cards, o que foi lido como defeito na revisao de 10/09/2026. A decisao do
+    // Lucas no mesmo dia foi manter a conta e dizer o criterio na tela — o card
+    // agora traz "apenas concluidas" embaixo do valor.
+    const statusReceita: StatusVenda[] = filtros.status ?? ['concluida'];
 
     const aggParams: Record<string, unknown> = { status: statusReceita };
-    const aggConds: string[] = ['v.ativo = true', 'v.status = :status'];
+    const aggConds: string[] = ['v.ativo = true', 'v.status::text = ANY(:status::text[])'];
     if (filtros.dataDe !== undefined) {
       aggConds.push('v.data_venda >= :dataDe');
       aggParams.dataDe = filtros.dataDe;
@@ -370,8 +478,25 @@ export class VendaRepository implements IVendaRepository {
       aggParams.dataAte = filtros.dataAte;
     }
     if (filtros.vendedoraId !== undefined) {
-      aggConds.push('v.vendedora_id = :vendedoraId');
+      aggConds.push('v.vendedora_id = ANY(:vendedoraId::uuid[])');
       aggParams.vendedoraId = filtros.vendedoraId;
+    }
+    // EXISTS, e nao JOIN. A forma de pagamento vive em `pagamentos_venda`
+    // (1:N), e com JOIN a venda entra uma vez POR LINHA de pagamento que casa
+    // com o filtro — entao uma venda quitada em DUAS transferencias PIX seria
+    // contada duas vezes e sua receita somada em dobro. Nao basta ser paga em
+    // formas diferentes: o proprio JOIN ja filtra pela forma, e o que duplica e
+    // haver mais de uma linha DA MESMA forma na mesma venda.
+    //
+    // Conferido no banco local em 09/09/2026: hoje nenhuma venda tem duas
+    // linhas da mesma forma, e por isso JOIN e EXISTS devolvem identico
+    // (376 vendas / R$ 4.441.374,31 em PIX). O esquema permite, o EXISTS e
+    // correto nos dois casos, e e a mesma condicao que `listar` ja usava.
+    if (filtros.formaPagamento !== undefined) {
+      aggConds.push(
+        'EXISTS (SELECT 1 FROM pagamentos_venda pvf WHERE pvf.venda_id = v.id AND pvf.forma_pagamento::text = ANY(:formaPagamento::text[]))',
+      );
+      aggParams.formaPagamento = filtros.formaPagamento;
     }
 
     const receitaRow = await this.repo
@@ -393,8 +518,11 @@ export class VendaRepository implements IVendaRepository {
     const totalItens = Number(itensRow?.total_itens ?? 0);
     const ticketMedio = totalVendas > 0 ? receitaTotal / totalVendas : 0;
 
-    // Contagem por status sobre vendas ATIVAS do recorte (periodo/vendedora),
-    // sem aplicar o filtro de status (queremos a distribuicao completa).
+    // Contagem por status sobre vendas ATIVAS do recorte (periodo, vendedora e
+    // forma de pagamento), sem aplicar o filtro de status — queremos a
+    // distribuicao completa. `formaPagamento` entra aqui porque e recorte, como
+    // periodo e vendedora; so o `status` fica de fora, e e o proprio eixo desta
+    // contagem.
     const statusParams: Record<string, unknown> = {};
     const statusConds: string[] = ['v.ativo = true'];
     if (filtros.dataDe !== undefined) {
@@ -406,8 +534,14 @@ export class VendaRepository implements IVendaRepository {
       statusParams.dataAte = filtros.dataAte;
     }
     if (filtros.vendedoraId !== undefined) {
-      statusConds.push('v.vendedora_id = :vendedoraId');
+      statusConds.push('v.vendedora_id = ANY(:vendedoraId::uuid[])');
       statusParams.vendedoraId = filtros.vendedoraId;
+    }
+    if (filtros.formaPagamento !== undefined) {
+      statusConds.push(
+        'EXISTS (SELECT 1 FROM pagamentos_venda pvf WHERE pvf.venda_id = v.id AND pvf.forma_pagamento::text = ANY(:formaPagamento::text[]))',
+      );
+      statusParams.formaPagamento = filtros.formaPagamento;
     }
 
     const statusRows = await this.repo
@@ -454,7 +588,7 @@ export class VendaRepository implements IVendaRepository {
     }
     if (filtros.vendedoraId !== undefined) {
       params.push(filtros.vendedoraId);
-      conds.push(`v.vendedora_id = $${params.length}`);
+      conds.push(`v.vendedora_id = ANY($${params.length}::uuid[])`);
     }
 
     // O dia e o da loja. `data_venda` e timestamptz: truncar sem dizer o fuso

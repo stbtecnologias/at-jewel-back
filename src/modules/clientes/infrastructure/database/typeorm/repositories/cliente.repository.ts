@@ -39,13 +39,15 @@ export class ClienteRepository implements IClienteRepository {
       params.push(filtro.dataInicio, filtro.dataFim);
       whereDemo += ` AND c.criado_em BETWEEN $${params.length - 1} AND $${params.length}`;
     }
+    // `= ANY($n::text[])`, o mesmo do `/analytics` desde o `53b5c97`: a lista
+    // vai como UM parametro. O cast e explicito porque `sexo` e ENUM.
     if (filtro?.sexo != null) {
       params.push(filtro.sexo);
-      whereDemo += ` AND COALESCE(cp.sexo::text, 'NAO_INFORMADO') = $${params.length}`;
+      whereDemo += ` AND COALESCE(cp.sexo::text, 'NAO_INFORMADO') = ANY($${params.length}::text[])`;
     }
     if (filtro?.origem != null) {
       params.push(filtro.origem);
-      whereDemo += ` AND COALESCE(cp.origem_contato::text, 'Nao informado') = $${params.length}`;
+      whereDemo += ` AND COALESCE(cp.origem_contato::text, 'Nao informado') = ANY($${params.length}::text[])`;
     }
     if (filtro?.faixaEtaria != null) {
       params.push(filtro.faixaEtaria);

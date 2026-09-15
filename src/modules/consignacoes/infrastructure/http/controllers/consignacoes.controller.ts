@@ -65,10 +65,24 @@ export class ConsignacoesController {
 
   // ATENCAO: declarar /resumo ANTES de /:id para o Nest nao casar
   // "resumo" como parametro :id.
+  //
+  // O MESMO FILTRO DA LISTA desde 11/09/2026 — os cards acompanham a tela.
   @Get('resumo')
   @Permissions('consignacoes:read')
-  async resumo() {
-    return this.resumoConsignacoes.execute();
+  async resumo(
+    @Query('status') status?: StatusConsignacao,
+    @Query('destinoTipo') destinoTipo?: DestinoConsignacao,
+    @Query('produtoId') produtoId?: string,
+    @Query('dataDe') dataDe?: string,
+    @Query('dataAte') dataAte?: string,
+  ) {
+    return this.resumoConsignacoes.execute({
+      status,
+      destinoTipo,
+      produtoId,
+      dataDe: dataDe ? new Date(dataDe) : undefined,
+      dataAte: dataAte ? new Date(dataAte) : undefined,
+    });
   }
 
   @Get(':id')

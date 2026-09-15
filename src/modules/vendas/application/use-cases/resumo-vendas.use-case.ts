@@ -26,7 +26,10 @@ export class ResumoVendasUseCase {
    * e ecoa o periodo aplicado — nenhuma PII.
    */
   async execute(
-    filtros: Pick<FiltroVenda, 'dataDe' | 'dataAte' | 'vendedoraId' | 'status'>,
+    filtros: Pick<
+      FiltroVenda,
+      'dataDe' | 'dataAte' | 'vendedoraId' | 'status' | 'formaPagamento'
+    >,
   ): Promise<ResumoVendasComPeriodo> {
     const resumo = await this.vendaRepo.resumoAgregado(filtros);
     return {

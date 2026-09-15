@@ -179,8 +179,12 @@ describe('ConsultarAuditoriaUseCase', () => {
       );
       // Sem isto a tela mostraria os atendimentos de UMA vendedora ao lado da
       // receita da EQUIPE inteira, e o numero pareceria dela.
+      //
+      // A vendedora vai em LISTA desde 10/09/2026, quando os filtros de vendas
+      // passaram a aceitar selecao multipla. O recorte e o mesmo — uma
+      // vendedora so —, muda a forma de dize-lo.
       expect(vendas.serieAgregada).toHaveBeenCalledWith(
-        { vendedoraId: 'vd-1', dataDe: de, dataAte: ate },
+        { vendedoraId: ['vd-1'], dataDe: de, dataAte: ate },
         'SEMANA',
       );
     });

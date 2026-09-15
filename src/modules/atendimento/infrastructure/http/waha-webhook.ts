@@ -10,6 +10,8 @@ interface WahaWebhookBody {
     fromMe?: boolean;
     body?: string;
     hasMedia?: boolean;
+    /** Quando a mensagem foi escrita, em SEGUNDOS. */
+    timestamp?: number;
     media?: { url?: string; mimetype?: string } | null;
     _data?: {
       Info?: { Type?: string; MediaType?: string };
@@ -61,6 +63,15 @@ export interface MensagemWhatsapp {
   audio?: AudioRecebido;
   /** Presente so quando a mensagem e de imagem. */
   imagem?: ImagemRecebida;
+  /**
+   * Quando a mensagem foi ESCRITA, em milissegundos — o carimbo do WhatsApp,
+   * e nao a hora em que chegou aqui.
+   *
+   * Entrou em 11/09/2026 para o relogio da aprovacao do catalogo: uma
+   * afirmacao so aprova foto que ja tinha chegado quando a pessoa escreveu.
+   * Ausente quando o payload nao traz — e ai quem usa cai na hora de agora.
+   */
+  em?: number;
 }
 
 /**
@@ -181,6 +192,11 @@ export function extrairMensagemRecebida(body: unknown): MensagemWhatsapp | null 
   const msg: MensagemWhatsapp = { de, texto };
   if (audio) msg.audio = audio;
   if (imagem) msg.imagem = imagem;
+  // O WAHA manda o timestamp em SEGUNDOS — o mesmo campo que o
+  // `contatoDoEvento` ja le para a regua da vendedora.
+  if (typeof payload.timestamp === 'number' && payload.timestamp > 0) {
+    msg.em = payload.timestamp * 1000;
+  }
   return msg;
 }
 

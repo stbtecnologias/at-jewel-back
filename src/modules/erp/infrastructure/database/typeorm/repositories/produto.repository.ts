@@ -13,6 +13,20 @@ import { ProdutoOrmEntity } from '../entities/produto.orm-entity';
 
 const NOME_PRODUTO = `COALESCE(NULLIF(descricao_etiqueta, ''), codigo_erp, categoria || ' ' || familia, LEFT(id::text, 8))`;
 
+/**
+ * O que o evento de produto do ERP NAO traz — e por isso nao reescreve.
+ *
+ * `codigoErp` e a chave do conflito. As outras tres o ERP nao conhece: o
+ * `idErp` vem da API do integrador, o estoque e a data de entrada vem de
+ * outros caminhos. Ver `upsertByCodigoErp`.
+ */
+const FORA_DO_EVENTO_DO_ERP = new Set<string>([
+  'codigoErp',
+  'idErp',
+  'estoqueAtual',
+  'dataEntradaEstoque',
+]);
+
 @Injectable()
 export class ProdutoRepository implements IProdutoRepository {
   constructor(
@@ -20,12 +34,52 @@ export class ProdutoRepository implements IProdutoRepository {
     private readonly repo: Repository<ProdutoOrmEntity>,
   ) {}
 
+  /**
+   * O caminho do ERP: cria a peca, ou atualiza o que o ERP manda sobre ela.
+   *
+   * ==========================================================================
+   * O ERP NAO APAGA O QUE NAO MANDA — conserto de 11/09/2026.
+   *
+   * Isto era `repo.upsert(this.toOrm(produto))`. O evento do ERP nao traz
+   * `idErp`, `estoqueAtual` nem `dataEntradaEstoque`, entao o `Produto` chegava
+   * com `null`, `0` e `null` — e o TypeORM 1.0.0 sobrescreve no conflito TODA
+   * coluna cujo valor nao seja `undefined`. Reproduzido no banco local: UM
+   * evento tirou o `idErp` de uma peca, zerou o estoque e apagou a data de
+   * entrada. No homolog, os 6.911 produtos estavam sem data — e sem data os
+   * dois graficos de giro nunca teriam como funcionar.
+   *
+   * Agora o INSERT leva a peca inteira, e o `ON CONFLICT` so reescreve as
+   * colunas que o ERP e dono. O que ele nao conhece fica como esta.
+   *
+   * PECA NOVA NASCE COM A DATA DE ENTRADA DE HOJE. O ERP nao manda a data, e a
+   * chegada da peca no ERP e a melhor aproximacao que o sistema tem da chegada
+   * na loja. Vale so no INSERT: no conflito a coluna nao esta na lista, entao
+   * uma data que ja existe nunca e trocada.
+   * ==========================================================================
+   */
   async upsertByCodigoErp(produto: Produto): Promise<Produto> {
-    await this.repo.upsert(this.toOrm(produto), {
-      conflictPaths: ['codigoErp'],
-      upsertType: 'on-conflict-do-update',
-      skipUpdateIfNoValuesChanged: true,
-    });
+    const linha = this.toOrm(produto);
+
+    const colunasDoErp = Object.keys(linha)
+      .filter((propriedade) => !FORA_DO_EVENTO_DO_ERP.has(propriedade))
+      .map((propriedade) => {
+        const coluna =
+          this.repo.metadata.findColumnWithPropertyName(propriedade);
+        if (!coluna) {
+          throw new Error(`Coluna do ERP sem mapeamento: ${propriedade}`);
+        }
+        return coluna.databaseName;
+      });
+
+    await this.repo
+      .createQueryBuilder()
+      .insert()
+      .into(ProdutoOrmEntity)
+      .values({ ...linha, dataEntradaEstoque: () => 'now()' })
+      .orUpdate(colunasDoErp, ['codigo_erp'], {
+        skipUpdateIfNoValuesChanged: true,
+      })
+      .execute();
 
     const saved = await this.repo.findOneByOrFail({ codigoErp: produto.codigoErp! });
     return this.toDomain(saved);
@@ -192,13 +246,18 @@ export class ProdutoRepository implements IProdutoRepository {
   }
 
   async alertasEstoque(limiteBaixo: number, diasGiroLento: number): Promise<AlertasEstoque> {
+    // O TOTAL SAI DA MESMA CONSULTA, pelo `count(*) OVER()`: a janela conta
+    // as linhas que passaram no WHERE ANTES de o LIMIT cortar. Uma segunda
+    // consulta so para contar repetiria o filtro — e as duas copias divergiriam
+    // na primeira vez que alguem mexesse em uma so.
     const [estoqueBaixo, giroLento] = await Promise.all([
-      this.repo.manager.query<ProdutoAlerta[]>(
+      this.repo.manager.query<ProdutoAlertaComTotal[]>(
         `
         SELECT id, ${NOME_PRODUTO} AS nome, categoria, familia,
                NULLIF(referencia_fornecedor, '') AS fornecedor,
                estoque_atual AS "estoqueAtual",
-               NULL::int AS "diasEmEstoque"
+               NULL::int AS "diasEmEstoque",
+               count(*) OVER() AS total
         FROM produtos
         WHERE ativo = true AND estoque_atual <= $1
         ORDER BY estoque_atual ASC
@@ -206,12 +265,13 @@ export class ProdutoRepository implements IProdutoRepository {
         `,
         [limiteBaixo],
       ),
-      this.repo.manager.query<ProdutoAlerta[]>(
+      this.repo.manager.query<ProdutoAlertaComTotal[]>(
         `
         SELECT id, ${NOME_PRODUTO} AS nome, categoria, familia,
                NULLIF(referencia_fornecedor, '') AS fornecedor,
                estoque_atual AS "estoqueAtual",
-               EXTRACT(DAY FROM (now() - data_entrada_estoque))::int AS "diasEmEstoque"
+               EXTRACT(DAY FROM (now() - data_entrada_estoque))::int AS "diasEmEstoque",
+               count(*) OVER() AS total
         FROM produtos
         WHERE ativo = true AND estoque_atual > 0
           AND data_entrada_estoque IS NOT NULL
@@ -222,7 +282,12 @@ export class ProdutoRepository implements IProdutoRepository {
         [diasGiroLento],
       ),
     ]);
-    return { estoqueBaixo, giroLento };
+    return {
+      estoqueBaixo: estoqueBaixo.map(semTotal),
+      giroLento: giroLento.map(semTotal),
+      totalEstoqueBaixo: totalDa(estoqueBaixo),
+      totalGiroLento: totalDa(giroLento),
+    };
   }
 
   /**
@@ -303,4 +368,28 @@ function palavrasDaBusca(busca: string | undefined): string[] {
     .split(/\s+/)
     .filter((p) => p.length > 2)
     .slice(0, 4);
+}
+
+/** A linha do alerta como sai do banco: com o total da janela pendurado. */
+type ProdutoAlertaComTotal = ProdutoAlerta & { total: string | number };
+
+/** Tira o total da linha — ele e da lista, nao da peca. */
+function semTotal(l: ProdutoAlertaComTotal): ProdutoAlerta {
+  return {
+    id: l.id,
+    nome: l.nome,
+    categoria: l.categoria,
+    familia: l.familia,
+    fornecedor: l.fornecedor,
+    estoqueAtual: l.estoqueAtual,
+    diasEmEstoque: l.diasEmEstoque,
+  };
+}
+
+/**
+ * O total da janela. Toda linha carrega o mesmo; sem linha nenhuma, e zero. O
+ * Postgres devolve `count` como bigint, que chega aqui como TEXTO.
+ */
+function totalDa(linhas: ProdutoAlertaComTotal[]): number {
+  return linhas.length ? Number(linhas[0].total) : 0;
 }

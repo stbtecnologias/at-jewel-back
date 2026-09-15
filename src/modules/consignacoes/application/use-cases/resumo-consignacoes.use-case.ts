@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { CONSIGNACAO_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type {
+  FiltroConsignacao,
   IConsignacaoRepository,
   ResumoConsignacoes,
 } from '../../domain/ports/repositories/consignacao-repository.port';
@@ -12,7 +13,10 @@ export class ResumoConsignacoesUseCase {
     private readonly repo: IConsignacaoRepository,
   ) {}
 
-  async execute(): Promise<ResumoConsignacoes> {
-    return this.repo.resumo();
+  /** Sem recorte, a casa inteira; com recorte, o mesmo filtro da lista. */
+  async execute(
+    filtro?: Omit<FiltroConsignacao, 'limit' | 'offset'>,
+  ): Promise<ResumoConsignacoes> {
+    return this.repo.resumo(filtro);
   }
 }

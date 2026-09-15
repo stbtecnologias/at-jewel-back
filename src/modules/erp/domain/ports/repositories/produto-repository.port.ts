@@ -43,8 +43,19 @@ export interface ProdutoAlerta {
 }
 
 export interface AlertasEstoque {
+  /** As primeiras, ate o teto da consulta — NAO e a contagem. */
   estoqueBaixo: ProdutoAlerta[];
   giroLento: ProdutoAlerta[];
+  /**
+   * Quantas sao DE VERDADE, sem o teto.
+   *
+   * Ate 11/09/2026 so havia as listas, cortadas em 50, e a tela usava o
+   * tamanho delas como contagem: "Estoque baixo (50)" com o numero real bem
+   * acima. Teto silencioso mente por omissao — a listagem que corta devolve o
+   * total junto.
+   */
+  totalEstoqueBaixo: number;
+  totalGiroLento: number;
 }
 
 export interface IProdutoRepository {

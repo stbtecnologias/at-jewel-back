@@ -124,8 +124,13 @@ export interface Periodo {
 export interface FiltroAnalitico {
   dataInicio?: Date;
   dataFim?: Date;
-  sexo?: string;
-  origem?: string;
+  /**
+   * LISTAS desde 10/09/2026 — a tela passou a aceitar selecao multipla.
+   * Vazio nunca chega: o controller transforma em `undefined`, que e "sem
+   * recorte". Uma lista vazia significaria "nenhum valor serve".
+   */
+  sexo?: string[];
+  origem?: string[];
   faixaEtaria?: string;
   idadeMin?: number;
   idadeMax?: number;
@@ -138,7 +143,16 @@ export interface ResumoPeriodo {
 }
 
 export interface IAnalyticsRepository {
-  receitaMensal(meses: number): Promise<ReceitaMensal>;
+  /**
+   * Receita e vendas por mes, de `janela.de` a `janela.ate`, com os meses
+   * vazios zerados. Desde 11/09/2026 as vendas passam pelo recorte do
+   * `filtro` (periodo e demografia), como nas outras rotas desta tela. A meta
+   * e a global da loja e NAO segue o recorte.
+   */
+  receitaMensal(
+    janela: { de: Date; ate: Date },
+    filtro?: FiltroAnalitico,
+  ): Promise<ReceitaMensal>;
   comportamentoDatas(
     janelas: JanelaData[],
     filtro?: FiltroAnalitico,

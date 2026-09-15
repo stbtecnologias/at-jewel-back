@@ -1,5 +1,6 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
+  IsArray,
   IsDateString,
   IsIn,
   IsInt,
@@ -8,6 +9,7 @@ import {
   Max,
   Min,
 } from 'class-validator';
+import { listaEntrada } from '../../../../../shared/http/query-transforms';
 import { FORMAS_PAGAMENTO, STATUS_VENDA } from '../../../domain/entities/enums';
 import type { FormaPagamento, StatusVenda } from '../../../domain/entities/enums';
 
@@ -26,17 +28,41 @@ export class FiltroVendaDto {
   @IsUUID()
   clienteId?: string;
 
+  /**
+   * Aceita MAIS DE UM valor desde 10/09/2026 — pedido do Yerlon na revisao
+   * de homologacao. O `listaEntrada` cobre as tres formas de envio; a antiga
+   * (`?campo=x`, um valor so) continua valendo, entao o contrato ja publicado
+   * nao quebra.
+   */
   @IsOptional()
-  @IsUUID()
-  vendedoraId?: string;
+  @Transform(({ value }) => listaEntrada(value))
+  @IsArray()
+  @IsUUID(undefined, { each: true })
+  vendedoraId?: string[];
 
+  /**
+   * Aceita MAIS DE UM valor desde 10/09/2026 — pedido do Yerlon na revisao
+   * de homologacao. O `listaEntrada` cobre as tres formas de envio; a antiga
+   * (`?campo=x`, um valor so) continua valendo, entao o contrato ja publicado
+   * nao quebra.
+   */
   @IsOptional()
-  @IsIn([...STATUS_VENDA])
-  status?: StatusVenda;
+  @Transform(({ value }) => listaEntrada(value))
+  @IsArray()
+  @IsIn([...STATUS_VENDA], { each: true })
+  status?: StatusVenda[];
 
+  /**
+   * Aceita MAIS DE UM valor desde 10/09/2026 — pedido do Yerlon na revisao
+   * de homologacao. O `listaEntrada` cobre as tres formas de envio; a antiga
+   * (`?campo=x`, um valor so) continua valendo, entao o contrato ja publicado
+   * nao quebra.
+   */
   @IsOptional()
-  @IsIn([...FORMAS_PAGAMENTO])
-  formaPagamento?: FormaPagamento;
+  @Transform(({ value }) => listaEntrada(value))
+  @IsArray()
+  @IsIn([...FORMAS_PAGAMENTO], { each: true })
+  formaPagamento?: FormaPagamento[];
 
   @IsOptional()
   @Type(() => Number)

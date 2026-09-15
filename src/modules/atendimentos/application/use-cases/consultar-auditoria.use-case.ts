@@ -100,7 +100,7 @@ export class ConsultarAuditoriaUseCase {
         {
           dataDe: filtros.de,
           dataAte: filtros.ate,
-          vendedoraId: filtros.vendedoraId,
+          vendedoraId: filtros.vendedoraId ? [filtros.vendedoraId] : undefined,
         },
         granularidade,
       ),

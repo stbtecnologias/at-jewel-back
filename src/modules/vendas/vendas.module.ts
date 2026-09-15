@@ -6,6 +6,7 @@ import { ComparativoVendedorasUseCase } from './application/use-cases/comparativ
 import { ListarVendasUseCase } from './application/use-cases/listar-vendas.use-case';
 import { RegistrarVendaUseCase } from './application/use-cases/registrar-venda.use-case';
 import { ResumoVendasUseCase } from './application/use-cases/resumo-vendas.use-case';
+import { SerieMensalVendasUseCase } from './application/use-cases/serie-mensal-vendas.use-case';
 import { EscopoVendasService } from './application/escopo-vendas.service';
 import { VENDA_REPOSITORY } from './domain/ports/injection-tokens';
 import { ItemVendaOrmEntity } from './infrastructure/database/typeorm/entities/item-venda.orm-entity';
@@ -30,6 +31,7 @@ import { VendasController } from './infrastructure/http/controllers/vendas.contr
     BuscarVendaUseCase,
     ResumoVendasUseCase,
     ComparativoVendedorasUseCase,
+    SerieMensalVendasUseCase,
     EscopoVendasService,
     { provide: VENDA_REPOSITORY, useClass: VendaRepository },
   ],

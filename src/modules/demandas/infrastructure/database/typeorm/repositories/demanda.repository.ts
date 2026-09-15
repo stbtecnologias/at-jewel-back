@@ -122,13 +122,19 @@ export class DemandaRepository implements IDemandaRepository {
     return item;
   }
 
-  async kpis(solicitanteUserId?: string): Promise<KpisDemandas> {
-    const params: unknown[] = [];
-    let where = '';
-    if (solicitanteUserId !== undefined) {
-      params.push(solicitanteUserId);
-      where = `WHERE d.solicitante_user_id = $${params.length}`;
-    }
+  async kpis(
+    solicitanteUserId?: string,
+    filtro: Omit<FiltroDemanda, 'limit' | 'offset' | 'solicitanteUserId'> = {},
+  ): Promise<KpisDemandas> {
+    // O MESMO `montarWhere` DA LISTA, desde 11/09/2026: os cards seguem o
+    // filtro da tela (status, tipo, periodo de criacao), como INTERSECAO. O
+    // escopo do solicitante continua entrando por ali, igual a lista.
+    const { where, params } = this.montarWhere({
+      ...filtro,
+      solicitanteUserId,
+      limit: 0,
+      offset: 0,
+    });
     // Contadores de estado + concluidas nos ultimos 30 dias, tudo numa
     // varredura via FILTER. tempo_medio_horas = media de
     // (concluida_em - created_at) das CONCLUIDAS dos ultimos 90 dias,

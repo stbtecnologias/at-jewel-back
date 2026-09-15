@@ -47,10 +47,10 @@ describe('ListarVendasUseCase', () => {
     repo.listar.mockResolvedValue(vendas);
 
     const dataDe = new Date('2026-05-01');
-    const resultado = await useCase.execute({ dataDe, vendedoraId: 'vend1' });
+    const resultado = await useCase.execute({ dataDe, vendedoraId: ['vend1'] });
 
     expect(resultado).toBe(vendas);
-    expect(repo.listar).toHaveBeenCalledWith({ dataDe, vendedoraId: 'vend1' });
+    expect(repo.listar).toHaveBeenCalledWith({ dataDe, vendedoraId: ['vend1'] });
   });
 
   it('aceita filtros vazios', async () => {

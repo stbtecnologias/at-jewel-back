@@ -57,8 +57,13 @@ export interface IDemandaRepository {
   // estado atual antes de uma transicao).
   buscarPorId(id: string): Promise<Demanda | null>;
   atualizar(id: string, dados: AtualizarDemandaData): Promise<DemandaItem>;
-  // Com solicitanteUserId, os KPIs consideram apenas as demandas dele.
-  kpis(solicitanteUserId?: string): Promise<KpisDemandas>;
+  // Com solicitanteUserId, os KPIs consideram apenas as demandas dele. Desde
+  // 11/09/2026 o `filtro` da lista (status, tipo, periodo) tambem vale, como
+  // INTERSECAO — os cards acompanham a tela.
+  kpis(
+    solicitanteUserId?: string,
+    filtro?: Omit<FiltroDemanda, 'limit' | 'offset' | 'solicitanteUserId'>,
+  ): Promise<KpisDemandas>;
   // Rotulo denormalizado de quem abriu (nome do staff). Usado na
   // criacao para preencher solicitante_nome sem acoplar ao modulo auth.
   buscarNomeUsuario(userId: string): Promise<string | null>;

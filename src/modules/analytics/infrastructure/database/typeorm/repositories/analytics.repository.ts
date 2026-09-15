@@ -18,6 +18,7 @@ import type {
   ResumoPeriodo,
   TopProduto,
 } from '../../../../domain/ports/repositories/analytics-repository.port';
+import { FUSO_DA_LOJA } from '../../../../../../shared/erp/data-do-erp';
 
 // Reimplementacao da feature "analytics" do backend paralelo (atp) contra o
 // NOSSO modelo normalizado: venda -> itens_venda -> pagamentos_venda. Apenas
@@ -29,29 +30,52 @@ export class AnalyticsRepository implements IAnalyticsRepository {
     private readonly ds: DataSource,
   ) {}
 
-  async receitaMensal(meses: number): Promise<ReceitaMensal> {
-    // Esqueleto de N meses via generate_series garante meses zerados na serie.
+  async receitaMensal(
+    janela: { de: Date; ate: Date },
+    filtro?: FiltroAnalitico,
+  ): Promise<ReceitaMensal> {
+    // O ESQUELETO VEM DA JANELA, AS VENDAS VEM DO RECORTE — 11/09/2026.
+    //
+    // Ate ai este grafico era os ultimos N meses da loja inteira, qualquer que
+    // fosse o filtro da tela: o Yerlon aplicava "Feminino" e a curva nao se
+    // mexia. Agora as vendas passam pelo mesmo `filtroVendas` do resto da
+    // tela, e o `generate_series` continua garantindo o mes zerado.
+    //
+    // O MES E O DA LOJA: truncar `data_venda` sem fuso usava o do servidor, em
+    // UTC, e a venda das 22h do dia 31 caia no mes seguinte.
+    const params: unknown[] = [];
+    const { join, where } = this.filtroVendas(filtro, params);
+    params.push(FUSO_DA_LOJA);
+    const iFuso = params.length;
+    params.push(janela.de, janela.ate);
+    const iDe = params.length - 1;
+    const iAte = params.length;
+
     const linhas = await this.ds.query<ReceitaMensalItem[]>(
       `
       WITH serie AS (
-        SELECT to_char(m, 'YYYY-MM') AS mes, m AS inicio
+        SELECT m::date AS inicio
         FROM generate_series(
-          date_trunc('month', now()) - (($1::int - 1) * interval '1 month'),
-          date_trunc('month', now()),
+          date_trunc('month', $${iDe}::timestamptz AT TIME ZONE $${iFuso}::text),
+          date_trunc('month', $${iAte}::timestamptz AT TIME ZONE $${iFuso}::text),
           interval '1 month'
         ) AS m
+      ),
+      recorte AS (
+        SELECT date_trunc('month', v.data_venda AT TIME ZONE $${iFuso}::text)::date AS inicio,
+               v.valor_total
+        FROM vendas v${join}
+        WHERE v.status = 'concluida'${where}
       )
-      SELECT serie.mes AS mes,
-             COALESCE(SUM(v.valor_total), 0)::float AS receita,
-             COUNT(v.id)::int AS "totalVendas"
+      SELECT to_char(serie.inicio, 'YYYY-MM') AS mes,
+             COALESCE(SUM(recorte.valor_total), 0)::float AS receita,
+             COUNT(recorte.inicio)::int AS "totalVendas"
       FROM serie
-      LEFT JOIN vendas v
-        ON date_trunc('month', v.data_venda) = serie.inicio
-       AND v.status = 'concluida'
-      GROUP BY serie.mes, serie.inicio
+      LEFT JOIN recorte ON recorte.inicio = serie.inicio
+      GROUP BY serie.inicio
       ORDER BY serie.inicio
       `,
-      [meses],
+      params,
     );
 
     const metaRows = await this.ds.query<{ meta: number }[]>(
@@ -82,11 +106,11 @@ export class AnalyticsRepository implements IAnalyticsRepository {
         let whereDemo = '';
         if (filtro?.sexo != null) {
           params.push(filtro.sexo);
-          whereDemo += ` AND COALESCE(cp.sexo::text, 'NAO_INFORMADO') = $${params.length}`;
+          whereDemo += ` AND COALESCE(cp.sexo::text, 'NAO_INFORMADO') = ANY($${params.length}::text[])`;
         }
         if (filtro?.origem != null) {
           params.push(filtro.origem);
-          whereDemo += ` AND COALESCE(cp.origem_contato::text, 'Nao informado') = $${params.length}`;
+          whereDemo += ` AND COALESCE(cp.origem_contato::text, 'Nao informado') = ANY($${params.length}::text[])`;
         }
         if (filtro?.faixaEtaria != null) {
           params.push(filtro.faixaEtaria);
@@ -153,11 +177,11 @@ export class AnalyticsRepository implements IAnalyticsRepository {
     // para que filtrar por "NAO_INFORMADO"/"Nao informado" case as linhas NULL.
     if (filtro?.sexo != null) {
       params.push(filtro.sexo);
-      where += ` AND COALESCE(cp.sexo::text, 'NAO_INFORMADO') = $${params.length}`;
+      where += ` AND COALESCE(cp.sexo::text, 'NAO_INFORMADO') = ANY($${params.length}::text[])`;
     }
     if (filtro?.origem != null) {
       params.push(filtro.origem);
-      where += ` AND COALESCE(cp.origem_contato::text, 'Nao informado') = $${params.length}`;
+      where += ` AND COALESCE(cp.origem_contato::text, 'Nao informado') = ANY($${params.length}::text[])`;
     }
     if (filtro?.faixaEtaria != null) {
       params.push(filtro.faixaEtaria);
@@ -191,11 +215,11 @@ export class AnalyticsRepository implements IAnalyticsRepository {
     }
     if (filtro?.sexo != null) {
       params.push(filtro.sexo);
-      where += ` AND COALESCE(cp.sexo::text, 'NAO_INFORMADO') = $${params.length}`;
+      where += ` AND COALESCE(cp.sexo::text, 'NAO_INFORMADO') = ANY($${params.length}::text[])`;
     }
     if (filtro?.origem != null) {
       params.push(filtro.origem);
-      where += ` AND COALESCE(cp.origem_contato::text, 'Nao informado') = $${params.length}`;
+      where += ` AND COALESCE(cp.origem_contato::text, 'Nao informado') = ANY($${params.length}::text[])`;
     }
     if (filtro?.faixaEtaria != null) {
       params.push(filtro.faixaEtaria);
