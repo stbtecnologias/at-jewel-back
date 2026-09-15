@@ -1342,3 +1342,128 @@ describe('ProcessarFotoCatalogoUseCase — em qualquer ordem (o print do Yerlon)
     expect(whatsapp.enviarTexto).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * A CONSULTA DE PECA — a opcao 2 do menu, pedida pelo Lucas em 15/09/2026.
+ *
+ * O que estes testes protegem: a consulta SO LE (nenhuma foto e tocada), vale
+ * para UMA mensagem, e responde pelas duas portas — codigo e descricao.
+ */
+describe('ProcessarFotoCatalogoUseCase — consultar uma peca', () => {
+  const DE = '558586467241@c.us';
+
+  let catalogos: { atualizarFoto: jest.Mock };
+  let produtos: { findByCodigoErp: jest.Mock };
+  let listar: { execute: jest.Mock };
+  let sessao: SessaoCatalogoService;
+  let useCase: ProcessarFotoCatalogoUseCase;
+
+  beforeEach(() => {
+    catalogos = { atualizarFoto: jest.fn().mockResolvedValue(undefined) };
+    produtos = { findByCodigoErp: jest.fn().mockResolvedValue(null) };
+    listar = { execute: jest.fn().mockResolvedValue([]) };
+    sessao = new SessaoCatalogoService();
+
+    useCase = new ProcessarFotoCatalogoUseCase(
+      catalogos as never,
+      {} as never,
+      produtos as never,
+      {} as never,
+      sessao,
+      {} as never,
+      listar as never,
+    );
+  });
+
+  it('sem ninguem ter pedido consulta, devolve null — segue para os agentes', async () => {
+    expect(await useCase.consulta(DE, 'BR26252')).toBeNull();
+  });
+
+  it('o codigo devolve descricao, preco e saldo', async () => {
+    produtos.findByCodigoErp.mockResolvedValue({
+      codigoErp: 'BR26252',
+      descricaoEtiqueta: 'BRINCO ESMERALDA OB 18K',
+      valorVenda: 7490.37,
+      estoqueAtual: 3,
+      familia: 'BRINCO',
+      categoria: 'JOIA',
+    });
+
+    useCase.pedirConsulta(DE);
+    const r = await useCase.consulta(DE, 'br26252');
+
+    expect(r?.motivo).toBe('consulta_por_codigo');
+    expect(r?.resposta).toContain('BRINCO ESMERALDA OB 18K');
+    // O CENTAVO FICA: quem consulta preco vai repetir o numero para alguem.
+    expect(r?.resposta).toContain('7.490,37');
+    expect(r?.resposta).toContain('3 em estoque');
+    // SO LE: nenhuma foto e tocada.
+    expect(catalogos.atualizarFoto).not.toHaveBeenCalled();
+  });
+
+  it('peca sem saldo diz isso, em vez de mostrar "0"', async () => {
+    produtos.findByCodigoErp.mockResolvedValue({
+      codigoErp: 'BR26252',
+      descricaoEtiqueta: 'BRINCO ESMERALDA',
+      valorVenda: 100,
+      estoqueAtual: 0,
+      familia: 'BRINCO',
+      categoria: 'JOIA',
+    });
+
+    useCase.pedirConsulta(DE);
+    const r = await useCase.consulta(DE, 'BR26252');
+
+    expect(r?.resposta).toContain('sem saldo em estoque');
+  });
+
+  it('a descricao devolve a lista, com preco em cada linha', async () => {
+    listar.execute.mockResolvedValue([
+      {
+        codigoErp: 'CB384',
+        descricaoEtiqueta: 'ANEL ESMERALDA OB 18K',
+        valorVenda: 15900,
+        familia: 'ANEL',
+        categoria: 'JOIA',
+      },
+      {
+        codigoErp: 'CB512',
+        descricaoEtiqueta: 'ANEL ESMERALDA GOTA OB 18K',
+        valorVenda: 18900,
+        familia: 'ANEL',
+        categoria: 'JOIA',
+      },
+    ]);
+
+    useCase.pedirConsulta(DE);
+    const r = await useCase.consulta(DE, 'anel de esmeralda');
+
+    expect(r?.motivo).toBe('consulta_por_descricao');
+    expect(r?.resposta).toContain('CB384');
+    expect(r?.resposta).toContain('CB512');
+  });
+
+  it('codigo que nao existe no catalogo responde, e nao cala', async () => {
+    useCase.pedirConsulta(DE);
+    const r = await useCase.consulta(DE, 'XX99999');
+
+    expect(r?.motivo).toBe('consulta_sem_resultado');
+    expect(r?.resposta).toContain('XX99999');
+  });
+
+  it('a consulta vale para UMA mensagem: o "obrigado" seguinte nao e busca', async () => {
+    useCase.pedirConsulta(DE);
+    await useCase.consulta(DE, 'anel');
+
+    expect(useCase.esperandoConsulta(DE)).toBe(false);
+    expect(await useCase.consulta(DE, 'obrigado')).toBeNull();
+  });
+
+  it('pedir consulta NAO abre conversa de catalogo', () => {
+    // Quem quer ver preco nao esta mandando foto: com a conversa aberta, o
+    // "#0003" seguinte viraria escolha de catalogo em vez de busca.
+    useCase.pedirConsulta(DE);
+
+    expect(useCase.conversaAberta(DE)).toBe(false);
+  });
+});

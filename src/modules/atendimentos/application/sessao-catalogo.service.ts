@@ -184,6 +184,11 @@ export class SessaoCatalogoService {
   private readonly sessoes = new Map<string, Sessao>();
   /** Fotos de sessoes ja vencidas, esperando o aviso a quem as mandou. */
   private readonly vencidas = new Map<string, FotoPendente[]>();
+  /**
+   * Quem pediu "consultar uma peça" no menu, e quando. Fora das sessoes para
+   * nao abrir conversa de catalogo — ver o bloco da consulta.
+   */
+  private readonly consultas = new Map<string, number>();
 
   /** Catalogo lembrado da ultima vez, se ainda dentro da janela. */
   catalogoAtual(
@@ -342,6 +347,37 @@ export class SessaoCatalogoService {
    */
   conversaAberta(chave: string): boolean {
     return this.viva(chave) !== null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A consulta de peca — a opcao 2 do menu, desde 15/09/2026.
+  //
+  // FORA DA SESSAO, DE PROPOSITO. A sessao viva E a "conversa de catalogo
+  // aberta" (ver `conversaAberta`), e quem pergunta o preco de uma peca nao
+  // esta mandando foto: com a conversa aberta, o `#0003` seguinte viraria
+  // escolha de catalogo e o "Ok" viraria recibo. Por isso a espera da
+  // consulta mora no seu proprio mapa, com a sua propria validade.
+  // ---------------------------------------------------------------------------
+
+  /** Perguntei qual peca a pessoa quer consultar. */
+  esperarConsulta(chave: string): void {
+    this.consultas.set(chave, Date.now());
+  }
+
+  /** Estou esperando a peca de uma consulta? */
+  consultaPendente(chave: string): boolean {
+    const em = this.consultas.get(chave);
+    if (em === undefined) return false;
+    if (Date.now() - em > JANELA_MS) {
+      this.consultas.delete(chave);
+      return false;
+    }
+    return true;
+  }
+
+  /** A consulta acabou — respondida ou nao. Vale para UMA mensagem. */
+  esquecerConsulta(chave: string): void {
+    this.consultas.delete(chave);
   }
 
   /** Guarda o codigo que chegou antes da foto. Substitui o anterior. */

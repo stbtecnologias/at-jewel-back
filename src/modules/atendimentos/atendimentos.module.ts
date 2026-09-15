@@ -34,6 +34,8 @@ import { FerramentasGestaoService } from './application/ferramentas-gestao.servi
 import { FerramentasVendedoraService } from './application/ferramentas-vendedora.service';
 import { MemoriaConversaService } from './application/memoria-conversa.service';
 import { SessaoCatalogoService } from './application/sessao-catalogo.service';
+import { RecepcaoService } from './application/recepcao.service';
+import { RecepcionarUseCase } from './application/use-cases/recepcionar.use-case';
 import { AgendarContatoGestaoUseCase } from './application/use-cases/agendar-contato-gestao.use-case';
 import { PendenciasScheduler } from './infrastructure/schedule/pendencias.scheduler';
 import {
@@ -118,6 +120,10 @@ import { ConversaWhatsappRepository } from './infrastructure/database/typeorm/re
     ProcessarFotoCatalogoUseCase,
     ResolverVendedoraPorNomeUseCase,
     ProcessarMensagemGestaoUseCase,
+    // A recepcao: o menu do perfil e a memoria do numero digitado depois dele.
+    // Singleton pelo mesmo motivo da sessao do catalogo — o Map e do processo.
+    RecepcaoService,
+    RecepcionarUseCase,
     RotearMensagemInternaUseCase,
     ConsultarAuditoriaUseCase,
     ConsultarLinhaDoTempoUseCase,

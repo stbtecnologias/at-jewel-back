@@ -13,6 +13,7 @@ import {
   type AudioInterno,
 } from './processar-mensagem-interna.use-case';
 import { ProcessarMensagemGestaoUseCase } from './processar-mensagem-gestao.use-case';
+import { RecepcionarUseCase } from './recepcionar.use-case';
 import {
   PERMISSAO_CATALOGO,
   ProcessarFotoCatalogoUseCase,
@@ -80,6 +81,7 @@ export class RotearMensagemInternaUseCase {
     private readonly canalVendedora: ProcessarMensagemInternaUseCase,
     private readonly canalGestao: ProcessarMensagemGestaoUseCase,
     private readonly canalCatalogo: ProcessarFotoCatalogoUseCase,
+    private readonly recepcionar: RecepcionarUseCase,
     @Inject(WHATSAPP_GATEWAY)
     private readonly whatsapp: IWhatsappGateway,
     @Inject(TRANSCRICAO_SERVICE)
@@ -151,9 +153,11 @@ export class RotearMensagemInternaUseCase {
     // ---------------------------------------------------------------------
     const esperandoCatalogo = this.canalCatalogo.temFotoEsperando(msg.de);
     const esperandoCodigo = this.canalCatalogo.temCodigoEsperando(msg.de);
+    const esperandoConsulta = this.canalCatalogo.esperandoConsulta(msg.de);
     if (
       esperandoCatalogo ||
       esperandoCodigo ||
+      esperandoConsulta ||
       this.canalCatalogo.temFotoEmAprovacao(msg.de) ||
       this.canalCatalogo.conversaAberta(msg.de)
     ) {
@@ -167,6 +171,18 @@ export class RotearMensagemInternaUseCase {
           const nome = quem.nome ?? '';
           if (esperandoCatalogo) {
             return this.canalCatalogo.resposta(msg.de, nome, textoResolvido);
+          }
+
+          // A CONSULTA VEM ANTES DO CODIGO, e a ordem e o ponto: acabei de
+          // perguntar "qual peça?", e a resposta muitas vezes E um codigo.
+          // Depois do `codigo`, esse "BR26252" entraria numa foto que estava
+          // sendo montada em vez de responder o preco que a pessoa pediu.
+          if (esperandoConsulta) {
+            const ficha = await this.canalCatalogo.consulta(
+              msg.de,
+              textoResolvido,
+            );
+            if (ficha) return ficha;
           }
 
           // O CODIGO ANTES DA APROVACAO: "BR26252" nao e veredito, e sem esta
@@ -247,7 +263,7 @@ export class RotearMensagemInternaUseCase {
       return { resposta: null, motivo: 'ignorado_remetente_desconhecido' };
     }
 
-    const texto =
+    let texto =
       textoResolvido !== undefined
         ? textoResolvido
         : await this.resolverTexto(msg);
@@ -264,6 +280,73 @@ export class RotearMensagemInternaUseCase {
     }
     if (!texto) {
       return { resposta: null, motivo: 'ignorado_sem_conteudo' };
+    }
+
+    // ---------------------------------------------------------------------
+    // A RECEPCAO — pedido do Lucas em 15/09/2026.
+    //
+    // DEPOIS DE TUDO QUE ESTAVA PENDENTE, e nao antes: com foto esperando
+    // catalogo, "1" e escolha da lista de pecas e "oi" segue o fluxo. O menu
+    // so atende quem chega sem conversa em curso.
+    //
+    // O NUMERO PRIMEIRO, E DE GRACA: e uma consulta a um Map. So depois vem a
+    // saudacao, que tambem e teste em memoria. Mensagem com conteudo nao paga
+    // nada por esta porta.
+    // ---------------------------------------------------------------------
+    const escolha = this.recepcionar.escolhida(msg.de, texto);
+    if (escolha) {
+      switch (escolha.acao.tipo) {
+        case 'catalogo_foto':
+          // A FRASE VAI ESCRITA, e nao o "6": o `intencao` le o texto
+          // procurando catalogo e codigo, e um numero solto ali seria lido
+          // como numero de catalogo.
+          return this.canalCatalogo.intencao(
+            msg.de,
+            'quero mandar foto para o catálogo',
+          );
+        case 'catalogo_consulta':
+          return this.canalCatalogo.pedirConsulta(msg.de);
+        case 'catalogo_abertos':
+          return this.canalCatalogo.conversa(
+            msg.de,
+            (doCatalogo ?? admin)?.nome ?? '',
+          );
+        case 'frase':
+          // O MENU DOS AGENTES NAO RESPONDE NADA: ele escreve a pergunta por
+          // quem esta no celular, e ela segue o caminho de sempre. Nenhuma
+          // regra da Elena ou da Anastasia e repetida aqui.
+          texto = escolha.acao.texto;
+          break;
+      }
+    } else {
+      // QUEM FALA OUTRA COISA FECHA O MENU, e isto nao e limpeza: e o que
+      // impede o menu velho de roubar o numero de outra pergunta. A Elena
+      // responde listas numeradas ("1 · CB384 …"); com o menu ainda de pe, o
+      // "2" que responde a LISTA dela viraria "Minhas metas".
+      //
+      // O menu serve a quem acabou de chegar. Passou para outro assunto, ele
+      // some — e um "oi" traz outro na hora.
+      this.recepcionar.esquecerMenu(msg.de);
+    }
+
+    if (this.recepcionar.ehSaudacao(texto)) {
+      // A PERMISSAO DE CATALOGO DA GESTAO SO E CONSULTADA AQUI, uma vez por
+      // saudacao: e o unico momento em que ela muda o que a pessoa VE. No
+      // resto do canal ela continua sendo perguntada so quando o texto fala
+      // de foto.
+      const gestaoComCatalogo =
+        admin &&
+        (await this.identificarAdmin.execute(telefone, PERMISSAO_CATALOGO));
+
+      return this.recepcionar.saudar(
+        msg.de,
+        {
+          vendedora: !!vendedora,
+          gestao: !!admin,
+          catalogo: !!doCatalogo || !!gestaoComCatalogo,
+        },
+        vendedora?.nome ?? admin?.nome ?? doCatalogo?.nome ?? '',
+      );
     }
 
     // O CHAO DO CANAL DO CATALOGO. Tudo que era assunto dele ja foi tentado

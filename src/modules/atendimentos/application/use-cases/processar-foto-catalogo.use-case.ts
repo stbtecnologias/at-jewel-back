@@ -1169,6 +1169,116 @@ export class ProcessarFotoCatalogoUseCase {
   }
 
   // ---------------------------------------------------------------------------
+  // Consultar uma peca — a opcao 2 do menu, desde 15/09/2026
+  // ---------------------------------------------------------------------------
+
+  /**
+   * "Consultar uma peça" escolhida no menu: pergunto qual e espero.
+   *
+   * NAO ABRE CONVERSA DE CATALOGO. Quem quer ver o preco de uma peca nao esta
+   * mandando foto, e abrir a conversa faria o `#0003` seguinte virar escolha
+   * de catalogo em vez de busca.
+   */
+  pedirConsulta(de: string): RespostaFoto {
+    this.sessao.esperarConsulta(de);
+    return {
+      resposta:
+        'Me manda o código da peça — ou o nome dela, se não tiver o código.',
+      motivo: 'catalogo_consulta_pedida',
+    };
+  }
+
+  /** Estou esperando a peca de uma consulta deste remetente? */
+  esperandoConsulta(de: string): boolean {
+    return this.sessao.consultaPendente(de);
+  }
+
+  /**
+   * A peca pedida na consulta: descricao, preco e saldo.
+   *
+   * ==========================================================================
+   * SO LE. Esta e a diferenca para o `buscarPeca`, que parece fazer o mesmo:
+   * la a escolha ENTRA numa foto guardada — aqui nada e escrito, e por isso a
+   * resposta pode sair com a lista inteira, sem pedir confirmacao de qual e.
+   *
+   * O SALDO VAI JUNTO porque quem pergunta e estoque e marketing: "tem?" e a
+   * outra metade de "quanto custa?".
+   * ==========================================================================
+   *
+   * VALE PARA UMA MENSAGEM. Respondida ou nao, a espera acaba: a frase
+   * seguinte volta a ser do canal de sempre. Sem isso, um "obrigado" depois
+   * da consulta viraria termo de busca.
+   *
+   * DEVOLVE `null` quando ninguem pediu consulta — mesmo contrato de
+   * `codigo`, `aprovacao` e `buscarPeca` com o roteador.
+   */
+  async consulta(de: string, texto: string): Promise<RespostaFoto | null> {
+    if (!this.sessao.consultaPendente(de)) return null;
+    this.sessao.esquecerConsulta(de);
+
+    const termo = texto.trim();
+    const codigo = termo.match(RE_CODIGO)?.[1]?.toUpperCase();
+
+    if (codigo) {
+      const produto = await this.produtos.findByCodigoErp(codigo);
+      if (!produto) {
+        return {
+          resposta:
+            `Não achei a peça ${codigo} no catálogo. Confere o código — ou ` +
+            'me manda o nome dela que eu procuro.',
+          motivo: 'consulta_sem_resultado',
+        };
+      }
+      return {
+        resposta: this.fichaDaPeca(
+          codigo,
+          produto.descricaoEtiqueta ??
+            `${produto.familia} ${produto.categoria}`.trim(),
+          produto.valorVenda,
+          produto.estoqueAtual,
+        ),
+        motivo: 'consulta_por_codigo',
+      };
+    }
+
+    const achadas = await this.procurar(termo);
+    if (achadas.length === 0) {
+      return {
+        resposta:
+          `Não achei nenhuma peça com "${termo}". Tenta com outras palavras — ` +
+          'ou me manda o código dela.',
+        motivo: 'consulta_sem_resultado',
+      };
+    }
+
+    const linhas = achadas.map(
+      (o) =>
+        `${o.codigo} · ${o.descricao.toUpperCase()} · ${this.emReais(o.preco)}`,
+    );
+    return {
+      resposta: [
+        achadas.length === 1 ? 'Achei esta:' : `Achei ${achadas.length}:`,
+        linhas.join('\n'),
+      ].join('\n'),
+      motivo: 'consulta_por_descricao',
+    };
+  }
+
+  /** A peca em uma linha e meia, do jeito que ela chega no WhatsApp. */
+  private fichaDaPeca(
+    codigo: string,
+    descricao: string,
+    preco: number | null,
+    estoque: number,
+  ): string {
+    const saldo =
+      estoque > 0
+        ? `${estoque} em estoque`
+        : 'sem saldo em estoque — confere no sistema';
+    return `${codigo} · ${descricao.toUpperCase()}\n${this.emReais(preco)} · ${saldo}`;
+  }
+
+  // ---------------------------------------------------------------------------
   // Em qualquer ordem — decisao do Lucas em 11/09/2026
   // ---------------------------------------------------------------------------
 
@@ -1515,8 +1625,7 @@ export class ProcessarFotoCatalogoUseCase {
 
       return {
         codigo: candidato.toUpperCase(),
-        resto:
-          bruto.slice(0, pos) + ' ' + bruto.slice(pos + candidato.length),
+        resto: bruto.slice(0, pos) + ' ' + bruto.slice(pos + candidato.length),
       };
     }
 
