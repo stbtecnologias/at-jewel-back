@@ -1,4 +1,9 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { normalizarIdErp } from '../../../shared/erp/normalizar-id-erp';
 import { CLIENTE_REPOSITORY } from '../../clientes/domain/ports/injection-tokens';
 import type { IClienteRepository } from '../../clientes/domain/ports/repositories/cliente-repository.port';
@@ -28,6 +33,38 @@ export interface Referencia {
 }
 
 const NAO_VEIO: Referencia = { id: null, idErp: null };
+
+/**
+ * O minimo que toda tabela referenciada tem: o nosso id e o do ERP.
+ *
+ * O `id` e opcional no tipo porque varias entidades de dominio o declaram
+ * assim (ele so falta antes de gravar). Aqui elas sempre vem do banco, entao
+ * o `id` existe — e o `?? null` no uso fecha o caso impossivel.
+ */
+interface RegistroComIdErp {
+  id?: string;
+  idErp?: string | null;
+}
+
+/**
+ * O UUID veio e nao existe.
+ *
+ * ERRO, e nao pendencia: o id do ERP e dele e pode chegar antes da nossa
+ * carga; o UUID e NOSSO, e so pode ter saido de uma consulta a esta API. Nao
+ * achando, o mapa dele esta velho ou trocado — e gravar a movimentacao
+ * apontando para o vazio seria perder o dado com cara de sucesso.
+ */
+export class ReferenciaInexistenteError extends BadRequestException {
+  constructor(
+    readonly tipo: string,
+    readonly uuid: string,
+  ) {
+    // 400 e nao 500: quem errou foi o payload, e a mensagem diz QUAL campo e
+    // QUAL id — sem isso o integrador recebe "erro interno" e nao tem por
+    // onde comecar.
+    super(`${tipo} ${uuid} nao existe`);
+  }
+}
 
 /**
  * Traduz os identificadores do Safira nos nossos UUIDs.
@@ -77,70 +114,125 @@ export class ResolverReferenciasErpService {
     private readonly formasPagamento: IFormaPagamentoRepository,
   ) {}
 
-  async operacao(idErpBruto: unknown): Promise<Referencia> {
-    return this.resolver('operacao', idErpBruto, async (chave) => {
-      const achado = await this.operacoes.buscarPorIdErp(chave);
-      return achado?.id ?? null;
+  async operacao(
+    idErpBruto: unknown,
+    uuid?: string | null,
+  ): Promise<Referencia> {
+    return this.resolver('operacao', idErpBruto, uuid, {
+      porIdErp: (chave) => this.operacoes.buscarPorIdErp(chave),
+      porId: (id) => this.operacoes.buscarPorId(id),
     });
   }
 
-  async empresa(idErpBruto: unknown): Promise<Referencia> {
-    return this.resolver('empresa', idErpBruto, async (chave) => {
-      const achado = await this.empresas.buscarPorIdErp(chave);
-      return achado?.id ?? null;
+  async empresa(
+    idErpBruto: unknown,
+    uuid?: string | null,
+  ): Promise<Referencia> {
+    return this.resolver('empresa', idErpBruto, uuid, {
+      porIdErp: (chave) => this.empresas.buscarPorIdErp(chave),
+      porId: (id) => this.empresas.buscarPorId(id),
     });
   }
 
-  async grupoEstoque(idErpBruto: unknown): Promise<Referencia> {
-    return this.resolver('grupo_estoque', idErpBruto, async (chave) => {
-      const achado = await this.grupos.buscarPorIdErp(chave);
-      return achado?.id ?? null;
+  async grupoEstoque(
+    idErpBruto: unknown,
+    uuid?: string | null,
+  ): Promise<Referencia> {
+    return this.resolver('grupo_estoque', idErpBruto, uuid, {
+      porIdErp: (chave) => this.grupos.buscarPorIdErp(chave),
+      porId: (id) => this.grupos.buscarPorId(id),
     });
   }
 
-  async cliente(idErpBruto: unknown): Promise<Referencia> {
-    return this.resolver('cliente', idErpBruto, async (chave) => {
-      const achado = await this.clientes.buscarPorIdErp(chave);
-      return achado?.id ?? null;
+  async cliente(
+    idErpBruto: unknown,
+    uuid?: string | null,
+  ): Promise<Referencia> {
+    return this.resolver('cliente', idErpBruto, uuid, {
+      porIdErp: (chave) => this.clientes.buscarPorIdErp(chave),
+      porId: (id) => this.clientes.buscarPorId(id),
     });
   }
 
-  async vendedora(idErpBruto: unknown): Promise<Referencia> {
-    return this.resolver('vendedora', idErpBruto, async (chave) => {
-      const achado = await this.vendedoras.buscarPorIdErp(chave);
-      return achado?.id ?? null;
+  async vendedora(
+    idErpBruto: unknown,
+    uuid?: string | null,
+  ): Promise<Referencia> {
+    return this.resolver('vendedora', idErpBruto, uuid, {
+      porIdErp: (chave) => this.vendedoras.buscarPorIdErp(chave),
+      porId: (id) => this.vendedoras.buscarPorId(id),
     });
   }
 
-  async produto(idErpBruto: unknown): Promise<Referencia> {
-    return this.resolver('produto', idErpBruto, async (chave) => {
-      const achado = await this.produtos.findByIdErp(chave);
-      return achado?.id ?? null;
+  async produto(
+    idErpBruto: unknown,
+    uuid?: string | null,
+  ): Promise<Referencia> {
+    return this.resolver('produto', idErpBruto, uuid, {
+      porIdErp: (chave) => this.produtos.findByIdErp(chave),
+      porId: (id) => this.produtos.findById(id),
     });
   }
 
-  async formaPagamento(idErpBruto: unknown): Promise<Referencia> {
-    return this.resolver('forma_pagamento', idErpBruto, async (chave) => {
-      const achado = await this.formasPagamento.buscarPorIdErp(chave);
-      return achado?.id ?? null;
+  async formaPagamento(
+    idErpBruto: unknown,
+    uuid?: string | null,
+  ): Promise<Referencia> {
+    return this.resolver('forma_pagamento', idErpBruto, uuid, {
+      porIdErp: (chave) => this.formasPagamento.buscarPorIdErp(chave),
+      porId: (id) => this.formasPagamento.buscarPorId(id),
     });
   }
 
+  /**
+   * ==========================================================================
+   * DOIS CAMINHOS, E ELES NAO TEM O MESMO RIGOR — 15/09/2026.
+   *
+   * Pedido do integrador: mandar o NOSSO UUID no lugar do id do ERP, para o
+   * payload de movimentacao ficar igual ao de estoque. Os dois passam a valer,
+   * e o UUID vence quando vem.
+   *
+   * PELO ID DO ERP: best-effort, como sempre foi. Nao achar e NORMAL — o
+   * documento chega antes do cadastro, e o id cru fica gravado para religar
+   * depois (ver o cabecalho da classe).
+   *
+   * PELO NOSSO UUID: tem de existir, e nao existindo e ERRO de quem chamou.
+   * A diferenca nao e capricho: o id do ERP e dele e pode chegar antes da
+   * nossa carga; o UUID e NOSSO, e so pode ter saido de uma consulta a esta
+   * API. Se nao acha, o mapa dele esta velho ou trocado — engolir isso em
+   * silencio gravaria a movimentacao apontando para o vazio, com cara de
+   * sucesso. Quem decide o que fazer com esse erro e o use case.
+   * ==========================================================================
+   */
   private async resolver(
     tipo: string,
     idErpBruto: unknown,
-    buscar: (chave: string) => Promise<string | null>,
+    uuid: string | null | undefined,
+    buscas: {
+      porIdErp: (chave: string) => Promise<RegistroComIdErp | null>;
+      porId: (id: string) => Promise<RegistroComIdErp | null>;
+    },
   ): Promise<Referencia> {
+    if (uuid) {
+      const registro = await buscas.porId(uuid);
+      if (!registro?.id) throw new ReferenciaInexistenteError(tipo, uuid);
+
+      // O `id_erp` VEM JUNTO DE BRINDE: a coluna-sombra continua preenchida,
+      // entao documento mandado por UUID fica tao rastreavel quanto os outros
+      // — e as duas formas convivem na mesma tabela sem divergir.
+      return { id: registro.id, idErp: registro.idErp ?? null };
+    }
+
     const idErp = normalizarIdErp(idErpBruto as string | number | null);
     if (!idErp) return NAO_VEIO;
 
-    const id = await buscar(idErp);
-    if (!id) {
+    const achado = await buscas.porIdErp(idErp);
+    if (!achado) {
       this.logger.debug(
         `${tipo} id_erp=${idErp} ainda nao cadastrado — id cru guardado para religar depois`,
       );
     }
 
-    return { id, idErp };
+    return { id: achado?.id ?? null, idErp };
   }
 }

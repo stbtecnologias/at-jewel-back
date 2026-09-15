@@ -6,6 +6,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -49,6 +50,16 @@ export class MovimentacaoPagamentoDto {
   @IsString()
   @MaxLength(50)
   idErpFormaPagamento?: string;
+
+  /**
+   * O NOSSO UUID da forma de pagamento — vence o `idErpFormaPagamento`.
+   *
+   * O `idErpPagamento` acima nao ganhou par em UUID: e a linha da parcela, que
+   * nasce com este envio.
+   */
+  @IsOptional()
+  @IsUUID()
+  formaPagamentoId?: string;
 
   // SEM @Min(0), pelo mesmo motivo do item: estorno e credito existem do lado
   // de la, e o sinal e informacao, nao erro.
