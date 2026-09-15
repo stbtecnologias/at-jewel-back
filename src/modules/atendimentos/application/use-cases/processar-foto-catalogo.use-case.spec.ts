@@ -3,6 +3,16 @@ import { SessaoCatalogoService } from '../sessao-catalogo.service';
 import type { CatalogoAberto } from '../../../catalogos/domain/ports/repositories/catalogo-repository.port';
 
 /**
+ * A conferencia da foto NAO participa destes testes: null quer dizer "nao
+ * deu para conferir", e nesse caso a foto segue o caminho de sempre. Os testes
+ * da recusa ficam no bloco proprio, mais abaixo.
+ */
+const CONFERENCIA_NULA = {
+  disponivel: () => true,
+  conferir: jest.fn().mockResolvedValue(null),
+} as never;
+
+/**
  * O que se testa aqui e a LEITURA DA LEGENDA, e nao o caminho feliz inteiro.
  *
  * E onde mora a unica regra de verdade desta rodada, e onde um erro e caro: se
@@ -69,6 +79,7 @@ describe('ProcessarFotoCatalogoUseCase — leitura da legenda', () => {
       // LEITURA DA LEGENDA, que acontece antes de qualquer geracao.
       {} as never,
       {} as never,
+      CONFERENCIA_NULA,
     );
   });
 
@@ -306,6 +317,7 @@ describe('ProcessarFotoCatalogoUseCase — aprovacao da foto tratada', () => {
       sessao,
       tratar as never,
       { execute: jest.fn().mockResolvedValue([]) } as never,
+      CONFERENCIA_NULA,
     );
   });
 
@@ -592,6 +604,7 @@ describe('ProcessarFotoCatalogoUseCase — a peca pela descricao', () => {
       sessao,
       {} as never,
       listar as never,
+      CONFERENCIA_NULA,
     );
 
     // O estado que o recurso inteiro pressupoe: uma foto guardada esperando
@@ -759,6 +772,7 @@ describe('ProcessarFotoCatalogoUseCase — o texto solto de quem cuida do catalo
       sessao,
       {} as never,
       {} as never,
+      CONFERENCIA_NULA,
     );
   });
 
@@ -913,6 +927,7 @@ describe('ProcessarFotoCatalogoUseCase — em qualquer ordem (o print do Yerlon)
       sessao,
       tratar as never,
       { execute: jest.fn().mockResolvedValue([]) } as never,
+      CONFERENCIA_NULA,
     );
   });
 
@@ -1372,6 +1387,7 @@ describe('ProcessarFotoCatalogoUseCase — consultar uma peca', () => {
       sessao,
       {} as never,
       listar as never,
+      CONFERENCIA_NULA,
     );
   });
 
@@ -1465,5 +1481,166 @@ describe('ProcessarFotoCatalogoUseCase — consultar uma peca', () => {
     useCase.pedirConsulta(DE);
 
     expect(useCase.conversaAberta(DE)).toBe(false);
+  });
+});
+
+/**
+ * A CONFERENCIA DA FOTO — 15/09/2026.
+ *
+ * O Lucas mandou a foto do canto de um notebook e recebeu de volta uma
+ * ferradura de metal, bem iluminada, sobre fundo branco. `/images/edits`
+ * regera a imagem e so sabe devolver imagem: sem peca na entrada, ele produz
+ * a peca mais provavel.
+ *
+ * O que estes testes protegem:
+ *
+ * 1. FOTO SEM PECA NAO E GRAVADA NEM TRATADA — a geracao, que e a chamada
+ *    cara, nem sai.
+ * 2. "NAO DEU PARA CONFERIR" NAO E "NAO SERVE". Provedor fora do ar nao pode
+ *    fechar o canal do catalogo.
+ * 3. A resposta diz O QUE FOI VISTO, senao a pessoa reenvia a mesma foto.
+ */
+describe('ProcessarFotoCatalogoUseCase — a conferencia da foto', () => {
+  const DE = '558586467241@c.us';
+  const IMAGEM = {
+    url: 'http://waha:3000/api/files/default/foto.jpg',
+    mimetype: 'image/jpeg',
+  };
+
+  let catalogos: {
+    listarAbertos: jest.Mock;
+    criarFoto: jest.Mock;
+    listarEmAprovacao: jest.Mock;
+    atualizarFoto: jest.Mock;
+  };
+  let armazenamento: { guardar: jest.Mock; mover: jest.Mock };
+  let whatsapp: { baixarMidia: jest.Mock; enviarTexto: jest.Mock };
+  let tratar: { execute: jest.Mock };
+  let conferencia: { disponivel: jest.Mock; conferir: jest.Mock };
+  let useCase: ProcessarFotoCatalogoUseCase;
+
+  const mandarFoto = () =>
+    useCase.foto({
+      de: DE,
+      nomeRemetente: 'Yerlon',
+      legenda: '0003',
+      imagem: IMAGEM,
+    });
+
+  beforeEach(() => {
+    catalogos = {
+      listarAbertos: jest
+        .fn()
+        .mockResolvedValue([
+          { id: 'uuid-3', numero: '0003', nome: 'Verão 2027' },
+        ]),
+      criarFoto: jest.fn().mockResolvedValue({ id: 'f-1' }),
+      // O rearme da aprovacao roda no inicio do metodo foto: sem a fila, ele
+      // quebra antes de a conferencia acontecer.
+      listarEmAprovacao: jest.fn().mockResolvedValue([]),
+      atualizarFoto: jest.fn().mockResolvedValue(undefined),
+    };
+    armazenamento = {
+      guardar: jest.fn().mockResolvedValue('catalogo/pendentes/a.jpg'),
+      mover: jest.fn().mockResolvedValue('catalogo/0003/originais/a.jpg'),
+    };
+    whatsapp = {
+      baixarMidia: jest.fn().mockResolvedValue({
+        conteudo: Buffer.from('jpeg'),
+        mimetype: 'image/jpeg',
+      }),
+      enviarTexto: jest.fn(),
+    };
+    tratar = { execute: jest.fn().mockResolvedValue(null) };
+    conferencia = {
+      disponivel: jest.fn(() => true),
+      conferir: jest.fn().mockResolvedValue({ serve: true }),
+    };
+
+    useCase = new ProcessarFotoCatalogoUseCase(
+      catalogos as never,
+      armazenamento as never,
+      {
+        findByCodigoErp: jest.fn().mockResolvedValue(null),
+        buscarCodigosPresentesEm: jest.fn().mockResolvedValue([]),
+      } as never,
+      whatsapp as never,
+      new SessaoCatalogoService(),
+      tratar as never,
+      { execute: jest.fn().mockResolvedValue([]) } as never,
+      conferencia,
+    );
+  });
+
+  it('foto SEM peca nao e gravada, nem tratada — e a resposta diz o que viu', async () => {
+    conferencia.conferir.mockResolvedValue({
+      serve: false,
+      motivo: 'sem_peca',
+      viu: 'um teclado de notebook',
+    });
+
+    const r = await mandarFoto();
+
+    expect(r.motivo).toBe('foto_recusada_sem_peca');
+    expect(r.resposta).toContain('um teclado de notebook');
+    expect(r.resposta).toContain('Manda de novo');
+    // A GERACAO NEM SAI: e a chamada cara, e o ponto do recurso.
+    expect(tratar.execute).not.toHaveBeenCalled();
+    expect(armazenamento.guardar).not.toHaveBeenCalled();
+    expect(catalogos.criarFoto).not.toHaveBeenCalled();
+  });
+
+  it('varias pecas pede uma de cada vez', async () => {
+    conferencia.conferir.mockResolvedValue({
+      serve: false,
+      motivo: 'varias_pecas',
+      viu: 'tres aneis',
+    });
+
+    const r = await mandarFoto();
+
+    expect(r.motivo).toBe('foto_recusada_varias_pecas');
+    expect(r.resposta).toContain('cada peça');
+  });
+
+  it('sem o que o modelo viu, a resposta ainda diz o que fazer', async () => {
+    conferencia.conferir.mockResolvedValue({
+      serve: false,
+      motivo: 'sem_peca',
+    });
+
+    const r = await mandarFoto();
+
+    expect(r.resposta).toContain('Não consegui identificar');
+    expect(r.resposta).toContain('boa luz');
+  });
+
+  it('NAO DEU PARA CONFERIR (null) deixa a foto passar', async () => {
+    // Timeout, cota, chave ausente. Indisponibilidade do provedor nao pode
+    // fechar o canal do catalogo.
+    conferencia.conferir.mockResolvedValue(null);
+
+    const r = await mandarFoto();
+
+    expect(r.motivo).not.toContain('recusada');
+    expect(armazenamento.guardar).toHaveBeenCalled();
+  });
+
+  it('foto com peca segue o caminho de sempre', async () => {
+    const r = await mandarFoto();
+
+    expect(r.motivo).not.toContain('recusada');
+    expect(armazenamento.guardar).toHaveBeenCalled();
+    expect(catalogos.criarFoto).toHaveBeenCalled();
+  });
+
+  it('a conferencia recebe a imagem BAIXADA, e nao a URL', async () => {
+    await mandarFoto();
+
+    const [imagem] = conferencia.conferir.mock.calls[0] as [
+      { conteudo: Buffer; mime: string },
+    ];
+    expect(imagem.conteudo.toString()).toBe('jpeg');
+    expect(imagem.mime).toBe('image/jpeg');
   });
 });

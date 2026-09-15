@@ -15,6 +15,7 @@ import type {
   ReferenciaItem,
 } from '../../domain/ports/repositories/catalogo-repository.port';
 import type { ITratamentoImagem } from '../../domain/ports/tratamento-imagem.port';
+import { EstiloDoCatalogoService } from '../estilo-do-catalogo.service';
 
 /**
  * Teto de geracoes por foto.
@@ -62,6 +63,8 @@ export class TratarFotoUseCase {
     private readonly armazenamento: IArmazenamento,
     @Inject(TRATAMENTO_IMAGEM)
     private readonly ia: ITratamentoImagem,
+    // Le as paginas de referencia uma vez por catalogo — ver o servico.
+    private readonly estilo: EstiloDoCatalogoService,
   ) {}
 
   /**
@@ -104,12 +107,29 @@ export class TratarFotoUseCase {
 
     await this.catalogos.atualizarFoto(fotoId, { status: 'PROCESSANDO' });
 
+    // AS PAGINAS DE REFERENCIA PASSAM A VALER — 15/09/2026.
+    //
+    // Elas continuam SEM ir para o `/images/edits` (ver
+    // `PedidoDeTratamento.original`: manda-las fez o modelo devolver uma joia
+    // recortada de dentro de uma delas). O que vai e a LEITURA delas, em
+    // texto, feita uma vez por catalogo e guardada.
+    //
+    // Ate aqui elas eram gravadas e nunca lidas por ninguem — o Lucas
+    // resumiu: "da a sensacao de que o catalogo que envia nao serve de nada".
+    const textos = this.padraoEscrito(catalogo.referencias);
+    const estilo = await this.estilo.ler(
+      catalogo.id,
+      catalogo.referencias,
+      textos,
+    );
+
     const tratada = await this.ia.tratar({
       original,
-      // As referencias de IMAGEM nao vao junto — nem chegam a ser lidas do
-      // armazenamento. Ver `PedidoDeTratamento.original`: manda-las fez o
-      // modelo devolver uma joia recortada de dentro de uma delas.
-      padrao: this.padraoEscrito(catalogo.referencias),
+      // O ESTILO LIDO VEM PRIMEIRO E O TEXTO DEPOIS: a descricao das paginas e
+      // concreta ("fundo bege claro, luz quente") e o texto do marketing e
+      // intencao ("tema praiano"). As duas se somam; nenhuma substitui a
+      // outra.
+      padrao: [estilo, textos].filter(Boolean).join(' ') || null,
       pedidoDaPessoa,
     });
 
@@ -157,7 +177,15 @@ export class TratarFotoUseCase {
    */
   private padraoEscrito(referencias: ReferenciaItem[]): string | null {
     const textos = referencias
-      .filter((r) => r.tipo !== 'IMAGEM' && r.valor?.trim())
+      // A FONTE FICA DE FORA — HML-17, 15/09/2026.
+      //
+      // "fonte: Futura" ia junto para o modelo de IMAGEM, onde nao significa
+      // nada: o packshot nao tem texto. Ali ela so disputava atencao com a
+      // instrucao que importa, que e a do fundo. Tipografia e assunto do PDF,
+      // e e la que ela vai ser usada.
+      .filter(
+        (r) => r.tipo !== 'IMAGEM' && r.tipo !== 'FONTE' && r.valor?.trim(),
+      )
       .map((r) => `${r.tipo.toLowerCase()}: ${r.valor.trim()}`);
 
     return textos.length ? textos.join('; ') : null;
