@@ -194,19 +194,31 @@ export class Movimentacao {
     return somarEmReais(this.pagamentos.map((p) => p.valor));
   }
 
+  /**
+   * ==========================================================================
+   * OS `*IdErp` DE RELACIONAMENTO NAO SAEM NA RESPOSTA — 16/09/2026.
+   *
+   * Decisao do Lucas, conferindo o teste em producao: com o nosso UUID no
+   * retorno, `empresaIdErp`, `vendedoraIdErp` e companhia eram repeticao — e
+   * ainda vinham com os zeros a esquerda do cadastro (`009000000002`), que
+   * confundiam quem lia.
+   *
+   * ELES CONTINUAM GRAVADOS. A coluna-sombra existe para o caso em que o id do
+   * ERP nao casa: a FK fica nula e o id cru e o que permite religar depois. So
+   * deixaram de ser CONTRATO da API — quem manda o documento ja sabe o que
+   * mandou.
+   *
+   * O QUE FICA: os ids do PROPRIO documento (`idErpMovimentacao`, `idErpItem`,
+   * `idErpPagamento`). Sao as chaves com que o integrador reenvia e confere, e
+   * nao existe outra forma de ele reconhecer a linha dele na resposta.
+   * ==========================================================================
+   */
   toPublic(): Record<string, unknown> {
     return {
       ...this.toResumo(),
-      entidadeOrigemIdErp: this.entidadeOrigemIdErp,
-      entidadeDestinoIdErp: this.entidadeDestinoIdErp,
       grupoOrigemId: this.grupoOrigemId,
-      grupoOrigemIdErp: this.grupoOrigemIdErp,
       grupoDestinoId: this.grupoDestinoId,
-      grupoDestinoIdErp: this.grupoDestinoIdErp,
       empresaId: this.empresaId,
-      empresaIdErp: this.empresaIdErp,
-      clienteIdErp: this.clienteIdErp,
-      vendedoraIdErp: this.vendedoraIdErp,
       totalDosItens: this.totalDosItens,
       totalDosPagamentos: this.totalDosPagamentos,
       itens: this.itens.map((i) => i.toPublic()),
@@ -224,7 +236,6 @@ export class Movimentacao {
       numero: this.numero,
       dataMovimentacao: this.dataMovimentacao,
       operacaoId: this.operacaoId,
-      operacaoIdErp: this.operacaoIdErp,
       clienteId: this.clienteId,
       vendedoraId: this.vendedoraId,
       valor: this.valor,

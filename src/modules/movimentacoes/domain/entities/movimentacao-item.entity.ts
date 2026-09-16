@@ -71,7 +71,7 @@ export class MovimentacaoItem {
       nItem: this.nItem,
       idErpItem: this.idErp,
       produtoId: this.produtoId,
-      produtoIdErp: this.produtoIdErp,
+      // `produtoIdErp` fica so no banco — ver `Movimentacao.toPublic`.
       quantidade: this.quantidade,
       valorUnitario: this.valorUnitario,
       total: this.total,
