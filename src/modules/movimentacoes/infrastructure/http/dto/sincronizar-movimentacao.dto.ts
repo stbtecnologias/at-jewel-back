@@ -140,19 +140,25 @@ export class SincronizarMovimentacaoDto {
   idErpEntidadeDestino?: string;
 
   /**
-   * O CLIENTE, direto pelo nosso UUID — a saida para o problema das duas
-   * pontas.
+   * As duas pontas pelo NOSSO UUID — pedido do Lucas em 16/09/2026, no lugar
+   * do `clienteId` de 15/09.
    *
-   * `entidadeOrigem` e `entidadeDestino` sao POLIMORFICAS: uma delas e a
-   * loja e a outra e o terceiro, que pode ser cliente ou fornecedor. Um UUID
-   * solto nao diz de qual tabela e, entao quem quiser mandar o nosso id manda
-   * neste campo, que ja diz.
+   * POLIMORFICAS: cada uma pode ser um cliente, um fornecedor ou uma empresa
+   * do grupo. O UUID nao diz de qual tabela e, entao o back procura nas tres —
+   * UUID nao se repete entre tabelas, e no maximo uma acha. Nao achando em
+   * nenhuma e 400, como todo UUID desta API.
    *
-   * Vindo, VENCE a deducao por entrada/saida.
+   * Vindo, VENCE o `idErpEntidade*` da mesma ponta e a deducao por
+   * entrada/saida: o tipo encontrado ja diz qual ponta e o cliente.
    */
   @IsOptional()
   @IsUUID()
-  clienteId?: string;
+  idEntidadeOrigem?: string;
+
+  /** A outra ponta. Ver `idEntidadeOrigem`. */
+  @IsOptional()
+  @IsUUID()
+  idEntidadeDestino?: string;
 
   @IsOptional()
   @Transform(({ value }) => idErpEntrada(value))

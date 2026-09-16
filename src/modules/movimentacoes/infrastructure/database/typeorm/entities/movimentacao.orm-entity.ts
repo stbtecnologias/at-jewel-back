@@ -76,6 +76,14 @@ export class MovimentacaoOrmEntity {
   })
   entidadeDestinoIdErp: string | null;
 
+  // O NOSSO UUID das pontas (migracao 58). SEM FK: a ponta pode ser cliente,
+  // fornecedor ou empresa, e FK aponta para uma tabela so.
+  @Column({ name: 'entidade_origem_id', type: 'uuid', nullable: true })
+  entidadeOrigemId: string | null;
+
+  @Column({ name: 'entidade_destino_id', type: 'uuid', nullable: true })
+  entidadeDestinoId: string | null;
+
   @Index()
   @Column({ name: 'cliente_id', type: 'uuid', nullable: true })
   clienteId: string | null;

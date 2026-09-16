@@ -1,0 +1,31 @@
+--- 58 — AS DUAS PONTAS DA MOVIMENTACAO PELO NOSSO UUID
+---
+--- Ate aqui a movimentacao guardava as pontas so pelo id do ERP
+--- (`entidade_origem_id_erp`, `entidade_destino_id_erp`), e o nosso UUID so
+--- existia para o cliente — `cliente_id`, vindo do campo `clienteId` da API.
+---
+--- Pedido do Lucas em 16/09/2026: a API passa a receber `idEntidadeOrigem` e
+--- `idEntidadeDestino` com o NOSSO UUID, e o `clienteId` sai.
+---
+--- ==========================================================================
+--- SEM FK, E DE PROPOSITO.
+---
+--- A ponta e POLIMORFICA: pode ser um cliente, um fornecedor ou uma empresa do
+--- grupo, e FK aponta para uma tabela so. Quem garante que o UUID existe e a
+--- API, na entrada — UUID que nao esta em nenhuma das tres volta 400 e nao
+--- chega aqui.
+---
+--- O custo, declarado: apagar o cliente ou o fornecedor NAO limpa esta coluna.
+--- Ela fica apontando para um id que nao existe mais. `cliente_id` continua
+--- com FK e ON DELETE SET NULL, entao a pergunta "de quem e esta venda?"
+--- continua respondida certo.
+--- ==========================================================================
+---
+--- `cliente_id` FICA, e continua preenchido: quando uma das pontas e cliente,
+--- ele recebe o mesmo UUID. O filtro por cliente e a projecao para `vendas`
+--- seguem lendo dali.
+---
+--- Aditiva, sem CREATE TYPE, re-executavel.
+
+ALTER TABLE movimentacoes ADD COLUMN IF NOT EXISTS entidade_origem_id  UUID;
+ALTER TABLE movimentacoes ADD COLUMN IF NOT EXISTS entidade_destino_id UUID;

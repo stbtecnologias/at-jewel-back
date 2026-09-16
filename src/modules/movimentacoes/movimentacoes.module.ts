@@ -4,6 +4,7 @@ import { AuthModule } from '../auth/auth.module';
 import { ClientesModule } from '../clientes/clientes.module';
 import { EmpresasModule } from '../empresas/empresas.module';
 import { FormasPagamentoModule } from '../formas-pagamento/formas-pagamento.module';
+import { FornecedoresModule } from '../fornecedores/fornecedores.module';
 import { GruposEstoqueModule } from '../grupos-estoque/grupos-estoque.module';
 import { OperacoesModule } from '../operacoes/operacoes.module';
 import { ProdutosModule } from '../produtos/produtos.module';
@@ -50,6 +51,8 @@ import { MovimentacoesController } from './infrastructure/http/controllers/movim
     VendedorasModule,
     ProdutosModule,
     FormasPagamentoModule,
+    // A ponta da movimentacao pode ser fornecedor (idEntidade*, 16/09/2026).
+    FornecedoresModule,
   ],
   controllers: [MovimentacoesController],
   providers: [

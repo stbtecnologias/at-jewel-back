@@ -38,6 +38,7 @@ function servico(repos: {
     repo as never,
     repo as never,
     repo as never,
+    repo as never,
   );
 }
 
@@ -120,5 +121,63 @@ describe('ResolverReferenciasErpService', () => {
       expect(r.id).toBe(UUID);
       expect(porIdErp).not.toHaveBeenCalled();
     });
+  });
+});
+
+/**
+ * A PONTA POLIMORFICA — 16/09/2026.
+ *
+ * O UUID e procurado em clientes, fornecedores e empresas. Cada teste deixa so
+ * uma das tres acharem, para provar que o TIPO devolvido e o da tabela certa.
+ */
+describe('ResolverReferenciasErpService — entidade (a ponta pelo UUID)', () => {
+  const ID = '22222222-2222-2222-2222-222222222222';
+
+  function servicoComTres(achados: {
+    cliente?: object;
+    fornecedor?: object;
+    empresa?: object;
+  }) {
+    const vazio = { buscarPorId: jest.fn().mockResolvedValue(null) };
+    const repo = (registro?: object) => ({
+      buscarPorId: jest.fn().mockResolvedValue(registro ?? null),
+    });
+    // Ordem do construtor: operacoes, empresas, grupos, clientes, vendedoras,
+    // produtos, formasPagamento, fornecedores.
+    return new ResolverReferenciasErpService(
+      vazio as never,
+      repo(achados.empresa) as never,
+      vazio as never,
+      repo(achados.cliente) as never,
+      vazio as never,
+      vazio as never,
+      vazio as never,
+      repo(achados.fornecedor) as never,
+    );
+  }
+
+  it('sem UUID devolve null — a ponta segue pelo id do ERP', async () => {
+    expect(await servicoComTres({}).entidade(null)).toBeNull();
+    expect(await servicoComTres({}).entidade(undefined)).toBeNull();
+  });
+
+  it.each([
+    ['cliente', { cliente: { id: ID, idErp: '2397' } }],
+    ['fornecedor', { fornecedor: { id: ID, idErp: '555' } }],
+    ['empresa', { empresa: { id: ID, idErp: '9000000018' } }],
+  ])('achado em %s, devolve o tipo certo e o id do ERP', async (tipo, achados) => {
+    const r = await servicoComTres(achados).entidade(ID);
+
+    expect(r).toEqual({
+      id: ID,
+      idErp: Object.values(achados)[0].idErp,
+      tipo,
+    });
+  });
+
+  it('nao achado em nenhuma das tres: 400, com o UUID na mensagem', async () => {
+    await expect(servicoComTres({}).entidade(ID)).rejects.toThrow(
+      `entidade ${ID} nao existe`,
+    );
   });
 });
