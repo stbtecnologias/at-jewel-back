@@ -1,4 +1,7 @@
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsEnum,
   IsInt,
   IsNumber,
@@ -111,4 +114,39 @@ export class CorrigirParcelamentoDto {
   @Min(0)
   @Max(300)
   juros_percentual?: number | null;
+}
+
+/**
+ * O pedido de ajuste, em texto livre: "na página 4, a modelo sorrindo".
+ *
+ * `finalId` é a versão que a pessoa estava vendo. Sem ele, a mais nova
+ * montada pelo sistema.
+ */
+export class InterpretarAjusteDto {
+  @IsString()
+  @MinLength(3)
+  @MaxLength(2000)
+  @SanitizeText()
+  texto: string;
+
+  @IsOptional()
+  @IsUUID()
+  finalId?: string;
+}
+
+/**
+ * As ações que a pessoa confirmou, como a interpretação as devolveu.
+ *
+ * O CONTEÚDO DE CADA AÇÃO NÃO É VALIDADO AQUI, e é de propósito: a regra de
+ * cada uma depende do plano da versão (a página existe? a peça está nela?),
+ * e só o caso de uso tem o plano. Ele confere tudo de novo.
+ */
+export class AplicarAjusteDto {
+  @IsUUID()
+  finalId: string;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(20)
+  acoes: unknown[];
 }

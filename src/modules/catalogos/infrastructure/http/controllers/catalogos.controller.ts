@@ -24,6 +24,7 @@ import {
   LIMITE_FINAL_BYTES,
 } from '../../../application/use-cases/enviar-final.use-case';
 import { ExportarCatalogoUseCase } from '../../../application/use-cases/exportar-catalogo.use-case';
+import { AjustarCatalogoUseCase } from '../../../application/use-cases/ajustar-catalogo.use-case';
 import { MontarCatalogoUseCase } from '../../../application/use-cases/montar-catalogo.use-case';
 import { Permissions } from '../../../../auth/infrastructure/http/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../../../auth/infrastructure/http/guards/jwt-auth.guard';
@@ -44,9 +45,7 @@ import {
   type ArquivoRecebido,
 } from '../../../application/use-cases/catalogos.use-cases';
 import type { StatusCatalogo } from '../../../domain/entities/enums';
-import {
-  LIMITE_PDF_BYTES,
-} from '../../../domain/ports/armazenamento.port';
+import { LIMITE_PDF_BYTES } from '../../../domain/ports/armazenamento.port';
 import {
   AnotarReferenciaDto,
   AtualizarCatalogoDto,
@@ -54,6 +53,8 @@ import {
   CriarCatalogoDto,
   CriarReferenciaDto,
   DefinirCapaDto,
+  AplicarAjusteDto,
+  InterpretarAjusteDto,
 } from '../dto/catalogo.dto';
 
 /** Teto de referencias por envio. Impede um `select all` virar 300 arquivos. */
@@ -84,6 +85,7 @@ export class CatalogosController {
     private readonly exportarCatalogo: ExportarCatalogoUseCase,
     private readonly montarCatalogo: MontarCatalogoUseCase,
     private readonly enviarFinalCatalogo: EnviarFinalUseCase,
+    private readonly ajustarCatalogo: AjustarCatalogoUseCase,
   ) {}
 
   @Get()
@@ -173,6 +175,35 @@ export class CatalogosController {
   @Permissions('catalogo:write')
   async montar(@Param('id', ParseUUIDPipe) id: string) {
     return this.montarCatalogo.execute(id);
+  }
+
+  /**
+   * O que foi entendido de um pedido de ajuste — NADA é gerado nem gravado.
+   *
+   * Passo 1 de 2: a tela mostra a lista para a pessoa confirmar. Ver
+   * `AjustarCatalogoUseCase`.
+   */
+  @Post(':id/ajustes/interpretacao')
+  @HttpCode(HttpStatus.OK)
+  @Permissions('catalogo:write')
+  async interpretarAjuste(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: InterpretarAjusteDto,
+  ) {
+    return this.ajustarCatalogo.interpretar(id, dto.texto, dto.finalId);
+  }
+
+  /**
+   * Aplica os ajustes confirmados e grava uma VERSÃO NOVA do PDF. A versão
+   * ajustada continua guardada.
+   */
+  @Post(':id/ajustes')
+  @Permissions('catalogo:write')
+  async aplicarAjuste(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AplicarAjusteDto,
+  ) {
+    return this.ajustarCatalogo.aplicar(id, dto.finalId, dto.acoes);
   }
 
   /**
@@ -331,7 +362,11 @@ export class CatalogosController {
     @Param('referenciaId', ParseUUIDPipe) referenciaId: string,
     @Body() dto: AnotarReferenciaDto,
   ) {
-    return this.anotarReferencia.execute(id, referenciaId, dto.observacao ?? null);
+    return this.anotarReferencia.execute(
+      id,
+      referenciaId,
+      dto.observacao ?? null,
+    );
   }
 
   @Delete(':id/referencias/:referenciaId')

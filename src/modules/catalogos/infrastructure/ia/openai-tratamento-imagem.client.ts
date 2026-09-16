@@ -4,10 +4,14 @@ import type {
   ImagemDeEntrada,
   ImagemTratada,
   ITratamentoImagem,
+  Orientacao,
+  PedidoDeAmbientacao,
+  PedidoDeArte,
   PedidoDeTratamento,
 } from '../../domain/ports/tratamento-imagem.port';
 
-const ENDPOINT = 'https://api.openai.com/v1/images/edits';
+const ENDPOINT_EDICAO = 'https://api.openai.com/v1/images/edits';
+const ENDPOINT_GERACAO = 'https://api.openai.com/v1/images/generations';
 const MODELO_PADRAO = 'gpt-image-1';
 
 /**
@@ -17,11 +21,15 @@ const MODELO_PADRAO = 'gpt-image-1';
  */
 const TIMEOUT_MS = 120_000;
 
+/** As tres formas que o `gpt-image-1` aceita, pelo nome do que sao. */
+const TAMANHO: Record<Orientacao | 'quadrada', string> = {
+  quadrada: '1024x1024',
+  retrato: '1024x1536',
+  paisagem: '1536x1024',
+};
+
 /**
- * A REGRA QUE NAO SE NEGOCIA.
- *
- * Vem primeiro no prompt e e repetida no fim, porque instrucao no meio de
- * texto longo e a que mais se perde.
+ * O QUE NAO MUDA NA PECA — valendo para o packshot E para a foto com modelo.
  *
  * ==========================================================================
  * AS PROIBICOES SAO NOMEADAS UMA A UMA PORQUE A REGRA GENERICA JA FALHOU.
@@ -32,39 +40,27 @@ const TIMEOUT_MS = 120_000;
  * ignorada.
  *
  * O que mudou aqui: cada falha observada virou uma linha propria, no
- * imperativo, com o caso concreto ("se nao tem pedra, a saida nao tem
- * pedra"; "nunca transforme metal branco em dourado"). Instrucao enumerada e
- * especifica sobrevive melhor que paragrafo generico.
+ * imperativo, com o caso concreto. Instrucao enumerada e especifica sobrevive
+ * melhor que paragrafo generico.
  *
  * ==========================================================================
  * 15/09/2026: A REGRA DO METAL VALIA NUM SENTIDO SO, E O MODELO FOI PELO
  * OUTRO.
  *
- * Teste com o colar de opala CO23322, que e ouro amarelo: nas TRES geracoes
- * — fundo branco, bege e escuro — a corrente e o aro sairam PRATEADOS. A
- * regra dizia "nunca transforme metal branco em dourado", e o caminho
- * contrario estava aberto.
+ * Teste com o colar de opala CO23322, que e ouro amarelo: nas TRES geracoes a
+ * corrente e o aro sairam PRATEADOS. A regra dizia "nunca transforme metal
+ * branco em dourado", e o caminho contrario estava aberto.
  *
  * Agora a linha proibe as duas direcoes e nomeia amarelo e rose. E entrou
- * uma linha nova para o DESENHO DA PEDRA: opala e pedra unica, o veio dela e
- * a identidade da peca, e o modelo repintava o padrao a cada geracao.
- *
- * ISTO CONTINUA SENDO MITIGACAO. A garantia so vem quando a peca parar de
- * ser regerada — ver o recorte, no fim deste bloco.
+ * uma linha para o DESENHO DA PEDRA: opala e pedra unica, o veio dela e a
+ * identidade da peca, e o modelo repintava o padrao a cada geracao.
  * ==========================================================================
  *
- * E O RISCO CONTINUA. Isto e mitigacao, nao garantia: o `gpt-image-1` no
- * `/images/edits` REGERA a imagem em vez de edita-la, entao preservar a peca e
- * um resultado provavel, nunca certo. Quem for conferir o catalogo tem de
- * saber disso — a aprovacao na conversa existe tambem para isto.
- *
- * A unica forma de garantir seria nao regerar: recortar a peca da foto e
- * assenta-la no fundo. Decisao do Lucas em 31/08 foi seguir com a geracao.
- * ==========================================================================
+ * ISTO E MITIGACAO, NAO GARANTIA: o `gpt-image-1` REGERA a imagem em vez de
+ * edita-la, entao preservar a peca e um resultado provavel, nunca certo. A
+ * garantia so viria de nao regerar — recortar a peca e assenta-la no fundo.
  */
-const REGRA_PECA_INTOCADA =
-  'REGRA ABSOLUTA: o objeto da imagem enviada é o único objeto da imagem de ' +
-  'saída. Ele não pode ser alterado, substituído, completado nem embelezado.\n' +
+const O_QUE_NAO_MUDA =
   '- NÃO ACRESCENTE PEDRAS. Se a peça enviada não tem nenhuma pedra, a imagem ' +
   'de saída não pode ter nenhuma pedra. Se tem três, tem três.\n' +
   '- NÃO MUDE A COR DO METAL, EM NENHUMA DIREÇÃO. Ouro amarelo permanece ' +
@@ -76,13 +72,39 @@ const REGRA_PECA_INTOCADA =
   'as proporções entre as partes.\n' +
   '- NÃO MUDE O DESENHO DA PEDRA. Opala, madrepérola, ágata e pedras naturais ' +
   'têm veios e manchas ÚNICOS: copie os que estão na foto, não crie um padrão ' +
-  'novo nem "melhore" o existente.\n' +
+  'novo nem "melhore" o existente.\n';
+
+/**
+ * A REGRA QUE NAO SE NEGOCIA, NO PACKSHOT.
+ *
+ * Vem primeiro no prompt e e repetida no fim, porque instrucao no meio de
+ * texto longo e a que mais se perde.
+ */
+const REGRA_PECA_INTOCADA =
+  'REGRA ABSOLUTA: o objeto da imagem enviada é o único objeto da imagem de ' +
+  'saída. Ele não pode ser alterado, substituído, completado nem embelezado.\n' +
+  O_QUE_NAO_MUDA +
   '- NÃO POLIR, NÃO LIMPAR, NÃO RESTAURAR. Marcas de uso, riscos e ' +
   'irregularidades da peça são dela e permanecem.\n' +
   'Esta NÃO é uma joia de catálogo idealizada: é ESTA peça específica, como ' +
   'ela é. Você está tratando apenas a APRESENTAÇÃO — fundo, iluminação, ' +
   'sombra, enquadramento e nitidez. Na dúvida entre embelezar e manter, ' +
   'MANTENHA.';
+
+/**
+ * A MESMA REGRA, NA FOTO COM MODELO.
+ *
+ * A abertura muda porque a do packshot ("o objeto enviado e o unico objeto da
+ * saida") proibiria a propria modelo e a cena. O que nao muda e a lista: a
+ * joia que aparece no corpo e ESTA joia.
+ */
+const REGRA_PECA_NA_CENA =
+  'REGRA ABSOLUTA: a joia da imagem enviada deve aparecer na imagem de saída ' +
+  'EXATAMENTE como é. Ela não pode ser alterada, substituída, completada nem ' +
+  'embelezada. Quem aparece usa SOMENTE esta joia — nenhuma outra joia, ' +
+  'relógio ou acessório de metal.\n' +
+  O_QUE_NAO_MUDA +
+  'Na dúvida entre embelezar a joia e mantê-la, MANTENHA.';
 
 /**
  * O PADRAO DA CASA, EM TEXTO — QUE E A UNICA FORMA SEGURA DE DIZE-LO.
@@ -102,24 +124,6 @@ const REGRA_PECA_INTOCADA =
  *
  * Conferido nos catalogos reais: a peca aparece recortada, de frente, na
  * altura do olho. Sem cenario, sem superficie, sem mesa.
- *
- * ==========================================================================
- * O ENQUADRAMENTO E FIXO. A COR DO FUNDO, NAO — HML-17, 15/09/2026.
- *
- * Ate aqui esta constante abria com "Fundo BRANCO liso e uniforme", em
- * maiusculas, e a descricao da colecao ("cores quentes", "cor escura") entrava
- * DEPOIS, no meio do mesmo texto. Com as duas instrucoes brigando, o modelo
- * ficava com a primeira — e toda foto saia branca, qualquer que fosse o
- * catalogo. Foi o que o Yerlon apontou na homologacao.
- *
- * O proprio codigo ja dizia a intencao certa em outro ponto: "fundo branco
- * liso, SE A COLECAO NAO INDICAR OUTRO". O branco era para ser o padrao, e a
- * linha o transformou em regra.
- *
- * Agora esta constante cuida so do que nao se negocia — de frente, na altura
- * do olho, centralizada, sem cenario, fundo liso. A COR sai daqui e vira uma
- * linha propria, resolvida por precedencia em `corDoFundo`.
- * ==========================================================================
  */
 const ENQUADRAMENTO =
   'Sem cenário, sem mesa, sem superfície visível. Fundo liso e uniforme, sem ' +
@@ -128,7 +132,7 @@ const ENQUADRAMENTO =
   'vista de cima nem em perspectiva inclinada. Centralizada, ocupando a maior ' +
   'parte do quadro.';
 
-/** O padrao da casa, e so quando ninguem disser outra coisa. */
+/** O padrao da casa, e so quando a pessoa nao pedir outro. */
 const FUNDO_PADRAO = 'FUNDO: BRANCO liso e uniforme.';
 
 const INSTRUCAO_BASE =
@@ -137,16 +141,24 @@ const INSTRUCAO_BASE =
   'Não escreva texto algum na imagem.';
 
 /**
+ * O QUE TODA ARTE SEM PECA PROIBE.
+ *
+ * Pessoa e joia porque a arte nao pode competir com a peca da pagina nem
+ * sugerir uma que a loja nao vende. Texto porque o modelo escreve letra
+ * torta — e o texto da capa e nosso, escrito por cima.
+ */
+const ARTE_SEM =
+  'SEM pessoas, SEM joias ou acessórios, SEM texto, letras, números, marcas ' +
+  'ou logotipos.';
+
+/**
  * Tratamento da foto pela API de imagens da OpenAI.
  *
  * HTTP direto, sem SDK — mesmo caminho do `OpenaiTranscricaoClient`. Trazer o
- * pacote da OpenAI so para duas chamadas nao se paga, e o `fetch` do Node 22 da
+ * pacote da OpenAI so para tres chamadas nao se paga, e o `fetch` do Node da
  * conta.
  *
- * SEGUNDO ponto do backend que fala com provedor fora da Anthropic, e pelo
- * mesmo motivo do primeiro: a Anthropic nao gera imagem.
- *
- * O QUE SAI DAQUI: a foto da peca e as referencias do catalogo. Nao vai nome de
+ * O QUE SAI DAQUI: a foto da peca e a cena do catalogo. Nao vai nome de
  * cliente, telefone, preco nem qualquer dado do ERP — o texto entra depois, e
  * por composicao nossa.
  */
@@ -161,6 +173,126 @@ export class OpenaiTratamentoImagemClient implements ITratamentoImagem {
   }
 
   async tratar(pedido: PedidoDeTratamento): Promise<ImagemTratada | null> {
+    // ==========================================================================
+    // QUADRADA, SEMPRE. O packshot e quadrado — quem tem proporcao 9:16 ou 16:9
+    // e a PECA FINAL montada, e nao a foto da joia.
+    //
+    // Estava pedindo 1024x1536 quando o catalogo era 9:16, e a tela — que
+    // desenha a foto num quadrado — cortava o topo e a base da peca. Medido em
+    // 01/09/2026: uma garrafa chegou com tampa e fundo fora do quadro.
+    // ==========================================================================
+    //
+    // UMA IMAGEM SO, E ISSO NAO E ECONOMIA: e o que impede o modelo de trocar
+    // a joia por outra. Ver a porta (`PedidoDeTratamento.original`).
+    return this.editar(
+      pedido.original,
+      this.montarPrompt(pedido),
+      TAMANHO.quadrada,
+    );
+  }
+
+  /**
+   * A peca na modelo. A entrada e o packshot aprovado — UMA imagem, pelo
+   * mesmo motivo do tratamento.
+   *
+   * A regra da peca abre e fecha, como no packshot. A cena fica no meio: e o
+   * que pode variar.
+   *
+   * NADA DE TEMA FIXO AQUI — 16/09/2026. Quem aparece e a luz vem da direcao
+   * de arte: praia pede luz de fim de tarde, Natal pede luz de vela, Dia dos
+   * Pais pede um homem. O que o prompt fixa e so o que vale em qualquer tema:
+   * a joia em foco e a cara de fotografia profissional.
+   *
+   * A PECA MANDA NA PESSOA quando as duas brigam. Um colar delicado num
+   * catalogo de Dia dos Pais vai no pescoco de uma mulher — forcar o homem
+   * geraria uma imagem estranha, ou o modelo trocaria a peca para caber nele.
+   */
+  async ambientar(pedido: PedidoDeAmbientacao): Promise<ImagemTratada | null> {
+    const prompt = [
+      REGRA_PECA_NA_CENA,
+      'Crie uma fotografia editorial de campanha de joalheria. ' +
+        `Quem aparece: ${pedido.modelo}, usando a joia da imagem enviada ` +
+        `${pedido.onde}. Se essa pessoa não combinar com a joia (uma peça ` +
+        'claramente feminina num homem, por exemplo), escolha quem combine, ' +
+        'mantendo o clima do tema. ' +
+        `Cenário, clima e luz: ${pedido.cena}. ` +
+        'A joia em foco, nítida, bem iluminada e claramente visível, ocupando ' +
+        'uma parte relevante do quadro. Pele real, aparência de fotografia ' +
+        'profissional. Não escreva texto algum na imagem.',
+      // O PEDIDO DO AJUSTE VEM DEPOIS DA CENA, para poder muda-la ("luz de
+      // dia" numa cena de fim de tarde), e ANTES da regra da peca, que
+      // continua fechando: nenhum pedido autoriza mexer na joia.
+      ...(pedido.pedido?.trim()
+        ? [
+            `Pedido específico para esta foto (vence a cena acima): ${pedido.pedido.trim()}`,
+          ]
+        : []),
+      REGRA_PECA_NA_CENA,
+    ].join('\n\n');
+
+    return this.editar(pedido.peca, prompt, TAMANHO[pedido.orientacao], true);
+  }
+
+  /**
+   * Capa ou fundo de pagina — geracao do zero, sem imagem de entrada.
+   *
+   * O FUNDO DEIXA O MEIO LIVRE: a grade de joias vai por cima dele, e
+   * elemento decorativo no centro brigaria com as pecas. A cena mora nas
+   * bordas.
+   */
+  async gerarArte(pedido: PedidoDeArte): Promise<ImagemTratada | null> {
+    const cores = pedido.cores.join(', ');
+    const prompt =
+      pedido.tipo === 'capa'
+        ? 'Fotografia de cenário para a capa de um catálogo de joias de luxo. ' +
+          `Cenário e clima: ${pedido.cena}. Tons que conversem com ${cores}. ` +
+          'Composição elegante e arejada, com uma área central mais limpa ' +
+          `para receber um título. ${ARTE_SEM}`
+        : 'Fundo decorativo para a página de um catálogo de joias de luxo. ' +
+          `Tema: ${pedido.cena}. Elementos do tema discretos, suaves e ` +
+          'desfocados SOMENTE nas bordas e nos cantos. O CENTRO da imagem ' +
+          `amplo, liso e claro, na cor ${pedido.cores[0]}, sem nenhum ` +
+          `elemento. Paleta: ${cores}. ${ARTE_SEM}`;
+    // O pedido do ajuste antes das proibições: pode mudar o clima, nunca
+    // colocar pessoa, joia ou texto na arte.
+    const comPedido = pedido.pedido?.trim()
+      ? prompt.replace(
+          ARTE_SEM,
+          `Pedido específico para esta arte: ${pedido.pedido.trim()}. ${ARTE_SEM}`,
+        )
+      : prompt;
+
+    const chave = this.config.get<string>('OPENAI_API_KEY');
+    if (!chave) {
+      this.logger.warn('OPENAI_API_KEY ausente — arte nao gerada.');
+      return null;
+    }
+
+    return this.pedir(ENDPOINT_GERACAO, chave, {
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: this.modelo(),
+        prompt: comPedido,
+        size: TAMANHO[pedido.orientacao],
+        n: 1,
+        output_format: 'jpeg',
+      }),
+    });
+  }
+
+  /**
+   * `/images/edits` com UMA imagem de entrada.
+   *
+   * @param emJpeg o que vai para PAGINA (a peca na modelo, a arte) sai em
+   *   JPEG: sao imagens fotograficas, sem transparencia, e em PNG cada uma
+   *   pesaria uns 3 MB dentro do PDF. O packshot segue PNG, como sempre foi.
+   */
+  private async editar(
+    imagem: ImagemDeEntrada,
+    prompt: string,
+    tamanho: string,
+    emJpeg = false,
+  ): Promise<ImagemTratada | null> {
     const chave = this.config.get<string>('OPENAI_API_KEY');
     if (!chave) {
       this.logger.warn('OPENAI_API_KEY ausente — foto nao tratada.');
@@ -168,37 +300,70 @@ export class OpenaiTratamentoImagemClient implements ITratamentoImagem {
     }
 
     const form = new FormData();
-    form.append(
-      'model',
-      this.config.get<string>('OPENAI_IMAGEM_MODEL') ?? MODELO_PADRAO,
-    );
-    form.append('prompt', this.montarPrompt(pedido));
-    // ==========================================================================
-    // QUADRADA, SEMPRE. O packshot e quadrado — quem tem proporcao 9:16 ou 16:9
-    // e a PECA FINAL montada, e nao a foto da joia. Esta na definicao do enum,
-    // com todas as letras.
-    //
-    // Estava pedindo 1024x1536 quando o catalogo era 9:16, e a tela — que
-    // desenha a foto num quadrado — cortava o topo e a base da peca. Medido em
-    // 01/09/2026: uma garrafa chegou com tampa e fundo fora do quadro.
-    //
-    // Nao adianta so consertar a exibicao: a imagem alta seria montada no PDF
-    // com o mesmo corte, e o arquivo entregue ao marketing tambem.
-    // ==========================================================================
-    form.append('size', '1024x1024');
+    form.append('model', this.modelo());
+    form.append('prompt', prompt);
+    form.append('size', tamanho);
     form.append('n', '1');
+    if (emJpeg) form.append('output_format', 'jpeg');
+    form.append('image[]', this.paraBlob(imagem), 'peca.png');
 
-    // UMA IMAGEM SO, E ISSO NAO E ECONOMIA: e o que impede o modelo de trocar
-    // a joia por outra. Ver a porta (`PedidoDeTratamento.original`) — mandar
-    // as paginas de referencia junto fez o modelo devolver um brinco recortado
-    // de dentro de uma delas.
-    form.append('image[]', this.paraBlob(pedido.original), 'peca.png');
+    return this.pedir(ENDPOINT_EDICAO, chave, { body: form }, emJpeg);
+  }
+
+  /**
+   * A chamada, com UMA nova tentativa quando o erro e passageiro.
+   *
+   * ==========================================================================
+   * SO REPETE O QUE PODE DAR CERTO NA SEGUNDA — 16/09/2026.
+   *
+   * Fila cheia, limite por minuto (429 comum), erro 5xx e queda de rede
+   * costumam passar em segundos. Sem credito (`insufficient_quota`), chave
+   * invalida, imagem recusada e timeout NAO repetem: os tres primeiros dao o
+   * mesmo erro de novo, e o timeout ja esperou dois minutos — repetir faria a
+   * pessoa esperar quatro por uma resposta que ela pode pedir com "tenta de
+   * novo".
+   * ==========================================================================
+   */
+  private async pedir(
+    endpoint: string,
+    chave: string,
+    init: { headers?: Record<string, string>; body: FormData | string },
+    emJpeg = true,
+  ): Promise<ImagemTratada | null> {
+    const primeira = await this.tentar(endpoint, chave, init, emJpeg);
+    if (primeira.imagem || !primeira.passageira) return primeira.imagem;
+
+    this.logger.warn(
+      `OpenAI ${endpoint.split('/v1')[1]}: erro passageiro, tentando de novo em ${primeira.esperarMs} ms.`,
+    );
+    await new Promise((r) => setTimeout(r, primeira.esperarMs));
+    return (await this.tentar(endpoint, chave, init, emJpeg)).imagem;
+  }
+
+  /** Espera antes de repetir, quando a OpenAI nao diz quanto. */
+  esperaPadraoMs = 5_000;
+
+  private async tentar(
+    endpoint: string,
+    chave: string,
+    init: { headers?: Record<string, string>; body: FormData | string },
+    emJpeg: boolean,
+  ): Promise<{
+    imagem: ImagemTratada | null;
+    passageira: boolean;
+    esperarMs: number;
+  }> {
+    const falha = (passageira: boolean, esperarMs = this.esperaPadraoMs) => ({
+      imagem: null,
+      passageira,
+      esperarMs,
+    });
 
     try {
-      const resp = await fetch(ENDPOINT, {
+      const resp = await fetch(endpoint, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${chave}` },
-        body: form,
+        headers: { Authorization: `Bearer ${chave}`, ...init.headers },
+        body: init.body,
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
 
@@ -208,36 +373,56 @@ export class OpenaiTratamentoImagemClient implements ITratamentoImagem {
         // conteudo recusado.
         const corpo = await resp.text();
         this.logger.error(
-          `OpenAI /images/edits ${resp.status}: ${corpo.slice(0, 300)}`,
+          `OpenAI ${endpoint.split('/v1')[1]} ${resp.status}: ${corpo.slice(0, 300)}`,
         );
-        return null;
+        const semCredito = /insufficient_quota|credit_balance_exhausted/.test(
+          corpo,
+        );
+        const passageira =
+          resp.status >= 500 || (resp.status === 429 && !semCredito);
+        // O `retry-after` da OpenAI vem em segundos. Teto de 20 s: mais que
+        // isso, a pessoa pede de novo quando quiser.
+        const pedido = Number(resp.headers?.get?.('retry-after'));
+        return falha(
+          passageira,
+          pedido > 0 ? Math.min(pedido * 1000, 20_000) : this.esperaPadraoMs,
+        );
       }
 
       const dados = (await resp.json()) as { data?: { b64_json?: string }[] };
       const b64 = dados.data?.[0]?.b64_json;
       if (!b64) {
         this.logger.error('OpenAI devolveu resposta sem imagem.');
-        return null;
+        return falha(false);
       }
 
-      return { conteudo: Buffer.from(b64, 'base64'), mime: 'image/png' };
+      return {
+        imagem: {
+          conteudo: Buffer.from(b64, 'base64'),
+          mime: emJpeg ? 'image/jpeg' : 'image/png',
+        },
+        passageira: false,
+        esperarMs: 0,
+      };
     } catch (err) {
-      this.logger.error(`Falha ao tratar a foto: ${String(err)}`);
-      return null;
+      this.logger.error(`Falha ao gerar imagem: ${String(err)}`);
+      // Timeout ja esperou o teto inteiro; queda de rede costuma passar.
+      const timeout = err instanceof Error && err.name === 'TimeoutError';
+      return falha(!timeout);
     }
   }
 
+  private modelo(): string {
+    return this.config.get<string>('OPENAI_IMAGEM_MODEL') ?? MODELO_PADRAO;
+  }
+
   /**
-   * O prompt e montado do CATALOGO, nao fixado aqui.
+   * O prompt do packshot.
    *
-   * O que muda entre coleções — fonte, composição, cor, iluminação — vive nas
-   * referencias de texto, e quem edita e o marketing pelo painel. Fixar isso em
-   * constante obrigaria deploy a cada coleção nova.
-   *
-   * A ordem e deliberada: regra dura, instrucao base, padrao do catalogo,
-   * pedido pontual, regra dura de novo. O pedido da pessoa vem DEPOIS do padrao
-   * para poder contraria-lo ("fundo rosa" numa coleção de fundo branco), e a
-   * regra da peca fecha porque instrucao no fim pesa mais que no meio.
+   * A ordem e deliberada: regra dura, instrucao base, composicao do catalogo,
+   * pedido pontual, fundo, regra dura de novo. O pedido da pessoa vem DEPOIS
+   * da composicao para poder contraria-la, e a regra da peca fecha porque
+   * instrucao no fim pesa mais que no meio.
    */
   private montarPrompt(pedido: PedidoDeTratamento): string {
     const partes = [REGRA_PECA_INTOCADA, INSTRUCAO_BASE];
@@ -251,10 +436,9 @@ export class OpenaiTratamentoImagemClient implements ITratamentoImagem {
 
     // A COR DO FUNDO, UMA VEZ SO E POR ULTIMO — o conserto do HML-17.
     //
-    // O defeito nunca foi a colecao nao chegar: ela chegava, e perdia para um
-    // "Fundo BRANCO" fixo, em maiusculas, escrito antes. Agora existe uma
-    // linha de fundo apenas, e ela e a ultima coisa dita antes da regra da
-    // peca — a posicao de mais peso depois do fim.
+    // O defeito foi haver DUAS ordens de fundo no mesmo texto: um "Fundo
+    // BRANCO" fixo, em maiusculas, e outra cor escrita depois. O modelo ficava
+    // com a primeira. Agora existe uma linha de fundo apenas.
     partes.push(this.corDoFundo(pedido));
 
     partes.push(REGRA_PECA_INTOCADA);
@@ -262,28 +446,23 @@ export class OpenaiTratamentoImagemClient implements ITratamentoImagem {
   }
 
   /**
-   * Quem manda no fundo, em ordem:
+   * Quem manda no fundo do packshot:
    *
    *   1. o PEDIDO da pessoa, que e sobre esta peca ("fundo rosa")
-   *   2. o PADRAO da colecao, que vale para o catalogo inteiro
-   *   3. o BRANCO, quando ninguem disse nada
+   *   2. o BRANCO, sempre que ninguem pediu
    *
-   * A precedencia fica ESCRITA no proprio texto, e nao so na ordem das
-   * frases: dizer ao modelo qual instrucao vence e o que impede as duas de
-   * coexistirem e ele escolher. Foi assim que o branco venceu por semanas.
+   * ==========================================================================
+   * O TEMA DO CATALOGO SAIU DAQUI — 16/09/2026.
+   *
+   * Em 15/09 a colecao ganhou vez no fundo: "tema praiano" virava packshot
+   * bege. O Lucas corrigiu no dia seguinte: o tema e do CATALOGO — capa,
+   * pagina, a peca na modelo —, e nao do fundo da joia. O packshot volta a
+   * ser branco, e a pagina tematica o recebe num cartao branco.
+   * ==========================================================================
    */
   private corDoFundo(pedido: PedidoDeTratamento): string {
     if (pedido.pedidoDaPessoa?.trim()) {
-      return (
-        'FUNDO: siga o "Pedido para esta peça" acima. Ele vence o padrão da ' +
-        'coleção.'
-      );
-    }
-    if (pedido.padrao?.trim()) {
-      return (
-        'FUNDO: siga o "Padrão desta coleção" acima — cor, tom e clima. ' +
-        'Mantenha o fundo LISO e uniforme, sem cenário e sem objetos.'
-      );
+      return 'FUNDO: siga o "Pedido para esta peça" acima. Sem pedido de cor, BRANCO.';
     }
     return FUNDO_PADRAO;
   }

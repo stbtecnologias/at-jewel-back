@@ -15,7 +15,6 @@ import type {
   ReferenciaItem,
 } from '../../domain/ports/repositories/catalogo-repository.port';
 import type { ITratamentoImagem } from '../../domain/ports/tratamento-imagem.port';
-import { EstiloDoCatalogoService } from '../estilo-do-catalogo.service';
 
 /**
  * Teto de geracoes por foto.
@@ -63,8 +62,6 @@ export class TratarFotoUseCase {
     private readonly armazenamento: IArmazenamento,
     @Inject(TRATAMENTO_IMAGEM)
     private readonly ia: ITratamentoImagem,
-    // Le as paginas de referencia uma vez por catalogo — ver o servico.
-    private readonly estilo: EstiloDoCatalogoService,
   ) {}
 
   /**
@@ -107,29 +104,15 @@ export class TratarFotoUseCase {
 
     await this.catalogos.atualizarFoto(fotoId, { status: 'PROCESSANDO' });
 
-    // AS PAGINAS DE REFERENCIA PASSAM A VALER — 15/09/2026.
+    // O TEMA DO CATALOGO NAO VEM PARA CA — 16/09/2026.
     //
-    // Elas continuam SEM ir para o `/images/edits` (ver
-    // `PedidoDeTratamento.original`: manda-las fez o modelo devolver uma joia
-    // recortada de dentro de uma delas). O que vai e a LEITURA delas, em
-    // texto, feita uma vez por catalogo e guardada.
-    //
-    // Ate aqui elas eram gravadas e nunca lidas por ninguem — o Lucas
-    // resumiu: "da a sensacao de que o catalogo que envia nao serve de nada".
-    const textos = this.padraoEscrito(catalogo.referencias);
-    const estilo = await this.estilo.ler(
-      catalogo.id,
-      catalogo.referencias,
-      textos,
-    );
-
+    // Em 15/09 as observacoes e as paginas de referencia passaram a descer
+    // para esta foto, e "tema praiano" virou fundo bege atras da joia. O
+    // Lucas corrigiu: o tema e do CATALOGO — capa, pagina e a peca na
+    // modelo —, e quem o aplica e a montagem. O packshot e branco.
     const tratada = await this.ia.tratar({
       original,
-      // O ESTILO LIDO VEM PRIMEIRO E O TEXTO DEPOIS: a descricao das paginas e
-      // concreta ("fundo bege claro, luz quente") e o texto do marketing e
-      // intencao ("tema praiano"). As duas se somam; nenhuma substitui a
-      // outra.
-      padrao: [estilo, textos].filter(Boolean).join(' ') || null,
+      padrao: this.padraoEscrito(catalogo.referencias),
       pedidoDaPessoa,
     });
 
@@ -140,8 +123,13 @@ export class TratarFotoUseCase {
       });
       return {
         foto: semTratar,
+        // O COMANDO VAI ESCRITO — 16/09/2026. "Da para tentar de novo" nao
+        // dizia COMO, e nao havia como: a foto ficava RECEBIDA, fora da
+        // aprovacao e do painel. Agora o canal lembra dela e o "tenta de
+        // novo" a refaz a partir do original.
         recado:
-          'Não consegui tratar essa imagem agora. A foto está guardada; dá para tentar de novo.',
+          'Não consegui tratar essa imagem agora — a foto está guardada. ' +
+          'Responde "tenta de novo" que eu refaço, ou manda outra foto.',
       };
     }
 
@@ -169,24 +157,18 @@ export class TratarFotoUseCase {
   }
 
   /**
-   * O padrao ESCRITO da colecao: fonte, composicao e observacoes, na ordem em
-   * que o marketing as cadastrou.
+   * O padrao ESCRITO da colecao: so a COMPOSICAO ("peca centralizada").
    *
    * Vem do banco e nao de constante no codigo porque e o que muda entre
    * colecoes — e quem muda e o marketing, pela tela, sem deploy.
+   *
+   * FICAM DE FORA a FONTE (o packshot nao tem texto — 15/09) e a OBSERVACAO,
+   * que e o tema e vai para a montagem (16/09).
    */
   private padraoEscrito(referencias: ReferenciaItem[]): string | null {
     const textos = referencias
-      // A FONTE FICA DE FORA — HML-17, 15/09/2026.
-      //
-      // "fonte: Futura" ia junto para o modelo de IMAGEM, onde nao significa
-      // nada: o packshot nao tem texto. Ali ela so disputava atencao com a
-      // instrucao que importa, que e a do fundo. Tipografia e assunto do PDF,
-      // e e la que ela vai ser usada.
-      .filter(
-        (r) => r.tipo !== 'IMAGEM' && r.tipo !== 'FONTE' && r.valor?.trim(),
-      )
-      .map((r) => `${r.tipo.toLowerCase()}: ${r.valor.trim()}`);
+      .filter((r) => r.tipo === 'COMPOSICAO' && r.valor?.trim())
+      .map((r) => `composicao: ${r.valor.trim()}`);
 
     return textos.length ? textos.join('; ') : null;
   }

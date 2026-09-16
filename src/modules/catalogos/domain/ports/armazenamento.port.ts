@@ -145,6 +145,17 @@ export interface IArmazenamento {
   guardar(arquivo: ArquivoParaGuardar, pasta: string): Promise<string>;
 
   /**
+   * Grava NUMA CHAVE ESCOLHIDA por quem chama — 16/09/2026.
+   *
+   * Existe para o que acompanha outro arquivo e tem de ser achado a partir
+   * dele, sem coluna no banco: o plano da montagem mora em
+   * `<chave do PDF>.plano.json`. Para tudo que vem de fora (upload, foto do
+   * WhatsApp) continua valendo `guardar`, com UUID — nome escolhido so para
+   * o que o proprio sistema gera.
+   */
+  guardarEm(chave: string, conteudo: Buffer, mime: string): Promise<void>;
+
+  /**
    * Le o arquivo inteiro na memoria. Devolve null se nao existir.
    *
    * Existe porque o tratamento pela IA precisa MANDAR a imagem para outro

@@ -17,6 +17,7 @@ import {
 } from './application/use-cases/catalogos.use-cases';
 import { EnviarFinalUseCase } from './application/use-cases/enviar-final.use-case';
 import { ExportarCatalogoUseCase } from './application/use-cases/exportar-catalogo.use-case';
+import { AjustarCatalogoUseCase } from './application/use-cases/ajustar-catalogo.use-case';
 import { MontarCatalogoUseCase } from './application/use-cases/montar-catalogo.use-case';
 import { TratarFotoUseCase } from './application/use-cases/tratar-foto.use-case';
 import {
@@ -24,6 +25,7 @@ import {
   CATALOGO_REPOSITORY,
   CONFERENCIA_FOTO,
   ESTILO_CATALOGO,
+  INTERPRETADOR_AJUSTE,
   TRATAMENTO_IMAGEM,
 } from './domain/ports/injection-tokens';
 import { DiscoArmazenamento } from './infrastructure/armazenamento/disco.armazenamento';
@@ -31,6 +33,7 @@ import { S3Armazenamento } from './infrastructure/armazenamento/s3.armazenamento
 import { OpenaiTratamentoImagemClient } from './infrastructure/ia/openai-tratamento-imagem.client';
 import { AnthropicConferenciaFotoClient } from './infrastructure/ia/anthropic-conferencia-foto.client';
 import { AnthropicEstiloCatalogoClient } from './infrastructure/ia/anthropic-estilo-catalogo.client';
+import { AnthropicInterpretadorDeAjusteClient } from './infrastructure/ia/anthropic-interpretador-ajuste.client';
 import { EstiloDoCatalogoService } from './application/estilo-do-catalogo.service';
 import { CatalogoFinalOrmEntity } from './infrastructure/database/typeorm/entities/catalogo-final.orm-entity';
 import { CatalogoFotoOrmEntity } from './infrastructure/database/typeorm/entities/catalogo-foto.orm-entity';
@@ -72,6 +75,12 @@ import { MidiaController } from './infrastructure/http/controllers/midia.control
     EnviarFinalUseCase,
     ExportarCatalogoUseCase,
     MontarCatalogoUseCase,
+    // O ajuste do PDF montado, pagina por pagina — e quem le o pedido.
+    AjustarCatalogoUseCase,
+    {
+      provide: INTERPRETADOR_AJUSTE,
+      useClass: AnthropicInterpretadorDeAjusteClient,
+    },
     TratarFotoUseCase,
     { provide: TRATAMENTO_IMAGEM, useClass: OpenaiTratamentoImagemClient },
     // Quem OLHA a foto antes de gerar. Ver o cabecalho da porta: sem ela, a

@@ -76,6 +76,12 @@ export class DiscoArmazenamento implements IArmazenamento {
     return chave;
   }
 
+  async guardarEm(chave: string, conteudo: Buffer): Promise<void> {
+    const destino = this.caminhoAbsoluto(chave);
+    await mkdir(dirname(destino), { recursive: true });
+    await writeFile(destino, conteudo);
+  }
+
   async ler(chave: string): Promise<{ conteudo: Buffer; mime: string } | null> {
     try {
       const conteudo = await readFile(this.caminhoAbsoluto(chave));
