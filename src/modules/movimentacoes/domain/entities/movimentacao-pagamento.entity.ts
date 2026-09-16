@@ -68,7 +68,7 @@ export class MovimentacaoPagamento {
       idErpPagamento: this.idErp,
       nParcela: this.nParcela,
       formaPagamentoId: this.formaPagamentoId,
-      formaPagamentoIdErp: this.formaPagamentoIdErp,
+      // `formaPagamentoIdErp` fica so no banco — ver `Movimentacao.toPublic`.
       valor: this.valor,
       debitoCredito: this.debitoCredito,
       ativo: this.ativo,
