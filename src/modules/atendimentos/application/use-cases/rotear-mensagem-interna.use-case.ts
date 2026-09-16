@@ -154,10 +154,12 @@ export class RotearMensagemInternaUseCase {
     const esperandoCatalogo = this.canalCatalogo.temFotoEsperando(msg.de);
     const esperandoCodigo = this.canalCatalogo.temCodigoEsperando(msg.de);
     const esperandoConsulta = this.canalCatalogo.esperandoConsulta(msg.de);
+    const fotoComFalha = this.canalCatalogo.temFotoComFalha(msg.de);
     if (
       esperandoCatalogo ||
       esperandoCodigo ||
       esperandoConsulta ||
+      fotoComFalha ||
       this.canalCatalogo.temFotoEmAprovacao(msg.de) ||
       this.canalCatalogo.conversaAberta(msg.de)
     ) {
@@ -183,6 +185,18 @@ export class RotearMensagemInternaUseCase {
               textoResolvido,
             );
             if (ficha) return ficha;
+          }
+
+          // "TENTA DE NOVO" — a foto que a IA nao tratou. So o comando exato
+          // age; qualquer outro texto segue o fluxo. Antes do codigo porque a
+          // frase nunca e codigo, e antes da aprovacao porque ela e curta e
+          // levaria a dica "nao entendi se e sobre a foto".
+          if (fotoComFalha) {
+            const refeita = await this.canalCatalogo.tentarDeNovo(
+              msg.de,
+              textoResolvido,
+            );
+            if (refeita) return refeita;
           }
 
           // O CODIGO ANTES DA APROVACAO: "BR26252" nao e veredito, e sem esta
@@ -353,10 +367,20 @@ export class RotearMensagemInternaUseCase {
     // la em cima — responder o catalogo, mandar o codigo, aprovar, buscar a
     // peca. Aqui chega o que sobrou, e a resposta e dizer o que este canal faz
     // — ou, se a pessoa disse que quer mandar foto, abrir a conversa.
+    //
+    // A CONSULTA ANTES DA LISTA DE CATALOGOS — 16/09/2026. O Lucas escreveu
+    // "consultar peça" com o menu ja vencido e recebeu os catalogos abertos. A
+    // lista so e a resposta quando o texto nao pede NADA que o canal saiba
+    // fazer. Foto vem antes: "vou mandar a foto da peça" fala de peca, mas e
+    // envio.
     if (doCatalogo) {
-      return this.canalCatalogo.falaDeMandarFoto(texto)
-        ? this.canalCatalogo.intencao(msg.de, texto)
-        : this.canalCatalogo.conversa(msg.de, doCatalogo.nome ?? '');
+      if (this.canalCatalogo.falaDeMandarFoto(texto)) {
+        return this.canalCatalogo.intencao(msg.de, texto);
+      }
+      if (this.canalCatalogo.falaDeConsultar(texto)) {
+        return this.canalCatalogo.consultarAgora(msg.de, texto);
+      }
+      return this.canalCatalogo.conversa(msg.de, doCatalogo.nome ?? '');
     }
 
     // ---------------------------------------------------------------------

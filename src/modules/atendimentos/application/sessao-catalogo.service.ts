@@ -99,6 +99,13 @@ export interface CodigoEsperado {
   aprovada?: boolean;
 }
 
+/** A foto cujo tratamento falhou, e o pedido de estilo que veio com ela. */
+export interface FotoComFalha {
+  fotoId: string;
+  pedido: string | null;
+  em: number;
+}
+
 /** O codigo mandado antes da foto, com o que veio junto dele. */
 export interface CodigoAdiantado {
   codigoErp: string;
@@ -189,6 +196,8 @@ export class SessaoCatalogoService {
    * nao abrir conversa de catalogo — ver o bloco da consulta.
    */
   private readonly consultas = new Map<string, number>();
+  /** A foto cujo tratamento falhou, esperando o "tenta de novo". */
+  private readonly falhas = new Map<string, FotoComFalha>();
 
   /** Catalogo lembrado da ultima vez, se ainda dentro da janela. */
   catalogoAtual(
@@ -375,9 +384,44 @@ export class SessaoCatalogoService {
     return true;
   }
 
-  /** A consulta acabou — respondida ou nao. Vale para UMA mensagem. */
+  /**
+   * A consulta acabou. Quem chama rearma com `esperarConsulta` quando a
+   * resposta pede outra tentativa (peca nao achada).
+   */
   esquecerConsulta(chave: string): void {
     this.consultas.delete(chave);
+  }
+
+  // ---------------------------------------------------------------------------
+  // A foto que a IA nao tratou — desde 16/09/2026.
+  //
+  // Os creditos da OpenAI acabaram no meio de um teste, e a foto ficou
+  // RECEBIDA: fora da fila de aprovacao, fora do painel, e a mensagem dizia
+  // "da para tentar de novo" sem existir como. Aqui fica qual foto e, para o
+  // "tenta de novo" refaze-la sem a pessoa mandar outra.
+  //
+  // FORA DA SESSAO, pelo mesmo motivo da consulta: lembrar a falha nao pode
+  // abrir conversa de catalogo. E SO A ULTIMA — a que ela acabou de ver falhar.
+  // ---------------------------------------------------------------------------
+
+  /** O tratamento desta foto falhou; guardo para o "tenta de novo". */
+  marcarFalha(chave: string, fotoId: string, pedido: string | null): void {
+    this.falhas.set(chave, { fotoId, pedido, em: Date.now() });
+  }
+
+  /** A foto que falhou por ultimo, se ainda dentro da janela. */
+  fotoComFalha(chave: string): FotoComFalha | null {
+    const f = this.falhas.get(chave);
+    if (!f) return null;
+    if (Date.now() - f.em > JANELA_MS) {
+      this.falhas.delete(chave);
+      return null;
+    }
+    return f;
+  }
+
+  esquecerFalha(chave: string): void {
+    this.falhas.delete(chave);
   }
 
   /** Guarda o codigo que chegou antes da foto. Substitui o anterior. */

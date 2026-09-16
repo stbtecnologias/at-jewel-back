@@ -110,6 +110,16 @@ const RE_NUMERO = /#?\b(\d{1,6})\b/;
 const RE_TIPO_PECA =
   /\b(anel|aneis|alianca|aliancas|brinco|brincos|colar|colares|corrente|correntes|gargantilha|gargantilhas|pingente|pingentes|pulseira|pulseiras|bracelete|braceletes|tornozeleira|tornozeleiras|berloque|berloques|broche|broches|piercing|piercings|relogio|relogios|joia|joias|peca|pecas|conjunto|conjuntos)\b/;
 
+/**
+ * O comando que refaz a foto que a IA nao tratou — e como a mensagem o cita.
+ *
+ * FRASE INTEIRA, e nao "de novo" solto no meio: "manda de novo o relatorio"
+ * nao pode refazer foto nenhuma. Aceita as variacoes de quem digita rapido.
+ */
+const TENTA_DE_NOVO = 'tenta de novo';
+const RE_TENTA_DE_NOVO =
+  /^(pode )?(tenta|tente|tentar|tentando|refaz|refazer|faz|faca|trata|tratar) ?(de novo|novamente|outra vez|denovo)( por favor| pf| pfv)?$|^(de novo|denovo|novamente)$/;
+
 /** `2`, `#2` — o numero da opcao na lista que eu acabei de mostrar. */
 const RE_ESCOLHA = /^#?(\d{1,2})\b/;
 
@@ -473,6 +483,56 @@ const RE_FALA_ENVIO =
   /\b(mandar|mando|manda|enviar|envio|envia|adicionar|adiciono|colocar|coloco|botar|subir|incluir)\b/;
 
 /**
+ * ===========================================================================
+ * "CONSULTAR PEÇA" — O PEDIDO DE CONSULTA SEM O MENU.
+ *
+ * Em 16/09/2026 o Lucas escreveu "consultar peça" pelo WhatsApp, com o perfil
+ * de catalogo, e recebeu a lista de catalogos abertos. O menu tinha expirado e
+ * o texto caiu no chao do canal. O proprio menu promete "ou me diz o que
+ * precisa" — e a frase mais obvia nao era entendida.
+ *
+ * POR PALAVRA, SEM LLM, pelo mesmo motivo da intencao de foto: e classificar
+ * uma frase, e a garantia tem de ser de codigo, nao de um modelo acertar.
+ * ===========================================================================
+ */
+const RE_FALA_CONSULTA =
+  /\b(consultar|consulta|consulto|pesquisar|pesquisa|procurar|procuro|buscar|busca|preco|precos|valor|quanto|custa)\b/;
+
+/**
+ * Palavras do PEDIDO, e nao da peca — saem antes de procurar.
+ *
+ * A busca exige TODAS as palavras (`palavrasDaBusca`, no repositorio de
+ * produtos). "Quero o anel de diamante" procuraria tambem "quero", e nenhuma
+ * etiqueta tem "quero": a busca voltaria vazia por causa do verbo.
+ *
+ * As de ate dois caracteres ("o", "de") nao precisam estar aqui — o
+ * repositorio ja as descarta.
+ */
+const PALAVRAS_DO_PEDIDO = new Set([
+  'quero', 'queria', 'gostaria', 'preciso', 'poderia', 'pode', 'consegue',
+  'consultar', 'consulta', 'consulto', 'pesquisar', 'pesquisa', 'procurar',
+  'procuro', 'buscar', 'busca', 'ver', 'saber', 'mostra', 'mostrar',
+  'peca', 'pecas', 'preco', 'precos', 'valor', 'quanto', 'custa', 'custo',
+  'tem', 'qual', 'quais', 'sobre', 'essa', 'esse', 'esta', 'este', 'uma',
+  'umas', 'uns', 'dos', 'das', 'para', 'pra', 'por', 'favor', 'aqui', 'ajuda',
+  'voce', 'mim',
+]);
+
+/**
+ * O que sobra do texto para procurar: sem as palavras do pedido e sem
+ * pontuacao. Devolve o texto CRU nas palavras que ficam — `normalizar` tira
+ * acento, e "alianca" nao casa com "ALIANÇA" no ILIKE.
+ */
+function termoDaConsulta(texto: string): string {
+  return texto
+    .trim()
+    .split(/\s+/)
+    .map((p) => p.replace(/[?!.,;:"'()]+/g, ''))
+    .filter((p) => p && !PALAVRAS_DO_PEDIDO.has(normalizar(p)))
+    .join(' ');
+}
+
+/**
  * A imagem como a APLICACAO a conhece. Espelha o que o webhook extrai, mas
  * declarada aqui: o mesmo criterio do audio — a camada de aplicacao nao
  * importa tipo da infra, senao trocar de provedor de WhatsApp mexeria nos
@@ -573,6 +633,13 @@ export class ProcessarFotoCatalogoUseCase {
     try {
       const r = await this.tratar.execute(fotoId, pedidoDeEstilo);
       if (!r) return;
+
+      // A IA NAO TRATOU: a foto voltou a RECEBIDA. Lembro qual foi, para o
+      // "tenta de novo" refaze-la — sem isso ela ficava fora da aprovacao e
+      // do painel, e o unico jeito era mandar outra. Ver `tentarDeNovo`.
+      if (r.foto.status === 'RECEBIDA') {
+        this.sessao.marcarFalha(chat, fotoId, pedidoDeEstilo);
+      }
 
       if (r.recado) {
         await this.whatsapp.enviarTexto(chat, r.recado);
@@ -1065,6 +1132,26 @@ export class ProcessarFotoCatalogoUseCase {
       // foi. E o vocabulario fechado continua protegendo o "quanto vendi
       // hoje?" — ele tem ponto de interrogacao.
       // ========================================================================
+      // A DESCRIÇÃO DA PEÇA NÃO É RESPOSTA DE APROVAÇÃO — 16/09/2026.
+      //
+      // Com a foto esperando código, eu mesmo pedi "descreve ela ('anel de
+      // esmeralda')". A resposta "Anel de esmeralda" é curta e sem "?", e caía
+      // aqui na dica "não entendi se é sobre a foto" — que, dada uma vez, só
+      // deixava a SEGUNDA tentativa chegar na busca. Devolver `null` deixa o
+      // roteador seguir para `buscarPeca`, que é quem responde isso.
+      //
+      // E A RESPOSTA À LISTA TAMBÉM NÃO É: no mesmo teste, "colar de
+      // esmeralda" trouxe as 6 opções e o "2" levou a dica. Com a lista na
+      // tela, qualquer texto é assunto da escolha — inclusive o número fora
+      // dela, que `buscarPeca` responde.
+      if (
+        this.sessao.codigoPendente(de) &&
+        (this.sessao.escolhaPendente(de) ||
+          RE_TIPO_PECA.test(normalizar(texto)))
+      ) {
+        return null;
+      }
+
       const alvo = vistas[0];
       if (alvo && ehRespostaCurta(texto) && this.sessao.darDica(de, alvo.id)) {
         return {
@@ -1158,10 +1245,22 @@ export class ProcessarFotoCatalogoUseCase {
     const semCodigo = alvos.filter((f) => !f.codigoErp);
     if (semCodigo.length > 0) {
       // Marca a primeira, para o código que vier em seguida encontrá-la.
+      //
+      // O RÓTULO É O DO CATÁLOGO, e não "essa foto" — 16/09/2026. A
+      // confirmação do código abre com ele ("#0004 Holiday", e a peça embaixo);
+      // com o texto fixo a mensagem saiu começando por um "essa foto" solto.
+      // Se a foto já esperava código, o rótulo que ela tinha continua valendo.
+      const primeira = semCodigo[0];
+      const jaEsperava = this.sessao.codigoPendente(de);
+      let rotulo = jaEsperava?.fotoId === primeira.id ? jaEsperava.alvo : null;
+      if (!rotulo) {
+        const catalogo = await this.catalogos.buscarPorId(primeira.catalogoId);
+        rotulo = catalogo ? `#${catalogo.numero} ${catalogo.nome}` : 'o catálogo';
+      }
       this.sessao.esperarCodigo(
         de,
-        semCodigo[0].id,
-        'essa foto',
+        primeira.id,
+        rotulo,
         semCodigo.length === 1 && alvos.length === 1,
       );
       return {
@@ -1202,6 +1301,42 @@ export class ProcessarFotoCatalogoUseCase {
    */
   temFotoEmAprovacao(de: string): boolean {
     return this.sessao.temEmAprovacao(de);
+  }
+
+  /** A IA falhou numa foto desta pessoa, e o "tenta de novo" ainda vale? */
+  temFotoComFalha(de: string): boolean {
+    return this.sessao.fotoComFalha(de) !== null;
+  }
+
+  /**
+   * "tenta de novo" — refaz a foto que a IA nao tratou. 16/09/2026.
+   *
+   * A MESMA FOTO, A PARTIR DO ORIGINAL: nada de a pessoa mandar outra e a
+   * primeira ficar abandonada no banco e no bucket. O pedido de estilo que
+   * veio com ela vai junto.
+   *
+   * CONFERE O BANCO ANTES: a lembranca e da memoria, e a foto pode ter sido
+   * descartada ou tratada por outro caminho no meio. So refaz o que ainda esta
+   * RECEBIDA. Devolve `null` quando o texto nao e o comando — segue o fluxo.
+   */
+  async tentarDeNovo(de: string, texto: string): Promise<RespostaFoto | null> {
+    const falha = this.sessao.fotoComFalha(de);
+    if (!falha || !RE_TENTA_DE_NOVO.test(normalizar(texto))) return null;
+
+    this.sessao.esquecerFalha(de);
+    const foto = await this.catalogos.buscarFotoPorId(falha.fotoId);
+    if (!foto || foto.status !== 'RECEBIDA') {
+      return {
+        resposta: 'Essa foto já não está esperando — manda de novo se ainda precisar.',
+        motivo: 'refazer_sem_foto',
+      };
+    }
+
+    void this.tratarEAvisar(foto.id, falha.pedido, de);
+    return {
+      resposta: 'Tentando de novo — te mando em instantes.',
+      motivo: 'foto_refazendo',
+    };
   }
 
   /**
@@ -1268,9 +1403,15 @@ export class ProcessarFotoCatalogoUseCase {
    * outra metade de "quanto custa?".
    * ==========================================================================
    *
-   * VALE PARA UMA MENSAGEM. Respondida ou nao, a espera acaba: a frase
-   * seguinte volta a ser do canal de sempre. Sem isso, um "obrigado" depois
-   * da consulta viraria termo de busca.
+   * RESPONDIDA, A ESPERA ACABA: a frase seguinte volta a ser do canal de
+   * sempre. Sem isso, um "obrigado" depois da consulta viraria termo de busca.
+   *
+   * SEM RESULTADO, A ESPERA CONTINUA. A resposta pede outra tentativa — "tenta
+   * com outras palavras" —, entao a proxima mensagem TEM de ser reconhecida
+   * como a tentativa. Ate 16/09/2026 a espera era apagada antes da busca nos
+   * dois casos: o Lucas pediu a consulta, errou o nome, mandou outro e recebeu
+   * a lista de catalogos. Nao crie uma pergunta que voce nao sabe responder.
+   * Nao vira laco: a espera tem validade propria (`JANELA_MS`).
    *
    * DEVOLVE `null` quando ninguem pediu consulta — mesmo contrato de
    * `codigo`, `aprovacao` e `buscarPeca` com o roteador.
@@ -1279,12 +1420,13 @@ export class ProcessarFotoCatalogoUseCase {
     if (!this.sessao.consultaPendente(de)) return null;
     this.sessao.esquecerConsulta(de);
 
-    const termo = texto.trim();
-    const codigo = termo.match(RE_CODIGO)?.[1]?.toUpperCase();
+    const codigo = texto.match(RE_CODIGO)?.[1]?.toUpperCase();
 
     if (codigo) {
       const produto = await this.produtos.findByCodigoErp(codigo);
       if (!produto) {
+        // Pedi outra tentativa: a proxima mensagem tem de ser reconhecida.
+        this.sessao.esperarConsulta(de);
         return {
           resposta:
             `Não achei a peça ${codigo} no catálogo. Confere o código — ou ` +
@@ -1304,8 +1446,15 @@ export class ProcessarFotoCatalogoUseCase {
       };
     }
 
+    // "Consultar peça", "quero ver o preço": pedido sem a peca. Pergunto qual
+    // — e `pedirConsulta` rearma a espera.
+    const termo = termoDaConsulta(texto);
+    if (!termo) return this.pedirConsulta(de);
+
     const achadas = await this.procurar(termo);
     if (achadas.length === 0) {
+      // Pedi outra tentativa: a proxima mensagem tem de ser reconhecida.
+      this.sessao.esperarConsulta(de);
       return {
         resposta:
           `Não achei nenhuma peça com "${termo}". Tenta com outras palavras — ` +
@@ -1360,6 +1509,38 @@ export class ProcessarFotoCatalogoUseCase {
       RE_FALA_FOTO.test(n) &&
       (RE_FALA_CATALOGO.test(n) || RE_FALA_ENVIO.test(n))
     );
+  }
+
+  /**
+   * O texto pede uma consulta de peca? Ver `RE_FALA_CONSULTA`. So memoria.
+   *
+   * Tres sinais, qualquer um basta: um verbo de consulta ("consultar",
+   * "quanto custa"), o nome de um tipo de peca ("anel de diamante", "peça") ou
+   * um codigo ("BR26252").
+   *
+   * FOTO VENCE. "Vou mandar a foto da peça" fala de peca, mas e o outro
+   * caminho — por isso o roteador pergunta `falaDeMandarFoto` antes, e esta
+   * funcao tambem recusa quando o texto fala de foto.
+   */
+  falaDeConsultar(texto: string): boolean {
+    const n = normalizar(texto);
+    if (RE_FALA_FOTO.test(n)) return false;
+    return (
+      RE_FALA_CONSULTA.test(n) || RE_TIPO_PECA.test(n) || RE_CODIGO.test(texto)
+    );
+  }
+
+  /**
+   * A consulta aberta pelo TEXTO, sem ter passado pelo menu.
+   *
+   * "Consultar peça" pergunta qual; "quanto custa o anel de diamante?" ja
+   * procura. Mesmo caminho de `consulta` — a espera e armada aqui so para
+   * atravessar a porta dela, e as regras de rearmar e acabar valem iguais.
+   */
+  async consultarAgora(de: string, texto: string): Promise<RespostaFoto> {
+    this.sessao.esperarConsulta(de);
+    // Com a espera armada, `consulta` nunca devolve null.
+    return (await this.consulta(de, texto)) as RespostaFoto;
   }
 
   /**
@@ -1869,7 +2050,15 @@ export class ProcessarFotoCatalogoUseCase {
         aprovadoEm: new Date(),
       });
     }
-    const fecho = publicar ? '\nAprovada — já está no catálogo.' : '';
+    // O CODIGO DA FOTO QUE A IA NAO TRATOU — 16/09/2026. Ele fica anotado nela
+    // (e a foto certa: e a que a pessoa mandou), mas a foto nao anda sozinha.
+    // Sem este aviso, quem mandou o codigo achava que a peca ja estava a
+    // caminho do catalogo.
+    const fecho = publicar
+      ? '\nAprovada — já está no catálogo.'
+      : anotada?.status === 'RECEBIDA' && this.sessao.fotoComFalha(de)
+        ? `\nA foto ainda não foi tratada — responde "${TENTA_DE_NOVO}" que eu refaço.`
+        : '';
 
     if (!descricao) {
       return {

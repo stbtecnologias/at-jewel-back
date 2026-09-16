@@ -279,6 +279,7 @@ describe('ProcessarFotoCatalogoUseCase — aprovacao da foto tratada', () => {
     listarEmAprovacao: jest.Mock;
     atualizarFoto: jest.Mock;
     removerFoto: jest.Mock;
+    buscarPorId: jest.Mock;
   };
   let armazenamento: { remover: jest.Mock };
   let produtos: {
@@ -296,6 +297,9 @@ describe('ProcessarFotoCatalogoUseCase — aprovacao da foto tratada', () => {
         .mockResolvedValue([FOTO('f-1', 'BR26252'), FOTO('f-2', 'CO26185')]),
       atualizarFoto: jest.fn().mockResolvedValue(undefined),
       removerFoto: jest.fn().mockResolvedValue(undefined),
+      buscarPorId: jest
+        .fn()
+        .mockResolvedValue({ numero: '0002', nome: 'Catálogo Rosa Pink' }),
     };
     armazenamento = { remover: jest.fn().mockResolvedValue(undefined) };
     produtos = {
@@ -881,6 +885,7 @@ describe('ProcessarFotoCatalogoUseCase — em qualquer ordem (o print do Yerlon)
     listarEmAprovacao: jest.Mock;
     atualizarFoto: jest.Mock;
     removerFoto: jest.Mock;
+    buscarPorId: jest.Mock;
   };
   let armazenamento: { remover: jest.Mock; ler: jest.Mock };
   let produtos: {
@@ -889,15 +894,20 @@ describe('ProcessarFotoCatalogoUseCase — em qualquer ordem (o print do Yerlon)
   };
   let whatsapp: { enviarTexto: jest.Mock; enviarImagem: jest.Mock };
   let tratar: { execute: jest.Mock };
+  let listar: { execute: jest.Mock };
   let sessao: SessaoCatalogoService;
   let useCase: ProcessarFotoCatalogoUseCase;
 
   beforeEach(() => {
+    listar = { execute: jest.fn().mockResolvedValue([]) };
     catalogos = {
       listarAbertos: jest.fn().mockResolvedValue(ABERTOS),
       listarEmAprovacao: jest.fn().mockResolvedValue([FOTO('f-1', 'AN24435')]),
       atualizarFoto: jest.fn().mockResolvedValue({ status: 'EM_APROVACAO' }),
       removerFoto: jest.fn().mockResolvedValue(undefined),
+      buscarPorId: jest
+        .fn()
+        .mockResolvedValue({ numero: '0004', nome: 'Holiday' }),
     };
     armazenamento = {
       remover: jest.fn().mockResolvedValue(undefined),
@@ -926,7 +936,7 @@ describe('ProcessarFotoCatalogoUseCase — em qualquer ordem (o print do Yerlon)
       whatsapp as never,
       sessao,
       tratar as never,
-      { execute: jest.fn().mockResolvedValue([]) } as never,
+      listar as never,
       CONFERENCIA_NULA,
     );
   });
@@ -1139,6 +1149,136 @@ describe('ProcessarFotoCatalogoUseCase — em qualquer ordem (o print do Yerlon)
       'f-1',
       expect.objectContaining({ status: 'APROVADA', aprovadoPor: QUEM }),
     );
+  });
+
+  // -------------------------------------------------------------------------
+  // A foto que a IA nao tratou — 16/09/2026, os creditos da OpenAI acabaram
+  // -------------------------------------------------------------------------
+
+  describe('"tenta de novo"', () => {
+    const tratarEAvisar = (fotoId: string, pedido: string | null) =>
+      (
+        useCase as unknown as {
+          tratarEAvisar(f: string, p: string | null, c: string): Promise<void>;
+        }
+      ).tratarEAvisar(fotoId, pedido, DE);
+
+    let buscarFotoPorId: jest.Mock;
+
+    beforeEach(() => {
+      buscarFotoPorId = jest
+        .fn()
+        .mockResolvedValue({ id: 'f-9', status: 'RECEBIDA' });
+      (catalogos as unknown as { buscarFotoPorId: jest.Mock }).buscarFotoPorId =
+        buscarFotoPorId;
+    });
+
+    async function falhar() {
+      tratar.execute.mockResolvedValueOnce({
+        foto: { id: 'f-9', status: 'RECEBIDA' },
+        recado: 'Não consegui tratar essa imagem agora.',
+      });
+      await tratarEAvisar('f-9', 'fundo rosa');
+    }
+
+    it('a falha e lembrada, e o comando refaz A MESMA foto com o mesmo pedido', async () => {
+      await falhar();
+      expect(whatsapp.enviarTexto).toHaveBeenCalledWith(
+        DE,
+        'Não consegui tratar essa imagem agora.',
+      );
+      expect(useCase.temFotoComFalha(DE)).toBe(true);
+
+      tratar.execute.mockResolvedValue(null);
+      const r = await useCase.tentarDeNovo(DE, 'Tenta de novo');
+
+      expect(r?.motivo).toBe('foto_refazendo');
+      expect(tratar.execute).toHaveBeenLastCalledWith('f-9', 'fundo rosa');
+      expect(useCase.temFotoComFalha(DE)).toBe(false);
+    });
+
+    it.each(['tenta de novo', 'Tente novamente', 'refaz de novo', 'de novo'])(
+      'aceita "%s"',
+      async (texto) => {
+        await falhar();
+        tratar.execute.mockResolvedValue(null);
+        expect((await useCase.tentarDeNovo(DE, texto))?.motivo).toBe(
+          'foto_refazendo',
+        );
+      },
+    );
+
+    it('frase que so contem "de novo" NAO refaz foto', async () => {
+      await falhar();
+
+      expect(
+        await useCase.tentarDeNovo(DE, 'manda de novo o relatorio'),
+      ).toBeNull();
+      expect(useCase.temFotoComFalha(DE)).toBe(true);
+    });
+
+    it('foto que ja saiu de RECEBIDA nao e refeita', async () => {
+      await falhar();
+      buscarFotoPorId.mockResolvedValue({ id: 'f-9', status: 'REPROVADA' });
+      tratar.execute.mockClear();
+
+      const r = await useCase.tentarDeNovo(DE, 'tenta de novo');
+
+      expect(r?.motivo).toBe('refazer_sem_foto');
+      expect(tratar.execute).not.toHaveBeenCalled();
+    });
+
+    it('sem falha lembrada, o comando nao e comigo', async () => {
+      expect(await useCase.tentarDeNovo(DE, 'tenta de novo')).toBeNull();
+    });
+
+    it('o codigo da foto que falhou fica anotado — e a resposta diz como refazer', async () => {
+      await falhar();
+      sessao.esperarCodigo(DE, 'f-9', '#0004 Holiday');
+      catalogos.atualizarFoto.mockResolvedValue({ status: 'RECEBIDA' });
+
+      const r = await useCase.codigo(DE, 'AN24435', QUEM);
+
+      expect(r?.motivo).toBe('codigo_anotado');
+      expect(r?.resposta).toContain('#0004 Holiday');
+      expect(r?.resposta).toContain('tenta de novo');
+      expect(aprovou()).toBe(false);
+    });
+  });
+
+  // O teste do Lucas em 16/09/2026, pelo WhatsApp local: foto sem codigo,
+  // "Aprovo", "Anel de esmeralda" — e veio "Nao entendi se e sobre a foto".
+  // So a SEGUNDA descricao chegou na busca; e a confirmacao final abriu com
+  // um "essa foto" solto.
+  it('"aprovo" sem codigo e a DESCRICAO em seguida: vai direto para a busca', async () => {
+    catalogos.listarEmAprovacao.mockResolvedValue([FOTO('f-1', null)]);
+    sessao.marcarEnviada(DE, 'f-1');
+    listar.execute.mockResolvedValue([
+      {
+        codigoErp: 'AN24429',
+        descricaoEtiqueta: 'ANEL ESMERALDA OVAL OB 18K',
+        valorVenda: 38223,
+        familia: 'ANEL',
+        categoria: 'JOIA',
+      },
+    ]);
+
+    const aprovo = await useCase.aprovacao(DE, QUEM, 'Aprovo');
+    expect(aprovo?.motivo).toBe('aprovacao_sem_codigo');
+
+    // A descricao NAO e resposta de aprovacao: o roteador segue para a busca.
+    expect(await useCase.aprovacao(DE, QUEM, 'Anel de esmeralda')).toBeNull();
+    const lista = await useCase.buscarPeca(DE, 'Anel de esmeralda', QUEM);
+    expect(lista?.motivo).toBe('busca_com_opcoes');
+
+    // O "2" do segundo teste: com a lista na tela, o numero tambem nao e
+    // resposta de aprovacao — e levava a dica.
+    expect(await useCase.aprovacao(DE, QUEM, '1')).toBeNull();
+    const escolhida = await useCase.buscarPeca(DE, '1', QUEM);
+    expect(escolhida?.motivo).toBe('foto_aprovada');
+    // Abre com o CATALOGO, e nao com "essa foto".
+    expect(escolhida?.resposta).toMatch(/^#0004 Holiday\nAN24429/);
+    expect(escolhida?.resposta).not.toContain('essa foto');
   });
 
   it('se ela mandou refazer no meio, o codigo NAO publica a imagem nova', async () => {
@@ -1467,12 +1607,119 @@ describe('ProcessarFotoCatalogoUseCase — consultar uma peca', () => {
     expect(r?.resposta).toContain('XX99999');
   });
 
-  it('a consulta vale para UMA mensagem: o "obrigado" seguinte nao e busca', async () => {
-    useCase.pedirConsulta(DE);
-    await useCase.consulta(DE, 'anel');
+  it('RESPONDIDA, a consulta acaba: o "obrigado" seguinte nao e busca', async () => {
+    // Ate 16/09/2026 este teste usava uma busca SEM resultado (o mock devolve
+    // [] por padrao) — e assim travava o defeito: depois de um "nao achei" a
+    // espera sumia. A regra e sobre a consulta RESPONDIDA, entao a busca aqui
+    // tem de achar.
+    listar.execute.mockResolvedValue([
+      {
+        codigoErp: 'CB384',
+        descricaoEtiqueta: 'ANEL ESMERALDA OB 18K',
+        valorVenda: 15900,
+        familia: 'ANEL',
+        categoria: 'JOIA',
+      },
+    ]);
 
+    useCase.pedirConsulta(DE);
+    const r = await useCase.consulta(DE, 'anel');
+
+    expect(r?.motivo).toBe('consulta_por_descricao');
     expect(useCase.esperandoConsulta(DE)).toBe(false);
     expect(await useCase.consulta(DE, 'obrigado')).toBeNull();
+  });
+
+  // O caso real de 16/09/2026, pelo WhatsApp: "2", "Anel de diamente" (com o
+  // erro), "anel de esmeralda" — e a segunda tentativa voltava a lista de
+  // catalogos, porque a espera tinha sido apagada no "nao achei".
+  it('SEM RESULTADO na descricao, a proxima mensagem ainda e a consulta', async () => {
+    useCase.pedirConsulta(DE);
+    const primeira = await useCase.consulta(DE, 'Anel de diamente');
+    expect(primeira?.motivo).toBe('consulta_sem_resultado');
+
+    // A resposta pediu outra tentativa — entao a espera tem de continuar.
+    expect(useCase.esperandoConsulta(DE)).toBe(true);
+
+    listar.execute.mockResolvedValue([
+      {
+        codigoErp: 'AN100',
+        descricaoEtiqueta: 'ANEL DIAMANTE OB 18K',
+        valorVenda: 9800,
+        familia: 'ANEL',
+        categoria: 'JOIA',
+      },
+    ]);
+    const segunda = await useCase.consulta(DE, 'anel de diamante');
+
+    expect(segunda?.motivo).toBe('consulta_por_descricao');
+    expect(segunda?.resposta).toContain('AN100');
+    // E depois de achar, acaba.
+    expect(useCase.esperandoConsulta(DE)).toBe(false);
+  });
+
+  it('SEM RESULTADO no codigo, a proxima mensagem ainda e a consulta', async () => {
+    useCase.pedirConsulta(DE);
+    const primeira = await useCase.consulta(DE, 'XX99999');
+    expect(primeira?.motivo).toBe('consulta_sem_resultado');
+    // "Confere o codigo — ou me manda o nome dela": o convite pede resposta.
+    expect(useCase.esperandoConsulta(DE)).toBe(true);
+
+    produtos.findByCodigoErp.mockResolvedValue({
+      codigoErp: 'BR26252',
+      descricaoEtiqueta: 'BRINCO ESMERALDA OB 18K',
+      valorVenda: 7490.37,
+      estoqueAtual: 3,
+      familia: 'BRINCO',
+      categoria: 'JOIA',
+    });
+    const segunda = await useCase.consulta(DE, 'BR26252');
+
+    expect(segunda?.motivo).toBe('consulta_por_codigo');
+    expect(useCase.esperandoConsulta(DE)).toBe(false);
+  });
+
+  describe('falaDeConsultar — o pedido sem o menu (16/09/2026)', () => {
+    it.each([
+      ['consultar peça'],
+      ['Consultar Peça?'],
+      ['quanto custa o BR26252'],
+      ['qual o preço do anel de diamante'],
+      ['anel de diamante'],
+      ['BR26252'],
+      ['preciso de uma ajuda com uma peça aqui'],
+    ])('"%s" e pedido de consulta', (texto) => {
+      expect(useCase.falaDeConsultar(texto)).toBe(true);
+    });
+
+    it.each([
+      ['vou mandar a foto da peça'], // foto vence: e envio
+      ['obrigado'],
+      ['quais catálogos estão abertos?'],
+      ['bom trabalho a todos'],
+    ])('"%s" NAO e pedido de consulta', (texto) => {
+      expect(useCase.falaDeConsultar(texto)).toBe(false);
+    });
+  });
+
+  it('pedido sem a peca ("consultar peça") pergunta qual, sem procurar', async () => {
+    const r = await useCase.consultarAgora(DE, 'consultar peça');
+
+    expect(r.motivo).toBe('catalogo_consulta_pedida');
+    expect(listar.execute).not.toHaveBeenCalled();
+    expect(useCase.esperandoConsulta(DE)).toBe(true);
+  });
+
+  it('as palavras do pedido saem antes de procurar; as da peca ficam cruas', async () => {
+    useCase.pedirConsulta(DE);
+    await useCase.consulta(DE, 'quero ver o preço da Aliança de ouro?');
+
+    const busca = listar.execute.mock.calls[0][0].busca as string;
+    expect(busca).not.toMatch(/quero|ver|preço|\?/i);
+    // COM acento: `normalizar` decide o que sai, mas o que fica vai cru —
+    // "alianca" nao casaria com "ALIANÇA" no ILIKE.
+    expect(busca).toContain('Aliança');
+    expect(busca).toContain('ouro');
   });
 
   it('pedir consulta NAO abre conversa de catalogo', () => {
