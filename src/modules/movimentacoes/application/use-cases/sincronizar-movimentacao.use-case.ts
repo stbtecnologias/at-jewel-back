@@ -6,7 +6,11 @@ import { MovimentacaoPagamento } from '../../domain/entities/movimentacao-pagame
 import { Movimentacao } from '../../domain/entities/movimentacao.entity';
 import { MOVIMENTACAO_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { IMovimentacaoRepository } from '../../domain/ports/repositories/movimentacao-repository.port';
-import { ResolverReferenciasErpService } from '../resolver-referencias-erp.service';
+import {
+  Entidade,
+  Referencia,
+  ResolverReferenciasErpService,
+} from '../resolver-referencias-erp.service';
 
 export interface ItemMovimentacaoInput {
   nItem: number;
@@ -45,8 +49,12 @@ export interface SincronizarMovimentacaoInput {
   idErpEntidadeDestino?: string | number | null;
   idErpVendedora?: string | number | null;
   idVendedora?: string | null;
-  /** O cliente direto, sem depender da deducao pelas duas pontas. */
-  clienteId?: string | null;
+  /**
+   * As pontas pelo NOSSO UUID — cliente, fornecedor ou empresa. Vencem os
+   * `idErpEntidade*` e a deducao por entrada/saida.
+   */
+  idEntidadeOrigem?: string | null;
+  idEntidadeDestino?: string | null;
   valor: number;
   entrada?: boolean;
   saida?: boolean;
@@ -134,24 +142,29 @@ export class SincronizarMovimentacaoUseCase {
         this.referencias.vendedora(input.idErpVendedora, input.idVendedora),
       ]);
 
-    const entidadeOrigemIdErp = normalizarIdErp(input.idErpEntidadeOrigem);
-    const entidadeDestinoIdErp = normalizarIdErp(input.idErpEntidadeDestino);
+    // AS PONTAS PELO NOSSO UUID, quando vierem — 16/09/2026. Cada uma pode ser
+    // cliente, fornecedor ou empresa; o resolvedor procura nas tres e devolve o
+    // TIPO. UUID que nao existe em nenhuma e 400.
+    const [origem, destino] = await Promise.all([
+      this.referencias.entidade(input.idEntidadeOrigem),
+      this.referencias.entidade(input.idEntidadeDestino),
+    ]);
 
-    // Qual das duas pontas e o terceiro — regra do dominio, ver a entidade.
-    const candidatoCliente = Movimentacao.pontaDoTerceiro({
+    // O id do ERP da ponta vem de brinde quando so o UUID veio — a mesma regra
+    // dos outros relacionamentos: a coluna-sombra continua preenchida.
+    const brutoOrigem = normalizarIdErp(input.idErpEntidadeOrigem);
+    const brutoDestino = normalizarIdErp(input.idErpEntidadeDestino);
+    const entidadeOrigemIdErp = brutoOrigem ?? origem?.idErp ?? null;
+    const entidadeDestinoIdErp = brutoDestino ?? destino?.idErp ?? null;
+
+    const cliente = await this.clienteDaMovimentacao({
       entrada,
       saida,
-      entidadeOrigemIdErp,
-      entidadeDestinoIdErp,
+      origem,
+      destino,
+      brutoOrigem,
+      brutoDestino,
     });
-    // O `clienteId` VENCE A DEDUCAO. As duas pontas sao polimorficas — uma e a
-    // loja, a outra pode ser cliente ou fornecedor —, e um UUID solto nao diz
-    // de qual tabela e. Quem quiser mandar o nosso id manda neste campo, que
-    // ja diz; quem nao mandar continua caindo na regra de entrada/saida.
-    const cliente = await this.referencias.cliente(
-      candidatoCliente,
-      input.clienteId,
-    );
 
     const itens = await Promise.all(
       (input.itens ?? []).map(async (i) => {
@@ -203,6 +216,8 @@ export class SincronizarMovimentacaoUseCase {
       grupoDestinoIdErp: grupoDestino.idErp,
       entidadeOrigemIdErp,
       entidadeDestinoIdErp,
+      entidadeOrigemId: origem?.id ?? null,
+      entidadeDestinoId: destino?.id ?? null,
       clienteId: cliente.id,
       clienteIdErp: cliente.idErp,
       vendedoraId: vendedora.id,
@@ -217,5 +232,42 @@ export class SincronizarMovimentacaoUseCase {
 
     const { mov, criada } = await this.repo.sincronizar(movimentacao);
     return { movimentacao: mov, criada };
+  }
+
+  /**
+   * O cliente da movimentacao, pelas duas vias.
+   *
+   * 1. PELO UUID: o TIPO decide. A ponta que e cliente e o cliente — sem
+   *    depender do sentido. So se as duas forem cliente, o que nao deveria
+   *    acontecer, o sentido desempata.
+   *
+   * 2. PELO ID DO ERP, deduzindo por entrada/saida, como sempre foi — mas SO
+   *    na ponta que nao veio por UUID. Ponta que veio por UUID e nao e cliente
+   *    (fornecedor, empresa) ja respondeu: nao e. Procurar o id do ERP dela em
+   *    `clientes` gravaria o codigo de um fornecedor na coluna-sombra do
+   *    cliente.
+   */
+  private async clienteDaMovimentacao(p: {
+    entrada: boolean;
+    saida: boolean;
+    origem: Entidade | null;
+    destino: Entidade | null;
+    brutoOrigem: string | null;
+    brutoDestino: string | null;
+  }): Promise<Referencia> {
+    const o = p.origem?.tipo === 'cliente' ? p.origem : null;
+    const d = p.destino?.tipo === 'cliente' ? p.destino : null;
+    const pelasPontas = o && d ? (p.entrada && !p.saida ? o : d) : (o ?? d);
+    if (pelasPontas) {
+      return { id: pelasPontas.id, idErp: pelasPontas.idErp };
+    }
+
+    const candidato = Movimentacao.pontaDoTerceiro({
+      entrada: p.entrada,
+      saida: p.saida,
+      entidadeOrigemIdErp: p.origem ? null : p.brutoOrigem,
+      entidadeDestinoIdErp: p.destino ? null : p.brutoDestino,
+    });
+    return this.referencias.cliente(candidato);
   }
 }

@@ -12,6 +12,8 @@ import type { IEmpresaRepository } from '../../empresas/domain/ports/repositorie
 import { PRODUTO_REPOSITORY } from '../../erp/domain/ports/injection-tokens';
 import type { IProdutoRepository } from '../../erp/domain/ports/repositories/produto-repository.port';
 import { FORMA_PAGAMENTO_REPOSITORY } from '../../formas-pagamento/domain/ports/injection-tokens';
+import { FORNECEDOR_REPOSITORY } from '../../fornecedores/domain/ports/injection-tokens';
+import type { IFornecedorRepository } from '../../fornecedores/domain/ports/repositories/fornecedor-repository.port';
 import type { IFormaPagamentoRepository } from '../../formas-pagamento/domain/ports/repositories/forma-pagamento-repository.port';
 import { GRUPO_ESTOQUE_REPOSITORY } from '../../grupos-estoque/domain/ports/injection-tokens';
 import type { IGrupoEstoqueRepository } from '../../grupos-estoque/domain/ports/repositories/grupo-estoque-repository.port';
@@ -54,6 +56,16 @@ interface RegistroComIdErp {
  * achando, o mapa dele esta velho ou trocado — e gravar a movimentacao
  * apontando para o vazio seria perder o dado com cara de sucesso.
  */
+/** De que tabela e a ponta da movimentacao. */
+export type TipoEntidade = 'cliente' | 'fornecedor' | 'empresa';
+
+/** A ponta resolvida pelo nosso UUID: sempre com id, e com o tipo encontrado. */
+export interface Entidade {
+  id: string;
+  idErp: string | null;
+  tipo: TipoEntidade;
+}
+
 export class ReferenciaInexistenteError extends BadRequestException {
   constructor(
     readonly tipo: string,
@@ -112,7 +124,42 @@ export class ResolverReferenciasErpService {
     private readonly produtos: IProdutoRepository,
     @Inject(FORMA_PAGAMENTO_REPOSITORY)
     private readonly formasPagamento: IFormaPagamentoRepository,
+    @Inject(FORNECEDOR_REPOSITORY)
+    private readonly fornecedores: IFornecedorRepository,
   ) {}
+
+  /**
+   * Uma ponta da movimentacao pelo NOSSO UUID — 16/09/2026.
+   *
+   * A ponta e POLIMORFICA, entao o UUID e procurado nas tres tabelas ao mesmo
+   * tempo. UUID nao se repete entre tabelas: no maximo uma acha, e ela diz o
+   * TIPO. Nao achando em nenhuma e o mesmo erro de todo UUID desta API — o
+   * UUID e NOSSO e so pode ter saido de uma consulta a ela.
+   *
+   * Devolve `null` quando nao veio UUID: ai a ponta segue pelo id do ERP, se
+   * tiver vindo.
+   */
+  async entidade(uuid?: string | null): Promise<Entidade | null> {
+    if (!uuid) return null;
+
+    const [cliente, fornecedor, empresa] = await Promise.all([
+      this.clientes.buscarPorId(uuid),
+      this.fornecedores.buscarPorId(uuid),
+      this.empresas.buscarPorId(uuid),
+    ]);
+
+    const achados: Array<[RegistroComIdErp | null, TipoEntidade]> = [
+      [cliente, 'cliente'],
+      [fornecedor, 'fornecedor'],
+      [empresa, 'empresa'],
+    ];
+    for (const [registro, tipo] of achados) {
+      if (registro?.id) {
+        return { id: registro.id, idErp: registro.idErp ?? null, tipo };
+      }
+    }
+    throw new ReferenciaInexistenteError('entidade', uuid);
+  }
 
   async operacao(
     idErpBruto: unknown,

@@ -45,6 +45,9 @@ export interface MovimentacaoProps {
 
   entidadeOrigemIdErp?: string | null;
   entidadeDestinoIdErp?: string | null;
+  /** O NOSSO UUID da ponta — cliente, fornecedor ou empresa. Sem FK (migracao 58). */
+  entidadeOrigemId?: string | null;
+  entidadeDestinoId?: string | null;
   clienteId?: string | null;
   clienteIdErp?: string | null;
   vendedoraId?: string | null;
@@ -81,6 +84,8 @@ export class Movimentacao {
 
   readonly entidadeOrigemIdErp: string | null;
   readonly entidadeDestinoIdErp: string | null;
+  readonly entidadeOrigemId: string | null;
+  readonly entidadeDestinoId: string | null;
   readonly clienteId: string | null;
   readonly clienteIdErp: string | null;
   readonly vendedoraId: string | null;
@@ -116,6 +121,8 @@ export class Movimentacao {
 
     this.entidadeOrigemIdErp = props.entidadeOrigemIdErp ?? null;
     this.entidadeDestinoIdErp = props.entidadeDestinoIdErp ?? null;
+    this.entidadeOrigemId = props.entidadeOrigemId ?? null;
+    this.entidadeDestinoId = props.entidadeDestinoId ?? null;
     this.clienteId = props.clienteId ?? null;
     this.clienteIdErp = props.clienteIdErp ?? null;
     this.vendedoraId = props.vendedoraId ?? null;
@@ -219,6 +226,8 @@ export class Movimentacao {
       grupoOrigemId: this.grupoOrigemId,
       grupoDestinoId: this.grupoDestinoId,
       empresaId: this.empresaId,
+      entidadeOrigemId: this.entidadeOrigemId,
+      entidadeDestinoId: this.entidadeDestinoId,
       totalDosItens: this.totalDosItens,
       totalDosPagamentos: this.totalDosPagamentos,
       itens: this.itens.map((i) => i.toPublic()),

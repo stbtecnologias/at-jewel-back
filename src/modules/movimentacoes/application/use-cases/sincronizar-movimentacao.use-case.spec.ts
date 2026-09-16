@@ -37,6 +37,7 @@ function resolverQueNaoAcha(): ResolverReferenciasErpService {
     vendedora: nada,
     produto: nada,
     formaPagamento: nada,
+    entidade: jest.fn(async () => null),
   } as unknown as ResolverReferenciasErpService;
 }
 
@@ -53,6 +54,7 @@ function resolverQueAcha(id: string): ResolverReferenciasErpService {
     vendedora: acha,
     produto: acha,
     formaPagamento: acha,
+    entidade: jest.fn(async () => null),
   } as unknown as ResolverReferenciasErpService;
 }
 
@@ -269,5 +271,157 @@ describe('SincronizarMovimentacaoUseCase', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(repo.sincronizar).not.toHaveBeenCalled();
     });
+  });
+});
+
+/**
+ * AS PONTAS PELO NOSSO UUID — 16/09/2026.
+ *
+ * `clienteId` saiu; entram `idEntidadeOrigem` e `idEntidadeDestino`. Cada ponta
+ * pode ser cliente, fornecedor ou empresa, e o TIPO encontrado — nao o sentido
+ * — diz qual e o cliente.
+ */
+describe('SincronizarMovimentacaoUseCase — as pontas pelo nosso UUID', () => {
+  const EMPRESA = { id: 'emp-uuid', idErp: '9000000018', tipo: 'empresa' };
+  const CLIENTE = { id: 'cli-uuid', idErp: '2397', tipo: 'cliente' };
+  const FORNECEDOR = { id: 'forn-uuid', idErp: '555', tipo: 'fornecedor' };
+  const CADASTRO: Record<string, unknown> = {
+    'emp-uuid': EMPRESA,
+    'cli-uuid': CLIENTE,
+    'forn-uuid': FORNECEDOR,
+  };
+
+  function montar() {
+    const repo = makeRepoMock();
+    repo.sincronizar.mockImplementation(async (mov) => ({ mov, criada: true }));
+    const nada = jest.fn(async () => ({ id: null, idErp: null }));
+    const cliente = jest.fn(async (bruto: unknown) => ({
+      id: null,
+      idErp: bruto ? String(bruto) : null,
+    }));
+    const resolver = {
+      operacao: nada,
+      empresa: nada,
+      grupoEstoque: nada,
+      vendedora: nada,
+      produto: nada,
+      formaPagamento: nada,
+      cliente,
+      entidade: jest.fn(async (uuid?: string | null) => {
+        if (!uuid) return null;
+        if (!(uuid in CADASTRO)) {
+          throw new BadRequestException(`entidade ${uuid} nao existe`);
+        }
+        return CADASTRO[uuid];
+      }),
+    } as unknown as ResolverReferenciasErpService;
+
+    return {
+      useCase: new SincronizarMovimentacaoUseCase(repo, resolver),
+      repo,
+      cliente,
+    };
+  }
+
+  const semPontasDoErp = {
+    idErpEntidadeOrigem: undefined,
+    idErpEntidadeDestino: undefined,
+  };
+
+  it('venda: empresa na origem, cliente no destino — grava as duas pontas e o cliente', async () => {
+    const { useCase, repo } = montar();
+
+    await useCase.execute(
+      vendaDoDump({
+        ...semPontasDoErp,
+        idEntidadeOrigem: 'emp-uuid',
+        idEntidadeDestino: 'cli-uuid',
+      }),
+    );
+
+    const mov = repo.sincronizar.mock.calls[0][0];
+    expect(mov.entidadeOrigemId).toBe('emp-uuid');
+    expect(mov.entidadeDestinoId).toBe('cli-uuid');
+    expect(mov.clienteId).toBe('cli-uuid');
+    expect(mov.clienteIdErp).toBe('2397');
+    // O id do ERP vem de brinde: a coluna-sombra continua preenchida.
+    expect(mov.entidadeOrigemIdErp).toBe('9000000018');
+    expect(mov.entidadeDestinoIdErp).toBe('2397');
+  });
+
+  it('o TIPO decide, e nao o sentido: cliente na origem com saida=1 ainda e o cliente', async () => {
+    const { useCase, repo } = montar();
+
+    await useCase.execute(
+      vendaDoDump({
+        ...semPontasDoErp,
+        saida: true,
+        entrada: false,
+        idEntidadeOrigem: 'cli-uuid',
+        idEntidadeDestino: 'emp-uuid',
+      }),
+    );
+
+    expect(repo.sincronizar.mock.calls[0][0].clienteId).toBe('cli-uuid');
+  });
+
+  it('fornecedor e empresa: nao ha cliente — e o id do fornecedor NAO vai procurar em clientes', async () => {
+    const { useCase, repo, cliente } = montar();
+
+    await useCase.execute(
+      vendaDoDump({
+        // O id do ERP da ponta TAMBEM veio: ainda assim, a ponta ja resolvida
+        // como fornecedor nao e candidata a cliente.
+        idErpEntidadeOrigem: 9000000018,
+        idErpEntidadeDestino: 555,
+        idEntidadeOrigem: 'emp-uuid',
+        idEntidadeDestino: 'forn-uuid',
+      }),
+    );
+
+    const mov = repo.sincronizar.mock.calls[0][0];
+    expect(mov.clienteId).toBeNull();
+    expect(mov.clienteIdErp).toBeNull();
+    expect(mov.entidadeDestinoId).toBe('forn-uuid');
+    expect(cliente).not.toHaveBeenCalledWith('555');
+  });
+
+  it('UUID que nao existe em nenhuma tabela: 400, e nada e gravado', async () => {
+    const { useCase, repo } = montar();
+
+    await expect(
+      useCase.execute(
+        vendaDoDump({ idEntidadeDestino: '99999999-9999-9999-9999-999999999999' }),
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(repo.sincronizar).not.toHaveBeenCalled();
+  });
+
+  it('sem UUID nas pontas, continua deduzindo pelo id do ERP como antes', async () => {
+    const { useCase, repo } = montar();
+
+    await useCase.execute(vendaDoDump());
+
+    const mov = repo.sincronizar.mock.calls[0][0];
+    expect(mov.entidadeOrigemId).toBeNull();
+    expect(mov.entidadeDestinoId).toBeNull();
+    // saida=1: o terceiro esta no destino, 2397.
+    expect(mov.clienteIdErp).toBe('2397');
+  });
+
+  it('uma ponta por UUID e a outra so pelo id do ERP: a do ERP ainda pode ser o cliente', async () => {
+    const { useCase, repo } = montar();
+
+    await useCase.execute(
+      vendaDoDump({
+        idEntidadeOrigem: 'emp-uuid',
+        idErpEntidadeDestino: 2397,
+      }),
+    );
+
+    const mov = repo.sincronizar.mock.calls[0][0];
+    expect(mov.entidadeOrigemId).toBe('emp-uuid');
+    expect(mov.entidadeDestinoId).toBeNull();
+    expect(mov.clienteIdErp).toBe('2397');
   });
 });

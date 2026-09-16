@@ -121,6 +121,7 @@ const MANIFESTO = {
   '52_ocorrencia_cliente_fotos.sql':      { tipo: 'tabela',     alvo: 'ocorrencia_fotos' },
   '53_interacao_contato_whatsapp.sql':    { tipo: 'enum',       alvo: 'tipo_interacao|CONTATO_CLIENTE' },
   '54_atendimentos_write.sql':             { tipo: 'permissao',  alvo: 'ADMIN|atendimentos:write' },
+  '58_movimentacoes_entidades_uuid.sql':   { tipo: 'coluna',     alvo: 'movimentacoes.entidade_destino_id' },
   // Migracao de DADOS: nao cria objeto, preenche coluna. Nenhum marcador do
   // manifesto descreve isso — fica de fora pelo mesmo motivo da 50.
   // 50 nao cria objeto nenhum: so troca o COMMENT de uma coluna. Fica de fora

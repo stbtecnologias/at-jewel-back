@@ -27,6 +27,8 @@ describe('Movimentacao.toPublic — o que a API devolve', () => {
     grupoDestinoIdErp: '009000000456',
     entidadeOrigemIdErp: '9000000018',
     entidadeDestinoIdErp: '2397',
+    entidadeOrigemId: 'eo-uuid',
+    entidadeDestinoId: 'ed-uuid',
     clienteId: 'cli-uuid',
     clienteIdErp: '2397',
     vendedoraId: 'vend-uuid',
@@ -82,6 +84,8 @@ describe('Movimentacao.toPublic — o que a API devolve', () => {
       grupoDestinoId: 'gd-uuid',
       clienteId: 'cli-uuid',
       vendedoraId: 'vend-uuid',
+      entidadeOrigemId: 'eo-uuid',
+      entidadeDestinoId: 'ed-uuid',
     });
     expect(item.produtoId).toBe('prod-uuid');
     expect(pagamento.formaPagamentoId).toBe('fp-uuid');
