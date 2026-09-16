@@ -12,6 +12,7 @@ export interface ItemMovimentacaoInput {
   nItem: number;
   idErpItem?: string | number | null;
   idErpProduto?: string | number | null;
+  idProduto?: string | null;
   quantidade: number;
   valorUnitario: number;
   ativo?: boolean;
@@ -21,6 +22,7 @@ export interface PagamentoMovimentacaoInput {
   idErpPagamento?: string | number | null;
   nParcela?: number | null;
   idErpFormaPagamento?: string | number | null;
+  formaPagamentoId?: string | null;
   valor: number;
   debitoCredito?: 'D' | 'C';
   ativo?: boolean;
@@ -31,12 +33,20 @@ export interface SincronizarMovimentacaoInput {
   numero?: number | null;
   dataMovimentacao: string;
   idErpOperacao?: string | number | null;
+  /** O nosso UUID, quando o integrador o tem. Vence o `idErp*` do mesmo campo. */
+  idOperacao?: string | null;
   idErpEmpresa?: string | number | null;
+  idEmpresa?: string | null;
   idErpGrupoOrigem?: string | number | null;
+  idGrupoOrigem?: string | null;
   idErpGrupoDestino?: string | number | null;
+  idGrupoDestino?: string | null;
   idErpEntidadeOrigem?: string | number | null;
   idErpEntidadeDestino?: string | number | null;
   idErpVendedora?: string | number | null;
+  idVendedora?: string | null;
+  /** O cliente direto, sem depender da deducao pelas duas pontas. */
+  clienteId?: string | null;
   valor: number;
   entrada?: boolean;
   saida?: boolean;
@@ -105,13 +115,23 @@ export class SincronizarMovimentacaoUseCase {
     const entrada = input.entrada ?? false;
     const saida = input.saida ?? false;
 
+    // OS DOIS FORMATOS, E O UUID VENCE — pedido do integrador em 15/09/2026,
+    // para o payload de movimentacao ficar igual ao de `/estoque`. Ver
+    // `ResolverReferenciasErpService.resolver`: o id do ERP segue best-effort,
+    // e o nosso UUID, quando vem, tem de existir.
     const [operacao, empresa, grupoOrigem, grupoDestino, vendedora] =
       await Promise.all([
-        this.referencias.operacao(input.idErpOperacao),
-        this.referencias.empresa(input.idErpEmpresa),
-        this.referencias.grupoEstoque(input.idErpGrupoOrigem),
-        this.referencias.grupoEstoque(input.idErpGrupoDestino),
-        this.referencias.vendedora(input.idErpVendedora),
+        this.referencias.operacao(input.idErpOperacao, input.idOperacao),
+        this.referencias.empresa(input.idErpEmpresa, input.idEmpresa),
+        this.referencias.grupoEstoque(
+          input.idErpGrupoOrigem,
+          input.idGrupoOrigem,
+        ),
+        this.referencias.grupoEstoque(
+          input.idErpGrupoDestino,
+          input.idGrupoDestino,
+        ),
+        this.referencias.vendedora(input.idErpVendedora, input.idVendedora),
       ]);
 
     const entidadeOrigemIdErp = normalizarIdErp(input.idErpEntidadeOrigem);
@@ -124,11 +144,21 @@ export class SincronizarMovimentacaoUseCase {
       entidadeOrigemIdErp,
       entidadeDestinoIdErp,
     });
-    const cliente = await this.referencias.cliente(candidatoCliente);
+    // O `clienteId` VENCE A DEDUCAO. As duas pontas sao polimorficas — uma e a
+    // loja, a outra pode ser cliente ou fornecedor —, e um UUID solto nao diz
+    // de qual tabela e. Quem quiser mandar o nosso id manda neste campo, que
+    // ja diz; quem nao mandar continua caindo na regra de entrada/saida.
+    const cliente = await this.referencias.cliente(
+      candidatoCliente,
+      input.clienteId,
+    );
 
     const itens = await Promise.all(
       (input.itens ?? []).map(async (i) => {
-        const produto = await this.referencias.produto(i.idErpProduto);
+        const produto = await this.referencias.produto(
+          i.idErpProduto,
+          i.idProduto,
+        );
         return MovimentacaoItem.create({
           nItem: i.nItem,
           idErp: normalizarIdErp(i.idErpItem),
@@ -145,6 +175,7 @@ export class SincronizarMovimentacaoUseCase {
       (input.pagamentos ?? []).map(async (p) => {
         const forma = await this.referencias.formaPagamento(
           p.idErpFormaPagamento,
+          p.formaPagamentoId,
         );
         return MovimentacaoPagamento.create({
           idErp: normalizarIdErp(p.idErpPagamento),

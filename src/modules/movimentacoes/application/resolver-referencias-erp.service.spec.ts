@@ -1,0 +1,124 @@
+import {
+  ReferenciaInexistenteError,
+  ResolverReferenciasErpService,
+} from './resolver-referencias-erp.service';
+
+/**
+ * OS DOIS FORMATOS DE REFERENCIA — pedido do integrador em 15/09/2026.
+ *
+ * Ele pediu para mandar o NOSSO UUID no lugar do id do ERP, como ja faz em
+ * `/estoque`. Os dois passam a valer, e o que estes testes protegem é a
+ * diferença de rigor entre eles:
+ *
+ * 1. **pelo id do ERP**: não achar é NORMAL — o documento chega antes do
+ *    cadastro, e o id cru fica gravado para religar depois;
+ * 2. **pelo nosso UUID**: não achar é ERRO (400), porque aquele id só pode ter
+ *    saído de uma consulta a esta API;
+ * 3. **o UUID vence** quando os dois vêm;
+ * 4. o `id_erp` do registro achado pelo UUID **vai junto**, para a
+ *    coluna-sombra continuar preenchida nas duas formas.
+ */
+const UUID = '11111111-1111-1111-1111-111111111111';
+
+function servico(repos: {
+  porId?: jest.Mock;
+  porIdErp?: jest.Mock;
+}): ResolverReferenciasErpService {
+  const repo = {
+    buscarPorId: repos.porId ?? jest.fn().mockResolvedValue(null),
+    buscarPorIdErp: repos.porIdErp ?? jest.fn().mockResolvedValue(null),
+    findById: repos.porId ?? jest.fn().mockResolvedValue(null),
+    findByIdErp: repos.porIdErp ?? jest.fn().mockResolvedValue(null),
+  };
+  return new ResolverReferenciasErpService(
+    repo as never,
+    repo as never,
+    repo as never,
+    repo as never,
+    repo as never,
+    repo as never,
+    repo as never,
+  );
+}
+
+describe('ResolverReferenciasErpService', () => {
+  describe('pelo id do ERP — best-effort, como sempre foi', () => {
+    it('acha e devolve o par id + idErp', async () => {
+      const r = await servico({
+        porIdErp: jest.fn().mockResolvedValue({ id: 'op-1', idErp: '9000' }),
+      }).operacao(9000);
+
+      expect(r).toEqual({ id: 'op-1', idErp: '9000' });
+    });
+
+    it('NAO achar nao e erro: o id cru fica guardado', async () => {
+      // O documento chega antes do cadastro o tempo todo — ver o cabecalho da
+      // classe. A FK fica nula e o id cru permite religar depois.
+      const r = await servico({}).vendedora(9602);
+
+      expect(r).toEqual({ id: null, idErp: '9602' });
+    });
+
+    it('normaliza os zeros a esquerda antes de procurar', async () => {
+      const porIdErp = jest.fn().mockResolvedValue(null);
+      await servico({ porIdErp }).produto('0000009602');
+
+      expect(porIdErp).toHaveBeenCalledWith('9602');
+    });
+
+    it('sem id nenhum, nao procura nada', async () => {
+      const porIdErp = jest.fn();
+      const r = await servico({ porIdErp }).empresa(null);
+
+      expect(r).toEqual({ id: null, idErp: null });
+      expect(porIdErp).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('pelo nosso UUID — tem de existir', () => {
+    it('acha e traz o id_erp do registro junto', async () => {
+      const r = await servico({
+        porId: jest.fn().mockResolvedValue({ id: UUID, idErp: '9000000323' }),
+      }).operacao(null, UUID);
+
+      // A coluna-sombra continua preenchida: documento mandado por UUID fica
+      // tao rastreavel quanto os outros.
+      expect(r).toEqual({ id: UUID, idErp: '9000000323' });
+    });
+
+    it('registro sem id do ERP (cadastrado pela tela) tambem vale', async () => {
+      const r = await servico({
+        porId: jest.fn().mockResolvedValue({ id: UUID, idErp: null }),
+      }).vendedora(null, UUID);
+
+      expect(r).toEqual({ id: UUID, idErp: null });
+    });
+
+    it('UUID que NAO existe e erro 400, e nao pendencia', async () => {
+      await expect(servico({}).produto(null, UUID)).rejects.toBeInstanceOf(
+        ReferenciaInexistenteError,
+      );
+    });
+
+    it('o erro diz o campo e o id, para o integrador achar o que corrigir', async () => {
+      await expect(servico({}).formaPagamento(null, UUID)).rejects.toThrow(
+        `forma_pagamento ${UUID} nao existe`,
+      );
+    });
+  });
+
+  describe('quando vem os dois', () => {
+    it('o UUID vence, e o id do ERP nem e consultado', async () => {
+      const porIdErp = jest.fn();
+      const porId = jest.fn().mockResolvedValue({ id: UUID, idErp: '9000' });
+
+      const r = await servico({ porId, porIdErp }).grupoEstoque(
+        '9000000458',
+        UUID,
+      );
+
+      expect(r.id).toBe(UUID);
+      expect(porIdErp).not.toHaveBeenCalled();
+    });
+  });
+});

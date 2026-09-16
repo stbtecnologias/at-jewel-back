@@ -35,31 +35,44 @@ interface AnexoParaCapa {
  * A REGRA DA CAPA, escrita uma vez só.
  *
  *   1. a referência ESCOLHIDA, se ela ainda existe e é imagem
- *   2. senão, a primeira imagem por ordem de envio
- *   3. senão, nada — e a tela desenha o esboço
+ *   2. senão, nada — e a tela desenha o esboço com o nome do catálogo
  *
  * Mora aqui, e não em cada consulta, porque listagem e detalhe precisam da
  * mesma resposta: um card mostrando uma capa e a tela do catálogo mostrando
  * outra seria pior do que não ter capa nenhuma.
  *
+ * ==========================================================================
+ * A PRIMEIRA IMAGEM DEIXOU DE SER CAPA AUTOMÁTICA — 15/09/2026.
+ *
+ * Havia um passo 2 aqui: "senão, a primeira imagem por ordem de envio". A
+ * intenção era boa e o efeito era ruim — a primeira imagem de um catálogo NOVO
+ * é uma PÁGINA DO CATÁLOGO ANTIGO, anexada como referência de estilo. O card
+ * do #0005 aparecia com a capa do #0003, e quem olhava a grade via o catálogo
+ * errado.
+ *
+ * Decisão do Lucas: catálogo sem capa escolhida fica SEM IMAGEM. O esboço com
+ * o nome é honesto — diz "ainda não tem capa" — e a capa aparece quando
+ * alguém escolher uma referência (botão "definir capa").
+ * ==========================================================================
+ *
  * PDF NUNCA É CAPA. O use case já impede escolher um, mas a regra é repetida
  * aqui de propósito: se um PDF chegar a esta coluna por qualquer caminho, o
- * resultado é cair na próxima imagem — e não um `<img src="...pdf">`, que
- * desenha um quadro vazio.
+ * resultado é nenhuma capa — e não um `<img src="...pdf">`, que desenha um
+ * quadro vazio.
  */
 function escolherCapa(
   capaReferenciaId: string | null,
   anexos: AnexoParaCapa[],
 ): string | null {
-  const imagens = anexos
-    .filter((r) => r.arquivoId && !(r.mime ?? '').includes('pdf'))
-    .sort((a, b) => a.ordem - b.ordem);
+  if (!capaReferenciaId) return null;
 
-  if (capaReferenciaId) {
-    const escolhida = imagens.find((r) => r.id === capaReferenciaId);
-    if (escolhida) return escolhida.arquivoId;
-  }
-  return imagens[0]?.arquivoId ?? null;
+  const escolhida = anexos.find(
+    (r) =>
+      r.id === capaReferenciaId &&
+      r.arquivoId &&
+      !(r.mime ?? '').includes('pdf'),
+  );
+  return escolhida?.arquivoId ?? null;
 }
 
 @Injectable()

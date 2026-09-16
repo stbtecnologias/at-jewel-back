@@ -5,6 +5,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -46,6 +47,17 @@ export class MovimentacaoItemDto {
   @IsString()
   @MaxLength(50)
   idErpProduto?: string;
+
+  /**
+   * O NOSSO UUID do produto — pedido do integrador em 15/09/2026. Vence o
+   * `idErpProduto` quando os dois vierem, e UUID inexistente e erro (400).
+   *
+   * O `idErpItem` acima NAO ganhou par em UUID de proposito: aquela linha
+   * nasce com este envio, entao nao existe id nosso para ela antes.
+   */
+  @IsOptional()
+  @IsUUID()
+  idProduto?: string;
 
   // SEM @Min(0): devolucao e ajuste podem trazer quantidade negativa, e a
   // migracao 32 ja firmou que "quantidade negativa e estado valido" para o

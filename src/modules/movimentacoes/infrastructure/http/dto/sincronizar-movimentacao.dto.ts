@@ -9,6 +9,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -76,11 +77,31 @@ export class SincronizarMovimentacaoDto {
   @MaxLength(50)
   idErpOperacao?: string;
 
+  /**
+   * O NOSSO UUID, quando o integrador ja o tem — pedido dele em 15/09/2026,
+   * para o payload ficar igual ao de `/estoque`.
+   *
+   * VENCE o `idErp` do mesmo campo quando os dois vierem: o UUID e resposta
+   * desta API, e o id do ERP e chave estrangeira que ainda pode nao ter
+   * cadastro deste lado.
+   *
+   * UUID que nao existe e ERRO (400), e nao pendencia — ver
+   * `ReferenciaInexistenteError`.
+   */
+  @IsOptional()
+  @IsUUID()
+  idOperacao?: string;
+
   @IsOptional()
   @Transform(({ value }) => idErpEntrada(value))
   @IsString()
   @MaxLength(50)
   idErpEmpresa?: string;
+
+  /** O nosso UUID — vence o `idErpEmpresa`. Ver `idOperacao`. */
+  @IsOptional()
+  @IsUUID()
+  idEmpresa?: string;
 
   @IsOptional()
   @Transform(({ value }) => idErpEntrada(value))
@@ -88,11 +109,21 @@ export class SincronizarMovimentacaoDto {
   @MaxLength(50)
   idErpGrupoOrigem?: string;
 
+  /** O nosso UUID — vence o `idErpGrupoOrigem`. Ver `idOperacao`. */
+  @IsOptional()
+  @IsUUID()
+  idGrupoOrigem?: string;
+
   @IsOptional()
   @Transform(({ value }) => idErpEntrada(value))
   @IsString()
   @MaxLength(50)
   idErpGrupoDestino?: string;
+
+  /** O nosso UUID — vence o `idErpGrupoDestino`. Ver `idOperacao`. */
+  @IsOptional()
+  @IsUUID()
+  idGrupoDestino?: string;
 
   // As duas pontas do documento. Uma delas e a propria loja; qual e o terceiro
   // sai de `entrada`/`saida`, nao de comparar com um id chumbado aqui.
@@ -108,11 +139,31 @@ export class SincronizarMovimentacaoDto {
   @MaxLength(50)
   idErpEntidadeDestino?: string;
 
+  /**
+   * O CLIENTE, direto pelo nosso UUID — a saida para o problema das duas
+   * pontas.
+   *
+   * `entidadeOrigem` e `entidadeDestino` sao POLIMORFICAS: uma delas e a
+   * loja e a outra e o terceiro, que pode ser cliente ou fornecedor. Um UUID
+   * solto nao diz de qual tabela e, entao quem quiser mandar o nosso id manda
+   * neste campo, que ja diz.
+   *
+   * Vindo, VENCE a deducao por entrada/saida.
+   */
+  @IsOptional()
+  @IsUUID()
+  clienteId?: string;
+
   @IsOptional()
   @Transform(({ value }) => idErpEntrada(value))
   @IsString()
   @MaxLength(50)
   idErpVendedora?: string;
+
+  /** O nosso UUID — vence o `idErpVendedora`. Ver `idOperacao`. */
+  @IsOptional()
+  @IsUUID()
+  idVendedora?: string;
 
   // SEM @Min(0): documento de estorno pode vir negativo, e recusar por sinal
   // faria a movimentacao sumir.
