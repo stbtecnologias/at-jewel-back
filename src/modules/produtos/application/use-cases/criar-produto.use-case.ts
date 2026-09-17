@@ -23,7 +23,6 @@ export interface CriarProdutoInput {
   valorVenda: number;
   observacao?: string | null;
   fotoUrl?: string | null;
-  estoqueAtual?: number | null;
   dataEntradaEstoque?: Date | null;
 }
 

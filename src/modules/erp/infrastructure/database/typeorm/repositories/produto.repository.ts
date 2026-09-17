@@ -8,7 +8,12 @@ import {
   FiltroProduto,
   IProdutoRepository,
   ProdutoAlerta,
+  SaldoDaPeca,
 } from '../../../../domain/ports/repositories/produto-repository.port';
+import {
+  SALDO_POR_PRODUTO,
+  saldoDe,
+} from '../../../../../../shared/database/sql/saldo-do-produto';
 import { ProdutoOrmEntity } from '../entities/produto.orm-entity';
 
 const NOME_PRODUTO = `COALESCE(NULLIF(descricao_etiqueta, ''), codigo_erp, categoria || ' ' || familia, LEFT(id::text, 8))`;
@@ -16,14 +21,13 @@ const NOME_PRODUTO = `COALESCE(NULLIF(descricao_etiqueta, ''), codigo_erp, categ
 /**
  * O que o evento de produto do ERP NAO traz — e por isso nao reescreve.
  *
- * `codigoErp` e a chave do conflito. As outras tres o ERP nao conhece: o
- * `idErp` vem da API do integrador, o estoque e a data de entrada vem de
- * outros caminhos. Ver `upsertByCodigoErp`.
+ * `codigoErp` e a chave do conflito. As outras duas o ERP nao conhece: o
+ * `idErp` vem da API do integrador, a data de entrada vem de outro caminho. O
+ * estoque nem passa por aqui — e a tabela `estoque`. Ver `upsertByCodigoErp`.
  */
 const FORA_DO_EVENTO_DO_ERP = new Set<string>([
   'codigoErp',
   'idErp',
-  'estoqueAtual',
   'dataEntradaEstoque',
 ]);
 
@@ -82,7 +86,7 @@ export class ProdutoRepository implements IProdutoRepository {
       .execute();
 
     const saved = await this.repo.findOneByOrFail({ codigoErp: produto.codigoErp! });
-    return this.toDomain(saved);
+    return this.umComSaldo(saved);
   }
 
   /** UPDATE de uma coluna so — ver o porque no `toOrm`. */
@@ -121,12 +125,12 @@ export class ProdutoRepository implements IProdutoRepository {
 
   async findByCodigoErp(codigoErp: string): Promise<Produto | null> {
     const entity = await this.repo.findOneBy({ codigoErp });
-    return entity ? this.toDomain(entity) : null;
+    return entity ? this.umComSaldo(entity) : null;
   }
 
   async findByIdErp(idErp: string): Promise<Produto | null> {
     const entity = await this.repo.findOneBy({ idErp });
-    return entity ? this.toDomain(entity) : null;
+    return entity ? this.umComSaldo(entity) : null;
   }
 
   async findAll(filtros: FiltroProduto): Promise<Produto[]> {
@@ -171,13 +175,12 @@ export class ProdutoRepository implements IProdutoRepository {
     qb.orderBy('p.criado_em', 'DESC');
     if (filtros.limit) qb.take(filtros.limit);
 
-    const entities = await qb.getMany();
-    return entities.map((e) => this.toDomain(e));
+    return this.comSaldo(await qb.getMany());
   }
 
   async findById(id: string): Promise<Produto | null> {
     const entity = await this.repo.findOneBy({ id });
-    return entity ? this.toDomain(entity) : null;
+    return entity ? this.umComSaldo(entity) : null;
   }
 
   async save(produto: Produto): Promise<Produto> {
@@ -187,7 +190,7 @@ export class ProdutoRepository implements IProdutoRepository {
     };
     const entity = this.repo.create(data);
     const saved = await this.repo.save(entity);
-    return this.toDomain(saved);
+    return this.umComSaldo(saved);
   }
 
   async saveMany(produtos: Produto[]): Promise<Produto[]> {
@@ -200,7 +203,7 @@ export class ProdutoRepository implements IProdutoRepository {
     // repo.save com array roda numa transacao (all-or-nothing): se um item
     // viola constraint (ex.: codigoErp duplicado), o lote inteiro reverte.
     const saved = await this.repo.save(entities);
-    return saved.map((e) => this.toDomain(e));
+    return this.comSaldo(saved);
   }
 
   async remover(id: string): Promise<void> {
@@ -255,12 +258,16 @@ export class ProdutoRepository implements IProdutoRepository {
         `
         SELECT id, ${NOME_PRODUTO} AS nome, categoria, familia,
                NULLIF(referencia_fornecedor, '') AS fornecedor,
-               estoque_atual AS "estoqueAtual",
+               ${saldoDe('sal')} AS "estoqueAtual",
                NULL::int AS "diasEmEstoque",
                count(*) OVER() AS total
         FROM produtos
-        WHERE ativo = true AND estoque_atual <= $1
-        ORDER BY estoque_atual ASC
+        LEFT JOIN ${SALDO_POR_PRODUTO} sal ON sal.produto_id = produtos.id
+        -- BAIXO E "TEM, MAS POUCO": de 1 ao limite. Era \`<= limite\`, e com
+        -- o saldo real o zero punha ~6.500 pecas no alerta — o catalogo
+        -- inteiro. Zero e "sem estoque", como no filtro da tela.
+        WHERE ativo = true AND ${saldoDe('sal')} BETWEEN 1 AND $1
+        ORDER BY ${saldoDe('sal')} ASC
         LIMIT 50
         `,
         [limiteBaixo],
@@ -269,11 +276,12 @@ export class ProdutoRepository implements IProdutoRepository {
         `
         SELECT id, ${NOME_PRODUTO} AS nome, categoria, familia,
                NULLIF(referencia_fornecedor, '') AS fornecedor,
-               estoque_atual AS "estoqueAtual",
+               ${saldoDe('sal')} AS "estoqueAtual",
                EXTRACT(DAY FROM (now() - data_entrada_estoque))::int AS "diasEmEstoque",
                count(*) OVER() AS total
         FROM produtos
-        WHERE ativo = true AND estoque_atual > 0
+        LEFT JOIN ${SALDO_POR_PRODUTO} sal ON sal.produto_id = produtos.id
+        WHERE ativo = true AND ${saldoDe('sal')} > 0
           AND data_entrada_estoque IS NOT NULL
           AND data_entrada_estoque <= now() - ($1::int * interval '1 day')
         ORDER BY data_entrada_estoque ASC
@@ -288,6 +296,29 @@ export class ProdutoRepository implements IProdutoRepository {
       totalEstoqueBaixo: totalDa(estoqueBaixo),
       totalGiroLento: totalDa(giroLento),
     };
+  }
+
+  async saldoPorEmpresa(produtoId: string): Promise<SaldoDaPeca[]> {
+    const linhas = await this.repo.manager.query<
+      {
+        empresa: string;
+        local: string;
+        grupo: string;
+        quantidade: number;
+        atualizadoEm: Date;
+      }[]
+    >(
+      `SELECT e.nome AS empresa, l.nome AS local, g.nome AS grupo,
+              s.quantidade, s.atualizado_em AS "atualizadoEm"
+         FROM estoque s
+         JOIN empresas e ON e.id = s.empresa_id
+         JOIN locais_estoque l ON l.id = s.local_estoque_id
+         JOIN grupos_estoque g ON g.id = s.grupo_estoque_id
+        WHERE s.produto_id = $1 AND s.quantidade <> 0
+        ORDER BY s.quantidade DESC, e.nome`,
+      [produtoId],
+    );
+    return linhas.map((l) => ({ ...l, quantidade: Number(l.quantidade) }));
   }
 
   /**
@@ -320,12 +351,38 @@ export class ProdutoRepository implements IProdutoRepository {
       observacao: p.observacao,
       fotoUrl: p.fotoUrl,
       ativo: p.ativo,
-      estoqueAtual: p.estoqueAtual ?? 0,
       dataEntradaEstoque: p.dataEntradaEstoque,
     };
   }
 
-  private toDomain(o: ProdutoOrmEntity): Produto {
+  /**
+   * O saldo das pecas, numa consulta so — pela tabela `estoque`, e nao pela
+   * coluna aposentada. Ver `saldo-do-produto.ts`.
+   *
+   * Uma ida ao banco por LISTA, e nao por peca: a tela de Produtos carrega
+   * o catalogo inteiro (~7 mil) de uma vez.
+   */
+  private async comSaldo(entidades: ProdutoOrmEntity[]): Promise<Produto[]> {
+    if (entidades.length === 0) return [];
+    const linhas = await this.repo.manager.query<
+      { produto_id: string; saldo: number }[]
+    >(
+      `SELECT produto_id, SUM(quantidade)::int AS saldo
+         FROM estoque
+        WHERE produto_id = ANY($1)
+        GROUP BY produto_id`,
+      [entidades.map((e) => e.id)],
+    );
+    const saldos = new Map(linhas.map((l) => [l.produto_id, Number(l.saldo)]));
+    return entidades.map((e) => this.toDomain(e, saldos.get(e.id) ?? 0));
+  }
+
+  private async umComSaldo(entidade: ProdutoOrmEntity): Promise<Produto> {
+    const [produto] = await this.comSaldo([entidade]);
+    return produto;
+  }
+
+  private toDomain(o: ProdutoOrmEntity, saldo: number): Produto {
     return Produto.create({
       idErp: o.idErp,
       id: o.id,
@@ -349,7 +406,7 @@ export class ProdutoRepository implements IProdutoRepository {
       fotoUrl: o.fotoUrl,
       fotoArquivoId: o.fotoArquivoId,
       ativo: o.ativo,
-      estoqueAtual: o.estoqueAtual ?? 0,
+      estoqueAtual: saldo,
       dataEntradaEstoque: o.dataEntradaEstoque,
       criadoEm: o.criadoEm,
       atualizadoEm: o.atualizadoEm,

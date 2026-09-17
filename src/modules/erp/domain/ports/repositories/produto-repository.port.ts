@@ -58,6 +58,18 @@ export interface AlertasEstoque {
   totalGiroLento: number;
 }
 
+/**
+ * Uma linha do saldo da peca: quanto ha em cada empresa × local × grupo.
+ * A soma de todas e o `estoqueAtual` do produto.
+ */
+export interface SaldoDaPeca {
+  empresa: string;
+  local: string;
+  grupo: string;
+  quantidade: number;
+  atualizadoEm: Date;
+}
+
 export interface IProdutoRepository {
   upsertByCodigoErp(produto: Produto): Promise<Produto>;
   findByCodigoErp(codigoErp: string): Promise<Produto | null>;
@@ -99,4 +111,10 @@ export interface IProdutoRepository {
   remover(id: string): Promise<void>;
   facetas(): Promise<FacetasProduto>;
   alertasEstoque(limiteBaixo: number, diasGiroLento: number): Promise<AlertasEstoque>;
+  /**
+   * Onde esta o saldo da peca, linha a linha — so as linhas COM quantidade:
+   * a carga do integrador traz uma linha zerada para quase toda peca, e na
+   * tela ela so diria "nada aqui".
+   */
+  saldoPorEmpresa(produtoId: string): Promise<SaldoDaPeca[]>;
 }

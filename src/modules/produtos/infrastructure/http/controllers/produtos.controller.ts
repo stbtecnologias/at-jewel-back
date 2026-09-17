@@ -26,6 +26,7 @@ import {
 import { RequireScopes } from '../../../../auth/infrastructure/http/decorators/scopes.decorator';
 import { JwtOrApiKeyGuard } from '../../../../auth/infrastructure/http/guards/jwt-or-api-key.guard';
 import { AlertasEstoqueUseCase } from '../../../application/use-cases/alertas-estoque.use-case';
+import { SaldoDoProdutoUseCase } from '../../../application/use-cases/saldo-do-produto.use-case';
 import { AtualizarProdutoUseCase } from '../../../application/use-cases/atualizar-produto.use-case';
 import { BuscarProdutoUseCase } from '../../../application/use-cases/buscar-produto.use-case';
 import { BuscarProdutoPorIdErpUseCase } from '../../../application/use-cases/buscar-produto-por-id-erp.use-case';
@@ -54,6 +55,7 @@ export class ProdutosController {
     private readonly removerProduto: RemoverProdutoUseCase,
     private readonly facetasProdutos: FacetasProdutosUseCase,
     private readonly alertasEstoque: AlertasEstoqueUseCase,
+    private readonly saldoDoProduto: SaldoDoProdutoUseCase,
     private readonly fotoProduto: FotoProdutoUseCase,
   ) {}
 
@@ -94,6 +96,17 @@ export class ProdutosController {
   @RequireScopes('produtos:read')
   async buscarPeloIdErp(@Param('id') idErp: string) {
     return this.buscarProdutoPorIdErp.execute(idErp);
+  }
+
+  /**
+   * Onde esta o saldo da peca: empresa, local e grupo, so as linhas com
+   * quantidade. A soma e o `estoqueAtual` que ja vem no produto.
+   */
+  @Get(':id/estoque')
+  @UseGuards(JwtOrApiKeyGuard)
+  @RequireScopes('produtos:read')
+  async estoque(@Param('id', ParseUUIDPipe) id: string) {
+    return this.saldoDoProduto.execute(id);
   }
 
   @Get(':id')
@@ -219,7 +232,7 @@ function dtoParaInput(dto: CriarProdutoDto): CriarProdutoInput {
     valorVenda: dto.valor_venda,
     observacao: dto.observacao,
     fotoUrl: dto.foto_url,
-    estoqueAtual: dto.estoque_atual,
+    // `estoque_atual` NAO passa: o saldo e a tabela `estoque` — ver o DTO.
     dataEntradaEstoque: dto.data_entrada_estoque
       ? new Date(dto.data_entrada_estoque)
       : null,

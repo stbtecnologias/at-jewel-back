@@ -90,6 +90,11 @@ export class CriarProdutoDto {
   @IsString()
   foto_url?: string;
 
+  /**
+   * ACEITO E IGNORADO desde 17/09/2026. O saldo é a tabela `estoque`, que o
+   * integrador alimenta por `/estoque`. O campo continua no contrato para quem
+   * já o manda não passar a receber 400.
+   */
   @IsOptional()
   @IsInt()
   @Min(0)
