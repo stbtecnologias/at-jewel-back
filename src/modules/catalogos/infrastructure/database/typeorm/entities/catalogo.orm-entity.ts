@@ -57,6 +57,20 @@ export class CatalogoOrmEntity {
   @Column({ name: 'capa_referencia_id', type: 'uuid', nullable: true })
   capaReferenciaId: string | null;
 
+  // A APROVACAO — migracao 59. As quatro andam juntas: ou todas preenchidas
+  // (PUBLICADO), ou todas nulas. Quem grava e so `registrarAprovacao`.
+  @Column({ name: 'aprovado_final_id', type: 'uuid', nullable: true })
+  aprovadoFinalId: string | null;
+
+  @Column({ name: 'aprovado_capa_arquivo_id', type: 'text', nullable: true })
+  aprovadoCapaArquivoId: string | null;
+
+  @Column({ name: 'aprovado_por', type: 'text', nullable: true })
+  aprovadoPor: string | null;
+
+  @Column({ name: 'aprovado_em', type: 'timestamptz', nullable: true })
+  aprovadoEm: Date | null;
+
   @Column({ name: 'final_nome_arquivo', type: 'text', nullable: true })
   finalNomeArquivo: string | null;
 

@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, In, Repository } from 'typeorm';
 import type { OrigemFinal } from '../../../../domain/entities/enums';
 import type {
+  AprovacaoData,
   AtualizarCatalogoData,
   AtualizarFotoData,
   CatalogoAberto,
@@ -61,9 +62,15 @@ interface AnexoParaCapa {
  * quadro vazio.
  */
 function escolherCapa(
-  capaReferenciaId: string | null,
+  linha: Pick<CatalogoOrmEntity, 'capaReferenciaId' | 'aprovadoCapaArquivoId'>,
   anexos: AnexoParaCapa[],
 ): string | null {
+  // 0. A CAPA DA VERSÃO APROVADA VENCE — 17/09/2026. Aprovar o catálogo leva a
+  //    capa do PDF (ou a primeira peça) para o card e o cabeçalho. Desfazer a
+  //    aprovação limpa a coluna, e a regra abaixo volta a valer.
+  if (linha.aprovadoCapaArquivoId) return linha.aprovadoCapaArquivoId;
+
+  const capaReferenciaId = linha.capaReferenciaId;
   if (!capaReferenciaId) return null;
 
   const escolhida = anexos.find(
@@ -148,7 +155,7 @@ export class CatalogoRepository implements ICatalogoRepository {
           l,
           contagem.get(l.id) ?? 0,
           origens.get(l.id) ?? null,
-          escolherCapa(l.capaReferenciaId, anexos.get(l.id) ?? []),
+          escolherCapa(l, anexos.get(l.id) ?? []),
         ),
       ),
       total,
@@ -183,7 +190,13 @@ export class CatalogoRepository implements ICatalogoRepository {
     if (ids.length === 0) return new Map();
 
     const linhas = await this.repoReferencias.manager.query<
-      { catalogo_id: string; id: string; arquivo_id: string | null; mime: string | null; ordem: number }[]
+      {
+        catalogo_id: string;
+        id: string;
+        arquivo_id: string | null;
+        mime: string | null;
+        ordem: number;
+      }[]
     >(
       `SELECT catalogo_id, id, arquivo_id, mime, ordem
          FROM catalogo_referencias
@@ -195,7 +208,12 @@ export class CatalogoRepository implements ICatalogoRepository {
     const mapa = new Map<string, AnexoParaCapa[]>();
     for (const l of linhas) {
       const lista = mapa.get(l.catalogo_id) ?? [];
-      lista.push({ id: l.id, arquivoId: l.arquivo_id, mime: l.mime, ordem: Number(l.ordem) });
+      lista.push({
+        id: l.id,
+        arquivoId: l.arquivo_id,
+        mime: l.mime,
+        ordem: Number(l.ordem),
+      });
       mapa.set(l.catalogo_id, lista);
     }
     return mapa;
@@ -272,6 +290,38 @@ export class CatalogoRepository implements ICatalogoRepository {
     // um DTO do usuário; misturar a capa ali abriria caminho para apontar a
     // capa de um catálogo para a referência de outro.
     await this.repo.update({ id }, { capaReferenciaId: referenciaId });
+
+    const detalhe = await this.buscarPorId(id);
+    if (!detalhe) throw new NotFoundException('Catálogo não encontrado');
+    return detalhe;
+  }
+
+  async registrarAprovacao(
+    id: string,
+    dados: AprovacaoData | null,
+  ): Promise<CatalogoDetalhe> {
+    // UM UPDATE com o status junto: aprovado sem PUBLICADO, ou PUBLICADO sem
+    // aprovação, seriam dois estados que a tela não saberia desenhar.
+    const resultado = await this.repo.update(
+      { id },
+      dados
+        ? {
+            status: 'PUBLICADO',
+            aprovadoFinalId: dados.finalId,
+            aprovadoCapaArquivoId: dados.capaArquivoId,
+            aprovadoPor: dados.aprovadoPor,
+            aprovadoEm: new Date(),
+          }
+        : {
+            status: 'COLETANDO',
+            aprovadoFinalId: null,
+            aprovadoCapaArquivoId: null,
+            aprovadoPor: null,
+            aprovadoEm: null,
+          },
+    );
+    if (!resultado.affected)
+      throw new NotFoundException('Catálogo não encontrado');
 
     const detalhe = await this.buscarPorId(id);
     if (!detalhe) throw new NotFoundException('Catálogo não encontrado');
@@ -523,7 +573,7 @@ export class CatalogoRepository implements ICatalogoRepository {
         atual?.origem ?? null,
         // As referencias ja estao carregadas aqui — a MESMA funcao da listagem
         // decide, entao as duas telas nao tem como discordar sobre a capa.
-        escolherCapa(linha.capaReferenciaId, referencias),
+        escolherCapa(linha, referencias),
       ),
       referencias: referencias.map((r) => this.paraReferencia(r)),
       fotos: fotos.map((f) => this.paraFoto(f)),
@@ -556,6 +606,9 @@ export class CatalogoRepository implements ICatalogoRepository {
       createdAt: linha.createdAt,
       capaReferenciaId: linha.capaReferenciaId,
       capaArquivoId,
+      aprovadoFinalId: linha.aprovadoFinalId,
+      aprovadoPor: linha.aprovadoPor,
+      aprovadoEm: linha.aprovadoEm,
     };
   }
 

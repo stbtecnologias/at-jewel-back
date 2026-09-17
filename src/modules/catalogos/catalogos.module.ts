@@ -18,6 +18,7 @@ import {
 import { EnviarFinalUseCase } from './application/use-cases/enviar-final.use-case';
 import { ExportarCatalogoUseCase } from './application/use-cases/exportar-catalogo.use-case';
 import { AjustarCatalogoUseCase } from './application/use-cases/ajustar-catalogo.use-case';
+import { AprovarCatalogoUseCase } from './application/use-cases/aprovar-catalogo.use-case';
 import { MontarCatalogoUseCase } from './application/use-cases/montar-catalogo.use-case';
 import { TratarFotoUseCase } from './application/use-cases/tratar-foto.use-case';
 import {
@@ -77,6 +78,8 @@ import { MidiaController } from './infrastructure/http/controllers/midia.control
     MontarCatalogoUseCase,
     // O ajuste do PDF montado, pagina por pagina — e quem le o pedido.
     AjustarCatalogoUseCase,
+    // A aprovação: PUBLICADO, a trava e a capa da versão aprovada.
+    AprovarCatalogoUseCase,
     {
       provide: INTERPRETADOR_AJUSTE,
       useClass: AnthropicInterpretadorDeAjusteClient,

@@ -43,6 +43,7 @@ import {
   ondeVai,
   type ImagensGeradas,
 } from './montar-catalogo.use-case';
+import { recusarSeAprovado } from './aprovar-catalogo.use-case';
 
 export interface Interpretacao {
   /** A versão sobre a qual o pedido foi lido — é ela que `aplicar` recebe. */
@@ -219,6 +220,7 @@ export class AjustarCatalogoUseCase {
   ): Promise<Versao> {
     const catalogo = await this.repositorio.buscarPorId(catalogoId);
     if (!catalogo) throw new NotFoundException('Catálogo não encontrado');
+    recusarSeAprovado(catalogo);
 
     const final = finalId
       ? catalogo.finais.find((f) => f.id === finalId)

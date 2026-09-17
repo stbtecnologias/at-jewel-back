@@ -38,6 +38,7 @@ import {
   type PaginaDoPlano,
   type PlanoDaMontagem,
 } from '../plano-da-montagem';
+import { recusarSeAprovado } from './aprovar-catalogo.use-case';
 
 /**
  * A página, em pontos de PDF (1 pt = 1/72 pol).
@@ -333,6 +334,7 @@ export class MontarCatalogoUseCase {
   async execute(catalogoId: string): Promise<CatalogoDetalhe> {
     const catalogo = await this.repositorio.buscarPorId(catalogoId);
     if (!catalogo) throw new NotFoundException('Catálogo não encontrado');
+    recusarSeAprovado(catalogo);
 
     const fotos = catalogo.fotos.filter((f) => f.status === 'APROVADA');
     if (fotos.length === 0) {

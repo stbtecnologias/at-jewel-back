@@ -25,6 +25,7 @@ import {
 } from '../../../application/use-cases/enviar-final.use-case';
 import { ExportarCatalogoUseCase } from '../../../application/use-cases/exportar-catalogo.use-case';
 import { AjustarCatalogoUseCase } from '../../../application/use-cases/ajustar-catalogo.use-case';
+import { AprovarCatalogoUseCase } from '../../../application/use-cases/aprovar-catalogo.use-case';
 import { MontarCatalogoUseCase } from '../../../application/use-cases/montar-catalogo.use-case';
 import { Permissions } from '../../../../auth/infrastructure/http/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../../../auth/infrastructure/http/guards/jwt-auth.guard';
@@ -54,6 +55,7 @@ import {
   CriarReferenciaDto,
   DefinirCapaDto,
   AplicarAjusteDto,
+  AprovarCatalogoDto,
   InterpretarAjusteDto,
 } from '../dto/catalogo.dto';
 
@@ -86,6 +88,7 @@ export class CatalogosController {
     private readonly montarCatalogo: MontarCatalogoUseCase,
     private readonly enviarFinalCatalogo: EnviarFinalUseCase,
     private readonly ajustarCatalogo: AjustarCatalogoUseCase,
+    private readonly aprovarCatalogo: AprovarCatalogoUseCase,
   ) {}
 
   @Get()
@@ -204,6 +207,33 @@ export class CatalogosController {
     @Body() dto: AplicarAjusteDto,
   ) {
     return this.ajustarCatalogo.aplicar(id, dto.finalId, dto.acoes);
+  }
+
+  /**
+   * Aprova a versão ATUAL: o catálogo vira PUBLICADO, trava montar, ajustar e
+   * enviar, e a capa dessa versão passa a ser a do card e do cabeçalho.
+   *
+   * Quem aprovou sai do JWT, nunca do corpo — como em `enviarFinal`.
+   */
+  @Post(':id/aprovacao')
+  @HttpCode(HttpStatus.OK)
+  @Permissions('catalogo:write')
+  async aprovar(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AprovarCatalogoDto,
+    @Request() req: { user: JwtPayload },
+  ) {
+    return this.aprovarCatalogo.aprovar(id, dto.finalId, {
+      userId: req.user.sub,
+      email: req.user.email,
+    });
+  }
+
+  /** Desfaz a aprovação: volta a COLETANDO e a capa volta à referência. */
+  @Delete(':id/aprovacao')
+  @Permissions('catalogo:write')
+  async desfazerAprovacao(@Param('id', ParseUUIDPipe) id: string) {
+    return this.aprovarCatalogo.desfazer(id);
   }
 
   /**

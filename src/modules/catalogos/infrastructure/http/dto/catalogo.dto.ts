@@ -150,3 +150,12 @@ export class AplicarAjusteDto {
   @ArrayMaxSize(20)
   acoes: unknown[];
 }
+
+/**
+ * Aprovar o catálogo. `finalId` é a versão que a pessoa estava vendo — se
+ * já não for a atual, o caso de uso recusa.
+ */
+export class AprovarCatalogoDto {
+  @IsUUID()
+  finalId: string;
+}
