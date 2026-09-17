@@ -54,8 +54,9 @@ const PERGUNTA =
   'Responda SOMENTE com um JSON, sem texto antes ou depois:\n' +
   '{"cena": "...", "modelo": "...", "paleta": {"fundo": "#RRGGBB", ' +
   '"destaque": "#RRGGBB", "texto": "#RRGGBB"}, "frase": "..."}\n\n' +
-  '- cena: até 3 frases, em português, descrevendo cenário, elementos ' +
-  'visuais e luz para as fotografias do catálogo;\n' +
+  '- cena: até 3 frases, em português, descrevendo SÓ o ambiente — lugar, ' +
+  'elementos do tema e luz. A cena vira capa e fundo de página, então não ' +
+  'cite joia, peça, pedra, metal nem o efeito da luz sobre elas;\n' +
   '- modelo: quem aparece usando as joias, coerente com o tema e o público ' +
   '(ex.: "uma mulher elegante", "um homem de uns 40 anos", "mãe e filha ' +
   'adulta");\n' +

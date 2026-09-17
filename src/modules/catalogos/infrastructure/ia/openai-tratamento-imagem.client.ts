@@ -148,8 +148,33 @@ const INSTRUCAO_BASE =
  * torta — e o texto da capa e nosso, escrito por cima.
  */
 const ARTE_SEM =
-  'SEM pessoas, SEM joias ou acessórios, SEM texto, letras, números, marcas ' +
-  'ou logotipos.';
+  'SEM pessoas, SEM texto, letras, números, marcas ou logotipos, e sem ' +
+  'nenhum adorno ou objeto de uso pessoal.';
+
+/**
+ * A ARTE E PEDIDA PELO QUE ELA TEM, NUNCA PELO QUE NAO TEM — 17/09/2026.
+ *
+ * O prompt dizia "capa de um catalogo de JOIAS ... SEM joias", e a cena da
+ * direcao de arte falava em "verdes-esmeralda das joias". O modelo de imagem
+ * leu "joias" e "esmeralda" e desenhou um par de brincos de esmeralda no
+ * centro da capa do #0004 — peca que o catalogo nao tem. Proibicao nao segura
+ * modelo de imagem: a palavra citada vira o assunto.
+ *
+ * Entao a palavra nao chega. A arte e descrita como paisagem, e da cena saem
+ * as FRASES que falam de joia, peca ou pedra — a luz e o cenario das outras
+ * frases continuam. Vale tambem para os planos ja gravados, que o ajuste
+ * reaproveita: a limpeza e aqui, na saida para a OpenAI.
+ */
+const FALA_DE_JOIA =
+  /\b(j[oó]ias?|an[eé]is|anel|brincos?|colar(es)?|cord[aã]o|cord[oõ]es|pulseiras?|braceletes?|pingentes?|gargantilhas?|tornozeleiras?|broches?|abotoaduras?|rel[oó]gios?|pe[cç]as?|acess[oó]rios?|adornos?|esmeraldas?|rubis?|safiras?|diamantes?|p[eé]rolas?|gemas?|pedras? preciosas?|ouro|prata)\b/i;
+
+export function cenaParaArte(cena: string): string {
+  return cena
+    .split(/(?<=[.!?;])\s+/)
+    .filter((frase) => frase.trim() && !FALA_DE_JOIA.test(frase))
+    .join(' ')
+    .trim();
+}
 
 /**
  * Tratamento da foto pela API de imagens da OpenAI.
@@ -242,14 +267,17 @@ export class OpenaiTratamentoImagemClient implements ITratamentoImagem {
    */
   async gerarArte(pedido: PedidoDeArte): Promise<ImagemTratada | null> {
     const cores = pedido.cores.join(', ');
+    // Se TODA a cena falava de joia, sobra o genérico — melhor que a joia.
+    const cena = cenaParaArte(pedido.cena) || 'ambiente sofisticado e sereno';
     const prompt =
       pedido.tipo === 'capa'
-        ? 'Fotografia de cenário para a capa de um catálogo de joias de luxo. ' +
-          `Cenário e clima: ${pedido.cena}. Tons que conversem com ${cores}. ` +
-          'Composição elegante e arejada, com uma área central mais limpa ' +
-          `para receber um título. ${ARTE_SEM}`
-        : 'Fundo decorativo para a página de um catálogo de joias de luxo. ' +
-          `Tema: ${pedido.cena}. Elementos do tema discretos, suaves e ` +
+        ? 'Fotografia de paisagem e ambiente para a capa de uma revista de ' +
+          `luxo. Cenário e clima: ${cena}. Tons que conversem com ${cores}. ` +
+          'Só o cenário e seus elementos naturais, em composição elegante e ' +
+          'arejada; o centro da imagem fica livre, sem nenhum objeto em ' +
+          `destaque, para receber um título. ${ARTE_SEM}`
+        : 'Fundo decorativo para a página de uma revista de luxo. ' +
+          `Tema: ${cena}. Elementos do tema discretos, suaves e ` +
           'desfocados SOMENTE nas bordas e nos cantos. O CENTRO da imagem ' +
           `amplo, liso e claro, na cor ${pedido.cores[0]}, sem nenhum ` +
           `elemento. Paleta: ${cores}. ${ARTE_SEM}`;

@@ -140,9 +140,46 @@ describe('OpenaiTratamentoImagemClient', () => {
       });
 
       expect(enviado.url).toContain('/images/generations');
-      expect(enviado.prompt).toContain('SEM pessoas, SEM joias');
+      expect(enviado.prompt).toContain('SEM pessoas');
       expect(enviado.prompt).toContain('SEM texto');
       expect(enviado.size).toBe('1536x1024');
+    });
+
+    /**
+     * O #0004 de 17/09: "capa de catálogo de JOIAS ... SEM joias" e a cena
+     * falando em "verdes-esmeralda das joias" deram um par de brincos que o
+     * catálogo não tem. A palavra não pode chegar à OpenAI.
+     */
+    it.each(['capa', 'fundo'] as const)(
+      '%s: nenhuma palavra de joia chega ao prompt, nem vinda da cena',
+      async (tipo) => {
+        await cliente.gerarArte({
+          tipo,
+          cena:
+            'Praia ao entardecer com areia clara. Conchas e pedras lisas. ' +
+            'Luz dourada que realça os verdes-esmeralda das joias, criando reflexos.',
+          cores: ['#f5f1ed', '#2d7a6b'],
+          orientacao: 'retrato',
+        });
+
+        expect(enviado.prompt).toContain(
+          'Praia ao entardecer com areia clara.',
+        );
+        expect(enviado.prompt).toContain('Conchas e pedras lisas.');
+        expect(enviado.prompt).not.toMatch(/j[oó]ia|esmeralda|brinco|pe[cç]a/i);
+      },
+    );
+
+    it('cena que só fala de joia vira cenário genérico, e não some o pedido', async () => {
+      await cliente.gerarArte({
+        tipo: 'capa',
+        cena: 'Anéis de ouro com esmeralda sobre veludo.',
+        cores: ['#ffffff'],
+        orientacao: 'retrato',
+      });
+
+      expect(enviado.prompt).toContain('ambiente sofisticado');
+      expect(enviado.prompt).not.toMatch(/anel|an[eé]is|esmeralda|ouro/i);
     });
 
     it('fundo: a cena nas bordas e o centro livre, na cor da pagina', async () => {
