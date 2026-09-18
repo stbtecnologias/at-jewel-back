@@ -39,7 +39,29 @@ describe('ProdutoRepository.upsertByCodigoErp — o que o ERP reescreve', () => 
 
     // O saldo vem da tabela `estoque` (17/09/2026): 5 aqui, e NAO o 3 da
     // coluna aposentada que a linha do banco ainda carrega.
-    query = jest.fn().mockResolvedValue([{ produto_id: 'p-1', saldo: 5 }]);
+    query = jest.fn().mockResolvedValue([
+      {
+        produto_id: 'p-1',
+        empresa: 'AT HOME LTDA',
+        local: 'ESTOQUE',
+        grupo: 'ESTOQUE',
+        quantidade: 3,
+      },
+      {
+        produto_id: 'p-1',
+        empresa: 'MP COMERCIO',
+        local: 'ESTOQUE',
+        grupo: 'ESTOQUE',
+        quantidade: 2,
+      },
+      {
+        produto_id: 'p-1',
+        empresa: 'GOLDESIGN',
+        local: 'ESTOQUE',
+        grupo: 'ESTOQUE',
+        quantidade: 0,
+      },
+    ]);
 
     const ormRepo = {
       manager: { query },
@@ -132,6 +154,13 @@ describe('ProdutoRepository.upsertByCodigoErp — o que o ERP reescreve', () => 
     const produto = await repo.upsertByCodigoErp(doEvento());
 
     expect(produto.estoqueAtual).toBe(5);
+    // As posicoes vem junto, INCLUSIVE a zerada: filtrar por GOLDESIGN tem
+    // de achar a peca que existe la com zero.
+    expect(produto.posicoes.map((p) => p.empresa)).toEqual([
+      'AT HOME LTDA',
+      'MP COMERCIO',
+      'GOLDESIGN',
+    ]);
     const [sql, params] = query.mock.calls[0] as [string, unknown[]];
     expect(sql).toContain('FROM estoque');
     expect(params).toEqual([['p-1']]);
@@ -143,6 +172,7 @@ describe('ProdutoRepository.upsertByCodigoErp — o que o ERP reescreve', () => 
     const produto = await repo.upsertByCodigoErp(doEvento());
 
     expect(produto.estoqueAtual).toBe(0);
+    expect(produto.posicoes).toEqual([]);
   });
 
   it('peca NOVA nasce com a data de entrada de agora', async () => {

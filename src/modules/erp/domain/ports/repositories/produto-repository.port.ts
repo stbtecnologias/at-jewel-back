@@ -30,6 +30,15 @@ export interface FacetasProduto {
   colecoes: string[];
   /** Cores ja usadas. Mesma logica. */
   cores: string[];
+  /**
+   * TODOS OS CADASTRADOS e ativos, e nao so os que tem peca — pedido do Lucas
+   * em 17/09/2026: filtrar por um lugar vazio tem de mostrar que ali nao ha
+   * nada, e nao esconder o lugar. Diferente de pedras/cores, estes tem tabela
+   * propria.
+   */
+  empresas: string[];
+  locais: string[];
+  grupos: string[];
 }
 
 export interface ProdutoAlerta {

@@ -1,3 +1,16 @@
+/**
+ * Uma posição do estoque da peça: empresa × local × grupo, com a quantidade.
+ * Vem da tabela `estoque` (o integrador), INCLUSIVE as zeradas — a tela filtra
+ * por empresa, local e grupo, e a peça que existe num lugar com zero também
+ * precisa ser achada ali.
+ */
+export interface PosicaoDeEstoque {
+  empresa: string;
+  local: string;
+  grupo: string;
+  quantidade: number;
+}
+
 export interface ProdutoProps {
   /** Identidade no ERP: chave da tabela la, imutavel. */
   idErp?: string | null;
@@ -28,6 +41,8 @@ export interface ProdutoProps {
   fotoArquivoId?: string | null;
   ativo: boolean;
   estoqueAtual?: number | null;
+  /** As posições do estoque. A soma das quantidades é o `estoqueAtual`. */
+  posicoes?: PosicaoDeEstoque[];
   dataEntradaEstoque?: Date | null;
   criadoEm?: Date;
   atualizadoEm?: Date;
@@ -57,6 +72,7 @@ export class Produto {
   readonly fotoArquivoId: string | null;
   readonly ativo: boolean;
   readonly estoqueAtual: number;
+  readonly posicoes: PosicaoDeEstoque[];
   readonly dataEntradaEstoque: Date | null;
   readonly criadoEm: Date | undefined;
   readonly atualizadoEm: Date | undefined;
@@ -85,6 +101,7 @@ export class Produto {
     this.fotoArquivoId = props.fotoArquivoId ?? null;
     this.ativo = props.ativo;
     this.estoqueAtual = props.estoqueAtual ?? 0;
+    this.posicoes = props.posicoes ?? [];
     this.dataEntradaEstoque = props.dataEntradaEstoque ?? null;
     this.criadoEm = props.criadoEm;
     this.atualizadoEm = props.atualizadoEm;

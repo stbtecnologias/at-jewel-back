@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository } from 'typeorm';
-import { Produto } from '../../../../domain/entities/produto.entity';
+import {
+  Produto,
+  type PosicaoDeEstoque,
+} from '../../../../domain/entities/produto.entity';
 import {
   AlertasEstoque,
   FacetasProduto,
@@ -211,7 +214,17 @@ export class ProdutoRepository implements IProdutoRepository {
   }
 
   async facetas(): Promise<FacetasProduto> {
-    const [fornecedores, categorias, familias, pedras, colecoes, cores] = await Promise.all([
+    const [
+      fornecedores,
+      categorias,
+      familias,
+      pedras,
+      colecoes,
+      cores,
+      empresas,
+      locais,
+      grupos,
+    ] = await Promise.all([
       this.repo.manager.query<{ v: string }[]>(
         `SELECT DISTINCT referencia_fornecedor AS v FROM produtos
          WHERE referencia_fornecedor IS NOT NULL AND referencia_fornecedor <> '' ORDER BY 1`,
@@ -237,6 +250,16 @@ export class ProdutoRepository implements IProdutoRepository {
         `SELECT DISTINCT cor AS v FROM produtos
          WHERE cor IS NOT NULL AND cor <> '' ORDER BY 1`,
       ),
+      // Os tres eixos do estoque: o CADASTRO inteiro, com peca ou sem.
+      this.repo.manager.query<{ v: string }[]>(
+        `SELECT DISTINCT nome AS v FROM empresas WHERE ativo ORDER BY 1`,
+      ),
+      this.repo.manager.query<{ v: string }[]>(
+        `SELECT DISTINCT nome AS v FROM locais_estoque WHERE ativo ORDER BY 1`,
+      ),
+      this.repo.manager.query<{ v: string }[]>(
+        `SELECT DISTINCT nome AS v FROM grupos_estoque WHERE ativo ORDER BY 1`,
+      ),
     ]);
     return {
       fornecedores: fornecedores.map((r) => r.v),
@@ -245,6 +268,9 @@ export class ProdutoRepository implements IProdutoRepository {
       pedras: pedras.map((r) => r.v),
       colecoes: colecoes.map((r) => r.v),
       cores: cores.map((r) => r.v),
+      empresas: empresas.map((r) => r.v),
+      locais: locais.map((r) => r.v),
+      grupos: grupos.map((r) => r.v),
     };
   }
 
@@ -364,17 +390,44 @@ export class ProdutoRepository implements IProdutoRepository {
    */
   private async comSaldo(entidades: ProdutoOrmEntity[]): Promise<Produto[]> {
     if (entidades.length === 0) return [];
+    // AS POSICOES VEM JUNTO, e o saldo e a soma delas (17/09/2026): a tela de
+    // Produtos mostra e filtra por empresa, local e grupo. Uma consulta so —
+    // ~7 mil linhas para o catalogo inteiro. As zeradas vem tambem: filtrar
+    // por empresa tem de achar a peca que existe la com zero.
     const linhas = await this.repo.manager.query<
-      { produto_id: string; saldo: number }[]
+      {
+        produto_id: string;
+        empresa: string;
+        local: string;
+        grupo: string;
+        quantidade: number;
+      }[]
     >(
-      `SELECT produto_id, SUM(quantidade)::int AS saldo
-         FROM estoque
-        WHERE produto_id = ANY($1)
-        GROUP BY produto_id`,
+      `SELECT s.produto_id,
+              COALESCE(e.nome, '—') AS empresa,
+              COALESCE(l.nome, '—') AS local,
+              COALESCE(g.nome, '—') AS grupo,
+              s.quantidade
+         FROM estoque s
+         LEFT JOIN empresas e ON e.id = s.empresa_id
+         LEFT JOIN locais_estoque l ON l.id = s.local_estoque_id
+         LEFT JOIN grupos_estoque g ON g.id = s.grupo_estoque_id
+        WHERE s.produto_id = ANY($1)
+        ORDER BY s.quantidade DESC, e.nome`,
       [entidades.map((e) => e.id)],
     );
-    const saldos = new Map(linhas.map((l) => [l.produto_id, Number(l.saldo)]));
-    return entidades.map((e) => this.toDomain(e, saldos.get(e.id) ?? 0));
+    const porProduto = new Map<string, PosicaoDeEstoque[]>();
+    for (const l of linhas) {
+      const lista = porProduto.get(l.produto_id) ?? [];
+      lista.push({
+        empresa: l.empresa,
+        local: l.local,
+        grupo: l.grupo,
+        quantidade: Number(l.quantidade),
+      });
+      porProduto.set(l.produto_id, lista);
+    }
+    return entidades.map((e) => this.toDomain(e, porProduto.get(e.id) ?? []));
   }
 
   private async umComSaldo(entidade: ProdutoOrmEntity): Promise<Produto> {
@@ -382,7 +435,7 @@ export class ProdutoRepository implements IProdutoRepository {
     return produto;
   }
 
-  private toDomain(o: ProdutoOrmEntity, saldo: number): Produto {
+  private toDomain(o: ProdutoOrmEntity, posicoes: PosicaoDeEstoque[]): Produto {
     return Produto.create({
       idErp: o.idErp,
       id: o.id,
@@ -406,7 +459,8 @@ export class ProdutoRepository implements IProdutoRepository {
       fotoUrl: o.fotoUrl,
       fotoArquivoId: o.fotoArquivoId,
       ativo: o.ativo,
-      estoqueAtual: saldo,
+      estoqueAtual: posicoes.reduce((s, p) => s + p.quantidade, 0),
+      posicoes,
       dataEntradaEstoque: o.dataEntradaEstoque,
       criadoEm: o.criadoEm,
       atualizadoEm: o.atualizadoEm,
