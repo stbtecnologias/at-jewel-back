@@ -2,9 +2,11 @@ import { Inject, Injectable } from '@nestjs/common';
 import { VENDEDORA_REPOSITORY } from '../../../vendedoras/domain/ports/injection-tokens';
 import type { IVendedoraRepository } from '../../../vendedoras/domain/ports/repositories/vendedora-repository.port';
 import { ATENDIMENTO_REPOSITORY } from '../../domain/ports/injection-tokens';
-import type {
-  IAtendimentoRepository,
-  PontoDaLinha,
+import {
+  ETAPAS_ATENDIMENTO,
+  type ContagemPorEtapa,
+  type IAtendimentoRepository,
+  type PontoDaLinha,
 } from '../../domain/ports/repositories/atendimento-repository.port';
 
 /** Uma faixa da tela: a vendedora e o que ela fez naquele dia. */
@@ -12,12 +14,34 @@ export interface FaixaDaLinha {
   vendedoraId: string;
   vendedoraNome: string;
   pontos: PontoDaLinha[];
+
+  /**
+   * O FUNIL DELA NAQUELE DIA — 22/09/2026.
+   *
+   * Conta EPISODIOS, e nao pontos: quem trocou oito mensagens com a mesma
+   * cliente e UM em negociacao, e nao oito. Ver `contarEtapas`.
+   */
+  porEtapa: ContagemPorEtapa;
+
+  /** A soma de `porEtapa`. Zero numa faixa so de venda, lead ou consignacao. */
+  atendimentos: number;
 }
 
 export interface LinhaDoTempo {
   /** O dia mostrado, em ISO. E sempre o pedido — ou hoje. */
   dia: string;
   faixas: FaixaDaLinha[];
+
+  /**
+   * O MESMO FUNIL, DA LOJA INTEIRA — e a legenda da tela.
+   *
+   * Sai da mesma funcao que alimenta cada faixa, e nao de uma segunda
+   * consulta: e o que garante que o total da legenda bata com a soma das
+   * barrinhas. Dois caminhos para o mesmo numero divergem, e quando
+   * divergem ninguem sabe qual acreditar.
+   */
+  porEtapa: ContagemPorEtapa;
+  atendimentos: number;
 }
 
 /**
@@ -76,22 +100,14 @@ export class ConsultarLinhaDoTempoUseCase {
 
     const faixas: FaixaDaLinha[] = ativas
       .filter((v): v is typeof v & { id: string } => Boolean(v.id))
-      .map((v) => ({
-        vendedoraId: v.id,
-        vendedoraNome: v.nome,
-        pontos: porVendedora.get(v.id) ?? [],
-      }));
+      .map((v) => comFunil(v.id, v.nome, porVendedora.get(v.id) ?? []));
 
     // Quem teve movimento e nao esta mais ativa ainda assim aparece: o dia
     // dela aconteceu, e apagar isso reescreveria o passado.
     const jaListadas = new Set(faixas.map((f) => f.vendedoraId));
     for (const [id, lista] of porVendedora) {
       if (jaListadas.has(id)) continue;
-      faixas.push({
-        vendedoraId: id,
-        vendedoraNome: lista[0].vendedoraNome,
-        pontos: lista,
-      });
+      faixas.push(comFunil(id, lista[0].vendedoraNome, lista));
     }
 
     // ======================================================================
@@ -110,7 +126,18 @@ export class ConsultarLinhaDoTempoUseCase {
     // ======================================================================
     faixas.sort((a, b) => a.vendedoraNome.localeCompare(b.vendedoraNome, 'pt-BR'));
 
-    return { dia: emIso(alvo), faixas };
+    // O TOTAL DA LOJA SAI DOS MESMOS PONTOS, e nao da soma das faixas: um
+    // atendimento pertence a uma vendedora so, entao as duas contas dao no
+    // mesmo — mas contar de novo da origem nao depende disso continuar
+    // verdade se um dia um episodio passar a ter duas donas.
+    const porEtapa = contarEtapas(pontos);
+
+    return {
+      dia: emIso(alvo),
+      faixas,
+      porEtapa,
+      atendimentos: somar(porEtapa),
+    };
   }
 
   /**
@@ -126,6 +153,63 @@ export class ConsultarLinhaDoTempoUseCase {
     const pontos = await this.repo.linhaDoTempo(alvo, somaUmDia(alvo));
     return pontos.filter((p) => p.vendedoraId === vendedoraId);
   }
+}
+
+function comFunil(
+  vendedoraId: string,
+  vendedoraNome: string,
+  pontos: PontoDaLinha[],
+): FaixaDaLinha {
+  const porEtapa = contarEtapas(pontos);
+  return {
+    vendedoraId,
+    vendedoraNome,
+    pontos,
+    porEtapa,
+    atendimentos: somar(porEtapa),
+  };
+}
+
+/**
+ * Quantos EPISODIOS DISTINTOS em cada etapa — 22/09/2026.
+ *
+ * ==========================================================================
+ * A UNIDADE E O ATENDIMENTO, E NAO O PONTO NEM A CLIENTE.
+ *
+ * Nao e o ponto: quem trocou oito mensagens com a mesma cliente hoje e UM em
+ * negociacao, e nao oito. Contar pontos transformaria conversa em volume e
+ * poria a cliente mais falante no lugar de oito clientes.
+ *
+ * Nao e a cliente, por um motivo menos obvio: a etapa e propriedade do
+ * ATENDIMENTO. A mesma cliente pode ter dois episodios abertos ("um atendimento
+ * = uma ocasiao"), e nesse caso nao existe A etapa dela — existem duas, e
+ * escolher uma seria inventar. Contando episodio, cada numero tem dono.
+ *
+ * NA PRATICA OS DOIS COINCIDEM quase sempre, e por isso a tela fala em
+ * clientes. Onde divergem, o episodio e que esta certo.
+ * ==========================================================================
+ *
+ * Ponto sem `atendimentoId` — venda, consignacao, lead encaminhado — nao entra
+ * em etapa nenhuma. Nao e falta de dado: e falta de episodio.
+ */
+function contarEtapas(pontos: PontoDaLinha[]): ContagemPorEtapa {
+  const etapaDoAtendimento = new Map<string, string>();
+  for (const p of pontos) {
+    if (!p.atendimentoId || !p.etapa) continue;
+    etapaDoAtendimento.set(p.atendimentoId, p.etapa);
+  }
+
+  const contagem = Object.fromEntries(
+    ETAPAS_ATENDIMENTO.map((e) => [e, 0]),
+  ) as ContagemPorEtapa;
+  for (const etapa of etapaDoAtendimento.values()) {
+    contagem[etapa as keyof ContagemPorEtapa] += 1;
+  }
+  return contagem;
+}
+
+function somar(c: ContagemPorEtapa): number {
+  return Object.values(c).reduce((n, v) => n + v, 0);
 }
 
 /** Meia-noite de hoje, no fuso do servidor (America/Sao_Paulo). */
