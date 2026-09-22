@@ -55,8 +55,22 @@ const MARGEM = 48;
 /** Espaço entre as células da grade. */
 const GAP = 18;
 
-/** Respiro da foto e do texto dentro do cartão branco, na página com tema. */
+/** Respiro da foto e do texto dentro do cartão, na página com tema. */
 const RESPIRO_CARTAO = 10;
+
+/**
+ * Quanto do branco do cartão de vidro fica de pé.
+ *
+ * NÃO É ESCOLHA DE GOSTO, É O PISO DA LEITURA. O descritivo é escuro
+ * (`COR_DESCRITIVO`, `COR_VALOR`) e o fundo do tema pode ser qualquer coisa
+ * — uma praia ao entardecer é escura. Abaixo disto o código e o preço começam
+ * a brigar com o que está atrás, e preço ilegível num catálogo é defeito, não
+ * estilo. Mais que isto e volta a ser o cartão branco de antes.
+ */
+const VIDRO = 0.58;
+
+/** O canto do cartão de vidro. Mais arredondado que o antigo, de propósito. */
+const RAIO_CARTAO = 14;
 
 /**
  * Fração da altura da célula que a foto PODE ocupar. O resto é do texto.
@@ -297,7 +311,8 @@ export function ondeVai(descricao: string | null): string {
  * Com tema, a IA entra ONDE ERRAR NÃO CUSTA DINHEIRO:
  *   - a arte da CAPA e o FUNDO das páginas, sem peça e sem texto;
  *   - a peça NA MODELO, uma a cada nove, marcada "imagem ilustrativa".
- * As peças da grade continuam sendo o packshot aprovado, em cartão branco.
+ * As peças da grade continuam sendo o packshot aprovado, recortado, num
+ * cartão de vidro.
  *
  * AS IMAGENS NASCEM AQUI, NA HORA DE MONTAR — decisão do Lucas ("não precisa
  * de migração, você gera a foto e monta"). A foto na modelo não passa pela
@@ -774,9 +789,17 @@ export class MontarCatalogoUseCase {
    * QUATRO COLUNAS EM PAISAGEM, DUAS EM RETRATO. A densidade é a mesma; o que
    * muda é a forma da folha.
    *
-   * COM TEMA, CADA PEÇA VAI NUM CARTÃO BRANCO sobre o fundo decorado. O
-   * packshot é branco, e colado direto na página de cor ele viraria um
-   * quadrado recortado; no cartão, o branco da foto é o branco do cartão.
+   * COM TEMA, CADA PEÇA VAI NUM CARTÃO DE VIDRO sobre o fundo decorado.
+   *
+   * ATÉ 21/09/2026 O CARTÃO ERA BRANCO CHAPADO, e ele era branco porque o
+   * packshot era: colado direto na página de cor, o packshot viraria um
+   * quadrado recortado, e no cartão branco o fundo da foto sumia dentro do
+   * fundo do cartão. As duas coisas andavam juntas.
+   *
+   * Agora o branco da foto some NO DESENHO, em modo Multiply — ver
+   * `comBrancoTransparente`, que também conta por que a peça não vem
+   * recortada da geração. A peça já aprovada funciona igual: nada aqui
+   * depende de regerar foto.
    *
    * O TAMANHO SEGUE A QUANTIDADE, E O BLOCO FICA NO MEIO — 16/09/2026. Com
    * uma peça só ela ficava no canto de cima, pequena, com a folha vazia. Agora
@@ -811,19 +834,24 @@ export class MontarCatalogoUseCase {
       const y = topo + linha * (d.alturaCartao + GAP);
 
       if (tema) {
-        doc
-          .roundedRect(x, y, d.larguraCartao, d.alturaCartao, 10)
-          .fill('#ffffff');
+        this.cartaoDeVidro(doc, x, y, d.larguraCartao, d.alturaCartao);
       }
 
       // `fit` preserva a proporção e centraliza: a foto NUNCA é distorcida para
       // preencher. Packshot esticado passa no desenvolvimento e salta aos olhos
       // no impresso.
-      doc.image(imagem, x + (d.larguraCartao - d.foto) / 2, y + respiro, {
-        fit: [d.foto, d.foto],
-        align: 'center',
-        valign: 'center',
-      });
+      const packshot = () =>
+        doc.image(imagem, x + (d.larguraCartao - d.foto) / 2, y + respiro, {
+          fit: [d.foto, d.foto],
+          align: 'center',
+          valign: 'center',
+        });
+
+      // COM TEMA, O BRANCO DA FOTO SOME. Sem tema a página já é branca, e
+      // misturar branco com branco não muda nada — então nem vale o estado
+      // gráfico a mais.
+      if (tema) this.comBrancoTransparente(doc, packshot);
+      else packshot();
 
       this.descritivo(
         doc,
@@ -834,6 +862,131 @@ export class MontarCatalogoUseCase {
         d.escala,
       );
     }
+  }
+
+  /**
+   * O BRANCO DO PACKSHOT SOME — a outra metade do cartão de vidro.
+   *
+   * ==========================================================================
+   * POR QUE NÃO É A FOTO QUE VEM RECORTADA.
+   *
+   * Foi a primeira tentativa, em 21/09/2026, e ela funcionou: pedindo
+   * `background: transparent` na geração, o PNG voltou RGBA com a peça
+   * recortada. O problema apareceu fora do PDF — o packshot é a imagem que
+   * volta pelo WHATSAPP para alguém aprovar, e transparência no WhatsApp
+   * escuro é um quadrado preto. Quem aprova deixou de ver a peça.
+   *
+   * Então a foto continua com fundo branco e quem apaga o branco é o DESENHO.
+   * `Multiply` multiplica cada cor pela que está atrás: branco (1,0) não muda
+   * nada do fundo e some; o ouro e a pedra escurecem contra o vidro claro e
+   * permanecem. De quebra, a peça JÁ aprovada funciona no vidro — nada
+   * depende de regerar foto.
+   *
+   * O CUSTO, e ele é real: reflexo e pedra muito clara ficam mais
+   * transparentes do que ficariam num recorte de verdade. Sobre o vidro
+   * claro isso lê como brilho; sobre um fundo escuro leria como buraco — é
+   * por isso que `VIDRO` não desce de 58%.
+   *
+   * ESCRITO À MÃO NO PDF porque o pdfkit só sabe opacidade (`ca`/`CA`): ele
+   * não expõe modo de mistura. O `BM` é padrão do PDF 1.4 e todo leitor
+   * entende; o que fazemos aqui é registrar o estado gráfico e citá-lo, que é
+   * exatamente o que o pdfkit faz para a opacidade.
+   * ==========================================================================
+   */
+  private comBrancoTransparente(
+    doc: PDFKit.PDFDocument,
+    desenhar: () => void,
+  ): void {
+    doc.save();
+    // `save`/`restore` fecham o modo junto com o resto do estado gráfico: o
+    // descritivo desenhado em seguida não herda a mistura.
+    (doc as unknown as { addContent: (t: string) => void }).addContent(
+      `/${this.multiply(doc)} gs`,
+    );
+    desenhar();
+    doc.restore();
+  }
+
+  /**
+   * O estado gráfico da mistura, criado UMA vez e citado em cada página.
+   *
+   * O objeto é do documento; o NOME é da página — `ext_gstates` é por página,
+   * e sem registrar ali o `/GsMultiply gs` apontaria para o nada e o leitor
+   * ignoraria em silêncio (a foto voltaria com o quadrado branco).
+   */
+  private multiply(doc: PDFKit.PDFDocument): string {
+    const NOME = 'GsMultiply';
+    const dono = doc as unknown as { _gsMultiply?: unknown };
+    if (!dono._gsMultiply) {
+      const ref = doc.ref({ Type: 'ExtGState', BM: 'Multiply' });
+      (ref as unknown as { end: () => void }).end();
+      dono._gsMultiply = ref;
+    }
+    (
+      doc.page as unknown as { ext_gstates: Record<string, unknown> }
+    ).ext_gstates[NOME] = dono._gsMultiply;
+    return NOME;
+  }
+
+  /**
+   * O CARTÃO DE VIDRO — pedido do Lucas em 21/09/2026.
+   *
+   * ==========================================================================
+   * PDF NÃO TEM DESFOQUE, E ESTE É O CONTORNO.
+   *
+   * O "glass" da web é o fundo BORRADO atrás de um painel translúcido, e não
+   * existe primitiva de desfoque no PDF — borrar exigiria recortar o fundo do
+   * tema, passá-lo por uma biblioteca de imagem e colar o pedaço atrás de cada
+   * cartão. Decisão do Lucas: por ora, sem desfoque.
+   *
+   * O que sustenta a leitura de vidro sem ele são as outras três camadas, e a
+   * ordem importa: a sombra dá o descolamento da página, o degradê dá a
+   * espessura (papel vegetal não tem brilho de cima) e a borda clara dá a
+   * aresta. Sem as três, um branco a 58% é só um cartão desbotado.
+   * ==========================================================================
+   */
+  private cartaoDeVidro(
+    doc: PDFKit.PDFDocument,
+    x: number,
+    y: number,
+    largura: number,
+    altura: number,
+  ): void {
+    doc.save();
+
+    // 1. A SOMBRA. PDF também não tem sombra — o que existe é desenhar outra
+    // coisa antes, um pouco deslocada e quase invisível.
+    doc
+      .fillOpacity(0.1)
+      .roundedRect(x + 1.5, y + 3, largura, altura, RAIO_CARTAO)
+      .fill('#000000');
+
+    // 2. O VIDRO.
+    doc
+      .fillOpacity(VIDRO)
+      .roundedRect(x, y, largura, altura, RAIO_CARTAO)
+      .fill('#ffffff');
+
+    // 3. O BRILHO, de cima para baixo, com uma volta no pé: é assim que a luz
+    // pega numa placa de vidro, e é o que separa vidro de papel.
+    const brilho = doc.linearGradient(x, y, x, y + altura);
+    brilho
+      .stop(0, '#ffffff', 0.45)
+      .stop(0.55, '#ffffff', 0)
+      .stop(1, '#ffffff', 0.14);
+    doc
+      .fillOpacity(1)
+      .roundedRect(x, y, largura, altura, RAIO_CARTAO)
+      .fill(brilho);
+
+    // 4. A ARESTA.
+    doc
+      .strokeOpacity(0.75)
+      .lineWidth(0.8)
+      .roundedRect(x, y, largura, altura, RAIO_CARTAO)
+      .stroke('#ffffff');
+
+    doc.restore();
   }
 
   /**

@@ -4,6 +4,7 @@ import { AuthModule } from '../auth/auth.module';
 import { ClientesModule } from '../clientes/clientes.module';
 import { VendedorasModule } from '../vendedoras/vendedoras.module';
 import { WhatsappGatewayModule } from '../atendimento/whatsapp-gateway.module';
+import { AtualizarStatusLeadUseCase } from './application/use-cases/atualizar-status-lead.use-case';
 import { AvisarGestaoDeLeadUseCase } from './application/use-cases/avisar-gestao-de-lead.use-case';
 import { RegistrarLeadUseCase } from './application/use-cases/registrar-lead.use-case';
 import { LEAD_REPOSITORY } from './domain/ports/injection-tokens';
@@ -32,8 +33,9 @@ import { LeadsController } from './infrastructure/http/controllers/leads.control
   providers: [
     RegistrarLeadUseCase,
     AvisarGestaoDeLeadUseCase,
+    AtualizarStatusLeadUseCase,
     { provide: LEAD_REPOSITORY, useClass: LeadRepository },
   ],
-  exports: [LEAD_REPOSITORY, RegistrarLeadUseCase],
+  exports: [LEAD_REPOSITORY, RegistrarLeadUseCase, AtualizarStatusLeadUseCase],
 })
 export class LeadsModule {}

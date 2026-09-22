@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { diasDeCalendario } from '../../../shared/tempo/dias-de-calendario';
 import type {
   GestaoCarteiraHandler,
   GestaoMelhoresHandler,
@@ -9,6 +10,8 @@ import type {
   GestaoVendedorasHandler,
   GestaoDiaDaVendedoraHandler,
   GestaoFeedbacksHandler,
+  GestaoFunilHandler,
+  GestaoPanoramaLeadsHandler,
   GestaoLeituraResultado,
   GestaoMetasHandler,
   GestaoPanoramaHandler,
@@ -34,6 +37,11 @@ import { ConsultarAuditoriaUseCase } from './use-cases/consultar-auditoria.use-c
 import { ConsultarLinhaDoTempoUseCase } from './use-cases/consultar-linha-do-tempo.use-case';
 import type { PontoDaLinha } from '../domain/ports/repositories/atendimento-repository.port';
 import { EncaminharLeadUseCase } from './use-cases/encaminhar-lead.use-case';
+import { fraseDoFunil, rotuloEtapa } from './etapas-em-palavras';
+import {
+  estadoLegivel,
+  linhaDoLead,
+} from '../../leads/application/leads-em-lista';
 
 const MAXIMO_CLIENTES_HOMONIMOS = 5;
 /** Feedbacks por resposta. Acima disso a mensagem deixa de ser lida. */
@@ -70,6 +78,8 @@ export interface FerramentasGestao {
   gestaoMelhores: GestaoMelhoresHandler;
   gestaoFeedbacks: GestaoFeedbacksHandler;
   gestaoDiaDaVendedora: GestaoDiaDaVendedoraHandler;
+  gestaoFunil: GestaoFunilHandler;
+  gestaoPanoramaLeads: GestaoPanoramaLeadsHandler;
 }
 
 /**
@@ -398,6 +408,159 @@ export class FerramentasGestaoService {
           return resumoDoDia(pontos);
         }),
 
+      /**
+       * O FUNIL AGORA — 21/09/2026. O espelho da carteira da Elena.
+       *
+       * SEM NOME, A LOJA INTEIRA; com nome, so aquela vendedora. E a
+       * assimetria de sempre, e ela e o motivo de esta ferramenta ser OUTRA e
+       * nao a mesma da vendedora com um campo a mais: la nao existe "de
+       * quem", entao nenhuma frase alcanca a carteira de uma colega.
+       *
+       * NAO FALA DE VENDA NEM DE VALOR. Este numero e sobre onde as pessoas
+       * estao, nao sobre quanto entrou — misturar os dois aqui faria parecer
+       * que "5 em negociacao" tem um valor associado, e nao tem.
+       */
+      /**
+       * O PANORAMA DE LEADS — 21/09/2026.
+       *
+       * ====================================================================
+       * A GESTAO VE TUDO, E ISSO E DECISAO DO LUCAS.
+       *
+       * O AVISO de lead novo omite o telefone de proposito — o ADM nao liga
+       * para ninguem, e um numero solto numa lista que ele nao pediu so
+       * serviria para ser repassado adiante. Aqui e o oposto: ele PERGUNTOU,
+       * e a resposta traz nome, telefone, o que a pessoa procura e a ocasiao.
+       *
+       * Pedir e receber e diferente de receber sem pedir, e e so isso que
+       * separa os dois textos.
+       * ====================================================================
+       *
+       * COM NOME, os leads daquela vendedora. SEM NOME, a fila inteira:
+       * quantos em cada estado, quem espera encaminhamento e quantos foram
+       * para cada uma.
+       */
+      gestaoPanoramaLeads: async ({ vendedora }) => {
+        if (vendedora && vendedora.trim()) {
+          return this.comVendedora(vendedora, async (_id, codigoErp) => {
+            if (!codigoErp) return [];
+            // ============================================================
+            // A GESTAO VE TUDO — INCLUSIVE O QUE ELA JA RESOLVEU.
+            //
+            // O `false` e o que separa esta leitura da lista DELA. A da
+            // vendedora e uma FILA ("o que eu tenho para fazer") e por isso
+            // esconde o resolvido; esta e uma PRESTACAO DE CONTAS ("como foi
+            // com os leads que mandei"), e ali o resolvido E a resposta.
+            //
+            // Sem isto, perguntar "ele deu baixa em algum?" devolvia "nao tem
+            // nenhum lead" — que e verdade sobre a fila e mentira sobre a
+            // pergunta. Aconteceu em 22/09/2026, com o Lucas do outro lado.
+            // ============================================================
+            const achados = await this.leads.listarPorVendedora(
+              codigoErp,
+              MAXIMO_LEADS + 1,
+              false,
+            );
+            const linhas = achados
+              .slice(0, MAXIMO_LEADS)
+              .map((l) => linhaDoLead(l, true));
+            // Teto silencioso mente por omissao — ver a licao da carteira.
+            if (achados.length > MAXIMO_LEADS) {
+              linhas.push(
+                `Ha mais de ${MAXIMO_LEADS}; estes sao os mais recentes. Diga isso.`,
+              );
+            }
+            return linhas;
+          });
+        }
+
+        const [panorama, esperando] = await Promise.all([
+          this.leads.panoramaDeLeads(),
+          this.leads.listarAguardandoGestao(MAXIMO_LEADS),
+        ]);
+
+        if (panorama.total === 0) return { status: 'OK', linhas: [] };
+
+        const linhas = [
+          `${panorama.total} ${panorama.total === 1 ? 'lead' : 'leads'} no total: ` +
+            panorama.porEstado
+              .map((e) => `${e.quantos} ${estadoLegivel(e.estado)}`)
+              .join(', ') +
+            '.',
+        ];
+
+        // A FILA VEM COM NOME E TELEFONE: e sobre ela que o ADM decide agora.
+        for (const lead of esperando) {
+          linhas.push(`Esperando encaminhamento: ${linhaDoLead(lead, true)}`);
+        }
+
+        // E o codigo da vendedora vira NOME — ninguem decide olhando "012".
+        if (panorama.porVendedora.length > 0) {
+          const equipe = await this.vendedoras.listar({});
+          const nomePorCodigo = new Map(
+            equipe
+              .filter((v) => v.codigoErp)
+              .map((v) => [v.codigoErp as string, v.nome]),
+          );
+          for (const v of panorama.porVendedora) {
+            linhas.push(
+              `${nomePorCodigo.get(v.codigo) ?? v.codigo}: ${v.quantos} ` +
+                `${v.quantos === 1 ? 'lead encaminhado' : 'leads encaminhados'}`,
+            );
+          }
+        }
+
+        return { status: 'OK', linhas };
+      },
+
+      gestaoFunil: async ({ vendedora }) => {
+        if (vendedora && vendedora.trim()) {
+          return this.comVendedora(vendedora, async (id) => {
+            const r = await this.auditoria.resumo({
+              apenasAbertos: true,
+              vendedoraId: id,
+            });
+            const dela = r.vendedoras[0];
+            if (!dela) return [];
+            const linhas = [fraseDoFunil(dela.total, dela.porEtapa)];
+            if (dela.aguardandoRelato > 0) {
+              linhas.push(
+                dela.aguardandoRelato === 1
+                  ? '1 deles esta esperando o relato dela'
+                  : `${dela.aguardandoRelato} deles estao esperando o relato dela`,
+              );
+            }
+            return linhas;
+          });
+        }
+
+        // A LOJA. Uma linha do todo, e depois uma por vendedora — e a leitura
+        // que a gestao faz: primeiro o tamanho, depois de quem e.
+        const r = await this.auditoria.resumo({ apenasAbertos: true });
+        if (r.total === 0) return { status: 'OK', linhas: [] };
+
+        const linhas = [`A loja tem ${fraseDoFunil(r.total, r.porEtapa)}.`];
+        const esperando = r.vendedoras.reduce(
+          (soma, v) => soma + v.aguardandoRelato,
+          0,
+        );
+        if (esperando > 0) {
+          linhas.push(
+            esperando === 1
+              ? '1 deles esta esperando o relato da vendedora'
+              : `${esperando} deles estao esperando o relato da vendedora`,
+          );
+        }
+        for (const v of [...r.vendedoras].sort((a, b) => b.total - a.total)) {
+          linhas.push(
+            `${v.nome}: ${fraseDoFunil(v.total, v.porEtapa)}` +
+              (v.aguardandoRelato > 0
+                ? ` — ${v.aguardandoRelato} esperando relato`
+                : ''),
+          );
+        }
+        return { status: 'OK', linhas };
+      },
+
     };
   }
 
@@ -537,30 +700,20 @@ export function formatarQuando(d: Date): string {
   });
 }
 
-/** A etapa em portugues de gente, para caber na frase da agente. */
-function rotuloEtapa(etapa: string): string {
-  const mapa: Record<string, string> = {
-    PRIMEIRO_CONTATO: 'primeiro contato',
-    EM_NEGOCIACAO: 'em negociacao',
-    REMARCADO: 'remarcado',
-    SEM_CONTATO: 'nao conseguiu falar',
-    CONCLUIDO: 'concluido',
-    NAO_AVANCOU: 'nao avancou',
-  };
-  return mapa[etapa] ?? etapa.toLowerCase();
-}
-
 /**
  * Ha quanto tempo o lead espera, como uma pessoa diria.
  *
  * EM DIAS, e nao em horas: a decisao que a lista alimenta e "esse ai eu
  * esqueci?", e para isso a diferenca entre 3h e 5h nao muda nada. "hoje"
  * cobre o dia corrente inteiro.
+ *
+ * DIA DE CALENDARIO, E NAO PERIODO DE 24 HORAS — mesmo defeito que a lista da
+ * vendedora tinha, achado junto com ele em 22/09/2026. Aqui doi mais: e a fila
+ * de quem espera APROVACAO, e um lead de ontem as 18h aparecia como "hoje"
+ * durante a manha inteira, justamente quando se decide o que ja atrasou.
  */
 function esperaLegivel(desde: Date, agora = new Date()): string {
-  const dias = Math.floor(
-    (agora.getTime() - new Date(desde).getTime()) / 86_400_000,
-  );
+  const dias = diasDeCalendario(new Date(desde), agora);
   if (dias <= 0) return 'hoje';
   if (dias === 1) return 'há 1 dia';
   return `há ${dias} dias`;

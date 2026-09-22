@@ -51,6 +51,9 @@ describe('RotearMensagemInternaUseCase', () => {
     resposta: jest.Mock;
     temFotoEsperando: jest.Mock;
     temFotoEmAprovacao: jest.Mock;
+    lembreteDaAprovacao: jest.Mock;
+    falaDeFotosPendentes: jest.Mock;
+    fotosPendentes: jest.Mock;
     temFotoComFalha: jest.Mock;
     tentarDeNovo: jest.Mock;
     aprovacao: jest.Mock;
@@ -65,6 +68,7 @@ describe('RotearMensagemInternaUseCase', () => {
     continuarConversa: jest.Mock;
     falaDeMandarFoto: jest.Mock;
     falaDeConsultar: jest.Mock;
+    falaDeCatalogos: jest.Mock;
     consultarAgora: jest.Mock;
     intencao: jest.Mock;
   };
@@ -98,6 +102,9 @@ describe('RotearMensagemInternaUseCase', () => {
       }),
       temFotoEsperando: jest.fn(() => false),
       temFotoEmAprovacao: jest.fn(() => false),
+      lembreteDaAprovacao: jest.fn(async () => null),
+      falaDeFotosPendentes: jest.fn(() => false),
+      fotosPendentes: jest.fn(),
       temFotoComFalha: jest.fn(() => false),
       tentarDeNovo: jest.fn().mockResolvedValue(null),
       aprovacao: jest.fn().mockResolvedValue(null),
@@ -118,6 +125,7 @@ describe('RotearMensagemInternaUseCase', () => {
       continuarConversa: jest.fn().mockResolvedValue(null),
       falaDeMandarFoto: jest.fn(() => false),
       falaDeConsultar: jest.fn(() => false),
+      falaDeCatalogos: jest.fn(() => false),
       consultarAgora: jest.fn().mockResolvedValue({
         resposta: 'qual peca?',
         motivo: 'catalogo_consulta_pedida',
@@ -571,19 +579,59 @@ describe('RotearMensagemInternaUseCase', () => {
       // como cliente — o telefone do estoque virava lead na fila da gestão.
       soCatalogo();
 
-      // NAO E MAIS UMA SAUDACAO: desde 15/09/2026 "oi, tudo bem?" e atendido
-      // pela recepcao, com o menu. O que este teste protege e o resto —
-      // qualquer outra frase do estoque continua sendo do canal do catalogo, e
-      // nao da triagem.
+      // O QUE ESTE TESTE PROTEGE E O DESVIO, e nao a resposta: a frase do
+      // estoque nao pode virar lead na triagem. Desde 21/09/2026 a resposta
+      // passou a ser o MENU — ate entao era a lista de catalogos abertos,
+      // que respondia uma pergunta que ninguem tinha feito.
       const r = await useCase.execute({
         de: '558586467241@c.us',
         texto: 'preciso de uma ajuda com uma peça aqui',
       });
 
-      expect(r.motivo).toBe('catalogo_conversa');
-      expect(canalCatalogo.conversa).toHaveBeenCalled();
+      expect(r.motivo).toBe('fora_do_escopo_menu');
+      expect(r.resposta).toContain('Enviar foto para o catálogo');
+      expect(canalCatalogo.conversa).not.toHaveBeenCalled();
       expect(canalGestao.execute).not.toHaveBeenCalled();
       expect(canalVendedora.execute).not.toHaveBeenCalled();
+    });
+
+    it('com foto pendurada, o texto solto LEMBRA da foto em vez de dar menu', async () => {
+      // 21/09/2026: o Lucas escreveu "Ajuda traz o fundo branco como sempre"
+      // logo depois de receber a foto tratada. Ele quis dizer "ajusta" — e
+      // "ajuda", com D, nao esta (nem pode estar) na lista de ajuste. O menu
+      // que ele recebeu nao mencionava a foto esperando.
+      soCatalogo();
+      canalCatalogo.temFotoEmAprovacao.mockReturnValue(true);
+      canalCatalogo.aprovacao.mockResolvedValue(null);
+      canalCatalogo.lembreteDaAprovacao.mockResolvedValue({
+        resposta: 'Tem 1 foto esperando sua resposta: AN24361.',
+        motivo: 'catalogo_lembrete_aprovacao',
+      });
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'Ajuda traz o fundo branco como sempre',
+      });
+
+      expect(r.motivo).toBe('catalogo_lembrete_aprovacao');
+      expect(r.resposta).toContain('AN24361');
+      expect(canalCatalogo.lembreteDaAprovacao).toHaveBeenCalled();
+    });
+
+    it('sem nada pendurado, o lembrete devolve null e o menu assume', async () => {
+      soCatalogo();
+      canalCatalogo.temFotoEmAprovacao.mockReturnValue(true);
+      canalCatalogo.aprovacao.mockResolvedValue(null);
+      // A marca de memoria pode estar de pe sem foto nenhuma no banco — a
+      // consulta e quem tem a verdade.
+      canalCatalogo.lembreteDaAprovacao.mockResolvedValue(null);
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'obrigado pessoal',
+      });
+
+      expect(r.motivo).toBe('fora_do_escopo_menu');
     });
 
     it('o ADMIN continua na Anastasia: a gestão vem ANTES do catálogo', async () => {
@@ -640,7 +688,10 @@ describe('RotearMensagemInternaUseCase', () => {
         audio: AUDIO,
       });
 
-      expect(r.motivo).toBe('catalogo_conversa');
+      // O QUE IMPORTA AQUI E QUE O AUDIO VIROU TEXTO — a resposta em si e a
+      // do chao do canal, que desde 21/09/2026 e o menu.
+      expect(transcricao.transcrever).toHaveBeenCalled();
+      expect(r.motivo).toBe('fora_do_escopo_menu');
     });
 
     // 16/09/2026, 10:37: "consultar peça", com o menu ja vencido, voltou a
@@ -1046,11 +1097,24 @@ describe('RotearMensagemInternaUseCase — a consulta do Lucas, de ponta a ponta
       listarEmAprovacao: jest.fn().mockResolvedValue([]),
     };
 
+    // Armazenamento e WhatsApp entram dublados de verdade: o reenvio das
+    // fotos penduradas passa por eles, e e o que prova que a imagem volta.
+    const armazenamento = {
+      ler: jest.fn().mockResolvedValue({
+        conteudo: Buffer.from('png'),
+        mime: 'image/png',
+      }),
+    };
+    const whatsapp = { enviarImagem: jest.fn().mockResolvedValue(undefined) };
+
     const canalCatalogo = new ProcessarFotoCatalogoUseCase(
       catalogos as never,
-      {} as never,
-      { findByCodigoErp: jest.fn().mockResolvedValue(null) } as never,
-      {} as never,
+      armazenamento as never,
+      {
+        findByCodigoErp: jest.fn().mockResolvedValue(null),
+        buscarCodigosPresentesEm: jest.fn().mockResolvedValue([]),
+      } as never,
+      whatsapp as never,
       new SessaoCatalogoService(),
       {} as never,
       listar as never,
@@ -1074,7 +1138,7 @@ describe('RotearMensagemInternaUseCase — a consulta do Lucas, de ponta a ponta
     const falar = (texto: string) =>
       roteador.execute({ de: DE, texto, em: Date.now() });
 
-    return { falar, buscas, catalogos };
+    return { falar, buscas, catalogos, whatsapp };
   };
 
   it('"consultar peça" sem menu, nome errado, nome certo — e a lista vem', async () => {
@@ -1121,12 +1185,82 @@ describe('RotearMensagemInternaUseCase — a consulta do Lucas, de ponta a ponta
     expect(catalogos.listarAbertos).not.toHaveBeenCalled();
   });
 
-  it('o que nao pede nada continua recebendo o que o canal faz', async () => {
-    // A lista de catalogos nao sumiu: ela e a resposta para quem nao pediu
-    // consulta nem foto.
+  it('o que nao e deste canal recebe o MENU, e nao a lista de catalogos', async () => {
+    // 21/09/2026: o Lucas, como estoquista, perguntou "qual minha carteira?"
+    // e recebeu os quatro catalogos abertos. A lista era o CHAO — caia nela
+    // tudo que as regras nao tratavam.
     const { falar, catalogos } = montar();
 
-    const r = await falar('bom trabalho a todos');
+    const r = await falar('qual minha carteira?');
+
+    expect(r.motivo).toBe('fora_do_escopo_menu');
+    expect(r.resposta).toContain('Enviar foto para o catálogo');
+    expect(catalogos.listarAbertos).not.toHaveBeenCalled();
+  });
+
+  it('"tem foto em aberto?" lista o que espera E reenvia a imagem', async () => {
+    // 21/09/2026, pedido do Lucas: "nao posso pedir para ver as fotos que
+    // estao abertas?" — e "como vou saber qual e?", porque o codigo sozinho
+    // nao diz qual peca e.
+    const { falar, catalogos, whatsapp } = montar();
+    catalogos.listarEmAprovacao.mockResolvedValue([
+      { id: 'f1', codigoErp: 'AN24361', arquivoId: 'arq-1' },
+    ]);
+
+    const r = await falar('tem foto em aberto?');
+
+    expect(r.motivo).toBe('catalogo_pendentes');
+    expect(r.resposta).toContain('AN24361');
+    expect(r.resposta).toContain('aqui embaixo');
+    // O reenvio sai sem await — espera o proximo tique do laco de eventos.
+    await new Promise((ok) => setImmediate(ok));
+    expect(whatsapp.enviarImagem).toHaveBeenCalledTimes(1);
+    expect(whatsapp.enviarImagem.mock.calls[0][3]).toContain('AN24361');
+  });
+
+  it('sem nada pendurado, a pergunta recebe um "nao tem" — e nao o menu', async () => {
+    const { falar, whatsapp } = montar();
+
+    const r = await falar('tem foto em aberto?');
+
+    expect(r.motivo).toBe('catalogo_sem_pendentes');
+    expect(whatsapp.enviarImagem).not.toHaveBeenCalled();
+  });
+
+  it('"tem foto para aprovar?" tambem e pergunta — a 1a versao errava nisso', async () => {
+    // "aprovar" tinha ficado de fora da lista, com medo de "mandar foto para
+    // aprovar". Quem separa as duas intencoes e o VERBO DE ENVIO, e nao a
+    // palavra — foi a primeira frase que o Lucas tentou, e caiu no menu.
+    const { falar, catalogos } = montar();
+    catalogos.listarEmAprovacao.mockResolvedValue([
+      { id: 'f1', codigoErp: 'AN24361', arquivoId: 'arq-1' },
+    ]);
+
+    const r = await falar('tem foto para aprovar?');
+
+    expect(r.motivo).toBe('catalogo_pendentes');
+    expect(r.resposta).toContain('AN24361');
+  });
+
+  it('"quero mandar foto para aprovar" continua sendo ENVIO', async () => {
+    // O outro lado da mesma regra: com verbo de envio, e anuncio do que vai
+    // fazer — mesmo dizendo "aprovar".
+    const { falar, catalogos } = montar();
+    catalogos.listarEmAprovacao.mockResolvedValue([
+      { id: 'f1', codigoErp: 'AN24361', arquivoId: 'arq-1' },
+    ]);
+
+    const r = await falar('quero mandar foto para aprovar');
+
+    expect(r.motivo).toBe('catalogo_intencao');
+  });
+
+  it('quem pergunta POR CATALOGO continua recebendo a lista', async () => {
+    // A lista nao sumiu: ela deixou de ser o chao e virou resposta de quem
+    // perguntou por ela.
+    const { falar, catalogos } = montar();
+
+    const r = await falar('quais catalogos estao abertos?');
 
     expect(r.motivo).toBe('catalogo_conversa');
     expect(catalogos.listarAbertos).toHaveBeenCalled();

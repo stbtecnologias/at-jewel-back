@@ -19,7 +19,12 @@ describe('ConsultarLinhaDoTempoUseCase', () => {
   let vendedoras: { listar: jest.Mock };
   let uc: ConsultarLinhaDoTempoUseCase;
 
-  function ponto(vendedoraId: string, nome: string, hora: number): PontoDaLinha {
+  function ponto(
+    vendedoraId: string,
+    nome: string,
+    hora: number,
+    extra: Partial<PontoDaLinha> = {},
+  ): PontoDaLinha {
     return {
       id: `interacao:${vendedoraId}-${hora}`,
       tipo: 'RELATO',
@@ -35,6 +40,8 @@ describe('ConsultarLinhaDoTempoUseCase', () => {
       sessao: null,
       chatId: null,
       relato: 'foi bem',
+      etapa: null,
+      ...extra,
     };
   }
 
@@ -166,6 +173,113 @@ describe('ConsultarLinhaDoTempoUseCase', () => {
       const r = await uc.execute();
 
       expect(r.faixas).toEqual([]);
+    });
+  });
+
+  /**
+   * O FUNIL DENTRO DA LINHA DO TEMPO — 22/09/2026.
+   *
+   * A regra que estes testes travam e uma so: a barra conta EPISODIOS, e nao
+   * pontos. Sem isso, a cliente que mandou oito mensagens ocuparia o espaco de
+   * oito clientes, e a faixa mentiria justamente no numero que se le de
+   * relance.
+   */
+  describe('o funil da faixa', () => {
+    beforeEach(() => {
+      vendedoras.listar.mockResolvedValue([{ id: 'v1', nome: 'Marina' }]);
+    });
+
+    it('oito pontos do mesmo atendimento sao UM em negociacao', async () => {
+      repo.linhaDoTempo.mockResolvedValue(
+        Array.from({ length: 8 }, (_, i) =>
+          ponto('v1', 'Marina', 9 + i, {
+            atendimentoId: 'at-1',
+            etapa: 'EM_NEGOCIACAO',
+          }),
+        ),
+      );
+
+      const r = await uc.execute();
+
+      expect(r.faixas[0].porEtapa.EM_NEGOCIACAO).toBe(1);
+      expect(r.faixas[0].atendimentos).toBe(1);
+      expect(r.faixas[0].pontos).toHaveLength(8);
+    });
+
+    it('conta cada atendimento na sua etapa', async () => {
+      repo.linhaDoTempo.mockResolvedValue([
+        ponto('v1', 'Marina', 9, { atendimentoId: 'at-1', etapa: 'CONCLUIDO' }),
+        ponto('v1', 'Marina', 10, { atendimentoId: 'at-2', etapa: 'REMARCADO' }),
+        ponto('v1', 'Marina', 11, { atendimentoId: 'at-3', etapa: 'REMARCADO' }),
+      ]);
+
+      const r = await uc.execute();
+
+      expect(r.faixas[0].porEtapa.REMARCADO).toBe(2);
+      expect(r.faixas[0].porEtapa.CONCLUIDO).toBe(1);
+      expect(r.faixas[0].atendimentos).toBe(3);
+    });
+
+    /**
+     * Venda, consignacao e lead encaminhado nascem sem atendimento. Eles CONTAM
+     * como movimento do dia — a faixa deixa de dizer "sem registro" — mas nao
+     * tem etapa, e entrar na barra somaria coisas de naturezas diferentes.
+     */
+    it('ponto sem atendimento nao entra em etapa nenhuma', async () => {
+      repo.linhaDoTempo.mockResolvedValue([
+        ponto('v1', 'Marina', 9, {
+          tipo: 'VENDA',
+          atendimentoId: null,
+          etapa: null,
+        }),
+      ]);
+
+      const r = await uc.execute();
+
+      expect(r.faixas[0].atendimentos).toBe(0);
+      expect(r.faixas[0].pontos).toHaveLength(1);
+    });
+
+    it('faixa vazia tem as seis etapas zeradas, e nao um objeto pela metade', async () => {
+      const r = await uc.execute();
+
+      expect(r.faixas[0].porEtapa).toEqual({
+        PRIMEIRO_CONTATO: 0,
+        EM_NEGOCIACAO: 0,
+        REMARCADO: 0,
+        SEM_CONTATO: 0,
+        CONCLUIDO: 0,
+        NAO_AVANCOU: 0,
+      });
+    });
+
+    /**
+     * O TOTAL DA LEGENDA TEM DE BATER COM A SOMA DAS BARRINHAS. E o unico
+     * jeito de a tela poder ser lida nos dois sentidos: da loja para a pessoa,
+     * e da pessoa para a loja.
+     */
+    it('o total da loja e a soma das faixas', async () => {
+      vendedoras.listar.mockResolvedValue([
+        { id: 'v1', nome: 'Marina' },
+        { id: 'v2', nome: 'Bianca' },
+      ]);
+      repo.linhaDoTempo.mockResolvedValue([
+        ponto('v1', 'Marina', 9, { atendimentoId: 'at-1', etapa: 'CONCLUIDO' }),
+        ponto('v1', 'Marina', 10, { atendimentoId: 'at-1', etapa: 'CONCLUIDO' }),
+        ponto('v2', 'Bianca', 11, {
+          atendimentoId: 'at-2',
+          etapa: 'EM_NEGOCIACAO',
+        }),
+      ]);
+
+      const r = await uc.execute();
+
+      expect(r.atendimentos).toBe(2);
+      expect(r.porEtapa.CONCLUIDO).toBe(1);
+      expect(r.porEtapa.EM_NEGOCIACAO).toBe(1);
+      expect(r.faixas.reduce((n, f) => n + f.atendimentos, 0)).toBe(
+        r.atendimentos,
+      );
     });
   });
 });

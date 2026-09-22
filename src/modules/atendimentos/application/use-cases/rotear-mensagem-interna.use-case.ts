@@ -374,13 +374,42 @@ export class RotearMensagemInternaUseCase {
     // fazer. Foto vem antes: "vou mandar a foto da peça" fala de peca, mas e
     // envio.
     if (doCatalogo) {
+      // A PERGUNTA PELO QUE ESTA PENDURADO VEM PRIMEIRO. "tem foto em aberto
+      // no catalogo?" fala de foto e de catalogo — sem esta ordem viraria
+      // envio, e a pergunta nunca seria respondida.
+      if (this.canalCatalogo.falaDeFotosPendentes(texto)) {
+        return this.canalCatalogo.fotosPendentes(msg.de, doCatalogo.nome ?? '');
+      }
       if (this.canalCatalogo.falaDeMandarFoto(texto)) {
         return this.canalCatalogo.intencao(msg.de, texto);
       }
       if (this.canalCatalogo.falaDeConsultar(texto)) {
         return this.canalCatalogo.consultarAgora(msg.de, texto);
       }
-      return this.canalCatalogo.conversa(msg.de, doCatalogo.nome ?? '');
+      // A LISTA DE CATALOGOS E RESPOSTA, E NAO CHAO — 21/09/2026. Quem
+      // pergunta por catalogo recebe a lista; ver `falaDeCatalogos`.
+      if (this.canalCatalogo.falaDeCatalogos(texto)) {
+        return this.canalCatalogo.conversa(msg.de, doCatalogo.nome ?? '');
+      }
+      // ANTES DO MENU, A FOTO PENDURADA. Um texto solto com foto esperando
+      // veredito e quase sempre uma tentativa de responder a ela — ver
+      // `lembreteDaAprovacao`. O teste de memoria vem primeiro e e de graca:
+      // sem foto pendurada ninguem paga a consulta.
+      if (this.canalCatalogo.temFotoEmAprovacao(msg.de)) {
+        const lembrete = await this.canalCatalogo.lembreteDaAprovacao(
+          msg.de,
+          doCatalogo.nome ?? '',
+        );
+        if (lembrete) return lembrete;
+      }
+
+      // O QUE SOBROU NAO E DESTE CANAL. Dizer isso, e dizer o que e —
+      // "qual minha carteira?" de um estoquista recebia os catalogos abertos.
+      return this.recepcionar.naoSeiFazer(
+        msg.de,
+        { vendedora: false, gestao: false, catalogo: true },
+        doCatalogo.nome ?? '',
+      );
     }
 
     // ---------------------------------------------------------------------

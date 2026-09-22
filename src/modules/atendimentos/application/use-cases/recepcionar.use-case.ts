@@ -91,16 +91,69 @@ export class RecepcionarUseCase {
     nomeCompleto: string,
     agora = new Date(),
   ): { resposta: string; motivo: string } {
-    const opcoes = this.opcoesDe(perfil);
+    return this.comMenu(
+      de,
+      perfil,
+      `${this.abertura(nomeCompleto, agora)} Aqui eu te ajudo com:`,
+      `${this.abertura(nomeCompleto, agora)} Como posso ajudar?`,
+      'recepcao_menu',
+      'recepcao_sem_opcoes',
+    );
+  }
 
-    // SEM NENHUMA OPCAO NAO HA MENU. Nao deveria acontecer — o roteador so
-    // chega aqui com alguem reconhecido —, mas um menu vazio seria pior que
-    // a saudacao seca.
+  /**
+   * "Isso eu não faço por aqui" — e, na mesma mensagem, o que eu faço.
+   *
+   * ==========================================================================
+   * O CHAO DO CANAL DO CATALOGO DEIXOU DE SER A LISTA DE CATALOGOS.
+   *
+   * Em 21/09/2026 o Lucas, entrando como estoquista, perguntou "qual minha
+   * carteira?" e recebeu os catalogos abertos. A lista nao estava errada por
+   * defeito: ela ERA o chao — todo texto que as regras nao tratavam caia nela.
+   *
+   * Duas coisas se perdiam. A primeira, que aquilo nao existe neste canal. A
+   * segunda, o que existe — e essa ele ja tinha, no menu, so que o menu so
+   * aparecia para quem dizia "oi".
+   *
+   * NAO E UM ERRO, E UMA RESPOSTA. Nada de "nao entendi": a pessoa entendeu
+   * o que escreveu, quem nao faz aquilo e o canal.
+   * ==========================================================================
+   */
+  naoSeiFazer(
+    de: string,
+    perfil: PerfilDoCanal,
+    nomeCompleto: string,
+  ): { resposta: string; motivo: string } {
+    const primeiro = nomeCompleto.trim().split(/\s+/)[0] ?? '';
+    const abre = primeiro ? `${primeiro}, i` : 'I';
+    return this.comMenu(
+      de,
+      perfil,
+      `${abre}sso eu não faço por aqui. O que dá para me pedir:`,
+      `${abre}sso eu não faço por aqui.`,
+      'fora_do_escopo_menu',
+      'fora_do_escopo_sem_opcoes',
+    );
+  }
+
+  /**
+   * O menu montado, com o cabecalho de quem chamou.
+   *
+   * SEM NENHUMA OPCAO NAO HA MENU. Nao deveria acontecer — o roteador so
+   * chega aqui com alguem reconhecido —, mas um menu vazio seria pior que a
+   * frase seca.
+   */
+  private comMenu(
+    de: string,
+    perfil: PerfilDoCanal,
+    cabecalho: string,
+    semOpcoes: string,
+    motivoComMenu: string,
+    motivoSemOpcoes: string,
+  ): { resposta: string; motivo: string } {
+    const opcoes = this.opcoesDe(perfil);
     if (opcoes.length === 0) {
-      return {
-        resposta: `${this.abertura(nomeCompleto, agora)} Como posso ajudar?`,
-        motivo: 'recepcao_sem_opcoes',
-      };
+      return { resposta: semOpcoes, motivo: motivoSemOpcoes };
     }
 
     this.recepcao.oferecer(de, opcoes);
@@ -108,11 +161,11 @@ export class RecepcionarUseCase {
     const linhas = opcoes.map((o, i) => `${i + 1} — ${o.rotulo}`);
     return {
       resposta: [
-        `${this.abertura(nomeCompleto, agora)} Aqui eu te ajudo com:`,
+        cabecalho,
         linhas.join('\n'),
         'Responde o número ou me diz o que precisa.',
       ].join('\n\n'),
-      motivo: 'recepcao_menu',
+      motivo: motivoComMenu,
     };
   }
 
@@ -155,6 +208,14 @@ export class RecepcionarUseCase {
           acao: frase('como está a minha meta deste mês?'),
         },
         {
+          rotulo: 'Minha carteira agora',
+          acao: frase('como está minha carteira agora?'),
+        },
+        {
+          rotulo: 'Leads que me mandaram',
+          acao: frase('quais leads encaminharam para mim?'),
+        },
+        {
           rotulo: 'Meus contatos de hoje',
           acao: frase('quais são os meus contatos de hoje?'),
         },
@@ -175,6 +236,10 @@ export class RecepcionarUseCase {
         {
           rotulo: 'Vendas por vendedora',
           acao: frase('como estão as vendas por vendedora hoje?'),
+        },
+        {
+          rotulo: 'Funil de atendimentos',
+          acao: frase('como está o funil de atendimentos?'),
         },
         {
           rotulo: 'Metas da equipe',

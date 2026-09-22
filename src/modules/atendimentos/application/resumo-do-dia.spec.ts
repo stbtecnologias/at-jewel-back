@@ -40,6 +40,7 @@ describe('resumoDoDia', () => {
       sessao: null,
       chatId: null,
       relato: null,
+      etapa: null,
       ...extra,
     };
   }
