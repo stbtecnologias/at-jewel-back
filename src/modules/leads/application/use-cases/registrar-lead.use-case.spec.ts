@@ -27,6 +27,9 @@ function leadFake(over: Partial<Lead> = {}): Lead {
     vendedoraAprovadaCodigo: null,
     direcionadoVendedoraEm: null,
     fechadoEm: null,
+    statusVendedora: null,
+    statusVendedoraEm: null,
+    observacaoVendedora: null,
     criadoEm: new Date(),
     ...over,
   };

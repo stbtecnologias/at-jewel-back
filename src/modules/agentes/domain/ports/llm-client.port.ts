@@ -150,6 +150,94 @@ export type ConsultarProdutosHandler = (
   input: ConsultarProdutosLlmInput,
 ) => Promise<ConsultarProdutosLlmResultado>;
 
+// Handler da tool `consultar_minha_carteira`, do canal INTERNO.
+//
+// SEM PARAMETRO NENHUM, e isso e a regra do canal e nao economia: nao existe
+// "de quem". O `vendedoraId` entra por closure, vindo do telefone, entao
+// nenhuma frase alcanca a carteira de outra pessoa. Decisao do Lucas em
+// 21/09/2026: "cada vendedora ve apenas as suas coisas".
+export interface CarteiraAgoraLlmResultado {
+  /** Clientes com atendimento EM CURSO agora — nao e o total historico. */
+  total: number;
+  /** Uma linha pronta por etapa que tenha pelo menos um cliente. */
+  linhas: string[];
+  /**
+   * Quantos desses esperam o relato DELA.
+   *
+   * E o numero que muda o dia: a distribuicao diz como esta a carteira, este
+   * diz o que esta parado esperando ela.
+   */
+  aguardandoRelato: number;
+}
+
+export type ConsultarCarteiraAgoraHandler =
+  () => Promise<CarteiraAgoraLlmResultado>;
+
+// Handler da tool `meus_leads`, do canal INTERNO.
+//
+// SEM "DE QUEM", como todas as dela: o codigo da vendedora entra por closure.
+// Decisao do Lucas em 21/09/2026: "a vendedora recebe apenas o que foi
+// encaminhado para ela".
+//
+// O TELEFONE VAI, e aqui ele TEM de ir — e o mesmo motivo do aviso de
+// encaminhamento: sem o numero, "entre em contato" nao tem como ser cumprido.
+export interface MeusLeadsLlmResultado {
+  /** `SEM_CODIGO`: o cadastro dela nao tem codigo, e o filtro nao existe. */
+  status: 'OK' | 'SEM_CODIGO';
+  /** Uma linha pronta por lead, com telefone. */
+  linhas: string[];
+  /** QUANTOS existem, e nao quantos vieram — o teto nao pode mentir. */
+  total: number;
+}
+
+export type ConsultarMeusLeadsHandler =
+  () => Promise<MeusLeadsLlmResultado>;
+
+/**
+ * A VENDEDORA DA BAIXA NO LEAD — 22/09/2026.
+ *
+ * ==========================================================================
+ * SEM "DE QUEM", como todas as dela — e aqui a ausencia protege ESCRITA, e
+ * nao so leitura.
+ *
+ * Nas outras ferramentas dela, um "de quem" vazaria dados de outra vendedora.
+ * Nesta, ele deixaria uma vendedora ESCREVER no lead de outra. O codigo dela
+ * entra por closure, e o use case ainda confere se o lead foi mesmo
+ * encaminhado para ela antes de tocar em qualquer coisa.
+ *
+ * O `lead` e o NOME como ela escreveu, e nao um id: ela acabou de ver a lista,
+ * e pedir um uuid no WhatsApp seria pedir o impossivel.
+ * ==========================================================================
+ */
+export type StatusLeadLlm =
+  | 'NOVO'
+  | 'EM_CONTATO'
+  | 'VIROU_CLIENTE'
+  | 'NAO_VINGOU';
+
+export interface AtualizarLeadLlmInput {
+  /** O nome do lead como ela falou. Casa frouxo com a lista dela. */
+  lead: string;
+  status: StatusLeadLlm;
+  /** A frase dela. Ausente nao apaga a que ja estava gravada. */
+  observacao?: string;
+}
+
+export interface AtualizarLeadLlmResultado {
+  /**
+   * `NAO_ACHEI` cobre tambem o lead de outra vendedora, de proposito — a
+   * mesma frase de nome errado. Dizer "esse e de outra" ja entregaria que ele
+   * existe, e e a regra que vale no resto do canal dela.
+   */
+  status: 'ATUALIZADO' | 'NAO_ACHEI' | 'SEM_CODIGO';
+  /** Frase pronta para o modelo repassar, com o VEREDITO na frente. */
+  mensagem: string;
+}
+
+export type AtualizarLeadHandler = (
+  input: AtualizarLeadLlmInput,
+) => Promise<AtualizarLeadLlmResultado>;
+
 // Handlers das tools de CARTEIRA, do canal INTERNO. Mesma regra: sem "de
 // quem" no input — o codigo da vendedora entra por closure.
 export interface ClienteDaCarteiraLlm {
@@ -187,7 +275,23 @@ export type StatusAgendamentoLlm =
   | 'CLIENTE_NAO_ENCONTRADO'
   | 'CLIENTE_AMBIGUO'
   | 'HORARIO_INVALIDO'
-  | 'ATENDIMENTO_DE_OUTRA_PESSOA';
+  | 'ATENDIMENTO_DE_OUTRA_PESSOA'
+  /**
+   * O NOME E UM LEAD DELA, E NAO UM CLIENTE — 22/09/2026.
+   *
+   * ======================================================================
+   * SEPARADO DE `CLIENTE_NAO_ENCONTRADO` DE PROPOSITO.
+   *
+   * As duas respostas seriam "nao achei", e para a vendedora elas nao sao a
+   * mesma coisa: o lead ela ACABOU DE VER na lista, com nome e telefone. Uma
+   * negativa seca ali parece defeito do sistema, e ela insiste.
+   *
+   * Nao ha vazamento: o lead ja e dela, e a frase so repete o que a propria
+   * lista dela mostrou. E o oposto do caso do cliente de outra carteira, onde
+   * a negativa e generica justamente para nao revelar que ele existe.
+   * ======================================================================
+   */
+  | 'E_LEAD';
 
 export interface AgendarContatoLlmInput {
   cliente: string;
@@ -351,6 +455,34 @@ export type GestaoDiaDaVendedoraHandler = (input: {
   dia?: string;
 }) => Promise<GestaoLeituraResultado>;
 
+/**
+ * O FUNIL AGORA, pela gestao — o espelho de `consultar_minha_carteira`.
+ *
+ * Com `vendedora`, a carteira daquela pessoa. SEM ela, a loja inteira, e ai
+ * as linhas trazem tambem uma por vendedora. E a assimetria de sempre: aqui o
+ * "de quem" existe porque quem pergunta e a administracao.
+ */
+/**
+ * O PANORAMA DE LEADS, pela gestao — o espelho de `meus_leads`.
+ *
+ * Com `vendedora`, os leads daquela pessoa, com telefone e tudo. SEM ela, a
+ * fila inteira: quantos em cada estado, quem esta esperando encaminhamento e
+ * quantos foram para cada vendedora.
+ *
+ * A GESTAO VE TUDO — decisao do Lucas em 21/09/2026. O AVISO que sai sozinho
+ * continua sem telefone (ninguem pediu por ele); quando o ADM PERGUNTA, ele
+ * recebe o dado completo.
+ */
+export type GestaoPanoramaLeadsHandler = (input: {
+  /** Nome (ou parte). Ausente = a fila inteira. */
+  vendedora?: string;
+}) => Promise<GestaoLeituraResultado & { total?: number }>;
+
+export type GestaoFunilHandler = (input: {
+  /** Nome (ou parte). Ausente = a loja inteira. */
+  vendedora?: string;
+}) => Promise<GestaoLeituraResultado & { total?: number }>;
+
 export type GestaoFeedbacksHandler = (input: {
   vendedora: string;
   /** Nome (ou parte) do cliente. Restringe a UM episodio. */
@@ -393,6 +525,12 @@ export interface ChatParams {
   consultarMetas?: ConsultarMetasHandler;
   // Idem para `consultar_produtos`.
   consultarProdutos?: ConsultarProdutosHandler;
+  // Idem para `consultar_minha_carteira`.
+  consultarCarteiraAgora?: ConsultarCarteiraAgoraHandler;
+  // Idem para `meus_leads`.
+  consultarMeusLeads?: ConsultarMeusLeadsHandler;
+  // Idem para `atualizar_lead` — a UNICA escrita dela sobre lead.
+  atualizarLead?: AtualizarLeadHandler;
   // Idem para as duas de carteira.
   clientesSemComprar?: ClientesSemComprarHandler;
   melhoresClientes?: MelhoresClientesHandler;
@@ -413,6 +551,8 @@ export interface ChatParams {
   gestaoAgendar?: GestaoAgendarHandler;
   gestaoFeedbacks?: GestaoFeedbacksHandler;
   gestaoDiaDaVendedora?: GestaoDiaDaVendedoraHandler;
+  gestaoFunil?: GestaoFunilHandler;
+  gestaoPanoramaLeads?: GestaoPanoramaLeadsHandler;
   /**
    * Habilita `gerar_grafico`. Default true, que preserva o painel.
    *
