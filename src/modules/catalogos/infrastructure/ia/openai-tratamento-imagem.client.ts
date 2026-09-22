@@ -126,14 +126,52 @@ const REGRA_PECA_NA_CENA =
  * altura do olho. Sem cenario, sem superficie, sem mesa.
  */
 const ENQUADRAMENTO =
-  'Sem cenário, sem mesa, sem superfície visível. Fundo liso e uniforme, sem ' +
-  'textura e sem gradiente. Sombra mínima ou nenhuma. A peça deve aparecer DE ' +
-  'FRENTE, na altura do olho, como produto fotografado em estúdio — nunca ' +
-  'vista de cima nem em perspectiva inclinada. Centralizada, ocupando a maior ' +
-  'parte do quadro.';
+  'Sem cenário, sem mesa, sem superfície visível. Sombra mínima ou nenhuma. ' +
+  'A peça deve aparecer DE FRENTE, na altura do olho, como produto ' +
+  'fotografado em estúdio — nunca vista de cima nem em perspectiva ' +
+  'inclinada. Centralizada, ocupando a maior parte do quadro.';
 
-/** O padrao da casa, e so quando a pessoa nao pedir outro. */
-const FUNDO_PADRAO = 'FUNDO: BRANCO liso e uniforme.';
+/**
+ * O padrao da casa, e so quando a pessoa nao pedir outro.
+ *
+ * ==========================================================================
+ * O RECORTE FOI TENTADO E DESFEITO NO MESMO DIA — 21/09/2026.
+ *
+ * O cartao da pagina tematica virou VIDRO, e vidro com um quadrado branco em
+ * cima nao e vidro. A saida obvia era pedir a peca SEM FUNDO
+ * (`background: transparent` na geracao), e ela funcionou: o PNG voltou RGBA,
+ * a peca recortada.
+ *
+ * SO QUE O PACKSHOT NAO VAI SO PARA O PDF. Ele e a imagem que volta pelo
+ * WHATSAPP para alguem aprovar, e transparencia no WhatsApp escuro e um
+ * QUADRADO PRETO. Quem aprova deixou de ver a peca. Medido no teste do Lucas
+ * as 13:24 — a foto do anel chegou sobre preto.
+ *
+ * Achatar o recorte sobre branco so para o envio exigiria uma biblioteca de
+ * imagem no back (nao ha nenhuma) e um segundo arquivo por peca.
+ *
+ * ENTAO O BRANCO FICA, e quem apaga o branco e o DESENHO DO PDF: o packshot
+ * entra no cartao de vidro em modo Multiply, onde branco vira transparente.
+ * Ver `cartaoDeVidro` e `comBrancoTransparente` no montador. De quebra, a
+ * peca JA aprovada tambem funciona no vidro — nada depende de regerar foto.
+ * ==========================================================================
+ */
+const FUNDO_PADRAO =
+  'FUNDO: BRANCO liso e uniforme, sem textura e sem gradiente.';
+
+/**
+ * O que a geracao deve devolver.
+ *
+ * SAO DOIS NOMES E NAO UM BOOLEANO porque o formato nao e um detalhe de
+ * transporte: JPEG e o que vai para PAGINA (foto, pesada em PNG) e PNG e o
+ * que vai para o PACKSHOT. Lido no ponto da chamada, `'jpeg'` diz mais do
+ * que `true`.
+ */
+type SaidaDaGeracao =
+  /** A peca na modelo e a arte da pagina: foto, sem transparencia. */
+  | 'jpeg'
+  /** O packshot. */
+  | 'png';
 
 const INSTRUCAO_BASE =
   'A imagem enviada é a foto de uma peça, tirada com celular. Produza o ' +
@@ -213,6 +251,7 @@ export class OpenaiTratamentoImagemClient implements ITratamentoImagem {
       pedido.original,
       this.montarPrompt(pedido),
       TAMANHO.quadrada,
+      'png',
     );
   }
 
@@ -255,7 +294,12 @@ export class OpenaiTratamentoImagemClient implements ITratamentoImagem {
       REGRA_PECA_NA_CENA,
     ].join('\n\n');
 
-    return this.editar(pedido.peca, prompt, TAMANHO[pedido.orientacao], true);
+    return this.editar(
+      pedido.peca,
+      prompt,
+      TAMANHO[pedido.orientacao],
+      'jpeg',
+    );
   }
 
   /**
@@ -311,15 +355,16 @@ export class OpenaiTratamentoImagemClient implements ITratamentoImagem {
   /**
    * `/images/edits` com UMA imagem de entrada.
    *
-   * @param emJpeg o que vai para PAGINA (a peca na modelo, a arte) sai em
-   *   JPEG: sao imagens fotograficas, sem transparencia, e em PNG cada uma
-   *   pesaria uns 3 MB dentro do PDF. O packshot segue PNG, como sempre foi.
+   * @param saida ver `SaidaDaGeracao`. O que vai para PAGINA (a peca na
+   *   modelo, a arte) sai em JPEG: sao imagens fotograficas, sem
+   *   transparencia, e em PNG cada uma pesaria uns 3 MB dentro do PDF. O
+   *   packshot segue PNG, como sempre foi.
    */
   private async editar(
     imagem: ImagemDeEntrada,
     prompt: string,
     tamanho: string,
-    emJpeg = false,
+    saida: SaidaDaGeracao,
   ): Promise<ImagemTratada | null> {
     const chave = this.config.get<string>('OPENAI_API_KEY');
     if (!chave) {
@@ -332,10 +377,15 @@ export class OpenaiTratamentoImagemClient implements ITratamentoImagem {
     form.append('prompt', prompt);
     form.append('size', tamanho);
     form.append('n', '1');
-    if (emJpeg) form.append('output_format', 'jpeg');
+    if (saida === 'jpeg') form.append('output_format', 'jpeg');
     form.append('image[]', this.paraBlob(imagem), 'peca.png');
 
-    return this.pedir(ENDPOINT_EDICAO, chave, { body: form }, emJpeg);
+    return this.pedir(
+      ENDPOINT_EDICAO,
+      chave,
+      { body: form },
+      saida === 'jpeg',
+    );
   }
 
   /**

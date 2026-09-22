@@ -7,6 +7,11 @@ import { OpenaiTratamentoImagemClient } from './openai-tratamento-imagem.client'
  * tema da colecao pintava o fundo ("tema praiano" dava bege); o Lucas
  * corrigiu no dia seguinte — o tema e do CATALOGO, nao da joia.
  *
+ * O RECORTE FOI TENTADO EM 21/09 E DESFEITO no mesmo dia: transparencia no
+ * WhatsApp escuro vira um quadrado preto, e e por ali que a peca e aprovada.
+ * O teste do `background` ficou — ele agora guarda a AUSENCIA do parametro,
+ * que e o que mantem o fundo branco.
+ *
  * PECA NA MODELO e ARTE: a cena do catalogo entra, a regra da peca continua
  * abrindo e fechando, e a arte proibe pessoa, joia e texto.
  *
@@ -16,11 +21,17 @@ import { OpenaiTratamentoImagemClient } from './openai-tratamento-imagem.client'
 describe('OpenaiTratamentoImagemClient', () => {
   const PECA = { conteudo: Buffer.from('jpeg'), mime: 'image/jpeg' };
 
-  let enviado: { url: string; prompt: string; size: string; formato: string };
+  let enviado: {
+    url: string;
+    prompt: string;
+    size: string;
+    formato: string;
+    fundo: string;
+  };
   let cliente: OpenaiTratamentoImagemClient;
 
   beforeEach(() => {
-    enviado = { url: '', prompt: '', size: '', formato: '' };
+    enviado = { url: '', prompt: '', size: '', formato: '', fundo: '' };
     global.fetch = jest.fn((url: string, init: { body: FormData | string }) => {
       enviado.url = url;
       if (typeof init.body === 'string') {
@@ -28,10 +39,12 @@ describe('OpenaiTratamentoImagemClient', () => {
         enviado.prompt = json.prompt;
         enviado.size = json.size;
         enviado.formato = json.output_format ?? '';
+        enviado.fundo = json.background ?? '';
       } else {
         enviado.prompt = init.body.get('prompt') as string;
         enviado.size = init.body.get('size') as string;
         enviado.formato = (init.body.get('output_format') as string) ?? '';
+        enviado.fundo = (init.body.get('background') as string) ?? '';
       }
       return Promise.resolve({
         ok: true,
@@ -46,15 +59,31 @@ describe('OpenaiTratamentoImagemClient', () => {
   });
 
   describe('packshot', () => {
-    it('sem pedido, o fundo e BRANCO', async () => {
-      await cliente.tratar({
+    it('sem pedido, o fundo e BRANCO — e nada de transparencia', async () => {
+      const r = await cliente.tratar({
         original: PECA,
         padrao: null,
         pedidoDaPessoa: null,
       });
 
-      expect(enviado.prompt).toContain('FUNDO: BRANCO liso e uniforme.');
+      expect(enviado.prompt).toContain('FUNDO: BRANCO liso e uniforme');
+      // O QUE ESTE EXPECT GUARDA: transparencia no WhatsApp escuro e um
+      // quadrado preto, e e por ali que a peca e aprovada. Ver o comentario
+      // do `FUNDO_PADRAO`.
+      expect(enviado.fundo).toBe('');
       expect(enviado.size).toBe('1024x1024');
+      expect(r?.mime).toBe('image/png');
+    });
+
+    it('UMA ordem de fundo apenas — o enquadramento nao manda mais nele', () => {
+      // A licao do HML-17: duas ordens de fundo no mesmo texto e o modelo
+      // fica com a primeira. O recorte vem por ultimo e precisa estar sozinho.
+      return cliente
+        .tratar({ original: PECA, padrao: null, pedidoDaPessoa: null })
+        .then(() => {
+          expect(enviado.prompt).not.toContain('Fundo liso e uniforme');
+          expect(enviado.prompt.match(/FUNDO:/g)).toHaveLength(1);
+        });
     });
 
     it('a composicao da colecao NAO tira o branco', async () => {
@@ -65,7 +94,7 @@ describe('OpenaiTratamentoImagemClient', () => {
       });
 
       expect(enviado.prompt).toContain('peça centralizada');
-      expect(enviado.prompt).toContain('FUNDO: BRANCO liso e uniforme.');
+      expect(enviado.prompt).toContain('FUNDO: BRANCO liso e uniforme');
     });
 
     it('o pedido da pessoa manda no fundo', async () => {
