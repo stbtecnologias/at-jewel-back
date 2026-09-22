@@ -115,7 +115,9 @@ describe('RecepcionarUseCase', () => {
       );
 
       expect(r.resposta).toContain('1 — Panorama do dia');
-      expect(r.resposta).toContain('6 — Enviar foto para o catálogo');
+      // O catalogo e a ULTIMA linha da gestao, e desde 21/09 ela e a 7a:
+      // o funil entrou no meio da lista.
+      expect(r.resposta).toContain('7 — Enviar foto para o catálogo');
     });
 
     it('sem nome cadastrado, só o cumprimento — nunca "Bom dia, !"', () => {

@@ -130,6 +130,15 @@ const RE_ESCOLHA = /^#?(\d{1,2})\b/;
 const MAX_OPCOES = 6;
 
 /**
+ * Quantas fotos penduradas voltam por mensagem.
+ *
+ * Cinco imagens ja sao uma rolagem inteira no celular. Acima disso a pessoa
+ * perde de vista a primeira antes de responder a ultima — as que sobram vao
+ * na proxima pergunta, depois que ela resolver estas.
+ */
+const MAX_REENVIO = 5;
+
+/**
  * "e essa mesmo" quando ha UMA opcao so na lista.
  *
  * PORQUE EU PERGUNTEI. Mostrando uma peca so e dizendo "e ela?", exigir o
@@ -479,6 +488,28 @@ function soLigacao(resto: string): boolean {
  */
 const RE_FALA_FOTO = /\b(foto|fotos|imagem|imagens)\b/;
 const RE_FALA_CATALOGO = /\b(catalogo|catalogos)\b/;
+
+/**
+ * "Em aberto", "pendente", "esperando", "para aprovar" — o que ainda nao foi
+ * respondido.
+ *
+ * ==========================================================================
+ * "APROVAR" ENTROU DEPOIS, E A PRIMEIRA VERSAO ERROU AO DEIXA-LO FORA.
+ *
+ * Tirei a palavra com medo de que "quero mandar foto PARA APROVAR" virasse
+ * pergunta em vez de envio. O Lucas perguntou "tem foto para aprovar?" — a
+ * forma mais natural de todas — e recebeu o menu.
+ *
+ * A separacao certa nao e a palavra, e o VERBO DE ENVIO: quem diz "mandar",
+ * "enviar", "subir" esta anunciando o que vai fazer; quem nao diz nenhum
+ * deles esta perguntando. Ver `falaDeFotosPendentes`.
+ * ==========================================================================
+ */
+const RE_FALA_PENDENTE =
+  /\b(aberto|abertos|aberta|abertas|pendente|pendentes|esperando|aguardando|faltando|falta|aprovar|aprovacao|aprovacoes)\b/;
+
+/** O que a pergunta pode chamar de peca. Mais largo que `RE_FALA_FOTO`. */
+const RE_FALA_FOTO_OU_PECA = /\b(foto|fotos|imagem|imagens|peca|pecas)\b/;
 const RE_FALA_ENVIO =
   /\b(mandar|mando|manda|enviar|envio|envia|adicionar|adiciono|colocar|coloco|botar|subir|incluir)\b/;
 
@@ -1303,6 +1334,148 @@ export class ProcessarFotoCatalogoUseCase {
     return this.sessao.temEmAprovacao(de);
   }
 
+  /**
+   * "Tem foto em aberto?" — a pergunta, respondida pelo banco.
+   *
+   * Diferente do lembrete em UMA coisa: aqui a pessoa PERGUNTOU, entao "nao
+   * tem nada" e uma resposta legitima. No lembrete, silencio — o chao do
+   * canal segue e ela recebe o menu.
+   */
+  async fotosPendentes(de: string, nomeRemetente: string): Promise<RespostaFoto> {
+    const r = await this.pendentes(de, nomeRemetente);
+    return (
+      r ?? {
+        resposta:
+          'Não tem nenhuma foto sua esperando resposta agora. ' +
+          'Me manda a foto da peça que eu trato e te devolvo.',
+        motivo: 'catalogo_sem_pendentes',
+      }
+    );
+  }
+
+  /**
+   * O LEMBRETE DA FOTO PENDURADA — 21/09/2026.
+   *
+   * ==========================================================================
+   * COM FOTO ESPERANDO, TEXTO SOLTO E QUASE SEMPRE UMA TENTATIVA DE RESPONDER.
+   *
+   * O Lucas escreveu "Ajuda traz o fundo branco como sempre" logo depois de
+   * receber a foto tratada. Ele quis dizer "ajusta" — e "ajuda", com D, nao
+   * esta em `PALAVRAS_AJUSTA` nem pode estar: "ajuda" e o pedido de socorro
+   * que abre o menu, e aceita-la aqui faria um pedido de ajuda virar uma
+   * geracao de imagem paga.
+   *
+   * O ERRO NAO FOI NAO ADIVINHAR, FOI NAO LEMBRAR. A resposta caiu no chao do
+   * canal e virou menu — um menu que nem menciona que existe foto esperando.
+   * Com o lembrete, a proxima mensagem dele ja sai certa.
+   *
+   * NAO ADIVINHA NADA. Nao tenta corrigir a palavra, nao escolhe veredito, nao
+   * gera imagem: so diz o que esta pendurado e quais sao as tres palavras.
+   * ==========================================================================
+   *
+   * `null` quando nao ha nada esperando — ai o chao do canal segue normal.
+   */
+  async lembreteDaAprovacao(
+    de: string,
+    nomeRemetente: string,
+  ): Promise<RespostaFoto | null> {
+    return this.pendentes(de, nomeRemetente);
+  }
+
+  /**
+   * O que esta pendurado: o texto, e as FOTOS de volta.
+   *
+   * ==========================================================================
+   * O CODIGO SOZINHO NAO DIZ QUAL PECA E — 21/09/2026.
+   *
+   * O lembrete dizia "AN24361 esperando sua resposta" e o Lucas perguntou,
+   * com razao: "como vou saber qual e?". Ninguem decora codigo, e a decisao
+   * pedida — aprovar, ajustar ou descartar — e sobre a IMAGEM.
+   *
+   * ENTAO AS FOTOS VOLTAM. E o relogio da aprovacao volta com elas
+   * (`marcarEnviada`): a partir de agora o "aprovo" responde a esta imagem,
+   * que e a que ela acabou de ver.
+   *
+   * AS IMAGENS VAO ATRAS DO TEXTO, sem `await` — o texto e o retorno, e quem
+   * o envia e a borda HTTP. Segurar o webhook pelo tempo de ler cinco
+   * arquivos do S3 faria o WAHA reenviar o evento.
+   * ==========================================================================
+   */
+  private async pendentes(
+    de: string,
+    nomeRemetente: string,
+  ): Promise<RespostaFoto | null> {
+    const esperando = await this.catalogos.listarEmAprovacao(
+      nomeRemetente.trim(),
+    );
+    if (esperando.length === 0) return null;
+
+    // A catraca sobe junto, como na `conversa`: depois de um restart a marca
+    // de memoria some, e sem ela o "aprovo" seguinte nao seria reconhecido.
+    this.sessao.marcarEmAprovacao(de);
+
+    const volta = esperando.filter((f) => f.arquivoId).slice(0, MAX_REENVIO);
+    if (volta.length > 0) void this.reenviar(de, volta);
+
+    const nomes = esperando.map((f) => f.codigoErp ?? 'sem código').join(', ');
+    const sobraram = esperando.length - volta.length;
+    const linhas = [
+      esperando.length === 1
+        ? `Tem 1 foto esperando sua resposta: ${nomes}.`
+        : `Tem ${esperando.length} fotos esperando sua resposta: ${nomes}.`,
+    ];
+    if (volta.length > 0) {
+      linhas.push(
+        volta.length === 1
+          ? 'Mando ela aqui embaixo.'
+          : `Mando ${volta.length} aqui embaixo.` +
+              (sobraram > 0
+                ? ` As outras ${sobraram} eu mando depois que você resolver essas.`
+                : ''),
+      );
+    }
+    linhas.push(
+      '"aprovo" põe no catálogo · "ajusta" e o quê refaz — ' +
+        '"ajusta fundo branco" · "descarta" joga fora.',
+    );
+
+    return {
+      resposta: linhas.join('\n\n'),
+      motivo: 'catalogo_pendentes',
+    };
+  }
+
+  /**
+   * As fotos penduradas, de volta ao WhatsApp.
+   *
+   * CADA UMA NOMEADA: a fila pode ter varias, e sem o codigo na legenda um
+   * "aprovo" solto seria um chute sobre qual imagem a pessoa esta olhando.
+   *
+   * Falha de envio nao derruba nada — a fila de verdade esta no banco, e a
+   * proxima pergunta traz tudo de novo.
+   */
+  private async reenviar(de: string, fotos: FotoItem[]): Promise<void> {
+    for (const foto of fotos) {
+      try {
+        const arquivo = await this.armazenamento.ler(foto.arquivoId!);
+        if (!arquivo) continue;
+        await this.whatsapp.enviarImagem(
+          de,
+          arquivo.conteudo,
+          arquivo.mime,
+          `${foto.codigoErp ?? 'Sem código'} — esperando sua resposta.`,
+        );
+        // O RELOGIO REINICIA AQUI: o "aprovo" que vier depois responde a esta
+        // imagem. Ver `foiVista`.
+        this.sessao.marcarEnviada(de, foto.id);
+      } catch (err) {
+        this.logger.error(
+          `Falha ao reenviar a foto ${foto.id}: ${String(err)}`,
+        );
+      }
+    }
+  }
+
   /** A IA falhou numa foto desta pessoa, e o "tenta de novo" ainda vale? */
   temFotoComFalha(de: string): boolean {
     return this.sessao.fotoComFalha(de) !== null;
@@ -1528,6 +1701,58 @@ export class ProcessarFotoCatalogoUseCase {
     return (
       RE_FALA_CONSULTA.test(n) || RE_TIPO_PECA.test(n) || RE_CODIGO.test(texto)
     );
+  }
+
+  /**
+   * O texto pergunta pelos CATALOGOS — 21/09/2026.
+   *
+   * ==========================================================================
+   * ESTE TESTE NASCEU DE UMA RESPOSTA ERRADA, E O ERRO ERA O CHAO.
+   *
+   * Ate hoje a lista de catalogos era o CHAO do canal: qualquer texto que as
+   * regras nao soubessem tratar caia nela. O Lucas, como estoquista,
+   * perguntou "qual minha carteira?" e recebeu os quatro catalogos abertos —
+   * uma resposta certa para uma pergunta que ninguem fez.
+   *
+   * Com este teste, a lista passa a ser a resposta de QUEM PERGUNTOU por ela.
+   * O resto vai para o menu, que e onde mora "o que da para me pedir".
+   * ==========================================================================
+   */
+  /**
+   * O texto PERGUNTA pelo que esta esperando resposta — 21/09/2026.
+   *
+   * Pedido do Lucas: "nao posso pedir para ver as fotos que estao abertas?".
+   * Nao podia — "tem foto em aberto?" caia no chao do canal e virava menu,
+   * porque o lembrete so existia quando a memoria sabia que havia algo. E a
+   * memoria some no restart do container, que e justamente quando a pessoa
+   * mais precisa perguntar.
+   *
+   * AGORA E PERGUNTA, e a resposta sai do BANCO — a verdade, e nao o atalho.
+   *
+   * O VERBO DE ENVIO TEM A ULTIMA PALAVRA, e e ele que separa as duas
+   * intencoes que usam as mesmas palavras:
+   *
+   *   "tem foto para aprovar?"            -> pergunta (nenhum verbo de envio)
+   *   "quero mandar foto para aprovar"    -> envio    ("mandar")
+   *
+   * Sem essa regra eu teria de escolher entre atender uma frase ou a outra —
+   * e a primeira versao escolheu errado, tirando "aprovar" da lista.
+   *
+   * VEM ANTES DE `falaDeMandarFoto` no roteador: "tem foto em aberto no
+   * catalogo?" fala de foto e de catalogo, e sem esta ordem viraria envio.
+   */
+  falaDeFotosPendentes(texto: string): boolean {
+    const n = normalizar(texto);
+    if (RE_FALA_ENVIO.test(n)) return false;
+    return RE_FALA_FOTO_OU_PECA.test(n) && RE_FALA_PENDENTE.test(n);
+  }
+
+  falaDeCatalogos(texto: string): boolean {
+    const n = normalizar(texto);
+    // Foto e consulta vem ANTES no roteador; aqui a ordem so evita que
+    // "manda a foto para o catalogo 3" caia na lista em vez do envio.
+    if (RE_FALA_FOTO.test(n)) return false;
+    return RE_FALA_CATALOGO.test(n);
   }
 
   /**
