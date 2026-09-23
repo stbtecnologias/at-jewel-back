@@ -200,4 +200,78 @@ describe('GlobalExceptionFilter', () => {
       expect.objectContaining({ statusCode: 418, message: 'msg simples' }),
     );
   });
+
+  describe('violacao de unicidade (23505)', () => {
+    function duplicata(constraint: string, detail: string): Error {
+      const e = new Error(
+        'duplicate key value violates unique constraint "' + constraint + '"',
+      ) as Error & { code: string; constraint: string; detail: string };
+      e.code = '23505';
+      e.constraint = constraint;
+      e.detail = detail;
+      return e;
+    }
+
+    const PECA_REPETIDA = () =>
+      duplicata('produtos_codigo_erp_key', 'Key (codigo_erp)=(C025109) already exists.');
+
+    it('vira 409 com a frase legivel, e nao 500', () => {
+      const { host, status, json } = makeHost('POST', '/produtos');
+      filter.catch(PECA_REPETIDA(), host);
+
+      expect(status).toHaveBeenCalledWith(HttpStatus.CONFLICT);
+      expect(json).toHaveBeenCalledWith({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Já existe uma peça com o código C025109.',
+      });
+    });
+
+    /**
+     * O DEFEITO ERA PIOR EM PRODUCAO: o ramo de erro desconhecido troca a
+     * mensagem por "Erro interno do servidor". A vendedora nao ficava sabendo
+     * que bastava trocar o codigo.
+     */
+    it('em producao diz a mesma coisa — nao vira "Erro interno do servidor"', () => {
+      process.env.NODE_ENV = 'production';
+      const { host, status, json } = makeHost('POST', '/produtos');
+      filter.catch(PECA_REPETIDA(), host);
+
+      expect(status).toHaveBeenCalledWith(HttpStatus.CONFLICT);
+      expect(json).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Já existe uma peça com o código C025109.' }),
+      );
+    });
+
+    /** Nem em dev: `stack` so acompanha HttpException. */
+    it('nunca leva stack nem o texto do Postgres', () => {
+      process.env.NODE_ENV = 'development';
+      const { host, json } = makeHost('POST', '/produtos');
+      filter.catch(PECA_REPETIDA(), host);
+
+      const corpo = json.mock.calls[0][0] as Record<string, unknown>;
+      expect(corpo.stack).toBeUndefined();
+      expect(JSON.stringify(corpo)).not.toContain('duplicate key');
+      expect(JSON.stringify(corpo)).not.toContain('produtos_codigo_erp_key');
+    });
+
+    /** 4xx nao polui o log — a regra que ja valia para os outros. */
+    it('nao vai para o log de erro', () => {
+      const errorSpy = jest.spyOn(filter['logger'], 'error');
+      const { host } = makeHost('POST', '/produtos');
+      filter.catch(PECA_REPETIDA(), host);
+
+      expect(errorSpy).not.toHaveBeenCalled();
+    });
+
+    /** Chave estrangeira segue como estava — este ramo nao a captura. */
+    it('outro erro de banco continua caindo em 500', () => {
+      const e = new Error('violates foreign key constraint') as Error & { code: string };
+      e.code = '23503';
+      const { host, status } = makeHost('POST', '/produtos');
+      filter.catch(e, host);
+
+      expect(status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR);
+    });
+  });
 });
