@@ -6,6 +6,7 @@ import { VendedorasModule } from '../vendedoras/vendedoras.module';
 import { WhatsappGatewayModule } from '../atendimento/whatsapp-gateway.module';
 import { AtualizarStatusLeadUseCase } from './application/use-cases/atualizar-status-lead.use-case';
 import { AvisarGestaoDeLeadUseCase } from './application/use-cases/avisar-gestao-de-lead.use-case';
+import { EncaminharPelaCarteiraUseCase } from './application/use-cases/encaminhar-pela-carteira.use-case';
 import { RegistrarLeadUseCase } from './application/use-cases/registrar-lead.use-case';
 import { LEAD_REPOSITORY } from './domain/ports/injection-tokens';
 import { LeadOrmEntity } from './infrastructure/database/typeorm/entities/lead.orm-entity';
@@ -33,6 +34,7 @@ import { LeadsController } from './infrastructure/http/controllers/leads.control
   providers: [
     RegistrarLeadUseCase,
     AvisarGestaoDeLeadUseCase,
+    EncaminharPelaCarteiraUseCase,
     AtualizarStatusLeadUseCase,
     { provide: LEAD_REPOSITORY, useClass: LeadRepository },
   ],

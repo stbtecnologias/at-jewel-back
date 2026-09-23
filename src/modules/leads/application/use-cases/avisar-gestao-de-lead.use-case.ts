@@ -45,6 +45,62 @@ export class AvisarGestaoDeLeadUseCase {
 
   /** Quantos avisos de fato sairam. Zero nao e erro — pode nao haver a quem avisar. */
   async execute(lead: Lead): Promise<number> {
+    const texto = this.mensagem(lead, await this.sugestao(lead));
+    return this.enviarParaGestao(texto, lead.id);
+  }
+
+  /**
+   * O QUE A GESTAO RECEBE quando a carteira ja decidiu — 23/09/2026.
+   *
+   * Cliente com vendedora nao passa pela decisao da gestao: a regra e do Lucas,
+   * "se o cliente tem uma vendedora associada, e tudo com ela". Entao o aviso
+   * deixa de ser PERGUNTA e vira RELATO — a gestao fica sabendo, e nao precisa
+   * responder nada.
+   *
+   * Continua indo, e de proposito: a gestao precisa enxergar o movimento da
+   * casa mesmo no que nao decide.
+   */
+  async avisarEncaminhadoPelaCarteira(
+    lead: Lead,
+    vendedoraNome: string,
+    avisada: boolean,
+  ): Promise<number> {
+    const linhas = blocoDoLead(lead);
+    linhas.push(``, `Está na carteira de ${vendedoraNome} — encaminhei para ela.`);
+
+    // SO APARECE QUANDO E PROBLEMA. Dizer "avisei" em toda mensagem vira
+    // ruido; dizer "nao avisei" e informacao acionavel — alguem precisa
+    // alcancar a vendedora por outro caminho.
+    if (!avisada) {
+      linhas.push(
+        `Ela não tem WhatsApp pessoal alcançável, então não recebeu o aviso. ` +
+          `O lead está na lista dela.`,
+      );
+    }
+
+    return this.enviarParaGestao(linhas.join('\n'), lead.id);
+  }
+
+  /**
+   * A carteira tem dona, mas ela nao pode receber agora. O lead FICA na fila —
+   * a gestao decide, sabendo por que caiu ali.
+   */
+  async avisarDonaIndisponivel(
+    lead: Lead,
+    vendedoraNome: string,
+    motivo: string,
+  ): Promise<number> {
+    const linhas = blocoDoLead(lead);
+    linhas.push(
+      ``,
+      `Está na carteira de ${vendedoraNome}, que ${motivo}.`,
+      `Para qual vendedora encaminho?`,
+    );
+    return this.enviarParaGestao(linhas.join('\n'), lead.id);
+  }
+
+  /** O envio em si, compartilhado pelos tres avisos. */
+  private async enviarParaGestao(texto: string, leadId: string): Promise<number> {
     const destinatarios = await this.destinatarios();
     if (destinatarios.length === 0) {
       this.logger.warn(
@@ -53,9 +109,7 @@ export class AvisarGestaoDeLeadUseCase {
       return 0;
     }
 
-    const texto = this.mensagem(lead, await this.sugestao(lead));
     let enviados = 0;
-
     for (const admin of destinatarios) {
       try {
         // `resolverChatId` porque o numero cadastrado nem sempre e o chatId: o
@@ -75,7 +129,7 @@ export class AvisarGestaoDeLeadUseCase {
       } catch (err) {
         // Um destinatario com problema nao pode calar os outros.
         this.logger.error(
-          `Falha ao avisar a gestao (${admin.nome}) do lead ${lead.id}: ${String(err)}`,
+          `Falha ao avisar a gestao (${admin.nome}) do lead ${leadId}: ${String(err)}`,
         );
       }
     }

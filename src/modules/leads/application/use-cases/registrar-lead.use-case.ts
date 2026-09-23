@@ -9,6 +9,7 @@ import { CLIENTE_REPOSITORY } from '../../../clientes/domain/ports/injection-tok
 import type { IClienteRepository } from '../../../clientes/domain/ports/repositories/cliente-repository.port';
 import { LEAD_REPOSITORY } from '../../domain/ports/injection-tokens';
 import { AvisarGestaoDeLeadUseCase } from './avisar-gestao-de-lead.use-case';
+import { EncaminharPelaCarteiraUseCase } from './encaminhar-pela-carteira.use-case';
 import type {
   ILeadRepository,
   Lead,
@@ -84,6 +85,7 @@ export class RegistrarLeadUseCase {
     private readonly clientes: IClienteRepository,
     private readonly buscarClientePorWhatsapp: BuscarClientePorWhatsappUseCase,
     private readonly avisarGestao: AvisarGestaoDeLeadUseCase,
+    private readonly encaminharPelaCarteira: EncaminharPelaCarteiraUseCase,
   ) {}
 
   async execute(entrada: RegistrarLeadInput): Promise<RegistrarLeadOutput> {
@@ -160,16 +162,23 @@ export class RegistrarLeadUseCase {
   }
 
   /**
-   * A triagem acabou: sobe o lead para a gestao e avisa o ADM no WhatsApp.
+   * A triagem acabou. Daqui saem TRES caminhos, e a carteira decide qual.
    *
-   * ACONTECE UMA VEZ SO, e a guarda e o proprio estado. A cada mensagem o
-   * `atwpp` reavalia se ja ha o essencial, entao `prontoParaEncaminhar` chega
-   * `true` de novo nos turnos seguintes — sem a checagem de
-   * `TRIAGE_IN_PROGRESS`, o ADM receberia o mesmo aviso a cada frase.
+   * ========================================================================
+   * REGRA DO LUCAS, 23/09/2026: "se o cliente tem uma vendedora associada, e
+   * tudo com ela". Trocar de vendedora existe, mas e caso muito especifico —
+   * nao e o caminho padrao. Entao cliente com dona nao passa pela DECISAO da
+   * gestao; a gestao e INFORMADA.
    *
-   * O aviso NAO participa da transacao: se o WhatsApp falhar, o lead fica em
-   * READY_FOR_ROUTING do mesmo jeito, e o aviso pode ser reenviado depois.
-   * Perder a notificacao e ruim; perder o lead seria pior.
+   *   tem dona ativa      -> encaminha direto, avisa ela, relata para a gestao
+   *   tem dona inativa    -> fica na fila, e o aviso diz por que caiu ali
+   *   nao tem dona        -> como sempre foi: a gestao escolhe
+   * ========================================================================
+   *
+   * O ESTADO VIRA `READY_FOR_ROUTING` NOS TRES, e antes de qualquer envio: e
+   * ele que tira o lead de `TRIAGE_IN_PROGRESS` e impede esta funcao de rodar
+   * duas vezes para o mesmo lead. No caminho da carteira o `encaminhar` logo
+   * em seguida o fecha e o tira da fila.
    */
   private async subirParaGestaoSePronto(
     lead: Lead,
@@ -184,11 +193,35 @@ export class RegistrarLeadUseCase {
     });
 
     try {
+      const carteira = await this.encaminharPelaCarteira.execute(promovido);
+
+      if (carteira.status === 'ENCAMINHADO') {
+        await this.avisarGestao.avisarEncaminhadoPelaCarteira(
+          promovido,
+          carteira.vendedoraNome,
+          carteira.avisada,
+        );
+        // Relido porque o `encaminhar` gravou codigo, carimbo e fechamento —
+        // e e o carimbo que faz o lead virar ponto na timeline DELA.
+        return (await this.leads.buscarPorId(promovido.id)) ?? promovido;
+      }
+
+      if (carteira.status === 'DONA_INDISPONIVEL') {
+        await this.avisarGestao.avisarDonaIndisponivel(
+          promovido,
+          carteira.vendedoraNome,
+          carteira.motivo,
+        );
+        return promovido;
+      }
+
       const enviados = await this.avisarGestao.execute(promovido);
       this.logger.log(
         `Lead ${promovido.id} pronto para encaminhar — ${enviados} aviso(s) enviado(s).`,
       );
     } catch (err) {
+      // O LEAD JA SUBIU, e e o que importa: ele esta na fila da gestao e
+      // aparece no painel. Falhar aqui custa um aviso, nunca o lead.
       this.logger.error(
         `Lead ${promovido.id} subiu para a gestao, mas o aviso falhou: ${String(err)}`,
       );
