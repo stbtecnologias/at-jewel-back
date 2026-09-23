@@ -112,7 +112,7 @@ export class AtualizarVendedoraUseCase {
     // letras — "se o codigo mudar no ERP, a mudanca propaga em vez de
     // orfanar as referencias".
     //
-    // O caso que isto atende: vendedora cadastrada no CRM nasce com `AT-####`
+    // O caso que isto atende: vendedora cadastrada no CRM nasce com `VD-####`
     // e, quando o ERP a trouxer, recebe o codigo de la sem perder a carteira.
     //
     // A unica checagem que fica e a de duplicata, que a coluna UNIQUE ja
@@ -131,7 +131,7 @@ export class AtualizarVendedoraUseCase {
     // Tres caminhos, nesta ordem:
     //   1. veio um codigo novo  -> usa ele
     //   2. ja tinha um          -> mantem
-    //   3. nao tinha nenhum     -> a casa gera um AT-####
+    //   3. nao tinha nenhum     -> a casa gera um VD-####
     //
     // O passo 3 fecha um buraco: a geracao nasceu so na criacao, entao quem
     // foi cadastrada ANTES dela nunca receberia codigo — e sem codigo nao ha

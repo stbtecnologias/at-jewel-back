@@ -77,7 +77,10 @@ export class ConsultarAuditoriaUseCase {
   }
 
   async resumo(
-    filtros: Pick<FiltroAuditoria, 'de' | 'ate' | 'etapa'>,
+    filtros: Pick<
+      FiltroAuditoria,
+      'de' | 'ate' | 'etapa' | 'vendedoraId' | 'apenasAbertos'
+    >,
   ): Promise<ResumoAuditoria> {
     return this.atendimentos.resumoAuditoria(filtros);
   }

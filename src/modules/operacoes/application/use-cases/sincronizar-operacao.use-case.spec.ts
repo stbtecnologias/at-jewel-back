@@ -158,6 +158,47 @@ describe('SincronizarOperacaoUseCase', () => {
     });
   });
 
+  /**
+   * 23/09/2026: o Alessandro manda "009000000324" e recebia "9000000324". A
+   * chave continua normalizada — e ela que casa com a `Movimentacao.operacaoid`
+   * numerica —, mas a resposta passa a devolver a grafia dele.
+   */
+  describe('o eco do id como o ERP mandou', () => {
+    it('deve gravar o bruto com os zeros e a chave sem eles', async () => {
+      repo.buscarPorIdErp.mockResolvedValue(null);
+
+      const { operacao } = await useCase.execute({
+        idErp: '009000000324',
+        codigoErp: 'DVE',
+        nome: 'DEVOLUCAO DE VENDA',
+      });
+
+      expect(operacao.idErp).toBe('9000000324');
+      expect(operacao.idErpBruto).toBe('009000000324');
+      expect(operacao.toPublic().idErpOperacao).toBe('009000000324');
+    });
+
+    it('deve atualizar o eco quando a remessa muda de grafia', async () => {
+      repo.buscarPorIdErp.mockResolvedValue(vendaJaClassificada());
+
+      const { operacao, criada } = await useCase.execute({
+        idErp: '009000000323',
+        codigoErp: 'VEN',
+        nome: 'VENDA',
+      });
+
+      expect(criada).toBe(false);
+      expect(operacao.id).toBe('uuid-da-venda');
+      expect(operacao.idErpBruto).toBe('009000000323');
+    });
+
+    // As operacoes gravadas antes da migracao 63 tem a coluna nula. A resposta
+    // delas nao pode sair vazia.
+    it('deve cair no id normalizado quando nao ha bruto', () => {
+      expect(vendaJaClassificada().toPublic().idErpOperacao).toBe('9000000323');
+    });
+  });
+
   describe('recusa', () => {
     it('deve recusar sem id do ERP — sem identidade nao ha upsert', async () => {
       await expect(

@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import {
+  SALDO_POR_PRODUTO,
+  saldoDe,
+} from '../../../../../../shared/database/sql/saldo-do-produto';
 import type {
   AlertaEstoque,
   DemografiaItem,
@@ -60,10 +64,11 @@ export class AgentesDataRepository implements IAgentesDataRepository {
              ${NOME_PRODUTO} AS nome,
              p.categoria AS categoria,
              NULLIF(p.referencia_fornecedor, '') AS fornecedor,
-             p.estoque_atual AS "estoqueAtual"
+             ${saldoDe('sal')} AS "estoqueAtual"
       FROM produtos p
-      WHERE p.ativo = true AND p.estoque_atual <= 2
-      ORDER BY p.estoque_atual ASC
+      LEFT JOIN ${SALDO_POR_PRODUTO} sal ON sal.produto_id = p.id
+      WHERE p.ativo = true AND ${saldoDe('sal')} BETWEEN 1 AND 2
+      ORDER BY ${saldoDe('sal')} ASC
       LIMIT $1
       `,
       [limite],
@@ -76,11 +81,12 @@ export class AgentesDataRepository implements IAgentesDataRepository {
       SELECT p.id AS "produtoId",
              ${NOME_PRODUTO} AS nome,
              p.categoria AS categoria,
-             p.estoque_atual AS "estoqueAtual",
+             ${saldoDe('sal')} AS "estoqueAtual",
              EXTRACT(DAY FROM (now() - p.data_entrada_estoque))::int AS "diasEmEstoque"
       FROM produtos p
+      LEFT JOIN ${SALDO_POR_PRODUTO} sal ON sal.produto_id = p.id
       WHERE p.ativo = true
-        AND p.estoque_atual > 0
+        AND ${saldoDe('sal')} > 0
         AND p.data_entrada_estoque IS NOT NULL
         AND p.data_entrada_estoque <= now() - ($1::int * interval '1 day')
       ORDER BY p.data_entrada_estoque ASC
@@ -108,9 +114,10 @@ export class AgentesDataRepository implements IAgentesDataRepository {
              p.categoria AS categoria,
              NULLIF(p.tipo_pedra, '') AS "tipoPedra",
              NULLIF(p.referencia_fornecedor, '') AS fornecedor,
-             p.estoque_atual AS "estoqueAtual",
+             ${saldoDe('sal')} AS "estoqueAtual",
              p.data_entrada_estoque AS "dataEntradaEstoque"
       FROM produtos p
+      LEFT JOIN ${SALDO_POR_PRODUTO} sal ON sal.produto_id = p.id
       WHERE p.id = $1
       `,
       [produtoId],

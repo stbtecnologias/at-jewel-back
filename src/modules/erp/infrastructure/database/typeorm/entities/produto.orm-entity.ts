@@ -77,10 +77,10 @@ export class ProdutoOrmEntity {
   @Column({ name: 'ativo', type: 'boolean', default: true })
   ativo: boolean;
 
-  // Snapshot de estoque (fonte da verdade no ERP). Usado pelos KPIs de
-  // inventario/giro sem precisar consultar o Safira.
-  @Column({ name: 'estoque_atual', type: 'int', default: 0 })
-  estoqueAtual: number;
+  // `estoque_atual` CONTINUA NO BANCO E SAIU DAQUI de proposito (17/09/2026):
+  // nunca teve escritor e estava em 0 em producao. O saldo e a soma da tabela
+  // `estoque` — ver `shared/database/sql/saldo-do-produto.ts`. Sem mapeamento,
+  // nenhum `save` volta a grava-la e nenhum `find` volta a le-la.
 
   @Column({ name: 'data_entrada_estoque', type: 'timestamptz', nullable: true })
   dataEntradaEstoque: Date | null;

@@ -9,7 +9,7 @@ function makeRepoMock(): jest.Mocked<IVendedoraRepository> {
     criar: jest.fn(),
     buscarPorId: jest.fn(),
     buscarPorCodigoErp: jest.fn(),
-    proximoCodigoInterno: jest.fn().mockResolvedValue('AT-0001'),
+    proximoCodigoInterno: jest.fn().mockResolvedValue('VD-0001'),
     buscarPorEmailHash: jest.fn(),
     buscarPorWhatsappHash: jest.fn(),
     listar: jest.fn(),

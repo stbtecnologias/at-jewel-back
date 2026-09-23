@@ -1,12 +1,16 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
-import type {
-  AtualizarLeadInput,
-  CriarLeadInput,
-  ILeadRepository,
-  Lead,
+import { In, IsNull, Repository } from 'typeorm';
+import {
+  STATUS_LEAD_EM_ABERTO,
+  type AtualizarLeadInput,
+  type CriarLeadInput,
+  type ILeadRepository,
+  type Lead,
+  type PanoramaDeLeads,
+  type StatusLeadVendedora,
 } from '../../../../domain/ports/repositories/lead-repository.port';
+import type { EstadoConversaAgente } from '../../../../../clientes/domain/entities/enums';
 import { LeadOrmEntity } from '../entities/lead.orm-entity';
 
 @Injectable()
@@ -122,6 +126,88 @@ export class LeadRepository implements ILeadRepository {
     });
     return rows.map(paraDominio);
   }
+
+  /**
+   * PELO ORM, e nao por SQL cru: `whatsapp` e coluna cifrada, e uma consulta
+   * crua devolveria o texto embaralhado. Quem decifra e o transformer, que so
+   * roda no caminho do ORM.
+   */
+  async listarPorVendedora(
+    vendedoraCodigo: string,
+    limite: number,
+    apenasAbertos = true,
+  ): Promise<Lead[]> {
+    const rows = await this.repo.find({
+      where: {
+        vendedoraAprovadaCodigo: vendedoraCodigo,
+        // ================================================================
+        // O RECORTE PADRAO — migracao 60.
+        //
+        // `In` e nao `Not(In)`: lead antigo, de antes da migracao, poderia
+        // ter status NULL e um `Not` o traria de volta para a fila. Dizer
+        // quais entram e mais seguro que dizer quais saem.
+        //
+        // (Na pratica a migracao 60 nao deixou nenhum NULL para tras — mas a
+        // consulta nao deveria depender disso.)
+        // ================================================================
+        ...(apenasAbertos
+          ? { statusVendedora: In([...STATUS_LEAD_EM_ABERTO]) }
+          : {}),
+      },
+      order: { direcionadoVendedoraEm: 'DESC' },
+      take: limite,
+    });
+    return rows.map(paraDominio);
+  }
+
+  async atualizarStatusVendedora(
+    id: string,
+    status: StatusLeadVendedora,
+    observacao?: string | null,
+  ): Promise<Lead> {
+    const row = await this.repo.findOne({ where: { id } });
+    if (!row) throw new NotFoundException('Lead nao encontrado: ' + id);
+
+    row.statusVendedora = status;
+    // O carimbo anda SEMPRE que o status e escrito, mesmo que seja o mesmo
+    // valor de antes: "ela reafirmou hoje" e informacao, e o CHECK exige.
+    row.statusVendedoraEm = new Date();
+    if (observacao !== undefined) row.observacaoVendedora = observacao;
+
+    return paraDominio(await this.repo.save(row));
+  }
+
+  async panoramaDeLeads(): Promise<PanoramaDeLeads> {
+    // SO CONTAGEM ATRAVESSA AQUI. Nenhuma coluna cifrada entra no SQL cru.
+    const porEstado: { estado: EstadoConversaAgente; quantos: string }[] =
+      await this.repo.manager.query(
+        `SELECT estado, count(*)::int AS quantos
+           FROM leads
+          GROUP BY estado`,
+      );
+
+    const porVendedora: { codigo: string; quantos: string }[] =
+      await this.repo.manager.query(
+        `SELECT vendedora_aprovada_codigo AS codigo, count(*)::int AS quantos
+           FROM leads
+          WHERE vendedora_aprovada_codigo IS NOT NULL
+          GROUP BY vendedora_aprovada_codigo
+          ORDER BY count(*) DESC`,
+      );
+
+    const total = porEstado.reduce((s, l) => s + Number(l.quantos), 0);
+    return {
+      porEstado: porEstado.map((l) => ({
+        estado: l.estado,
+        quantos: Number(l.quantos),
+      })),
+      porVendedora: porVendedora.map((l) => ({
+        codigo: l.codigo,
+        quantos: Number(l.quantos),
+      })),
+      total,
+    };
+  }
 }
 
 function paraDominio(row: LeadOrmEntity): Lead {
@@ -143,6 +229,9 @@ function paraDominio(row: LeadOrmEntity): Lead {
     vendedoraAprovadaCodigo: row.vendedoraAprovadaCodigo,
     direcionadoVendedoraEm: row.direcionadoVendedoraEm,
     fechadoEm: row.fechadoEm,
+    statusVendedora: row.statusVendedora,
+    statusVendedoraEm: row.statusVendedoraEm,
+    observacaoVendedora: row.observacaoVendedora,
     criadoEm: row.criadoEm,
   };
 }

@@ -8,7 +8,10 @@ import { OperacaoClasse } from '../../domain/entities/enums';
 import { OperacaoEntity } from '../../domain/entities/operacao.entity';
 import { OPERACAO_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { IOperacaoRepository } from '../../domain/ports/repositories/operacao-repository.port';
-import { normalizarIdErp } from '../../../../shared/erp/normalizar-id-erp';
+import {
+  aparaIdErp,
+  normalizarIdErp,
+} from '../../../../shared/erp/normalizar-id-erp';
 
 export interface AtualizarOperacaoInput {
   idErp?: string | null;
@@ -69,6 +72,9 @@ export class AtualizarOperacaoUseCase {
     const atualizada = OperacaoEntity.create({
       id,
       idErp,
+      // Sem `idErp` no PATCH, o eco de antes fica de pe.
+      idErpBruto:
+        input.idErp === undefined ? atual.idErpBruto : aparaIdErp(input.idErp),
       codigoErp,
       nome: input.nome ?? atual.nome,
       classificacao: input.classificacao ?? atual.classificacao,

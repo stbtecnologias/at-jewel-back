@@ -11,6 +11,7 @@ import { encryptedTransformer } from '../../../../../../shared/database/transfor
 import type {
   OcasiaoLead,
   OrigemContato,
+  StatusLeadVendedora,
 } from '../../../../domain/ports/repositories/lead-repository.port';
 
 @Entity('leads')
@@ -125,6 +126,42 @@ export class LeadOrmEntity {
 
   @Column({ name: 'fechado_em', type: 'timestamptz', nullable: true })
   fechadoEm: Date | null;
+
+  /**
+   * O QUE A VENDEDORA FEZ COM O LEAD — migracao 60, 22/09/2026.
+   *
+   * ========================================================================
+   * NAO CONFUNDIR COM `estado`, LOGO ACIMA.
+   *
+   * `estado` e da TRIAGEM e para em IN_HUMAN_SERVICE assim que o lead e
+   * encaminhado — dali em diante ele nao se mexe mais, nunca. Este aqui
+   * comeca justamente onde aquele termina.
+   *
+   * Tambem nao e `fechadoEm`: aquele ja nasce preenchido no encaminhamento e
+   * serve a outra coisa (liberar o numero para um proximo lead).
+   * ========================================================================
+   */
+  @Column({
+    name: 'status_vendedora',
+    type: 'varchar',
+    length: 20,
+    nullable: true,
+  })
+  statusVendedora: StatusLeadVendedora | null;
+
+  /** Anda junto com o status — o `chk_lead_status_vendedora` exige os dois. */
+  @Column({ name: 'status_vendedora_em', type: 'timestamptz', nullable: true })
+  statusVendedoraEm: Date | null;
+
+  /**
+   * A frase dela sobre este lead.
+   *
+   * SEM `encryptedTransformer`, ao contrario do `whatsapp` desta mesma
+   * entidade — decisao do Lucas em 22/09/2026. Em claro ela e buscavel por
+   * SQL e visivel no DBeaver; o preco e que um dump a leva junto, legivel.
+   */
+  @Column({ name: 'observacao_vendedora', type: 'text', nullable: true })
+  observacaoVendedora: string | null;
 
   @CreateDateColumn({ name: 'criado_em', type: 'timestamptz' })
   criadoEm: Date;

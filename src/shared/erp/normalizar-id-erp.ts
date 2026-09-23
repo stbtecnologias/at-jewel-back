@@ -58,7 +58,16 @@ const SUFIXO_FLOAT = /\.0+$/;
 /** So digito, do primeiro ao ultimo caractere. */
 const SO_DIGITOS = /^\d+$/;
 
-export function normalizarIdErp(
+/**
+ * Os passos 1 e 2 da regra, sem o 3: apara espaco das pontas e o `.0` da
+ * serializacao, e NAO mexe nos zeros a esquerda.
+ *
+ * Existe para `operacoes.id_erp_bruto` (migracao 63), que guarda o id como o
+ * integrador mandou, so para o eco da resposta. Espaco e `.0` ficam de fora
+ * porque nao sao valor — um e sujeira do dump, o outro e como o JSON escreve
+ * inteiro. O zero a esquerda e justamente o que ele quer ver de volta.
+ */
+export function aparaIdErp(
   valor: string | number | null | undefined,
 ): string | null {
   if (valor === null || valor === undefined) return null;
@@ -67,11 +76,15 @@ export function normalizarIdErp(
   // O `String` aqui cobre o caso de ele mandar como numero mesmo.
   const texto = typeof valor === 'number' ? String(valor) : valor;
 
-  let limpo = texto.trim();
-  if (limpo === '') return null;
+  const limpo = texto.trim().replace(SUFIXO_FLOAT, '');
+  return limpo === '' ? null : limpo;
+}
 
-  limpo = limpo.replace(SUFIXO_FLOAT, '');
-  if (limpo === '') return null;
+export function normalizarIdErp(
+  valor: string | number | null | undefined,
+): string | null {
+  const limpo = aparaIdErp(valor);
+  if (limpo === null) return null;
 
   if (SO_DIGITOS.test(limpo)) {
     // `replace` em vez de `Number`: o id do Safira ja passa de 9 bilhoes, e

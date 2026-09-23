@@ -5,6 +5,9 @@ export interface DefeitoProps {
   id?: string;
   produtoId: string;
   clienteId?: string | null;
+  produtoCodigo?: string | null;
+  produtoDescricao?: string | null;
+  clienteNome?: string | null;
   fotos?: FotoOcorrencia[];
   tipo: TipoDefeito;
   descricao: string;
@@ -19,6 +22,30 @@ export class Defeito {
   readonly produtoId: string;
   /** De quem era a peca. `null` = nao passou por cliente. */
   readonly clienteId: string | null;
+
+  // ====================================================================
+  // OS NOMES VEM DA CONSULTA, e nao de uma leitura a parte.
+  //
+  // Ate 23/09/2026 a tela mostrava os 8 primeiros caracteres do UUID do
+  // produto — "36802054…" —, que nao se pesquisa, nao se le e nao se fala.
+  // O Lucas tentou procurar a peca por aquilo e nao achou nada, o que era
+  // esperado: nao e codigo de coisa nenhuma.
+  //
+  // Traduzir no navegador exigiria baixar as 7.116 pecas do catalogo para
+  // resolver um punhado de linhas. Este mesmo repositorio ja tinha recusado
+  // o caminho ingenuo uma vez, nas fotos ("numa consulta so, e nao uma por
+  // linha").
+  //
+  // Sao CAMPOS DE LEITURA: so a listagem os preenche. Ficam nulos em
+  // qualquer outro caminho, e nada no dominio decide com base neles.
+  // ====================================================================
+
+  /** O codigo da peca — `CA25129`. Nulo se o produto foi apagado. */
+  readonly produtoCodigo: string | null;
+  /** A descricao de etiqueta — "ANEL OURO 24K YEAH". */
+  readonly produtoDescricao: string | null;
+  /** O nome do cliente, quando a ocorrencia tem um. */
+  readonly clienteNome: string | null;
   readonly tipo: TipoDefeito;
   /** As fotos da ocorrencia. Vazio quando ninguem anexou. */
   readonly fotos: FotoOcorrencia[];
@@ -32,6 +59,9 @@ export class Defeito {
     this.id = props.id;
     this.produtoId = props.produtoId;
     this.clienteId = props.clienteId ?? null;
+    this.produtoCodigo = props.produtoCodigo ?? null;
+    this.produtoDescricao = props.produtoDescricao ?? null;
+    this.clienteNome = props.clienteNome ?? null;
     this.tipo = props.tipo;
     this.fotos = props.fotos ?? [];
     this.descricao = props.descricao;

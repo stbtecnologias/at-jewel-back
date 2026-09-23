@@ -92,6 +92,24 @@ export class S3Armazenamento implements IArmazenamento {
     return chave;
   }
 
+  async guardarEm(
+    chave: string,
+    conteudo: Buffer,
+    mime: string,
+  ): Promise<void> {
+    await this.cliente.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: chave,
+        Body: conteudo,
+        ContentType: mime,
+        // SEM o `immutable` do `guardar`: a chave aqui e escolhida, e nada
+        // impede que um dia seja regravada.
+        CacheControl: 'no-cache',
+      }),
+    );
+  }
+
   async remover(chave: string): Promise<void> {
     try {
       await this.cliente.send(

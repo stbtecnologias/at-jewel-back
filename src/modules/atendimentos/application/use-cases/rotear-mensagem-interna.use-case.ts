@@ -154,10 +154,12 @@ export class RotearMensagemInternaUseCase {
     const esperandoCatalogo = this.canalCatalogo.temFotoEsperando(msg.de);
     const esperandoCodigo = this.canalCatalogo.temCodigoEsperando(msg.de);
     const esperandoConsulta = this.canalCatalogo.esperandoConsulta(msg.de);
+    const fotoComFalha = this.canalCatalogo.temFotoComFalha(msg.de);
     if (
       esperandoCatalogo ||
       esperandoCodigo ||
       esperandoConsulta ||
+      fotoComFalha ||
       this.canalCatalogo.temFotoEmAprovacao(msg.de) ||
       this.canalCatalogo.conversaAberta(msg.de)
     ) {
@@ -183,6 +185,18 @@ export class RotearMensagemInternaUseCase {
               textoResolvido,
             );
             if (ficha) return ficha;
+          }
+
+          // "TENTA DE NOVO" — a foto que a IA nao tratou. So o comando exato
+          // age; qualquer outro texto segue o fluxo. Antes do codigo porque a
+          // frase nunca e codigo, e antes da aprovacao porque ela e curta e
+          // levaria a dica "nao entendi se e sobre a foto".
+          if (fotoComFalha) {
+            const refeita = await this.canalCatalogo.tentarDeNovo(
+              msg.de,
+              textoResolvido,
+            );
+            if (refeita) return refeita;
           }
 
           // O CODIGO ANTES DA APROVACAO: "BR26252" nao e veredito, e sem esta
@@ -353,10 +367,49 @@ export class RotearMensagemInternaUseCase {
     // la em cima — responder o catalogo, mandar o codigo, aprovar, buscar a
     // peca. Aqui chega o que sobrou, e a resposta e dizer o que este canal faz
     // — ou, se a pessoa disse que quer mandar foto, abrir a conversa.
+    //
+    // A CONSULTA ANTES DA LISTA DE CATALOGOS — 16/09/2026. O Lucas escreveu
+    // "consultar peça" com o menu ja vencido e recebeu os catalogos abertos. A
+    // lista so e a resposta quando o texto nao pede NADA que o canal saiba
+    // fazer. Foto vem antes: "vou mandar a foto da peça" fala de peca, mas e
+    // envio.
     if (doCatalogo) {
-      return this.canalCatalogo.falaDeMandarFoto(texto)
-        ? this.canalCatalogo.intencao(msg.de, texto)
-        : this.canalCatalogo.conversa(msg.de, doCatalogo.nome ?? '');
+      // A PERGUNTA PELO QUE ESTA PENDURADO VEM PRIMEIRO. "tem foto em aberto
+      // no catalogo?" fala de foto e de catalogo — sem esta ordem viraria
+      // envio, e a pergunta nunca seria respondida.
+      if (this.canalCatalogo.falaDeFotosPendentes(texto)) {
+        return this.canalCatalogo.fotosPendentes(msg.de, doCatalogo.nome ?? '');
+      }
+      if (this.canalCatalogo.falaDeMandarFoto(texto)) {
+        return this.canalCatalogo.intencao(msg.de, texto);
+      }
+      if (this.canalCatalogo.falaDeConsultar(texto)) {
+        return this.canalCatalogo.consultarAgora(msg.de, texto);
+      }
+      // A LISTA DE CATALOGOS E RESPOSTA, E NAO CHAO — 21/09/2026. Quem
+      // pergunta por catalogo recebe a lista; ver `falaDeCatalogos`.
+      if (this.canalCatalogo.falaDeCatalogos(texto)) {
+        return this.canalCatalogo.conversa(msg.de, doCatalogo.nome ?? '');
+      }
+      // ANTES DO MENU, A FOTO PENDURADA. Um texto solto com foto esperando
+      // veredito e quase sempre uma tentativa de responder a ela — ver
+      // `lembreteDaAprovacao`. O teste de memoria vem primeiro e e de graca:
+      // sem foto pendurada ninguem paga a consulta.
+      if (this.canalCatalogo.temFotoEmAprovacao(msg.de)) {
+        const lembrete = await this.canalCatalogo.lembreteDaAprovacao(
+          msg.de,
+          doCatalogo.nome ?? '',
+        );
+        if (lembrete) return lembrete;
+      }
+
+      // O QUE SOBROU NAO E DESTE CANAL. Dizer isso, e dizer o que e —
+      // "qual minha carteira?" de um estoquista recebia os catalogos abertos.
+      return this.recepcionar.naoSeiFazer(
+        msg.de,
+        { vendedora: false, gestao: false, catalogo: true },
+        doCatalogo.nome ?? '',
+      );
     }
 
     // ---------------------------------------------------------------------

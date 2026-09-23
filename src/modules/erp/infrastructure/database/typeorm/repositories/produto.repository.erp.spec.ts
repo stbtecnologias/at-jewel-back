@@ -20,6 +20,7 @@ import { ProdutoRepository } from './produto.repository';
 describe('ProdutoRepository.upsertByCodigoErp — o que o ERP reescreve', () => {
   let values: jest.Mock;
   let orUpdate: jest.Mock;
+  let query: jest.Mock;
   let repo: ProdutoRepository;
 
   // snake_case como no banco — o bastante para o teste ler a lista.
@@ -36,7 +37,34 @@ describe('ProdutoRepository.upsertByCodigoErp — o que o ERP reescreve', () => 
     qb.orUpdate = orUpdate;
     qb.execute = jest.fn().mockResolvedValue(undefined);
 
+    // O saldo vem da tabela `estoque` (17/09/2026): 5 aqui, e NAO o 3 da
+    // coluna aposentada que a linha do banco ainda carrega.
+    query = jest.fn().mockResolvedValue([
+      {
+        produto_id: 'p-1',
+        empresa: 'AT HOME LTDA',
+        local: 'ESTOQUE',
+        grupo: 'ESTOQUE',
+        quantidade: 3,
+      },
+      {
+        produto_id: 'p-1',
+        empresa: 'MP COMERCIO',
+        local: 'ESTOQUE',
+        grupo: 'ESTOQUE',
+        quantidade: 2,
+      },
+      {
+        produto_id: 'p-1',
+        empresa: 'GOLDESIGN',
+        local: 'ESTOQUE',
+        grupo: 'ESTOQUE',
+        quantidade: 0,
+      },
+    ]);
+
     const ormRepo = {
+      manager: { query },
       metadata: {
         findColumnWithPropertyName: (p: string) => ({
           databaseName: paraColuna(p),
@@ -113,6 +141,38 @@ describe('ProdutoRepository.upsertByCodigoErp — o que o ERP reescreve', () => 
     ];
     expect(conflito).toEqual(['codigo_erp']);
     expect(opcoes.skipUpdateIfNoValuesChanged).toBe(true);
+  });
+
+  it('o INSERT nao leva estoque — a coluna foi aposentada', async () => {
+    await repo.upsertByCodigoErp(doEvento());
+
+    const [linha] = values.mock.calls[0] as [Record<string, unknown>];
+    expect(linha).not.toHaveProperty('estoqueAtual');
+  });
+
+  it('o saldo devolvido e a SOMA da tabela estoque, nao a coluna', async () => {
+    const produto = await repo.upsertByCodigoErp(doEvento());
+
+    expect(produto.estoqueAtual).toBe(5);
+    // As posicoes vem junto, INCLUSIVE a zerada: filtrar por GOLDESIGN tem
+    // de achar a peca que existe la com zero.
+    expect(produto.posicoes.map((p) => p.empresa)).toEqual([
+      'AT HOME LTDA',
+      'MP COMERCIO',
+      'GOLDESIGN',
+    ]);
+    const [sql, params] = query.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain('FROM estoque');
+    expect(params).toEqual([['p-1']]);
+  });
+
+  it('peca sem linha de estoque tem saldo zero', async () => {
+    query.mockResolvedValue([]);
+
+    const produto = await repo.upsertByCodigoErp(doEvento());
+
+    expect(produto.estoqueAtual).toBe(0);
+    expect(produto.posicoes).toEqual([]);
   });
 
   it('peca NOVA nasce com a data de entrada de agora', async () => {

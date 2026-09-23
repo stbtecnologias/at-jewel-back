@@ -163,6 +163,14 @@ export interface CatalogoItem {
    * imagem nenhuma, e ai a tela desenha o esboco.
    */
   capaArquivoId: string | null;
+
+  /**
+   * A aprovação — migração 59. `null` nos três = não aprovado. Quando
+   * aprovado, o status é PUBLICADO e a capa acima já é a da versão aprovada.
+   */
+  aprovadoFinalId: string | null;
+  aprovadoPor: string | null;
+  aprovadoEm: Date | null;
 }
 
 /** Detalhe: a linha, mais tudo que pendura nela. */
@@ -222,6 +230,14 @@ export interface RegistrarFinalData {
   enviadoPor: string | null;
 }
 
+/** O que a aprovação grava. `null` em `registrarAprovacao` desfaz. */
+export interface AprovacaoData {
+  finalId: string;
+  /** A imagem que vira capa. `null` = sem imagem, vale a referência escolhida. */
+  capaArquivoId: string | null;
+  aprovadoPor: string;
+}
+
 /** Uma versão já entregue. A mais recente é a que vale. */
 export interface FinalItem {
   id: string;
@@ -279,7 +295,19 @@ export interface ICatalogoRepository {
    * referencia de OUTRO catalogo. Aqui da para exigir que ela seja deste, e e
    * o que o use case faz.
    */
-  definirCapa(id: string, referenciaId: string | null): Promise<CatalogoDetalhe>;
+  definirCapa(
+    id: string,
+    referenciaId: string | null,
+  ): Promise<CatalogoDetalhe>;
+  /**
+   * Aprova (status PUBLICADO + as quatro colunas da 59) ou, com `null`,
+   * desfaz (COLETANDO + as quatro nulas). Numa gravação só: status e
+   * aprovação não podem ficar um sem o outro.
+   */
+  registrarAprovacao(
+    id: string,
+    dados: AprovacaoData | null,
+  ): Promise<CatalogoDetalhe>;
   /**
    * A nota daquele arquivo. `null` apaga.
    *

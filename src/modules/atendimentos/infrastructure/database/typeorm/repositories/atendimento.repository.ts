@@ -332,7 +332,10 @@ export class AtendimentoRepository implements IAtendimentoRepository {
   }
 
   async resumoAuditoria(
-    filtros: Pick<FiltroAuditoria, 'de' | 'ate' | 'etapa'>,
+    filtros: Pick<
+      FiltroAuditoria,
+      'de' | 'ate' | 'etapa' | 'vendedoraId' | 'apenasAbertos'
+    >,
   ): Promise<ResumoAuditoria> {
     const { where, params } = montarFiltro(filtros);
 
@@ -481,7 +484,20 @@ export class AtendimentoRepository implements IAtendimentoRepository {
   async linhaDoTempo(de: Date, ate: Date): Promise<PontoDaLinha[]> {
     const linhas: LinhaDaLinhaSql[] = await this.repo.manager.query(
       `
-      WITH janela AS (SELECT $1::timestamptz AS de, $2::timestamptz AS ate)
+      WITH janela AS (SELECT $1::timestamptz AS de, $2::timestamptz AS ate),
+
+      -- ====================================================================
+      -- A UNIAO VIROU CTE PARA A ETAPA PODER ENTRAR POR FORA — 22/09/2026.
+      --
+      -- Cada ramo abaixo continua o que sempre foi. O que mudou e que eles
+      -- nao sao mais o resultado: viraram "pontos", e o SELECT final junta
+      -- a etapa contra a view.
+      --
+      -- POR FORA, E NAO RAMO A RAMO: sao seis ramos e tres deles nem tem
+      -- atendimento atras. Repetir o join em cada um seria escrever a mesma
+      -- coisa seis vezes para acertar em tres.
+      -- ====================================================================
+      pontos AS (
 
       -- 1 + 2. As interacoes do periodo.
       SELECT
@@ -551,6 +567,42 @@ export class AtendimentoRepository implements IAtendimentoRepository {
 
       UNION ALL
 
+      -- 6. O LEAD ENCAMINHADO — 21/09/2026.
+      --
+      -- ====================================================================
+      -- A LINHA DO TEMPO MOSTRAVA "sem registro" PARA QUEM TINHA RECEBIDO UM.
+      --
+      -- Encaminhar lead nao cria atendimento (decisao de 03/09), e todos os
+      -- outros ramos desta uniao nascem de um. Entao o dia da vendedora que
+      -- so recebeu leads aparecia vazio — o Lucas viu isso na tela em 21/09,
+      -- horas depois de um lead ter sido encaminhado para ele.
+      --
+      -- O PONTO NASCE DO PROPRIO LEAD, sem atendimento e sem cliente: os dois
+      -- vao nulos, como ja acontece na venda e na consignacao. O nome do lead
+      -- ocupa o lugar do nome do cliente, que e o que a tela mostra.
+      --
+      -- O MARCO E O ENCAMINHAMENTO, e nao a criacao do lead: e o momento em
+      -- que aquilo passou a ser trabalho DELA. Lead que ainda espera a gestao
+      -- nao e dia de vendedora nenhuma, e por isso nao entra aqui.
+      --
+      -- A coluna "nome" NAO e cifrada (so "whatsapp" e), entao ela pode vir
+      -- por SQL cru. O telefone continua fora desta consulta, de proposito.
+      -- ====================================================================
+      SELECT
+        'lead:' || l.id, 'ENCAMINHADO',
+        vd.id, vd.nome,
+        l.direcionado_vendedora_em,
+        NULL::uuid, l.nome,
+        NULL::timestamptz, NULL::numeric,
+        NULL::text, NULL::uuid
+      FROM leads l
+      JOIN vendedoras vd ON vd.codigo_erp = l.vendedora_aprovada_codigo
+      , janela j
+      WHERE l.direcionado_vendedora_em >= j.de
+        AND l.direcionado_vendedora_em <  j.ate
+
+      UNION ALL
+
       -- 5. A peca que saiu com ela.
       SELECT
         'consignacao:' || c.id, 'CONSIGNACAO',
@@ -565,7 +617,26 @@ export class AtendimentoRepository implements IAtendimentoRepository {
       WHERE c.data_saida >= j.de AND c.data_saida < j.ate
         AND c.vendedora_id IS NOT NULL
 
-      ORDER BY em ASC
+      )
+
+      -- ====================================================================
+      -- A ETAPA, VINDA DA VIEW QUE JA A CALCULA.
+      --
+      -- A view vw_atendimentos_auditoria deriva a etapa da linha do tempo do
+      -- episodio (migracao 38). Reimplementar aquele CASE aqui seria manter
+      -- duas verdades sobre a mesma pergunta, e elas divergiriam na primeira
+      -- mudanca de regra.
+      --
+      -- LEFT, E NAO INNER: venda, consignacao e lead encaminhado nao tem
+      -- atendimento. Um INNER apagaria tres dos seis ramos da regua.
+      -- ====================================================================
+      SELECT
+        p.*,
+        va.etapa::text AS etapa
+      FROM pontos p
+      LEFT JOIN vw_atendimentos_auditoria va ON va.id = p.atendimento_id
+
+      ORDER BY p.em ASC
       `,
       [de, ate],
     );
@@ -607,6 +678,7 @@ export class AtendimentoRepository implements IAtendimentoRepository {
       desfecho: l.desfecho,
       atendimentoId: l.atendimento_id,
       relato: relatos.get(l.id.slice('interacao:'.length)) ?? null,
+      etapa: l.etapa,
       // `vend-<uuid>` e o mesmo nome que o `ConexoesService` monta. Aqui ele
       // e reconstruido em vez de importado para nao amarrar este modulo ao
       // de atendimento — se o formato mudar, muda nos dois.
@@ -700,6 +772,8 @@ interface LinhaDaLinhaSql {
   valor: string | null;
   desfecho: string | null;
   atendimento_id: string | null;
+  /** Vem do LEFT JOIN com a view; null onde nao ha atendimento atras. */
+  etapa: EtapaAtendimento | null;
 }
 
 /** Linha crua da view, com os nomes ja juntados. */
@@ -782,9 +856,14 @@ function montarFiltro(f: Partial<FiltroAuditoria>): {
     params.push(f.etapa);
     cond.push(`v.etapa = $${params.length}`);
   }
+  // SEM PARAMETRO: e um predicado fixo, nao um valor de fora. `desfecho`
+  // nulo e a definicao de atendimento em curso — ver `apenasAbertos`.
+  if (f.apenasAbertos) {
+    cond.push('v.desfecho IS NULL');
+  }
   if (f.de) {
     params.push(f.de);
-    cond.push(`v.aberto_em >= $${params.length}`);
+    cond.push(`v.aberto_em >= ${params.length}`);
   }
   if (f.ate) {
     params.push(f.ate);

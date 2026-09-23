@@ -3,7 +3,10 @@ import { OperacaoClasse } from '../../domain/entities/enums';
 import { OperacaoEntity } from '../../domain/entities/operacao.entity';
 import { OPERACAO_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { IOperacaoRepository } from '../../domain/ports/repositories/operacao-repository.port';
-import { normalizarIdErp } from '../../../../shared/erp/normalizar-id-erp';
+import {
+  aparaIdErp,
+  normalizarIdErp,
+} from '../../../../shared/erp/normalizar-id-erp';
 
 export interface SincronizarOperacaoInput {
   idErp: string;
@@ -63,12 +66,17 @@ export class SincronizarOperacaoUseCase {
       );
     }
 
+    // O id COMO ELE MANDOU, so para o eco da resposta — migracao 63. A chave
+    // continua sendo o `idErp` normalizado, aqui e na busca.
+    const idErpBruto = aparaIdErp(input.idErp);
+
     const codigoErp = normalizarIdErp(input.codigoErp);
     const existente = await this.repo.buscarPorIdErp(idErp);
 
     if (!existente) {
       const nova = OperacaoEntity.create({
         idErp,
+        idErpBruto,
         codigoErp,
         nome: input.nome,
         classificacao: input.classificacao ?? 'OUTRA',
@@ -80,6 +88,7 @@ export class SincronizarOperacaoUseCase {
     const atualizada = OperacaoEntity.create({
       id: existente.id,
       idErp,
+      idErpBruto,
       codigoErp,
       nome: input.nome,
       // Preservada. Ver o cabecalho.

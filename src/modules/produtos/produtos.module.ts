@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { CatalogosModule } from '../catalogos/catalogos.module';
 import { AlertasEstoqueUseCase } from './application/use-cases/alertas-estoque.use-case';
+import { SaldoDoProdutoUseCase } from './application/use-cases/saldo-do-produto.use-case';
 import { AtualizarProdutoUseCase } from './application/use-cases/atualizar-produto.use-case';
 import { BuscarProdutoUseCase } from './application/use-cases/buscar-produto.use-case';
 import { BuscarProdutoPorIdErpUseCase } from './application/use-cases/buscar-produto-por-id-erp.use-case';
@@ -40,6 +41,7 @@ import { ProdutosController } from './infrastructure/http/controllers/produtos.c
     RemoverProdutoUseCase,
     FacetasProdutosUseCase,
     AlertasEstoqueUseCase,
+    SaldoDoProdutoUseCase,
     FotoProdutoUseCase,
     FotoErpService,
     { provide: PRODUTO_REPOSITORY, useClass: ProdutoRepository },

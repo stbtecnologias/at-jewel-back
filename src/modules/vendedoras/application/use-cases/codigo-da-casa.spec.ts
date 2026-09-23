@@ -5,7 +5,7 @@ import { Vendedora } from '../../domain/entities/vendedora.entity';
 import type { IVendedoraRepository } from '../../domain/ports/repositories/vendedora-repository.port';
 
 /**
- * O CÓDIGO DA CASA — `AT-####`.
+ * O CÓDIGO DA CASA — `VD-####`.
  *
  * ==========================================================================
  * ELE NÃO É UM RÓTULO. É A CHAVE DA CARTEIRA.
@@ -15,12 +15,12 @@ import type { IVendedoraRepository } from '../../domain/ports/repositories/vende
  * limitação de tela, é chave estrangeira.
  *
  * Enquanto o cadastro vinha do ERP isso não incomodava: o código vinha de lá.
- * Com a vendedora nascendo no CRM, alguém tem que gerar — e o prefixo `AT-`
+ * Com a vendedora nascendo no CRM, alguém tem que gerar — e o prefixo `VD-`
  * diz a origem de relance.
  *
  * TROCAR É SEGURO, e é o que estes testes protegem junto: a FK tem ON UPDATE
  * CASCADE, então mudar o código leva os clientes junto. É isso que permite ela
- * nascer `AT-0007` aqui e receber o código do ERP depois, sem perder ninguém.
+ * nascer `VD-0007` aqui e receber o código do ERP depois, sem perder ninguém.
  * ==========================================================================
  */
 describe('O código da casa', () => {
@@ -35,7 +35,7 @@ describe('O código da casa', () => {
       buscarPorId: jest.fn().mockResolvedValue(null),
       buscarPorIdErp: jest.fn().mockResolvedValue(null),
       buscarPorCodigoErp: jest.fn().mockResolvedValue(null),
-      proximoCodigoInterno: jest.fn().mockResolvedValue('AT-0009'),
+      proximoCodigoInterno: jest.fn().mockResolvedValue('VD-0009'),
       buscarPorEmailHash: jest.fn().mockResolvedValue(null),
       buscarPorWhatsappHash: jest.fn().mockResolvedValue(null),
       listar: jest.fn().mockResolvedValue([]),
@@ -54,7 +54,7 @@ describe('O código da casa', () => {
 
       await uc.execute({ nome: 'Aline' });
 
-      expect(repo.criar.mock.calls[0][0].codigoErp).toBe('AT-0009');
+      expect(repo.criar.mock.calls[0][0].codigoErp).toBe('VD-0009');
     });
 
     it('com código informado, respeita o que veio', async () => {
@@ -89,13 +89,13 @@ describe('O código da casa', () => {
 
       await uc.execute('vd-1', { nome: 'Aline Keppler' });
 
-      expect(repo.atualizar.mock.calls[0][0].codigoErp).toBe('AT-0009');
+      expect(repo.atualizar.mock.calls[0][0].codigoErp).toBe('VD-0009');
     });
 
     /** O dia em que o ERP trouxer a vendedora: os clientes vão junto, por
      *  causa do ON UPDATE CASCADE. */
-    it('troca o AT-#### pelo código do ERP', async () => {
-      repo.buscarPorId.mockResolvedValue(existente('AT-0009'));
+    it('troca o VD-#### pelo código do ERP', async () => {
+      repo.buscarPorId.mockResolvedValue(existente('VD-0009'));
       const uc = new AtualizarVendedoraUseCase(repo);
 
       await uc.execute('vd-1', { codigoErp: 'LA-07' });
@@ -128,7 +128,7 @@ describe('O código da casa', () => {
     });
 
     it('recusa código que já é de outra vendedora', async () => {
-      repo.buscarPorId.mockResolvedValue(existente('AT-0009'));
+      repo.buscarPorId.mockResolvedValue(existente('VD-0009'));
       repo.buscarPorCodigoErp.mockResolvedValue(existente('LA-07'));
       const uc = new AtualizarVendedoraUseCase(repo);
 

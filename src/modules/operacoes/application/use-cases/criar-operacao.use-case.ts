@@ -3,7 +3,10 @@ import { OperacaoClasse } from '../../domain/entities/enums';
 import { OperacaoEntity } from '../../domain/entities/operacao.entity';
 import { OPERACAO_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { IOperacaoRepository } from '../../domain/ports/repositories/operacao-repository.port';
-import { normalizarIdErp } from '../../../../shared/erp/normalizar-id-erp';
+import {
+  aparaIdErp,
+  normalizarIdErp,
+} from '../../../../shared/erp/normalizar-id-erp';
 
 export interface CriarOperacaoInput {
   idErp?: string | null;
@@ -43,6 +46,8 @@ export class CriarOperacaoUseCase {
 
     const operacao = OperacaoEntity.create({
       idErp,
+      // O eco, quando o cadastro vem pelo painel com o id do ERP na mao.
+      idErpBruto: aparaIdErp(input.idErp),
       codigoErp,
       nome: input.nome,
       // Default OUTRA: operacao nova entra inerte e alguem classifica. O nome

@@ -85,6 +85,24 @@ export interface FiltroAuditoria {
   /** Parte do nome do cliente — e como se procura "o Thiago falou com a Luana?". */
   clienteNome?: string;
   etapa?: EtapaAtendimento;
+  /**
+   * So os atendimentos EM CURSO — os que ainda nao tem desfecho.
+   *
+   * ==========================================================================
+   * E O RECORTE DE "AGORA", E ELE NASCEU PARA O WHATSAPP — 21/09/2026.
+   *
+   * Na TELA a pergunta e sobre um dia ("o que aconteceu segunda"), e a janela
+   * de/ate responde. Na CONVERSA a pergunta e outra: "como esta minha
+   * carteira". Sem este recorte, um resumo sem janela contaria todo
+   * atendimento ja fechado desde o inicio do sistema — o numero cresceria para
+   * sempre e nao diria nada sobre hoje.
+   *
+   * CONCLUIDO e NAO_AVANCOU somem por definicao: as duas etapas SAO o
+   * desfecho. Sobram as quatro que ainda estao na mao de alguem, que e
+   * exatamente o que "o que esta comigo" quer dizer.
+   * ==========================================================================
+   */
+  apenasAbertos?: boolean;
   /** Janela sobre `aberto_em`. */
   de?: Date;
   ate?: Date;
@@ -276,7 +294,10 @@ export interface IAtendimentoRepository {
    * Sem `limit`: e agregacao, e o resultado tem o tamanho da equipe.
    */
   resumoAuditoria(
-    filtros: Pick<FiltroAuditoria, 'de' | 'ate' | 'etapa'>,
+    filtros: Pick<
+      FiltroAuditoria,
+      'de' | 'ate' | 'etapa' | 'vendedoraId' | 'apenasAbertos'
+    >,
   ): Promise<ResumoAuditoria>;
 
   /**
@@ -414,4 +435,26 @@ export interface PontoDaLinha {
 
   /** O que a vendedora escreveu. Cifrado no banco; chega decifrado. */
   relato: string | null;
+
+  /**
+   * EM QUE PE ESTA O EPISODIO DE ONDE ESTE PONTO SAIU — 22/09/2026.
+   *
+   * ====================================================================
+   * E O ESTADO DE AGORA, E NAO O DO DIA DO PONTO.
+   *
+   * A etapa vem da `vw_atendimentos_auditoria`, que calcula sempre sobre o
+   * estado ATUAL do atendimento. Um ponto de segunda-feira carrega a etapa
+   * de hoje, e nao a de segunda — nao existe historico de etapa no banco,
+   * entao nao ha como reconstruir o passado.
+   *
+   * A TELA PRECISA DIZER ISSO com todas as letras: "5 concluidos" quer
+   * dizer "dos que tiveram movimento hoje, 5 estao concluidos NESTE
+   * MOMENTO" — um deles pode ter fechado ontem.
+   *
+   * NULL onde nao ha episodio atras: venda, consignacao e lead encaminhado
+   * nascem sem `atendimentoId`, e portanto sem etapa. Nao e ausencia de
+   * dado, e ausencia de episodio.
+   * ====================================================================
+   */
+  etapa: EtapaAtendimento | null;
 }

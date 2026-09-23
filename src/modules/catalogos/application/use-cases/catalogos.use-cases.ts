@@ -143,6 +143,23 @@ export class AtualizarCatalogoUseCase {
     id: string,
     input: AtualizarCatalogoInput,
   ): Promise<CatalogoDetalhe> {
+    // PUBLICADO TEM PORTA PRÓPRIA — a aprovação (migração 59). Pelo PATCH, o
+    // status mudaria sem versão aprovada nem capa; e sair de PUBLICADO por aqui
+    // deixaria a aprovação gravada num catálogo que já não está aprovado.
+    if (input.status !== undefined) {
+      if (input.status === 'PUBLICADO') {
+        throw new BadRequestException(
+          'Para publicar, use "Aprovar catálogo" na versão atual.',
+        );
+      }
+      const atual = await this.repositorio.buscarPorId(id);
+      if (atual?.status === 'PUBLICADO') {
+        throw new BadRequestException(
+          'Catálogo aprovado — desfaça a aprovação antes de mudar o status.',
+        );
+      }
+    }
+
     // Liberar para COLETANDO significa entrar na lista que a agente oferece no
     // WhatsApp. Sem referencia, a IA nao tem o que seguir — e a foto volta
     // tratada em qualquer estilo. Barrado aqui, e nao na tela: a tela pode ser
@@ -429,11 +446,14 @@ export class CorrigirParcelamentoUseCase {
     // olha a colecao — sem esta checagem, um id valido de outro catalogo seria
     // aceito e o preco mudaria na coleccao errada.
     const foto = catalogo.fotos.find((f) => f.id === fotoId);
-    if (!foto) throw new NotFoundException('Foto não encontrada neste catálogo');
+    if (!foto)
+      throw new NotFoundException('Foto não encontrada neste catálogo');
 
     if (dados.parcelas !== undefined && dados.parcelas !== null) {
       if (!Number.isInteger(dados.parcelas) || dados.parcelas < 1) {
-        throw new BadRequestException('Parcelas precisa ser um número inteiro a partir de 1');
+        throw new BadRequestException(
+          'Parcelas precisa ser um número inteiro a partir de 1',
+        );
       }
       if (dados.parcelas > MAX_PARCELAS) {
         throw new BadRequestException(`No máximo ${MAX_PARCELAS} parcelas`);
@@ -442,7 +462,9 @@ export class CorrigirParcelamentoUseCase {
 
     if (dados.jurosPercentual !== undefined && dados.jurosPercentual !== null) {
       if (dados.jurosPercentual < 0 || dados.jurosPercentual > MAX_JUROS) {
-        throw new BadRequestException(`O juro precisa ficar entre 0 e ${MAX_JUROS}%`);
+        throw new BadRequestException(
+          `O juro precisa ficar entre 0 e ${MAX_JUROS}%`,
+        );
       }
     }
 

@@ -4,29 +4,35 @@ import {
   ESTILO_CATALOGO,
 } from '../domain/ports/injection-tokens';
 import type { IArmazenamento } from '../domain/ports/armazenamento.port';
-import type { IEstiloCatalogo } from '../domain/ports/estilo-catalogo.port';
+import {
+  QUEM_USA_PADRAO,
+  PALETA_DA_CASA,
+  type DirecaoDeArte,
+  type IEstiloCatalogo,
+} from '../domain/ports/estilo-catalogo.port';
 import type { ReferenciaItem } from '../domain/ports/repositories/catalogo-repository.port';
 import type { ImagemDeEntrada } from '../domain/ports/tratamento-imagem.port';
 
 /**
- * O estilo do catalogo, lido UMA VEZ e reaproveitado.
+ * A direcao de arte do catalogo, lida UMA VEZ e reaproveitada.
  *
  * ==========================================================================
- * POR QUE UM CACHE, E NAO UMA LEITURA POR FOTO.
+ * SEM OBSERVACAO, NAO HA TEMA — decisao do Lucas em 16/09/2026.
  *
- * Quem fotografa manda 20 pecas do mesmo catalogo numa tarde. As paginas de
- * referencia sao as mesmas nas 20, e a resposta tambem seria — pagar 20
- * leituras para receber 20 vezes "fundo bege claro, luz quente, titulo
- * serifado" e desperdicio pinto.
+ *   "sem observacao voce deixa branco mesmo."
  *
- * A CHAVE INCLUI A IMPRESSAO DAS REFERENCIAS, e nao so o id do catalogo:
- * trocar a pagina de referencia no painel tem de invalidar o que foi lido.
- * Sem isso, o marketing trocaria a referencia e o sistema continuaria usando
- * a antiga ate alguem reiniciar o processo.
- *
- * VIVE EM RAM, como a sessao do catalogo e a memoria dos agentes. Reiniciar
- * perde o cache e custa uma leitura barata — nunca trabalho.
+ * O tema nasce do que o marketing ESCREVEU: as referencias do tipo
+ * OBSERVACAO e a observacao anotada em cada pagina de referencia. As paginas
+ * sozinhas nao ligam o tema — elas refinam cor e clima de um tema que alguem
+ * pediu. Sem texto, `direcao` devolve `null` e o catalogo sai como sempre
+ * saiu: branco, grade de oito.
  * ==========================================================================
+ *
+ * POR QUE UM CACHE: montar de novo o mesmo catalogo nao muda as observacoes,
+ * e a resposta seria a mesma. A CHAVE INCLUI A IMPRESSAO DAS REFERENCIAS —
+ * trocar a pagina ou o texto no painel tem de invalidar o que foi lido.
+ *
+ * VIVE EM RAM. Reiniciar perde o cache e custa uma leitura barata.
  */
 
 /** Teto de catalogos lembrados. Sao poucos abertos por vez; o teto e do caso patologico. */
@@ -37,7 +43,7 @@ const MIMES_LEGIVEIS = ['image/jpeg', 'image/png', 'image/webp'];
 
 interface Lido {
   impressao: string;
-  estilo: string | null;
+  direcao: DirecaoDeArte;
 }
 
 @Injectable()
@@ -53,38 +59,60 @@ export class EstiloDoCatalogoService {
   ) {}
 
   /**
-   * O estilo escrito deste catalogo, ou `null` quando nao ha referencia de
-   * imagem, o provedor falhou ou a leitura nao esta disponivel.
-   *
-   * NUNCA LANCA. Estilo e enfeite: sem ele o tratamento segue com os textos
-   * das referencias, que e o comportamento de antes.
+   * O que o marketing escreveu de tema, numa linha — ou `null` quando nao
+   * escreveu nada.
    */
-  async ler(
+  static observacoes(referencias: ReferenciaItem[]): string | null {
+    const textos = referencias
+      .map((r) => (r.tipo === 'OBSERVACAO' ? r.valor : r.observacao))
+      .map((t) => t?.trim())
+      .filter((t): t is string => Boolean(t));
+    return textos.length ? textos.join('; ') : null;
+  }
+
+  /**
+   * A direcao de arte deste catalogo, ou `null` quando ele NAO TEM TEMA.
+   *
+   * NUNCA LANCA, e com observacao nunca devolve `null`: se a leitura falhar
+   * ou nao estiver disponivel, a direcao sai do proprio texto — a cena e o
+   * que foi escrito, a paleta e a da casa. O tema pedido continua valendo.
+   */
+  async direcao(
     catalogoId: string,
     referencias: ReferenciaItem[],
-    textos: string | null,
-  ): Promise<string | null> {
+  ): Promise<DirecaoDeArte | null> {
+    const observacoes = EstiloDoCatalogoService.observacoes(referencias);
+    if (!observacoes) return null;
+
     const paginas = referencias.filter(
       (r) =>
         r.tipo === 'IMAGEM' &&
         r.arquivoId &&
         MIMES_LEGIVEIS.includes(r.mime ?? ''),
     );
-    if (paginas.length === 0 || !this.leitor.disponivel()) return null;
 
-    const impressao = this.impressaoDe(paginas, textos);
+    const impressao = this.impressaoDe(paginas, observacoes);
     const lembrado = this.cache.get(catalogoId);
-    if (lembrado?.impressao === impressao) return lembrado.estilo;
+    if (lembrado?.impressao === impressao) return lembrado.direcao;
 
-    const carregadas = await this.carregar(paginas);
-    if (carregadas.length === 0) return null;
+    const soDoTexto: DirecaoDeArte = {
+      cena: observacoes,
+      modelo: QUEM_USA_PADRAO,
+      paleta: { ...PALETA_DA_CASA },
+      frase: null,
+    };
+    if (!this.leitor.disponivel()) return soDoTexto;
 
-    const estilo = await this.leitor.ler(carregadas, textos);
-    this.guardar(catalogoId, { impressao, estilo });
-    if (estilo) {
-      this.logger.log(`Estilo do catalogo ${catalogoId} lido das referencias.`);
-    }
-    return estilo;
+    const lida = await this.leitor.ler(
+      await this.carregar(paginas),
+      observacoes,
+    );
+    // FALHA NAO VAI PARA O CACHE: a proxima montagem tenta ler de novo.
+    if (!lida) return soDoTexto;
+
+    this.guardar(catalogoId, { impressao, direcao: lida });
+    this.logger.log(`Direcao de arte do catalogo ${catalogoId} lida.`);
+    return lida;
   }
 
   /** Esquece o que foi lido — usado quando a referencia muda pela tela. */
@@ -94,14 +122,11 @@ export class EstiloDoCatalogoService {
 
   /**
    * A impressao das referencias: o que muda quando o marketing troca uma
-   * pagina. Ids e textos bastam — o conteudo do arquivo de uma chave nao muda
-   * sem a chave mudar, porque o armazenamento nunca sobrescreve.
+   * pagina ou um texto. Ids bastam para o arquivo — o armazenamento nunca
+   * sobrescreve uma chave.
    */
-  private impressaoDe(
-    paginas: ReferenciaItem[],
-    textos: string | null,
-  ): string {
-    return [...paginas.map((p) => p.arquivoId).sort(), textos ?? ''].join('|');
+  private impressaoDe(paginas: ReferenciaItem[], observacoes: string): string {
+    return [...paginas.map((p) => p.arquivoId).sort(), observacoes].join('|');
   }
 
   private async carregar(
@@ -111,7 +136,7 @@ export class EstiloDoCatalogoService {
     for (const pagina of paginas) {
       const arquivo = await this.armazenamento.ler(pagina.arquivoId!);
       // Referencia sem arquivo nao e erro: o registro pode ter sobrevivido a
-      // uma limpeza de disco. Segue com as que existem.
+      // uma limpeza do bucket. Segue com as que existem.
       if (arquivo) {
         lidas.push({ conteudo: arquivo.conteudo, mime: arquivo.mime });
       }

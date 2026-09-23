@@ -18,6 +18,7 @@ import type {
   ICatalogoRepository,
 } from '../../domain/ports/repositories/catalogo-repository.port';
 import type { ArquivoRecebido } from './catalogos.use-cases';
+import { recusarSeAprovado } from './aprovar-catalogo.use-case';
 
 /**
  * O que o marketing pode devolver.
@@ -96,6 +97,7 @@ export class EnviarFinalUseCase {
   ): Promise<CatalogoDetalhe> {
     const catalogo = await this.repositorio.buscarPorId(catalogoId);
     if (!catalogo) throw new NotFoundException('Catálogo não encontrado');
+    recusarSeAprovado(catalogo);
 
     if (!arquivo) {
       throw new BadRequestException('Nenhum arquivo enviado.');

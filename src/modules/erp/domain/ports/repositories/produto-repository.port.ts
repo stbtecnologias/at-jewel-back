@@ -30,6 +30,15 @@ export interface FacetasProduto {
   colecoes: string[];
   /** Cores ja usadas. Mesma logica. */
   cores: string[];
+  /**
+   * TODOS OS CADASTRADOS e ativos, e nao so os que tem peca — pedido do Lucas
+   * em 17/09/2026: filtrar por um lugar vazio tem de mostrar que ali nao ha
+   * nada, e nao esconder o lugar. Diferente de pedras/cores, estes tem tabela
+   * propria.
+   */
+  empresas: string[];
+  locais: string[];
+  grupos: string[];
 }
 
 export interface ProdutoAlerta {
@@ -56,6 +65,18 @@ export interface AlertasEstoque {
    */
   totalEstoqueBaixo: number;
   totalGiroLento: number;
+}
+
+/**
+ * Uma linha do saldo da peca: quanto ha em cada empresa × local × grupo.
+ * A soma de todas e o `estoqueAtual` do produto.
+ */
+export interface SaldoDaPeca {
+  empresa: string;
+  local: string;
+  grupo: string;
+  quantidade: number;
+  atualizadoEm: Date;
 }
 
 export interface IProdutoRepository {
@@ -99,4 +120,10 @@ export interface IProdutoRepository {
   remover(id: string): Promise<void>;
   facetas(): Promise<FacetasProduto>;
   alertasEstoque(limiteBaixo: number, diasGiroLento: number): Promise<AlertasEstoque>;
+  /**
+   * Onde esta o saldo da peca, linha a linha — so as linhas COM quantidade:
+   * a carga do integrador traz uma linha zerada para quase toda peca, e na
+   * tela ela so diria "nada aqui".
+   */
+  saldoPorEmpresa(produtoId: string): Promise<SaldoDaPeca[]>;
 }

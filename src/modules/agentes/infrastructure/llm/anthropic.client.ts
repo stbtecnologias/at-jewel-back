@@ -9,6 +9,7 @@ import type {
   GraficoDinamico,
   ILlmClient,
   PeriodoAgendaLlm,
+  StatusLeadLlm,
   PeriodoVendasLlm,
 } from '../../domain/ports/llm-client.port';
 
@@ -144,6 +145,48 @@ const PRODUTOS_TOOL: Anthropic.Tool = {
     },
     required: ['busca'],
   },
+};
+
+const MEUS_LEADS_TOOL: Anthropic.Tool = {
+  name: 'meus_leads',
+  description:
+    'Lista os LEADS que a gestao encaminhou PARA ELA: nome, o que a pessoa procura, a ocasiao, ha quanto tempo chegou e o TELEFONE para ela entrar em contato. Use quando ela perguntar "tem lead para mim", "o que me mandaram", "quais clientes novos eu recebi", "me passa o contato daquele lead". Nao precisa passar nada. So enxerga os leads encaminhados para ela. Lead NAO e cliente da carteira: para atendimento em curso, use consultar_minha_carteira. LEAD NAO PODE SER AGENDADO — ele nao tem cadastro de cliente, e agendar_contato so aceita cliente da carteira. Nao ofereca marcar contato com um lead.',
+  input_schema: { type: 'object', properties: {} },
+};
+
+const ATUALIZAR_LEAD_TOOL: Anthropic.Tool = {
+  name: 'atualizar_lead',
+  description:
+    'Muda o STATUS de um lead que foi encaminhado para ela, e guarda uma observacao dela junto. Use quando ela contar o que aconteceu com um lead — "ja falei com o Aslan", "o Aslan comprou", "esse nao quis nada", "pode dar baixa nesse", "nao atendeu tres vezes". LEAD, e nao cliente: para cliente da carteira use registrar_relato ou agendar_contato. So alcanca os leads encaminhados para ela. Identifique o lead pelo NOME como ela falou — nao invente nome nem peca codigo. Se ela nao disser em que pe ficou, PERGUNTE antes de chamar; nao escolha o status por ela. Em NAO_VINGOU, pergunte o MOTIVO junto da confirmacao e mande a resposta em `observacao` — uma vez so, e sem insistir se ela nao quiser dizer.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      lead: {
+        type: 'string',
+        description:
+          'O nome do lead como ela escreveu. Nao complete nem corrija o sobrenome.',
+      },
+      status: {
+        type: 'string',
+        enum: ['NOVO', 'EM_CONTATO', 'VIROU_CLIENTE', 'NAO_VINGOU'],
+        description:
+          'EM_CONTATO = ela ja falou com a pessoa e aquilo esta andando. VIROU_CLIENTE = comprou, ou virou cadastro. NAO_VINGOU = a baixa, por qualquer motivo. NOVO = so para DESFAZER uma baixa dada por engano.',
+      },
+      observacao: {
+        type: 'string',
+        description:
+          'SO O QUE ELA ACABOU DE FALAR — o sistema soma isto ao que ja estava anotado, com a data. Nao repita observacao antiga: ela apareceria duas vezes. Em NAO_VINGOU, e aqui que vai o MOTIVO ("achou caro", "nao atende", "comprou em outro lugar"). Omita se ela so mudou o status; mandar vazio APAGA o historico inteiro.',
+      },
+    },
+    required: ['lead', 'status'],
+  },
+};
+
+const CARTEIRA_AGORA_TOOL: Anthropic.Tool = {
+  name: 'consultar_minha_carteira',
+  description:
+    'Diz como esta a carteira DELA agora: quantos clientes ela tem com atendimento em curso, em que pe cada grupo esta (em negociacao, remarcado, sem conseguir falar, primeiro contato) e quantos estao esperando o relato dela. Use quando ela perguntar "como esta minha carteira", "quantos clientes eu tenho em aberto", "o que esta parado comigo", "de quem eu preciso dar noticia", "quantos atendimentos eu tenho". Nao precisa passar nada. So enxerga a carteira dela. E o estado de AGORA, nao um periodo — nao diga "hoje" nem "esta semana" ao repassar. Nao traz venda nem valor: se ela perguntar quanto vendeu, use consultar_vendas.',
+  input_schema: { type: 'object', properties: {} },
 };
 
 const SEM_COMPRAR_TOOL: Anthropic.Tool = {
@@ -393,6 +436,38 @@ const GESTAO_DIA_DA_VENDEDORA_TOOL: Anthropic.Tool = {
   },
 };
 
+const GESTAO_PANORAMA_LEADS_TOOL: Anthropic.Tool = {
+  name: 'panorama_de_leads',
+  description:
+    'A fila de leads da triagem. SEM "vendedora": quantos em cada estado, quem esta esperando encaminhamento (com nome e telefone) e quantos leads foram para cada vendedora. COM "vendedora": TODOS os leads que foram encaminhados para ela — os que ainda estao abertos E os que ela ja resolveu —, cada um com nome, telefone, o que procura, a ocasiao, EM QUE PE ESTA (ainda sem contato, em contato, virou cliente, nao vingou) e a ULTIMA ANOTACAO que ela escreveu. Use quando perguntarem "como estao os leads", "quantos leads a Marina recebeu", "tem lead esperando", "me passa o contato dos leads dela" e TAMBEM para "ela deu baixa em algum lead", "o que aconteceu com os leads dela", "como foi com aquele lead", "algum lead virou cliente". A baixa de lead esta AQUI — nao confunda com atendimento fechado, que e outra coisa e sai no funil. Para encaminhar um lead, use encaminhar_lead.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      vendedora: {
+        type: 'string',
+        description:
+          'Nome da vendedora, como falado. OMITA para a fila inteira — nao invente um nome quando a pergunta for geral.',
+      },
+    },
+  },
+};
+
+const GESTAO_FUNIL_TOOL: Anthropic.Tool = {
+  name: 'funil_de_atendimentos',
+  description:
+    'Como estao os atendimentos EM CURSO agora, por etapa: em negociacao, remarcado, sem conseguir falar, primeiro contato. SEM "vendedora", traz a loja inteira mais uma linha por vendedora. COM "vendedora", traz so a carteira dela. Use quando perguntarem "como esta o funil", "quantos clientes em negociacao", "o que esta parado", "como esta a carteira da Marina", "quantos atendimentos abertos temos". E o estado de AGORA, nao um periodo — nao diga "hoje" nem "esta semana" ao repassar. Nao traz venda nem valor: para dinheiro use as ferramentas de vendas.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      vendedora: {
+        type: 'string',
+        description:
+          'Nome da vendedora, como falado. OMITA para a loja inteira — nao invente um nome quando a pergunta for geral.',
+      },
+    },
+  },
+};
+
 const GESTAO_FEEDBACKS_TOOL: Anthropic.Tool = {
   name: 'feedbacks_de_vendedora',
   description:
@@ -422,7 +497,7 @@ const GESTAO_FEEDBACKS_TOOL: Anthropic.Tool = {
 const GESTAO_AGENDAR_TOOL: Anthropic.Tool = {
   name: 'agendar_para_vendedora',
   description:
-    'Marca um contato na agenda de uma vendedora, com um cliente. Use quando pedirem para agendar alguem — "agenda a Luana com a Cintia amanha as 15h". Se o cliente for da carteira de OUTRA vendedora, a ferramenta NAO agenda: devolve a pergunta a ser feita, voce repassa e espera a escolha. Depois que a pessoa responder, chame de novo com os MESMOS cliente, vendedora e horario, agora com o `modo`. NUNCA escolha o modo por conta propria — transferir muda a carteira do cliente para sempre.',
+    'Marca um contato na agenda de uma vendedora, com um CLIENTE CADASTRADO — nunca com um nome que veio de panorama_de_leads, porque lead nao tem cadastro de cliente e a chamada vai falhar. Use quando pedirem para agendar alguem — "agenda a Luana com a Cintia amanha as 15h". Se o cliente for da carteira de OUTRA vendedora, a ferramenta NAO agenda: devolve a pergunta a ser feita, voce repassa e espera a escolha. Depois que a pessoa responder, chame de novo com os MESMOS cliente, vendedora e horario, agora com o `modo`. NUNCA escolha o modo por conta propria — transferir muda a carteira do cliente para sempre.',
   input_schema: {
     type: 'object',
     properties: {
@@ -454,7 +529,7 @@ const GESTAO_AGENDAR_TOOL: Anthropic.Tool = {
 const AGENDAR_TOOL: Anthropic.Tool = {
   name: 'agendar_contato',
   description:
-    'Coloca um contato com um cliente na agenda DELA, e agenda o lembrete. Use quando ela pedir para marcar, lembrar ou agendar — "me lembra de ligar pra Helena amanha as 10", "marca a Carla pra sexta as 15h". So funciona com cliente da carteira dela. Preencha quandoIso SEMPRE em ISO 8601 com fuso, calculado a partir da data de hoje informada acima. Se ela nao disser um horario, PERGUNTE antes de chamar — nao invente.',
+    'Coloca um contato com um cliente na agenda DELA, e agenda o lembrete. Use quando ela pedir para marcar, lembrar ou agendar — "me lembra de ligar pra Helena amanha as 10", "marca a Carla pra sexta as 15h". So funciona com cliente da carteira dela — NUNCA chame com um nome que veio de meus_leads: lead nao tem cadastro de cliente e a chamada vai falhar. Preencha quandoIso SEMPRE em ISO 8601 com fuso, calculado a partir da data de hoje informada acima. Se ela nao disser um horario, PERGUNTE antes de chamar — nao invente.',
   input_schema: {
     type: 'object',
     properties: {
@@ -601,12 +676,17 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoMelhores) tools.push(GESTAO_MELHORES_TOOL);
     if (params.gestaoAgendar) tools.push(GESTAO_AGENDAR_TOOL);
     if (params.gestaoFeedbacks) tools.push(GESTAO_FEEDBACKS_TOOL);
+    if (params.gestaoFunil) tools.push(GESTAO_FUNIL_TOOL);
+    if (params.gestaoPanoramaLeads) tools.push(GESTAO_PANORAMA_LEADS_TOOL);
     if (params.gestaoDiaDaVendedora)
       tools.push(GESTAO_DIA_DA_VENDEDORA_TOOL);
     if (params.registrarRelato) tools.push(RELATO_TOOL);
     if (params.consultarVendas) tools.push(VENDAS_TOOL);
     if (params.consultarMetas) tools.push(METAS_TOOL);
     if (params.consultarProdutos) tools.push(PRODUTOS_TOOL);
+    if (params.consultarCarteiraAgora) tools.push(CARTEIRA_AGORA_TOOL);
+    if (params.consultarMeusLeads) tools.push(MEUS_LEADS_TOOL);
+    if (params.atualizarLead) tools.push(ATUALIZAR_LEAD_TOOL);
     if (params.clientesSemComprar) tools.push(SEM_COMPRAR_TOOL);
     if (params.melhoresClientes) tools.push(MELHORES_TOOL);
     if (params.agendarContato) tools.push(AGENDAR_TOOL);
@@ -754,6 +834,34 @@ export class AnthropicClient implements ILlmClient {
               modo: e.modo,
             });
             return `${r.mensagem}\n\nResponda com isso, sem alterar nomes nem horarios.`;
+          }),
+        );
+      } else if (
+        toolUse.name === 'panorama_de_leads' &&
+        params.gestaoPanoramaLeads
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as { vendedora?: string };
+            return textoDosLeads(
+              await params.gestaoPanoramaLeads!({
+                vendedora: String(e.vendedora ?? '').slice(0, 80) || undefined,
+              }),
+            );
+          }),
+        );
+      } else if (
+        toolUse.name === 'funil_de_atendimentos' &&
+        params.gestaoFunil
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as { vendedora?: string };
+            return textoDoFunil(
+              await params.gestaoFunil!({
+                vendedora: String(e.vendedora ?? '').slice(0, 80) || undefined,
+              }),
+            );
           }),
         );
       } else if (
@@ -976,6 +1084,80 @@ export class AnthropicClient implements ILlmClient {
             return (
               `Pecas encontradas:\n${produtos.map((p) => `- ${p.linha}`).join('\n')}\n\n` +
               'Repasse os precos e quantidades exatamente como estao. Se ela pedir custo ou margem, diga que voce nao consegue ver isso.'
+            );
+          }),
+        );
+      } else if (toolUse.name === 'meus_leads' && params.consultarMeusLeads) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const r = await params.consultarMeusLeads!();
+            if (r.status === 'SEM_CODIGO') {
+              return (
+                'O cadastro dela esta sem codigo de vendedora, entao nao da para ' +
+                'saber quais leads sao dela. Diga isso e peca para ela falar com a ' +
+                'gestao. NAO diga que ela nao tem lead — e outra coisa.'
+              );
+            }
+            if (r.linhas.length === 0) {
+              return 'Nenhum lead foi encaminhado para ela ate agora. Diga isso em uma frase, sem inventar.';
+            }
+            const teto =
+              r.total > r.linhas.length
+                ? `\n\nSao ${r.total} no total; estes sao os ${r.linhas.length} mais recentes. Diga isso.`
+                : '';
+            return (
+              `Leads encaminhados para ela:\n${r.linhas.map((l) => `- ${l}`).join('\n')}${teto}\n\n` +
+              'Repasse nomes e telefones exatamente como estao — e por eles que ela entra em contato. ' +
+              'NAO OFERECA AGENDAR NENHUM DELES: lead nao tem cadastro de cliente, e agendar_contato ' +
+              'so aceita cliente da carteira. Se ela pedir para agendar um destes, diga que o lead ainda ' +
+              'nao e cliente e por isso nao entra na agenda, e repasse o telefone para ela falar com a pessoa.'
+            );
+          }),
+        );
+      } else if (toolUse.name === 'atualizar_lead' && params.atualizarLead) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as {
+              lead?: string;
+              status?: StatusLeadLlm;
+              observacao?: string;
+            };
+            const r = await params.atualizarLead!({
+              lead: String(e.lead ?? '').slice(0, 120),
+              status: e.status ?? 'EM_CONTATO',
+              // Vazio NAO e observacao: mandar string vazia apagaria a que ja
+              // estava gravada. `undefined` quer dizer "nao mexe".
+              observacao: e.observacao?.trim()
+                ? e.observacao.slice(0, 500)
+                : undefined,
+            });
+            // A frase ja vem pronta do servidor, com o veredito na frente.
+            return r.mensagem;
+          }),
+        );
+      } else if (
+        toolUse.name === 'consultar_minha_carteira' &&
+        params.consultarCarteiraAgora
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const r = await params.consultarCarteiraAgora!();
+            if (r.total === 0) {
+              return 'Ela nao tem nenhum cliente com atendimento em curso agora. Diga isso em uma frase, sem inventar numero.';
+            }
+            const espera =
+              r.aguardandoRelato > 0
+                ? `\n\n${r.aguardandoRelato} ${
+                    r.aguardandoRelato === 1
+                      ? 'desses esta esperando o relato DELA'
+                      : 'desses estao esperando o relato DELA'
+                  } — e o que ela precisa resolver.`
+                : '';
+            return (
+              `Carteira dela AGORA: ${r.total} ${r.total === 1 ? 'cliente' : 'clientes'} ` +
+              `em atendimento em curso — ${r.linhas.join(', ')}.${espera}\n\n` +
+              'Repasse os numeros exatamente como estao. Isto e o estado de agora, ' +
+              'nao um recorte de periodo: nao diga "hoje" nem "esta semana".'
             );
           }),
         );
@@ -1422,6 +1604,56 @@ function textoDosFeedbacks(
   ]
     .filter(Boolean)
     .join('\n');
+}
+
+/**
+ * O funil, dito ao modelo.
+ *
+ * NAO REUSA O `textoDaLeituraDeGestao` no caminho feliz por um motivo: la a
+ * frase de lista vazia comeca com o nome da vendedora, e aqui a consulta pode
+ * nao ter vendedora nenhuma — e a loja. "undefined nao tem nenhum atendimento"
+ * seria o resultado. Os dois ramos de nome (ambiguo, inexistente) continuam
+ * vindo de la, que e onde eles ja estao certos.
+ */
+/**
+ * O panorama de leads, dito ao modelo.
+ *
+ * Mesmo motivo do `textoDoFunil` para nao reusar o caminho feliz do
+ * `textoDaLeituraDeGestao`: aqui a consulta pode nao ter vendedora nenhuma.
+ */
+function textoDosLeads(r: GestaoLeituraResultado & { total?: number }): string {
+  if (r.status !== 'OK') {
+    return textoDaLeituraDeGestao(r, 'lead');
+  }
+  const alvo = r.vendedora ?? 'A fila';
+  if (r.linhas.length === 0) {
+    return `${alvo} nao tem nenhum lead. Diga isso em uma frase, sem inventar numero.`;
+  }
+  return (
+    `Leads ${r.vendedora ? `de ${r.vendedora}` : '(fila inteira)'}:\n` +
+    r.linhas.map((l) => `- ${l}`).join('\n') +
+    '\n\nRepasse nomes, telefones e numeros exatamente como estao. Nao omita ' +
+    'nenhum item da lista. NAO OFERECA AGENDAR NENHUM DELES: lead nao tem cadastro ' +
+    'de cliente, e a ferramenta de agendar so aceita cliente. O que da para fazer com ' +
+    'um lead e encaminhar para uma vendedora.'
+  );
+}
+
+function textoDoFunil(r: GestaoLeituraResultado & { total?: number }): string {
+  if (r.status !== 'OK') {
+    return textoDaLeituraDeGestao(r, 'atendimento em curso');
+  }
+  const alvo = r.vendedora ?? 'A loja';
+  if (r.linhas.length === 0) {
+    return `${alvo} nao tem nenhum atendimento em curso agora. Diga isso em uma frase, sem inventar numero.`;
+  }
+  return (
+    `Funil de ${alvo}, AGORA (so atendimentos em curso):\n` +
+    r.linhas.map((l) => `- ${l}`).join('\n') +
+    '\n\nRepasse os numeros exatamente como estao. Isto e o estado de agora, ' +
+    'nao um recorte de periodo: nao diga "hoje" nem "esta semana". Nao ha ' +
+    'valor de venda nestes dados — nao some dinheiro a esta resposta.'
+  );
 }
 
 function textoDaLeituraDeGestao(

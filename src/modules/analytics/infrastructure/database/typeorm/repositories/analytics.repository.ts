@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import {
+  SALDO_POR_PRODUTO,
+  saldoDe,
+} from '../../../../../../shared/database/sql/saldo-do-produto';
 import type {
   ComportamentoData,
   Demografia,
@@ -290,7 +294,7 @@ export class AnalyticsRepository implements IAnalyticsRepository {
     // Espelha giroEstoquePorFornecedor, mas agrupa por familia do produto
     // (RF-15). Produtos sem familia entram como 'Sem familia'. tempoMedioEstoque
     // = media de dias entre data_entrada_estoque e data_venda das vendas
-    // concluidas. estoqueAtual = soma do estoque_atual dos produtos da familia
+    // concluidas. estoqueAtual = soma do SALDO (tabela `estoque`) dos produtos da familia
     // (independente de venda), obtido numa subquery para nao inflar por join.
     const params: unknown[] = [];
     const { join: joinCp, where: whereDemo } = this.filtroVendas(filtro, params);
@@ -304,10 +308,11 @@ export class AnalyticsRepository implements IAnalyticsRepository {
       JOIN vendas v ON v.id = i.venda_id AND v.status = 'concluida'${joinCp}
       JOIN produtos p ON p.id = i.produto_id
       LEFT JOIN (
-        SELECT COALESCE(NULLIF(familia, ''), 'Sem familia') AS familia,
-               SUM(estoque_atual) AS estoque_atual
-        FROM produtos
-        GROUP BY COALESCE(NULLIF(familia, ''), 'Sem familia')
+        SELECT COALESCE(NULLIF(pf.familia, ''), 'Sem familia') AS familia,
+               SUM(${saldoDe('sal')}) AS estoque_atual
+        FROM produtos pf
+        LEFT JOIN ${SALDO_POR_PRODUTO} sal ON sal.produto_id = pf.id
+        GROUP BY COALESCE(NULLIF(pf.familia, ''), 'Sem familia')
       ) est ON est.familia = COALESCE(NULLIF(p.familia, ''), 'Sem familia')
       WHERE p.data_entrada_estoque IS NOT NULL
         AND v.data_venda >= p.data_entrada_estoque${whereDemo}
@@ -365,8 +370,9 @@ export class AnalyticsRepository implements IAnalyticsRepository {
       `
       SELECT categoria AS categoria,
              COUNT(*)::int AS quantidade,
-             COALESCE(SUM(estoque_atual), 0)::int AS "totalEstoque"
+             COALESCE(SUM(${saldoDe('sal')}), 0)::int AS "totalEstoque"
       FROM produtos
+      LEFT JOIN ${SALDO_POR_PRODUTO} sal ON sal.produto_id = produtos.id
       WHERE ativo = true
       GROUP BY categoria
       ORDER BY quantidade DESC
@@ -376,8 +382,9 @@ export class AnalyticsRepository implements IAnalyticsRepository {
     const totais = await this.ds.query<{ total: number; valorTotal: number }[]>(
       `
       SELECT COUNT(*)::int AS total,
-             COALESCE(SUM(valor_venda * estoque_atual), 0)::float AS "valorTotal"
+             COALESCE(SUM(valor_venda * ${saldoDe('sal')}), 0)::float AS "valorTotal"
       FROM produtos
+      LEFT JOIN ${SALDO_POR_PRODUTO} sal ON sal.produto_id = produtos.id
       WHERE ativo = true
       `,
     );

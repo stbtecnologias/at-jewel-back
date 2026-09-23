@@ -95,6 +95,11 @@ describe('ProcessarMensagemInternaUseCase', () => {
       carteira as never,
       agendar as never,
       relato as never,
+      // A auditoria (carteira agora) nao e exercitada por estes testes: eles
+      // olham o escopo por vendedoraId, que ja acontece uma camada abaixo.
+      { resumo: jest.fn() } as never,
+      { listarPorVendedora: jest.fn().mockResolvedValue([]) } as never,
+      { execute: jest.fn() } as never,
     );
 
     useCase = new ProcessarMensagemInternaUseCase(

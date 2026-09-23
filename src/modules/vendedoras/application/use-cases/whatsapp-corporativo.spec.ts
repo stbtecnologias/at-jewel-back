@@ -34,7 +34,7 @@ describe('O WhatsApp corporativo da vendedora', () => {
       buscarPorId: jest.fn().mockResolvedValue(null),
       buscarPorIdErp: jest.fn().mockResolvedValue(null),
       buscarPorCodigoErp: jest.fn().mockResolvedValue(null),
-      proximoCodigoInterno: jest.fn().mockResolvedValue('AT-0001'),
+      proximoCodigoInterno: jest.fn().mockResolvedValue('VD-0001'),
       buscarPorEmailHash: jest.fn().mockResolvedValue(null),
       buscarPorWhatsappHash: jest.fn().mockResolvedValue(null),
       listar: jest.fn().mockResolvedValue([]),

@@ -48,8 +48,11 @@ export interface PedidoDeTratamento {
   original: ImagemDeEntrada;
 
   /**
-   * O padrao escrito do catalogo, montado a partir das referencias de texto
-   * (FONTE, COMPOSICAO, OBSERVACAO).
+   * O padrao escrito do catalogo: as referencias de COMPOSICAO.
+   *
+   * A OBSERVACAO NAO ENTRA AQUI desde 16/09/2026. Ela e o TEMA do catalogo, e
+   * o tema vai para a montagem (capa, pagina, foto com modelo) — nao para o
+   * fundo do packshot, que e branco. Ver `DirecaoDeArte`.
    */
   padrao: string | null;
 
@@ -59,7 +62,54 @@ export interface PedidoDeTratamento {
    * prevalece sobre a regra geral.
    */
   pedidoDaPessoa: string | null;
+}
 
+/** Retrato ou paisagem: a forma da imagem gerada segue a da pagina. */
+export type Orientacao = 'retrato' | 'paisagem';
+
+/**
+ * A PECA NA MODELO, DENTRO DA CENA DO CATALOGO — 16/09/2026.
+ *
+ * Decisao do Lucas, depois de ver o teste com o colar de opala: usar a foto
+ * ambientada, e refazer se o cliente nao gostar. O risco foi medido e esta
+ * dito: a geracao REDESENHA a peca, entao a imagem e do CLIMA, nao a peca
+ * exata. A pagina que a recebe diz "imagem ilustrativa".
+ */
+export interface PedidoDeAmbientacao {
+  /**
+   * O packshot JA APROVADO, e nao o original do celular: e a versao em que
+   * alguem ja conferiu que a peca certa esta ali, de frente e limpa.
+   */
+  peca: ImagemDeEntrada;
+  /** A cena da direcao de arte. */
+  cena: string;
+  /** Quem usa a peca, da direcao de arte: "um homem de uns 40 anos". */
+  modelo: string;
+  /** Onde a peca vai no corpo: "no pescoço". */
+  onde: string;
+  orientacao: Orientacao;
+  /**
+   * O pedido do AJUSTE para esta foto ("sorrindo, luz de dia"). Ausente na
+   * montagem; presente quando a pessoa pediu para refazer.
+   */
+  pedido?: string | null;
+}
+
+/**
+ * ARTE SEM PECA: capa e fundo de pagina.
+ *
+ * Aqui a IA pode inventar a vontade — e o trabalho dela. Nao ha joia, preco
+ * nem promessa de produto na imagem; o texto e escrito por cima, pela
+ * montagem.
+ */
+export interface PedidoDeArte {
+  tipo: 'capa' | 'fundo';
+  cena: string;
+  /** As cores da paleta, para a arte conversar com a pagina. */
+  cores: string[];
+  orientacao: Orientacao;
+  /** O pedido do AJUSTE para esta arte. Ausente na montagem. */
+  pedido?: string | null;
 }
 
 export interface ImagemTratada {
@@ -76,4 +126,10 @@ export interface ITratamentoImagem {
    * falhar aqui custa uma versao, nunca a foto.
    */
   tratar(pedido: PedidoDeTratamento): Promise<ImagemTratada | null>;
+
+  /** A peca na modelo. `null` quando o provedor falha — a peca fica na grade. */
+  ambientar(pedido: PedidoDeAmbientacao): Promise<ImagemTratada | null>;
+
+  /** Capa ou fundo. `null` quando o provedor falha — a pagina sai na cor da paleta. */
+  gerarArte(pedido: PedidoDeArte): Promise<ImagemTratada | null>;
 }

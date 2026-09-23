@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { ThrottlerException } from '@nestjs/throttler';
 import { Request, Response } from 'express';
+import { ehViolacaoDeUnicidade, mensagemDeUnicidade } from './unicidade';
 
 interface ErrorBody {
   statusCode: number;
@@ -101,6 +102,20 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         statusCode: HttpStatus.PAYLOAD_TOO_LARGE,
         error: 'Payload Too Large',
         message: mensagemDeUpload(exception),
+      };
+    }
+
+    // VIOLACAO DE UNICIDADE TAMBEM NAO E ERRO INTERNO — e a pessoa cadastrando
+    // algo que ja existe. Mesmo motivo do ramo acima, e o sintoma era pior:
+    // em dev o Postgres vazava para o toast da tela
+    //   duplicate key value violates unique constraint "produtos_codigo_erp_key"
+    // e em PRODUCAO virava "Erro interno do servidor" — a vendedora nao ficava
+    // sabendo que bastava trocar o codigo da peca.
+    if (ehViolacaoDeUnicidade(exception)) {
+      return {
+        statusCode: HttpStatus.CONFLICT,
+        error: 'Conflict',
+        message: mensagemDeUnicidade(exception),
       };
     }
 

@@ -21,7 +21,7 @@ export interface IVendedoraRepository {
   buscarPorEmailHash(hash: string): Promise<Vendedora | null>;
   buscarPorWhatsappHash(hash: string): Promise<Vendedora | null>;
   /**
-   * O proximo codigo da casa: `AT-0001`, `AT-0002`...
+   * O proximo codigo da casa: `VD-0001`, `VD-0002`...
    *
    * ====================================================================
    * POR QUE UM CODIGO NOSSO, NUMA COLUNA CHAMADA `codigo_erp`.
@@ -32,7 +32,7 @@ export interface IVendedoraRepository {
    * codigo, a vendedora nao pode ter cliente nenhum.
    *
    * Com o cadastro passando a nascer no CRM, alguem precisa gerar. O
-   * prefixo `AT-` diz a origem de relance: o que comeca assim e nosso.
+   * prefixo `VD-` diz a origem de relance: o que comeca assim e nosso.
    *
    * E TROCAR DEPOIS E SEGURO: a FK tem ON UPDATE CASCADE. No dia em que o
    * ERP trouxer o codigo real dela, trocar leva a carteira junto.
