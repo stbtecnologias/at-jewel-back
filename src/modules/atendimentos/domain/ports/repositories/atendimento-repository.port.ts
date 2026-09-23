@@ -376,6 +376,8 @@ export type TipoPonto =
   | 'NOTA'
   | 'CONTATO_CLIENTE'
   | 'RESPOSTA_VENDEDORA'
+  | 'ABERTURA'
+  | 'LEAD_ENCAMINHADO'
   | 'EXPIRADA'
   | 'FECHAMENTO'
   | 'VENDA'

@@ -36,7 +36,10 @@ export type TipoInteracao =
   // porque a diferenca E o indicativo: cliente que escreve e nao recebe
   // resposta e exatamente o que a gestao precisa enxergar.
   | 'CONTATO_CLIENTE'
-  | 'RESPOSTA_VENDEDORA';
+  | 'RESPOSTA_VENDEDORA'
+  // O inicio do episodio (migracao 64). Carrega o resumo da triagem quando o
+  // atendimento nasce dela — e e o ponto de ABERTURA na linha do tempo.
+  | 'ABERTURA';
 
 /** Interacoes que EXIGEM `notificarEm` — espelha o CHECK da migracao 35. */
 export const TIPOS_AGENDAVEIS: readonly TipoInteracao[] = ['LEMBRETE', 'COBRANCA'] as const;
