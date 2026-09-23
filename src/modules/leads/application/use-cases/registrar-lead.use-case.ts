@@ -195,11 +195,12 @@ export class RegistrarLeadUseCase {
     try {
       const carteira = await this.encaminharPelaCarteira.execute(promovido);
 
-      if (carteira.status === 'ENCAMINHADO') {
+      if (carteira.status === 'ATENDEU') {
         await this.avisarGestao.avisarEncaminhadoPelaCarteira(
           promovido,
           carteira.vendedoraNome,
           carteira.avisada,
+          carteira.reusou,
         );
         // Relido porque o `encaminhar` gravou codigo, carimbo e fechamento —
         // e e o carimbo que faz o lead virar ponto na timeline DELA.

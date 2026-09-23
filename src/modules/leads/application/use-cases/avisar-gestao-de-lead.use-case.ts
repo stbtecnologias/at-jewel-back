@@ -64,9 +64,15 @@ export class AvisarGestaoDeLeadUseCase {
     lead: Lead,
     vendedoraNome: string,
     avisada: boolean,
+    reusou = false,
   ): Promise<number> {
     const linhas = blocoDoLead(lead);
-    linhas.push(``, `Está na carteira de ${vendedoraNome} — encaminhei para ela.`);
+    linhas.push(
+      ``,
+      reusou
+        ? `Está na carteira de ${vendedoraNome} — entrou no atendimento que ela já tinha aberto.`
+        : `Está na carteira de ${vendedoraNome} — abri o atendimento para ela.`,
+    );
 
     // SO APARECE QUANDO E PROBLEMA. Dizer "avisei" em toda mensagem vira
     // ruido; dizer "nao avisei" e informacao acionavel — alguem precisa

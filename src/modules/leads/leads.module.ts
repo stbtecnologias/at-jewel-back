@@ -6,6 +6,7 @@ import { VendedorasModule } from '../vendedoras/vendedoras.module';
 import { WhatsappGatewayModule } from '../atendimento/whatsapp-gateway.module';
 import { AtualizarStatusLeadUseCase } from './application/use-cases/atualizar-status-lead.use-case';
 import { AvisarGestaoDeLeadUseCase } from './application/use-cases/avisar-gestao-de-lead.use-case';
+import { AtendimentoPersistenciaModule } from '../atendimentos/atendimento-persistencia.module';
 import { EncaminharPelaCarteiraUseCase } from './application/use-cases/encaminhar-pela-carteira.use-case';
 import { RegistrarLeadUseCase } from './application/use-cases/registrar-lead.use-case';
 import { LEAD_REPOSITORY } from './domain/ports/injection-tokens';
@@ -29,6 +30,9 @@ import { LeadsController } from './infrastructure/http/controllers/leads.control
     WhatsappGatewayModule,
     // Para dizer, no mesmo aviso, quem eu sugeriria para atender.
     VendedorasModule,
+    // So o repositorio de atendimentos — o modulo inteiro fecharia ciclo, porque
+    // o AtendimentosModule importa este aqui.
+    AtendimentoPersistenciaModule,
   ],
   controllers: [LeadsController],
   providers: [

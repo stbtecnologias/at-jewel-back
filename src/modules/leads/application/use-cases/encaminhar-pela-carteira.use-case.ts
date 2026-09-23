@@ -1,6 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { WHATSAPP_GATEWAY } from '../../../atendimento/domain/ports/injection-tokens';
 import type { IWhatsappGateway } from '../../../atendimento/domain/ports/whatsapp-gateway.port';
+import { ATENDIMENTO_REPOSITORY } from '../../../atendimentos/domain/ports/injection-tokens';
+import type { IAtendimentoRepository } from '../../../atendimentos/domain/ports/repositories/atendimento-repository.port';
+import type { OcasiaoAtendimento } from '../../../atendimentos/domain/entities/enums';
 import { CLIENTE_REPOSITORY } from '../../../clientes/domain/ports/injection-tokens';
 import type { IClienteRepository } from '../../../clientes/domain/ports/repositories/cliente-repository.port';
 import { VENDEDORA_REPOSITORY } from '../../../vendedoras/domain/ports/injection-tokens';
@@ -13,34 +16,48 @@ import type {
 import { blocoDoLead, telefoneLegivel } from '../lead-em-texto';
 
 /**
- * A CLIENTE VOLTOU, E ELA JA TEM DONA — 23/09/2026.
+ * A TRIAGEM ACABOU E A CLIENTE JA TEM CADASTRO: vira ATENDIMENTO — 23/09/2026.
  *
  * ==========================================================================
- * A REGRA E DO LUCAS, e ela e curta: "se o cliente tem uma vendedora
- * associada, e tudo com ela". Trocar de vendedora existe, mas e caso muito
- * especifico — nao e o caminho padrao.
+ * A OBSERVACAO DO LUCAS QUE MUDOU O DESENHO:
  *
- * Ate aqui a carteira era um VOTO. O `SugerirVendedorasUseCase` ja lia
- * `cliente.vendedoraCodigoErp` e somava `PESOS_SUGESTAO.RELACIONAMENTO` com o
- * motivo "ja atendeu este cliente" — mas era um item de ranking, que podia
- * perder para especialidade ou disponibilidade, e a decisao final continuava
- * com a gestao.
+ *   "o lead geralmente usamos para novos clientes, sem cadastro. no caso
+ *    desse cliente que tem cadastro, o final poderia virar o atendimento"
  *
- * Aqui a carteira deixa de ser voto e vira REGRA. A gestao passa a ser
- * INFORMADA, e nao consultada.
+ * Esta certo, e resolve pela raiz um problema que a gente vinha remendando.
+ * A primeira versao so gravava a vendedora no LEAD — e `leads.encaminhar`
+ * FECHA o lead, o que liberava o numero. A mensagem seguinte da cliente nao
+ * achava lead aberto, abria outro e zerava a memoria da conversa: ela era
+ * cumprimentada do zero no meio da propria frase.
+ *
+ * Aconteceu duas vezes, e a segunda mostrou que nao era questao de ajustar a
+ * hora do encaminhamento: as 15:37 a Anastasia se despediu E fez uma pergunta
+ * ("ha algo em particular que voce gostaria que eu adiantasse a ela?"). O
+ * "que ela entrasse em contato comigo as 17hrs" caiu num lead novo e orfao —
+ * a informacao mais acionavel da conversa inteira, perdida.
+ *
+ * SEMPRE VAI EXISTIR UM TURNO DEPOIS DO ENCERRAMENTO. O erro nao era a hora;
+ * era o lead ser o veiculo errado para quem ja tem cadastro.
  * ==========================================================================
  *
- * POR QUE ISTO VIVE NO MODULO DE LEADS, e nao reusa o `EncaminharLeadUseCase`
- * do modulo de atendimentos: aquele resolve a vendedora por NOME, com
- * desambiguacao, porque nasceu para a ferramenta da gestao ("encaminha para a
- * Helena"). Aqui o codigo ja vem do cadastro — nao ha nome para adivinhar. E
- * `atendimentos` ja importa `leads`; a volta criaria ciclo de modulo.
+ * O QUE MUDA: a conversa migra para o atendimento, que e onde ela deveria
+ * estar. O lead fecha porque o assunto mudou de casa, e nao porque acabou.
+ *
+ * A ETAPA NASCE `PRIMEIRO_CONTATO` e anda sozinha — `vw_atendimentos_auditoria`
+ * a deriva do que aconteceu, e nao ha estado gravado para desatualizar.
  */
 
-/** O que aconteceu com a tentativa. `ENCAMINHADO` e o unico que tira da fila. */
+/** O que aconteceu. `ATENDEU` e o unico que tira o lead da fila. */
 export type ResultadoDaCarteira =
-  | { status: 'ENCAMINHADO'; vendedoraNome: string; avisada: boolean }
-  /** O lead nao tem cadastro de cliente atras, ou a cliente nao tem dona. */
+  | {
+      status: 'ATENDEU';
+      vendedoraNome: string;
+      atendimentoId: string;
+      /** Ja havia um atendimento aberto para esta cliente, e entrou nele. */
+      reusou: boolean;
+      avisada: boolean;
+    }
+  /** O lead nao tem cadastro atras, ou a cliente nao tem dona. */
   | { status: 'SEM_DONA' }
   /** Tem dona, mas ela nao pode receber agora. A gestao decide, sabendo disso. */
   | { status: 'DONA_INDISPONIVEL'; vendedoraNome: string; motivo: string };
@@ -56,6 +73,8 @@ export class EncaminharPelaCarteiraUseCase {
     private readonly clientes: IClienteRepository,
     @Inject(VENDEDORA_REPOSITORY)
     private readonly vendedoras: IVendedoraRepository,
+    @Inject(ATENDIMENTO_REPOSITORY)
+    private readonly atendimentos: IAtendimentoRepository,
     @Inject(WHATSAPP_GATEWAY)
     private readonly whatsapp: IWhatsappGateway,
   ) {}
@@ -72,25 +91,68 @@ export class EncaminharPelaCarteiraUseCase {
       };
     }
 
-    // AVISA ANTES DE GRAVAR, pela mesma razao do `EncaminharLeadUseCase`:
-    // `encaminhar` FECHA o lead e o tira da fila da gestao. Gravando primeiro
-    // e falhando o envio, o lead sairia da fila sem ninguem ter sido avisado —
-    // e nenhuma tela mostraria isso.
-    //
-    // A DIFERENCA e que aqui a falha de envio NAO cancela o encaminhamento: a
-    // carteira e dela de qualquer jeito, e o lead na lista dela e melhor que o
-    // lead na fila de ninguem. Hoje 19 das 23 vendedoras nao tem WhatsApp
-    // pessoal cadastrado — se isso barrasse, a regra nao valeria para quase
-    // ninguem. Quem fica sabendo e a gestao, pelo `avisada: false`.
+    const { atendimentoId, reusou } = await this.abrirOuReusar(lead, dona.id);
+
+    // O QUE A TRIAGEM DESCOBRIU VIRA A PRIMEIRA INTERACAO, do mesmo tipo que o
+    // encaminhamento manual grava. Sem isto o atendimento nasceria mudo: a
+    // vendedora abriria a tela e nao veria por que aquela cliente esta ali.
+    await this.atendimentos.criarInteracao({
+      atendimentoId,
+      tipo: 'ENCAMINHADO',
+      ocorridoEm: new Date(),
+      relato: this.relatoDaTriagem(lead),
+    });
+
     const avisada = await this.avisar(dona.whatsappInterno, lead);
 
+    // O LEAD FECHA PORQUE O ASSUNTO MUDOU DE CASA, e nao porque acabou. Daqui
+    // em diante a conversa e do atendimento; deixar o lead aberto faria a
+    // proxima mensagem continuar uma triagem que ja terminou.
     await this.leads.encaminhar(lead.id, dona.codigoErp as string);
+
     this.logger.log(
-      `Lead ${lead.id} encaminhado pela CARTEIRA para ${dona.codigoErp}` +
+      `Lead ${lead.id} virou atendimento ${atendimentoId} de ${dona.codigoErp}` +
+        (reusou ? ' (reusou o aberto)' : '') +
         (avisada ? '.' : ' — sem aviso, ela nao tem WhatsApp alcancavel.'),
     );
 
-    return { status: 'ENCAMINHADO', vendedoraNome: dona.nome, avisada };
+    return {
+      status: 'ATENDEU',
+      vendedoraNome: dona.nome,
+      atendimentoId,
+      reusou,
+      avisada,
+    };
+  }
+
+  /**
+   * REUSA O ATENDIMENTO ABERTO quando ha um. Nao e escolha de estilo: existe o
+   * indice parcial `uq_atendimento_aberto_por_cliente`, e abrir um segundo
+   * levantaria violacao de unicidade.
+   *
+   * Decisao do Lucas entre reusar e recusar: reusar. E a mesma cliente com a
+   * mesma vendedora, e um segundo episodio simultaneo e justamente o que
+   * aquela trava existe para impedir.
+   *
+   * A OCASIAO SO PREENCHE SE ESTIVER VAZIA (`completarOcasiaoSeVazia`): o
+   * atendimento pode ter nascido de uma venda de aniversario, e a triagem de
+   * agora falar de casamento. Sobrescrever apagaria o motivo original.
+   */
+  private async abrirOuReusar(
+    lead: Lead,
+    vendedoraId: string,
+  ): Promise<{ atendimentoId: string; reusou: boolean }> {
+    const clienteId = lead.clienteId as string;
+    const ocasiao = (lead.ocasiao ?? null) as OcasiaoAtendimento | null;
+
+    const aberto = await this.atendimentos.buscarAbertoPorCliente(clienteId);
+    if (aberto) {
+      if (ocasiao) await this.atendimentos.completarOcasiaoSeVazia(aberto.id, ocasiao);
+      return { atendimentoId: aberto.id, reusou: true };
+    }
+
+    const novo = await this.atendimentos.abrir({ clienteId, vendedoraId, ocasiao });
+    return { atendimentoId: novo.id, reusou: false };
   }
 
   /**
@@ -108,26 +170,29 @@ export class EncaminharPelaCarteiraUseCase {
     if (!codigo) return null;
 
     const vendedora = await this.vendedoras.buscarPorCodigoErp(codigo);
-    if (!vendedora?.codigoErp) return null;
+    if (!vendedora?.codigoErp || !vendedora.id) return null;
 
-    return vendedora;
+    return vendedora as typeof vendedora & { id: string };
+  }
+
+  /** O resumo da triagem, ou o que der, para o atendimento nao nascer mudo. */
+  private relatoDaTriagem(lead: Lead): string {
+    const resumo = lead.resumoTriagem?.trim();
+    if (resumo) return resumo;
+
+    const partes = [lead.produtosDesejados, lead.ocasiao].filter(Boolean);
+    return partes.length
+      ? `Chegou pela triagem: ${partes.join(' — ')}.`
+      : 'Chegou pela triagem do WhatsApp.';
   }
 
   /**
-   * O aviso no WhatsApp pessoal dela. Devolve se saiu, e nunca levanta erro —
-   * ver o comentario do `execute` sobre por que a falha nao cancela nada.
+   * O aviso no WhatsApp pessoal dela. Devolve se saiu, e NUNCA levanta erro.
    *
-   * O TEXTO E O MESMO do encaminhamento manual, mais a oferta de agendar. A
-   * oferta e segura AQUI e so aqui: `atendimentos.cliente_id` e NOT NULL,
-   * entao agendar exige cliente — foi o defeito de 22/09, quando a Elena
-   * ofereceu agendar um lead que nao tinha cadastro. Neste caminho o lead
-   * SEMPRE tem cliente, porque e a propria condicao que o dispara.
-   *
-   * E a oferta tem uma razao de negocio, do Lucas: sem ela a vendedora liga e
-   * o contato nunca passa por um atendimento — "se ficar apenas como um aviso,
-   * ela pode ligar e nem passar pelo atendimento". Respondendo o horario, a
-   * Elena chama `agendarContato`, que ABRE o atendimento e grava a interacao
-   * `AGENDAMENTO`. A trajetoria comeca registrada, e vira ponto na timeline.
+   * A FALHA NAO CANCELA NADA: hoje 19 das 23 vendedoras nao tem WhatsApp
+   * pessoal cadastrado. Se isso barrasse, a regra da carteira nao valeria para
+   * quase ninguem — e o atendimento e o registro que importa, nao a mensagem.
+   * Quem fica sabendo e a gestao.
    */
   private async avisar(whatsapp: string | null, lead: Lead): Promise<boolean> {
     if (!whatsapp) return false;
@@ -146,13 +211,22 @@ export class EncaminharPelaCarteiraUseCase {
     }
   }
 
+  /**
+   * A OFERTA DE AGENDAR E O PONTO DA MENSAGEM, e a razao e do Lucas: "se ficar
+   * apenas como um aviso, ela pode ligar e nem passar pelo atendimento".
+   *
+   * Aqui o atendimento JA existe, entao a resposta dela cai direto nele: a
+   * Elena chama `agendarContato` e a interacao `AGENDAMENTO` entra no mesmo
+   * episodio — sem o `E_LEAD` de 22/09, quando agendar exigia um cliente que o
+   * lead nao tinha.
+   */
   private mensagem(lead: Lead): string {
     const linhas = blocoDoLead(lead);
     linhas.push(`Entre em contato: ${telefoneLegivel(lead.whatsapp)}`);
     linhas.push(
       ``,
-      `Quer que eu registre esse contato na sua agenda? Me diga o horário que ` +
-        `você pretende falar com ela e eu te lembro.`,
+      `Já abri o atendimento. Quer que eu registre o contato na sua agenda? ` +
+        `Me diga o horário que você pretende falar com ela e eu te lembro.`,
     );
     return linhas.join('\n');
   }

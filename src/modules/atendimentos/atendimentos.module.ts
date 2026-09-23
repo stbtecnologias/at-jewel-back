@@ -1,3 +1,4 @@
+import { AtendimentoPersistenciaModule } from './atendimento-persistencia.module';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WhatsappGatewayModule } from '../atendimento/whatsapp-gateway.module';
@@ -61,6 +62,11 @@ import { ConversaWhatsappRepository } from './infrastructure/database/typeorm/re
     // WhatsApp da cliente e levar o ponto ate a conversa. Registrar a
     // entidade AQUI e o que da o repositorio ao `AtendimentoRepository` —
     // sem isto o modulo nem carrega.
+    // O repositorio vem daqui, e nao de um provider local: o modulo de LEADS
+    // tambem precisa dele desde 23/09 (a triagem abre atendimento), e este
+    // modulo importa LeadsModule — provendo nos dois lados existiriam duas
+    // instancias da mesma coisa.
+    AtendimentoPersistenciaModule,
     TypeOrmModule.forFeature([
       AtendimentoOrmEntity,
       AtendimentoInteracaoOrmEntity,
@@ -93,7 +99,6 @@ import { ConversaWhatsappRepository } from './infrastructure/database/typeorm/re
     AuthModule,
   ],
   providers: [
-    { provide: ATENDIMENTO_REPOSITORY, useClass: AtendimentoRepository },
     {
       provide: CONVERSA_WHATSAPP_REPOSITORY,
       useClass: ConversaWhatsappRepository,
@@ -138,7 +143,9 @@ import { ConversaWhatsappRepository } from './infrastructure/database/typeorm/re
   // O webhook usa o ROTEADOR, nao os canais direto: e ele que decide se quem
   // escreveu e vendedora, gestao ou ninguem.
   exports: [
-    ATENDIMENTO_REPOSITORY,
+    // O MODULO, e nao o token: o Nest nao reexporta provider de outro modulo.
+    // Quem importava AtendimentosModule pelo repositorio continua alcancando-o.
+    AtendimentoPersistenciaModule,
     // A fila de conversas a ler: o webhook do modulo `atendimento`
     // (singular) enfileira, e o leitor de la consome.
     CONVERSA_WHATSAPP_REPOSITORY,

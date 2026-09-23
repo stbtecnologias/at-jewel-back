@@ -272,10 +272,12 @@ describe('RegistrarLeadUseCase', () => {
       leads.buscarPorId.mockResolvedValue(leadFake({ nome: 'Ana Livia' }));
     });
 
-    it('nao pergunta para a gestao — relata que ja encaminhou', async () => {
+    it('nao pergunta para a gestao — relata que abriu o atendimento', async () => {
       encaminharPelaCarteira.execute.mockResolvedValue({
-        status: 'ENCAMINHADO',
+        status: 'ATENDEU',
         vendedoraNome: 'Helena',
+        atendimentoId: 'atend-1',
+        reusou: false,
         avisada: true,
       });
 
@@ -285,6 +287,7 @@ describe('RegistrarLeadUseCase', () => {
         expect.anything(),
         'Helena',
         true,
+        false,
       );
       // A pergunta "para qual vendedora encaminho?" NAO sai.
       expect(avisarGestao.execute).not.toHaveBeenCalled();
@@ -326,8 +329,10 @@ describe('RegistrarLeadUseCase', () => {
      */
     it('devolve o lead relido, ja com o encaminhamento gravado', async () => {
       encaminharPelaCarteira.execute.mockResolvedValue({
-        status: 'ENCAMINHADO',
+        status: 'ATENDEU',
         vendedoraNome: 'Helena',
+        atendimentoId: 'atend-1',
+        reusou: false,
         avisada: false,
       });
 

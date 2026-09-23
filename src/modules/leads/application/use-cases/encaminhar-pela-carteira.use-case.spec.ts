@@ -2,21 +2,27 @@ import { EncaminharPelaCarteiraUseCase } from './encaminhar-pela-carteira.use-ca
 import type { Lead } from '../../domain/ports/repositories/lead-repository.port';
 
 /**
- * A CLIENTE VOLTOU, E ELA JA TEM DONA — 23/09/2026.
+ * A TRIAGEM VIRA ATENDIMENTO QUANDO A CLIENTE JA TEM CADASTRO — 23/09/2026.
  *
  * ==========================================================================
- * O CASO REAL: o Lucas cadastrou o proprio numero na cliente "Ana Livia",
- * conversou pelo WhatsApp ate a triagem fechar, e o lead parou na fila da
- * gestao — mesmo com a Ana Livia tendo vendedora na carteira. Ele perguntou:
+ * O CAMINHO ATE AQUI, porque ele explica o desenho:
  *
- *   "mas nao vejo na timeline da vendedora"
+ * 1. O Lucas pos o proprio numero na cliente "Ana Livia", conversou ate a
+ *    triagem fechar, e perguntou: "mas nao vejo na timeline da vendedora".
+ *    Nao veria — o lead tinha parado na fila da gestao.
  *
- * E nao veria: o ramo de lead da timeline exige
- * `vendedora_aprovada_codigo` + `direcionado_vendedora_em`, e os dois estavam
- * vazios. Sem vendedora nao ha faixa onde desenhar o ponto.
+ * 2. A primeira versao encaminhava o LEAD para a dona. Mas `encaminhar` FECHA
+ *    o lead, e a mensagem seguinte da cliente abria outro e zerava a memoria:
+ *    ela era cumprimentada do zero no meio da frase. Duas vezes.
  *
- * A REGRA que ele deu: "se o cliente tem uma vendedora associada, e tudo com
- * ela". Trocar existe, mas e caso muito especifico.
+ * 3. As 15:37 ficou claro que nao era hora errada: a Anastasia se despediu E
+ *    perguntou "ha algo que voce gostaria que eu adiantasse a ela?". O "que
+ *    ela entre em contato as 17hrs" caiu num lead orfao. SEMPRE VAI EXISTIR UM
+ *    TURNO DEPOIS DO ENCERRAMENTO.
+ *
+ * 4. O Lucas achou a raiz: "o lead geralmente usamos para novos clientes, sem
+ *    cadastro. no caso desse cliente que tem cadastro, o final poderia virar o
+ *    atendimento".
  * ==========================================================================
  */
 describe('EncaminharPelaCarteiraUseCase', () => {
@@ -27,15 +33,23 @@ describe('EncaminharPelaCarteiraUseCase', () => {
     whatsapp: '5585986467241',
     produtosDesejados: 'par de alianças clássicas',
     ocasiao: 'CASAMENTO',
+    resumoTriagem: 'Cliente procura aliança clássica para casamento.',
   } as unknown as Lead;
 
   let leads: { encaminhar: jest.Mock };
   let clientes: { buscarPorId: jest.Mock };
   let vendedoras: { buscarPorCodigoErp: jest.Mock };
+  let atendimentos: {
+    buscarAbertoPorCliente: jest.Mock;
+    abrir: jest.Mock;
+    criarInteracao: jest.Mock;
+    completarOcasiaoSeVazia: jest.Mock;
+  };
   let whatsapp: { resolverChatId: jest.Mock; enviarTexto: jest.Mock };
   let useCase: EncaminharPelaCarteiraUseCase;
 
   const HELENA = {
+    id: 'vend-1',
     nome: 'Helena',
     codigoErp: '007',
     ativo: true,
@@ -48,6 +62,12 @@ describe('EncaminharPelaCarteiraUseCase', () => {
       buscarPorId: jest.fn().mockResolvedValue({ vendedoraCodigoErp: '007' }),
     };
     vendedoras = { buscarPorCodigoErp: jest.fn().mockResolvedValue(HELENA) };
+    atendimentos = {
+      buscarAbertoPorCliente: jest.fn().mockResolvedValue(null),
+      abrir: jest.fn().mockResolvedValue({ id: 'atend-1' }),
+      criarInteracao: jest.fn().mockResolvedValue({ id: 'int-1' }),
+      completarOcasiaoSeVazia: jest.fn().mockResolvedValue(undefined),
+    };
     whatsapp = {
       resolverChatId: jest.fn().mockResolvedValue('chat-1'),
       enviarTexto: jest.fn().mockResolvedValue(undefined),
@@ -57,43 +77,120 @@ describe('EncaminharPelaCarteiraUseCase', () => {
       leads as never,
       clientes as never,
       vendedoras as never,
+      atendimentos as never,
       whatsapp as never,
     );
     jest.spyOn(useCase['logger'], 'log').mockImplementation(() => undefined);
     jest.spyOn(useCase['logger'], 'error').mockImplementation(() => undefined);
   });
 
-  describe('a carteira decide', () => {
-    it('encaminha para a dona e avisa ela', async () => {
+  describe('a triagem vira atendimento', () => {
+    it('abre o atendimento para a dona da carteira', async () => {
       const r = await useCase.execute(LEAD);
 
       expect(r).toEqual({
-        status: 'ENCAMINHADO',
+        status: 'ATENDEU',
         vendedoraNome: 'Helena',
+        atendimentoId: 'atend-1',
+        reusou: false,
         avisada: true,
       });
+      expect(atendimentos.abrir).toHaveBeenCalledWith({
+        clienteId: 'cli-1',
+        vendedoraId: 'vend-1',
+        ocasiao: 'CASAMENTO',
+      });
+    });
+
+    /**
+     * SEM ISTO O ATENDIMENTO NASCERIA MUDO: a vendedora abriria a tela e nao
+     * veria por que aquela cliente esta ali. `ENCAMINHADO` e o mesmo tipo que
+     * o encaminhamento manual grava, entao a timeline e a auditoria leem igual.
+     */
+    it('grava a triagem como a primeira interacao', async () => {
+      await useCase.execute(LEAD);
+
+      expect(atendimentos.criarInteracao).toHaveBeenCalledWith(
+        expect.objectContaining({
+          atendimentoId: 'atend-1',
+          tipo: 'ENCAMINHADO',
+          relato: 'Cliente procura aliança clássica para casamento.',
+        }),
+      );
+    });
+
+    /** Sem resumo, ainda assim o atendimento diz de onde veio. */
+    it('sem resumo, monta um relato com o que tem', async () => {
+      await useCase.execute({ ...LEAD, resumoTriagem: null } as Lead);
+
+      const relato = atendimentos.criarInteracao.mock.calls[0][0].relato as string;
+      expect(relato).toContain('par de alianças clássicas');
+      expect(relato).toMatch(/triagem/i);
+    });
+
+    /**
+     * O LEAD FECHA PORQUE O ASSUNTO MUDOU DE CASA. Deixa-lo aberto faria a
+     * proxima mensagem continuar uma triagem que ja terminou.
+     */
+    it('fecha o lead, apontando para a dona', async () => {
+      await useCase.execute(LEAD);
+
       expect(leads.encaminhar).toHaveBeenCalledWith('lead-1', '007');
-      expect(whatsapp.enviarTexto).toHaveBeenCalledTimes(1);
     });
 
     /**
      * A RAZAO DE NEGOCIO, do Lucas: "se ficar apenas como um aviso, ela pode
-     * ligar e nem passar pelo atendimento". Respondendo o horario, a Elena
-     * chama `agendarContato`, que ABRE o atendimento — e a trajetoria comeca
-     * registrada, virando ponto na timeline.
-     *
-     * A oferta e segura AQUI e so aqui: `atendimentos.cliente_id` e NOT NULL,
-     * e neste caminho o lead SEMPRE tem cliente. Foi o defeito de 22/09, em
-     * que a Elena ofereceu agendar um lead sem cadastro.
+     * ligar e nem passar pelo atendimento".
      */
-    it('a mensagem oferece agendar o contato', async () => {
+    it('a mensagem diz que abriu e oferece agendar', async () => {
       await useCase.execute(LEAD);
 
       const texto = whatsapp.enviarTexto.mock.calls[0][1] as string;
       expect(texto).toContain('Ana Livia');
       expect(texto).toContain('par de alianças clássicas');
+      expect(texto).toMatch(/atendimento/i);
       expect(texto).toMatch(/agenda/i);
-      expect(texto).toMatch(/horário/i);
+    });
+  });
+
+  /**
+   * `uq_atendimento_aberto_por_cliente` so permite UM aberto por cliente —
+   * abrir um segundo levantaria violacao de unicidade. Decisao do Lucas entre
+   * reusar e recusar: reusar.
+   */
+  describe('quando ja ha atendimento aberto', () => {
+    beforeEach(() => {
+      atendimentos.buscarAbertoPorCliente.mockResolvedValue({ id: 'atend-velho' });
+    });
+
+    it('entra no aberto em vez de abrir outro', async () => {
+      const r = await useCase.execute(LEAD);
+
+      expect(r).toMatchObject({ atendimentoId: 'atend-velho', reusou: true });
+      expect(atendimentos.abrir).not.toHaveBeenCalled();
+      expect(atendimentos.criarInteracao).toHaveBeenCalledWith(
+        expect.objectContaining({ atendimentoId: 'atend-velho' }),
+      );
+    });
+
+    /**
+     * O atendimento pode ter nascido de uma venda de aniversario, e a triagem
+     * de agora falar de casamento. Sobrescrever apagaria o motivo original —
+     * por isso `completarOcasiaoSeVazia`, e nao um update cru.
+     */
+    it('so completa a ocasiao se estiver vazia', async () => {
+      await useCase.execute(LEAD);
+
+      expect(atendimentos.completarOcasiaoSeVazia).toHaveBeenCalledWith(
+        'atend-velho',
+        'CASAMENTO',
+      );
+    });
+
+    it('lead sem ocasiao nao tenta completar nada', async () => {
+      await useCase.execute({ ...LEAD, ocasiao: null } as Lead);
+
+      expect(atendimentos.completarOcasiaoSeVazia).not.toHaveBeenCalled();
     });
   });
 
@@ -103,14 +200,14 @@ describe('EncaminharPelaCarteiraUseCase', () => {
 
       expect(r).toEqual({ status: 'SEM_DONA' });
       expect(clientes.buscarPorId).not.toHaveBeenCalled();
-      expect(leads.encaminhar).not.toHaveBeenCalled();
+      expect(atendimentos.abrir).not.toHaveBeenCalled();
     });
 
     it('cliente sem vendedora no cadastro nao tem dona', async () => {
       clientes.buscarPorId.mockResolvedValue({ vendedoraCodigoErp: null });
 
       expect(await useCase.execute(LEAD)).toEqual({ status: 'SEM_DONA' });
-      expect(leads.encaminhar).not.toHaveBeenCalled();
+      expect(atendimentos.abrir).not.toHaveBeenCalled();
     });
 
     /** Codigo que aponta para vendedora apagada — o cadastro mente. */
@@ -122,20 +219,17 @@ describe('EncaminharPelaCarteiraUseCase', () => {
 
     /**
      * Inativa NAO recebe, e o lead FICA na fila: a gestao decide, sabendo o
-     * motivo. Encaminhar para quem saiu da casa seria perder o lead em
-     * silencio.
+     * motivo. Abrir atendimento para quem saiu da casa seria pior que esperar.
      */
-    it('dona inativa devolve o motivo e nao encaminha', async () => {
-      vendedoras.buscarPorCodigoErp.mockResolvedValue({
-        ...HELENA,
-        ativo: false,
-      });
+    it('dona inativa devolve o motivo e nao abre nada', async () => {
+      vendedoras.buscarPorCodigoErp.mockResolvedValue({ ...HELENA, ativo: false });
 
       expect(await useCase.execute(LEAD)).toEqual({
         status: 'DONA_INDISPONIVEL',
         vendedoraNome: 'Helena',
         motivo: 'está inativa',
       });
+      expect(atendimentos.abrir).not.toHaveBeenCalled();
       expect(leads.encaminhar).not.toHaveBeenCalled();
       expect(whatsapp.enviarTexto).not.toHaveBeenCalled();
     });
@@ -143,11 +237,11 @@ describe('EncaminharPelaCarteiraUseCase', () => {
 
   /**
    * HOJE 19 DAS 23 VENDEDORAS NAO TEM WHATSAPP PESSOAL CADASTRADO. Se a falta
-   * do aviso barrasse o encaminhamento, a regra nao valeria para quase
-   * ninguem — e o lead ficaria na fila de ninguem em vez da lista da dona.
+   * do aviso barrasse, a regra da carteira nao valeria para quase ninguem — e
+   * O ATENDIMENTO E O REGISTRO QUE IMPORTA, nao a mensagem.
    */
-  describe('a falha de aviso nao cancela o encaminhamento', () => {
-    it('sem whatsapp pessoal, encaminha do mesmo jeito', async () => {
+  describe('a falha de aviso nao cancela o atendimento', () => {
+    it('sem whatsapp pessoal, atende do mesmo jeito', async () => {
       vendedoras.buscarPorCodigoErp.mockResolvedValue({
         ...HELENA,
         whatsappInterno: null,
@@ -155,22 +249,19 @@ describe('EncaminharPelaCarteiraUseCase', () => {
 
       const r = await useCase.execute(LEAD);
 
-      expect(r).toEqual({
-        status: 'ENCAMINHADO',
-        vendedoraNome: 'Helena',
-        avisada: false,
-      });
-      expect(leads.encaminhar).toHaveBeenCalledWith('lead-1', '007');
+      expect(r).toMatchObject({ status: 'ATENDEU', avisada: false });
+      expect(atendimentos.abrir).toHaveBeenCalled();
+      expect(leads.encaminhar).toHaveBeenCalled();
     });
 
     /** Numero cadastrado que nao tem conta de WhatsApp. */
     it('numero sem conta de WhatsApp tambem nao barra', async () => {
       whatsapp.resolverChatId.mockResolvedValue(null);
 
-      const r = await useCase.execute(LEAD);
-
-      expect(r).toMatchObject({ status: 'ENCAMINHADO', avisada: false });
-      expect(leads.encaminhar).toHaveBeenCalled();
+      expect(await useCase.execute(LEAD)).toMatchObject({
+        status: 'ATENDEU',
+        avisada: false,
+      });
     });
 
     it('WAHA fora do ar tambem nao barra', async () => {
@@ -178,8 +269,8 @@ describe('EncaminharPelaCarteiraUseCase', () => {
 
       const r = await useCase.execute(LEAD);
 
-      expect(r).toMatchObject({ status: 'ENCAMINHADO', avisada: false });
-      expect(leads.encaminhar).toHaveBeenCalled();
+      expect(r).toMatchObject({ status: 'ATENDEU', avisada: false });
+      expect(atendimentos.criarInteracao).toHaveBeenCalled();
     });
   });
 });
