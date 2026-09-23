@@ -90,7 +90,7 @@ export class CriarVendedoraUseCase {
     // e o cadastro passou a nascer no CRM — onde nao ha codigo de ERP para
     // informar.
     //
-    // O prefixo `AT-` diz a origem de relance: o que comeca assim e nosso.
+    // O prefixo `VD-` diz a origem de relance: o que comeca assim e nosso.
     // Quando o ERP trouxer o codigo real dela, trocar e seguro — a FK tem
     // ON UPDATE CASCADE e a carteira vai junto.
     // ====================================================================

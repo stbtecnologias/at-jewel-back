@@ -85,7 +85,7 @@ export interface IClienteRepository {
   /**
    * O proximo `CL-####` livre, para cliente que nasce no CRM e nao no ERP.
    *
-   * Existe pelo mesmo motivo do `AT-####` da vendedora (migracao 55), mas o
+   * Existe pelo mesmo motivo do `VD-####` da vendedora (migracao 55), mas o
    * peso e OUTRO e vale dizer: nenhuma FK aponta para `clientes.codigo_erp` —
    * as dez que entram em `clientes` apontam para o `id`. Aqui o codigo nao
    * liga nada a nada; serve para reconciliar com o ERP, barrar duplicata e ser

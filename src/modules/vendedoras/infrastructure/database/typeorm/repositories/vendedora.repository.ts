@@ -60,11 +60,11 @@ export class VendedoraRepository implements IVendedoraRepository {
   }
 
   async proximoCodigoInterno(): Promise<string> {
-    // Ordena pelo NUMERO e nao pelo texto: por texto, "AT-9" viria depois de
-    // "AT-10" e a sequencia repetiria um codigo ja usado.
+    // Ordena pelo NUMERO e nao pelo texto: por texto, "VD-9" viria depois de
+    // "VD-10" e a sequencia repetiria um codigo ja usado.
     const linhas: { codigo_erp: string }[] = await this.repo.manager.query(
       `SELECT codigo_erp FROM vendedoras
-        WHERE codigo_erp ~ '^AT-[0-9]+
+        WHERE codigo_erp ~ '^VD-[0-9]+
     // Filtro por especialidades exige operador @> (array contains), que
     // o FindOptionsWhere nao expressa diretamente — usar QueryBuilder.
     const qb = this.repo.createQueryBuilder('v');
@@ -144,7 +144,7 @@ export class VendedoraRepository implements IVendedoraRepository {
     const ultimo = linhas[0]
       ? Number(linhas[0].codigo_erp.slice(3))
       : 0;
-    return `AT-${String(ultimo + 1).padStart(4, '0')}`;
+    return `VD-${String(ultimo + 1).padStart(4, '0')}`;
   }
 
   async listar(filtros: FiltroVendedora): Promise<Vendedora[]> {

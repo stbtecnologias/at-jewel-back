@@ -158,7 +158,7 @@ export class CriarClienteUseCase {
     // nosso quando o cadastro nasce no CRM.
     //
     // O PESO AQUI E MENOR QUE O DA VENDEDORA, e vale registrar para nao
-    // confundir os dois casos: o `AT-####` da vendedora e ESTRUTURAL — tres
+    // confundir os dois casos: o `VD-####` da vendedora e ESTRUTURAL — tres
     // FKs apontam para `vendedoras.codigo_erp`, e sem codigo ela nao recebia
     // cliente nenhum. Nenhuma FK aponta para `clientes.codigo_erp`; as dez que
     // entram em `clientes` apontam para o `id`. Aqui o codigo serve para
