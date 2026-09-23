@@ -504,6 +504,7 @@ export class AtendimentoRepository implements IAtendimentoRepository {
         'interacao:' || i.id            AS id,
         CASE
           WHEN i.status = 'EXPIRADA'    THEN 'EXPIRADA'
+          WHEN i.tipo = 'ABERTURA'      THEN 'ABERTURA'
           WHEN i.tipo = 'ENCAMINHADO'   THEN 'ENCAMINHADO'
           WHEN i.tipo = 'REAGENDAMENTO' THEN 'REAGENDAMENTO'
           WHEN i.tipo = 'RELATO'        THEN 'RELATO'
@@ -589,7 +590,7 @@ export class AtendimentoRepository implements IAtendimentoRepository {
       -- por SQL cru. O telefone continua fora desta consulta, de proposito.
       -- ====================================================================
       SELECT
-        'lead:' || l.id, 'ENCAMINHADO',
+        'lead:' || l.id, 'LEAD_ENCAMINHADO',
         vd.id, vd.nome,
         l.direcionado_vendedora_em,
         NULL::uuid, l.nome,

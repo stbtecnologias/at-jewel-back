@@ -93,12 +93,17 @@ export class EncaminharPelaCarteiraUseCase {
 
     const { atendimentoId, reusou } = await this.abrirOuReusar(lead, dona.id);
 
-    // O QUE A TRIAGEM DESCOBRIU VIRA A PRIMEIRA INTERACAO, do mesmo tipo que o
-    // encaminhamento manual grava. Sem isto o atendimento nasceria mudo: a
-    // vendedora abriria a tela e nao veria por que aquela cliente esta ali.
+    // O QUE A TRIAGEM DESCOBRIU VIRA A PRIMEIRA INTERACAO. Sem isto o
+    // atendimento nasceria mudo: a vendedora abriria a tela e nao veria por
+    // que aquela cliente esta ali.
+    //
+    // `ABERTURA` (migracao 64) e nao `ENCAMINHADO`: os dois acontecem no mesmo
+    // minuto e, compartilhando o tipo, a linha do tempo desenhava duas
+    // bolinhas com a MESMA frase. Sao acontecimentos DIFERENTES — o lead foi
+    // encaminhado E o atendimento comecou — e agora cada um diz o que e.
     await this.atendimentos.criarInteracao({
       atendimentoId,
-      tipo: 'ENCAMINHADO',
+      tipo: 'ABERTURA',
       ocorridoEm: new Date(),
       relato: this.relatoDaTriagem(lead),
     });

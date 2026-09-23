@@ -104,8 +104,12 @@ describe('EncaminharPelaCarteiraUseCase', () => {
 
     /**
      * SEM ISTO O ATENDIMENTO NASCERIA MUDO: a vendedora abriria a tela e nao
-     * veria por que aquela cliente esta ali. `ENCAMINHADO` e o mesmo tipo que
-     * o encaminhamento manual grava, entao a timeline e a auditoria leem igual.
+     * veria por que aquela cliente esta ali.
+     *
+     * O TIPO E `ABERTURA` (migracao 64), e nao `ENCAMINHADO`: os dois caem no
+     * mesmo minuto e, dividindo o mesmo tipo, a linha do tempo desenhava duas
+     * bolinhas com a MESMA frase. Visto pelo Lucas: "acho que o atendimento
+     * ficou 2 vezes".
      */
     it('grava a triagem como a primeira interacao', async () => {
       await useCase.execute(LEAD);
@@ -113,7 +117,7 @@ describe('EncaminharPelaCarteiraUseCase', () => {
       expect(atendimentos.criarInteracao).toHaveBeenCalledWith(
         expect.objectContaining({
           atendimentoId: 'atend-1',
-          tipo: 'ENCAMINHADO',
+          tipo: 'ABERTURA',
           relato: 'Cliente procura aliança clássica para casamento.',
         }),
       );
