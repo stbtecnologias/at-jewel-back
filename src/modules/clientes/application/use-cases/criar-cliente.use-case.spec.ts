@@ -12,6 +12,7 @@ function makeRepoMock(): jest.Mocked<IClienteRepository> {
     criar: jest.fn(),
     buscarPorId: jest.fn(),
     buscarPorCodigoErp: jest.fn(),
+    proximoCodigoInterno: jest.fn().mockResolvedValue("CL-0001"),
     buscarPorTelefone1Hash: jest.fn(),
     buscarPorEmailHash: jest.fn(),
     listar: jest.fn(),
@@ -327,6 +328,59 @@ describe('CriarClienteUseCase', () => {
 
       expect(repo.buscarPorCodigoErp).not.toHaveBeenCalled();
       expect(repo.criarComPerfil).toHaveBeenCalledTimes(1);
+    });
+
+    /**
+     * TODO CLIENTE NASCE COM CODIGO — 23/09/2026.
+     *
+     * A tela mostrava "—" na coluna Codigo para quem foi cadastrado pelo CRM,
+     * e o campo do formulario passou a ser desabilitado: a pessoa nao digita
+     * mais, a casa gera.
+     */
+    it('sem codigo, a casa gera o CL-####', async () => {
+      repo.criar.mockResolvedValue({} as Cliente);
+      repo.proximoCodigoInterno.mockResolvedValue('CL-0007');
+
+      await useCase.execute({ nome: 'Ana Livia' });
+
+      expect(repo.criar.mock.calls[0][0]).toMatchObject({ codigoErp: 'CL-0007' });
+    });
+
+    /** O caminho do ERP nao muda: quem manda codigo continua mandando. */
+    it('com codigo informado, nao gera nada', async () => {
+      repo.criar.mockResolvedValue({} as Cliente);
+
+      await useCase.execute({ codigoErp: 'C1042', nome: 'Cliente do ERP' });
+
+      expect(repo.proximoCodigoInterno).not.toHaveBeenCalled();
+    });
+
+    /** Campo so com espaco e campo vazio — o `trim` e o que decide. */
+    it('codigo em branco conta como ausente', async () => {
+      repo.criar.mockResolvedValue({} as Cliente);
+      repo.proximoCodigoInterno.mockResolvedValue('CL-0008');
+
+      await useCase.execute({ codigoErp: '   ', nome: 'Espaco a toa' });
+
+      expect(repo.criar.mock.calls[0][0]).toMatchObject({ codigoErp: 'CL-0008' });
+      // Nao e duplicata de "   ": a consulta nem acontece.
+      expect(repo.buscarPorCodigoErp).not.toHaveBeenCalled();
+    });
+
+    /** O fluxo da Anastasia cria com perfil, e tambem sai com codigo. */
+    it('o cliente que nasce do WhatsApp tambem recebe codigo', async () => {
+      repo.criarComPerfil.mockResolvedValue({} as Cliente);
+      repo.proximoCodigoInterno.mockResolvedValue('CL-0009');
+
+      await useCase.execute({
+        nome: 'Contato novo do WhatsApp',
+        whatsapp: '85988887777',
+        origemContato: 'whatsapp',
+      });
+
+      expect(repo.criarComPerfil.mock.calls[0][0]).toMatchObject({
+        codigoErp: 'CL-0009',
+      });
     });
   });
 });

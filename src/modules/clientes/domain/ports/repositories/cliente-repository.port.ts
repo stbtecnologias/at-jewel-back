@@ -83,6 +83,22 @@ export interface IClienteRepository {
   buscarPorCodigoErp(codigoErp: string): Promise<Cliente | null>;
 
   /**
+   * O proximo `CL-####` livre, para cliente que nasce no CRM e nao no ERP.
+   *
+   * Existe pelo mesmo motivo do `AT-####` da vendedora (migracao 55), mas o
+   * peso e OUTRO e vale dizer: nenhuma FK aponta para `clientes.codigo_erp` —
+   * as dez que entram em `clientes` apontam para o `id`. Aqui o codigo nao
+   * liga nada a nada; serve para reconciliar com o ERP, barrar duplicata e ser
+   * lido por gente.
+   *
+   * O prefixo tem hifen de proposito: o ERP escreve codigo de produto como
+   * DUAS LETRAS + digitos (BR19048, AN19031, CO20099), entao `CL0001` teria a
+   * forma de um codigo dele. Nenhum registro, em nenhuma das nove tabelas com
+   * `codigo_erp`, usa duas letras seguidas de hifen — conferido em 23/09/2026.
+   */
+  proximoCodigoInterno(): Promise<string>;
+
+  /**
    * Busca por parte do nome, sem acento e sem diferenciar maiuscula. Usada
    * pela tool avisar_vendedora da Anastasia, onde o ADM digita o nome como
    * lembra. O limite existe para responder "achei varios" sem varrer a base.

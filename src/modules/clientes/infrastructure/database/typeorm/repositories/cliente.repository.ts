@@ -162,6 +162,20 @@ export class ClienteRepository implements IClienteRepository {
     return row ? this.toDomain(row) : null;
   }
 
+  async proximoCodigoInterno(): Promise<string> {
+    // Ordena pelo NUMERO e nao pelo texto: por texto, "CL-9" viria depois de
+    // "CL-10" e a sequencia repetiria um codigo ja usado. Mesma armadilha que
+    // o `proximoCodigoInterno` da vendedora resolve.
+    const linhas: { codigo_erp: string }[] = await this.repo.manager.query(
+      `SELECT codigo_erp FROM clientes
+        WHERE codigo_erp ~ '^CL-[0-9]+$'
+        ORDER BY (substring(codigo_erp from 4))::int DESC
+        LIMIT 1`,
+    );
+    const ultimo = linhas[0] ? Number(linhas[0].codigo_erp.slice(3)) : 0;
+    return `CL-${String(ultimo + 1).padStart(4, '0')}`;
+  }
+
   /**
    * ATENCAO: desde a migracao 36 a coluna NAO e mais unica — o mesmo telefone
    * pode pertencer a varios clientes (mae e filha, fixo da empresa, etc.).

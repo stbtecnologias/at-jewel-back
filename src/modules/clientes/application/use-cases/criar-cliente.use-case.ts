@@ -110,8 +110,14 @@ export class CriarClienteUseCase {
     // Importa para a INGESTAO: sincronizacao que reenvia por timeout recebe uma
     // resposta que diz o que aconteceu e qual e o registro, em vez de um 500
     // que nao distingue "ja existe" de "quebrou".
-    if (input.codigoErp) {
-      const duplicadoErp = await this.clienteRepo.buscarPorCodigoErp(input.codigoErp);
+    // O codigo e normalizado UMA VEZ, e a mesma resposta serve as duas
+    // perguntas: "e duplicata?" e "precisa gerar?". Antes o `if` cru aceitava
+    // "   " como codigo e ia consultar o banco por um valor que nunca seria
+    // gravado.
+    const codigoInformado = input.codigoErp?.trim() || null;
+
+    if (codigoInformado) {
+      const duplicadoErp = await this.clienteRepo.buscarPorCodigoErp(codigoInformado);
       if (duplicadoErp) {
         throw new ConflictException(
           `Ja existe cliente com esse codigo ERP (id: ${duplicadoErp.id})`,
@@ -144,9 +150,30 @@ export class CriarClienteUseCase {
       }
     }
 
+    // ====================================================================
+    // TODO CLIENTE SAI DAQUI COM CODIGO.
+    //
+    // Em branco, a casa gera um `CL-####`. A tela nem oferece o campo para
+    // digitar — decisao do Lucas em 23/09/2026: o codigo passa a ser sempre
+    // nosso quando o cadastro nasce no CRM.
+    //
+    // O PESO AQUI E MENOR QUE O DA VENDEDORA, e vale registrar para nao
+    // confundir os dois casos: o `AT-####` da vendedora e ESTRUTURAL — tres
+    // FKs apontam para `vendedoras.codigo_erp`, e sem codigo ela nao recebia
+    // cliente nenhum. Nenhuma FK aponta para `clientes.codigo_erp`; as dez que
+    // entram em `clientes` apontam para o `id`. Aqui o codigo serve para
+    // reconciliar com o ERP, barrar duplicata e ser lido por gente.
+    //
+    // TROCAR DEPOIS E SEGURO, e e o que torna isto barato: no dia em que o ERP
+    // trouxer esta pessoa com o codigo dele, trocar nao arrasta nada — nao ha
+    // dependente para arrastar.
+    // ====================================================================
+    const codigoErp =
+      codigoInformado ?? (await this.clienteRepo.proximoCodigoInterno());
+
     const cliente = Cliente.create({
       idErp: input.idErp ?? null,
-      codigoErp: input.codigoErp ?? null,
+      codigoErp,
       nome: input.nome,
       nomeFantasia: input.nomeFantasia ?? null,
       tipoPessoa: input.tipoPessoa ?? 'fisica',
