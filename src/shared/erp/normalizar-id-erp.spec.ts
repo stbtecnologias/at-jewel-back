@@ -1,4 +1,4 @@
-import { normalizarIdErp } from './normalizar-id-erp';
+import { aparaIdErp, normalizarIdErp } from './normalizar-id-erp';
 
 describe('normalizarIdErp', () => {
   describe('as tres formas que o Safira manda o mesmo id', () => {
@@ -62,5 +62,36 @@ describe('normalizarIdErp', () => {
       const gigante = '00' + '9'.repeat(25);
       expect(normalizarIdErp(gigante)).toBe('9'.repeat(25));
     });
+  });
+});
+
+/**
+ * `aparaIdErp` e a mesma regra SEM o passo dos zeros. Ela alimenta o
+ * `operacoes.id_erp_bruto` (migracao 63), que existe so para a resposta da API
+ * devolver o id na grafia em que o integrador mandou.
+ */
+describe('aparaIdErp', () => {
+  it('deve preservar os zeros a esquerda — e o ponto dela existir', () => {
+    expect(aparaIdErp('009000000324')).toBe('009000000324');
+    expect(aparaIdErp('000')).toBe('000');
+  });
+
+  // Nao sao valor: espaco e sujeira do dump do Safira, e o `.0` e so como o
+  // JSON escreve inteiro. Gravar qualquer um dos dois foi vetado em 04/09.
+  it('deve aparar espaco das pontas e o .0 de serializacao', () => {
+    expect(aparaIdErp('     1294138')).toBe('1294138');
+    expect(aparaIdErp('009000000324.0')).toBe('009000000324');
+    expect(aparaIdErp(9000000324)).toBe('9000000324');
+  });
+
+  it('deve deixar o que nao e numero como chegou', () => {
+    expect(aparaIdErp('  VEN ')).toBe('VEN');
+  });
+
+  it('deve devolver null para ausencia e vazio', () => {
+    expect(aparaIdErp(null)).toBeNull();
+    expect(aparaIdErp(undefined)).toBeNull();
+    expect(aparaIdErp('   ')).toBeNull();
+    expect(aparaIdErp('.0')).toBeNull();
   });
 });
