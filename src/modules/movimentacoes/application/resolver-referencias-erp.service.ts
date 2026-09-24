@@ -16,6 +16,8 @@ import { FORNECEDOR_REPOSITORY } from '../../fornecedores/domain/ports/injection
 import type { IFornecedorRepository } from '../../fornecedores/domain/ports/repositories/fornecedor-repository.port';
 import type { IFormaPagamentoRepository } from '../../formas-pagamento/domain/ports/repositories/forma-pagamento-repository.port';
 import { GRUPO_ESTOQUE_REPOSITORY } from '../../grupos-estoque/domain/ports/injection-tokens';
+import { LOCAL_ESTOQUE_REPOSITORY } from '../../locais-estoque/domain/ports/injection-tokens';
+import type { ILocalEstoqueRepository } from '../../locais-estoque/domain/ports/repositories/local-estoque-repository.port';
 import type { IGrupoEstoqueRepository } from '../../grupos-estoque/domain/ports/repositories/grupo-estoque-repository.port';
 import { OPERACAO_REPOSITORY } from '../../operacoes/domain/ports/injection-tokens';
 import type { IOperacaoRepository } from '../../operacoes/domain/ports/repositories/operacao-repository.port';
@@ -57,7 +59,7 @@ interface RegistroComIdErp {
  * apontando para o vazio seria perder o dado com cara de sucesso.
  */
 /** De que tabela e a ponta da movimentacao. */
-export type TipoEntidade = 'cliente' | 'fornecedor' | 'empresa';
+export type TipoEntidade = 'cliente' | 'fornecedor' | 'empresa' | 'local';
 
 /** A ponta resolvida pelo nosso UUID: sempre com id, e com o tipo encontrado. */
 export interface Entidade {
@@ -126,15 +128,36 @@ export class ResolverReferenciasErpService {
     private readonly formasPagamento: IFormaPagamentoRepository,
     @Inject(FORNECEDOR_REPOSITORY)
     private readonly fornecedores: IFornecedorRepository,
+    @Inject(LOCAL_ESTOQUE_REPOSITORY)
+    private readonly locais: ILocalEstoqueRepository,
   ) {}
 
   /**
    * Uma ponta da movimentacao pelo NOSSO UUID — 16/09/2026.
    *
-   * A ponta e POLIMORFICA, entao o UUID e procurado nas tres tabelas ao mesmo
-   * tempo. UUID nao se repete entre tabelas: no maximo uma acha, e ela diz o
-   * TIPO. Nao achando em nenhuma e o mesmo erro de todo UUID desta API — o
-   * UUID e NOSSO e so pode ter saido de uma consulta a ela.
+   * A ponta e POLIMORFICA, entao o UUID e procurado nas QUATRO tabelas ao
+   * mesmo tempo. UUID nao se repete entre tabelas: no maximo uma acha, e ela
+   * diz o TIPO. Nao achando em nenhuma e o mesmo erro de todo UUID desta API —
+   * o UUID e NOSSO e so pode ter saido de uma consulta a ela.
+   *
+   * ==========================================================================
+   * O LOCAL DE ESTOQUE ENTROU EM 24/09/2026 — decisao do Lucas, para as DUAS
+   * pontas.
+   *
+   * O Safira poe a loja numa ponta da movimentacao, e o integrador vinha
+   * mandando o UUID do local `ESTOQUE` — cujo `id_erp` e `009000000018`, o
+   * mesmo numero da entidade da loja la. Tomava 400 ("entidade ... nao
+   * existe") porque so procuravamos em cliente, fornecedor e empresa.
+   *
+   * O CUSTO, E FOI ACEITO: a coluna-sombra `entidade_*_id_erp` passa a guardar
+   * id de dois espacos de numeracao — o de entidades e o de locais — sem nada
+   * na linha dizendo qual e qual. Quem for reconciliar isso depois precisa
+   * saber que a coluna nao e homogenea.
+   *
+   * A ORDEM IMPORTA POUCO e mesmo assim e deliberada: cliente vem primeiro
+   * porque e a unica cujo tipo muda o resto do fluxo (`clienteDaMovimentacao`).
+   * Local vem por ultimo por ser o caso menos frequente.
+   * ==========================================================================
    *
    * Devolve `null` quando nao veio UUID: ai a ponta segue pelo id do ERP, se
    * tiver vindo.
@@ -142,16 +165,18 @@ export class ResolverReferenciasErpService {
   async entidade(uuid?: string | null): Promise<Entidade | null> {
     if (!uuid) return null;
 
-    const [cliente, fornecedor, empresa] = await Promise.all([
+    const [cliente, fornecedor, empresa, local] = await Promise.all([
       this.clientes.buscarPorId(uuid),
       this.fornecedores.buscarPorId(uuid),
       this.empresas.buscarPorId(uuid),
+      this.locais.buscarPorId(uuid),
     ]);
 
     const achados: Array<[RegistroComIdErp | null, TipoEntidade]> = [
       [cliente, 'cliente'],
       [fornecedor, 'fornecedor'],
       [empresa, 'empresa'],
+      [local, 'local'],
     ];
     for (const [registro, tipo] of achados) {
       if (registro?.id) {

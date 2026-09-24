@@ -21,6 +21,16 @@ export class LocalEstoqueOrmEntity {
   })
   idErp: string | null;
 
+  /**
+   * O id do ERP COMO O INTEGRADOR MANDOU — migracao 65.
+   *
+   * Sem UNIQUE e fora de toda busca: quem casa e `idErp`, normalizado. Esta
+   * coluna serve so ao `idErpLocal` da resposta, para quem manda
+   * "009000000018" nao receber "9000000018" de volta.
+   */
+  @Column({ name: 'id_erp_bruto', type: 'varchar', length: 50, nullable: true })
+  idErpBruto: string | null;
+
   @Column({
     name: 'codigo_erp',
     type: 'varchar',

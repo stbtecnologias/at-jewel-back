@@ -39,6 +39,7 @@ function servico(repos: {
     repo as never,
     repo as never,
     repo as never,
+    repo as never,
   );
 }
 
@@ -125,10 +126,15 @@ describe('ResolverReferenciasErpService', () => {
 });
 
 /**
- * A PONTA POLIMORFICA — 16/09/2026.
+ * A PONTA POLIMORFICA — 16/09/2026, com o local de estoque desde 24/09/2026.
  *
- * O UUID e procurado em clientes, fornecedores e empresas. Cada teste deixa so
- * uma das tres acharem, para provar que o TIPO devolvido e o da tabela certa.
+ * O UUID e procurado em clientes, fornecedores, empresas e LOCAIS DE ESTOQUE.
+ * Cada teste deixa so uma das quatro achar, para provar que o TIPO devolvido e
+ * o da tabela certa.
+ *
+ * O LOCAL ENTROU PORQUE O SAFIRA NAO SEPARA: o `entidadeidorigem` da loja e
+ * `9000000018`, o mesmo numero do `id_erp` do local `ESTOQUE`. O integrador
+ * mandava o UUID do local e tomava 400.
  */
 describe('ResolverReferenciasErpService — entidade (a ponta pelo UUID)', () => {
   const ID = '22222222-2222-2222-2222-222222222222';
@@ -137,13 +143,14 @@ describe('ResolverReferenciasErpService — entidade (a ponta pelo UUID)', () =>
     cliente?: object;
     fornecedor?: object;
     empresa?: object;
+    local?: object;
   }) {
     const vazio = { buscarPorId: jest.fn().mockResolvedValue(null) };
     const repo = (registro?: object) => ({
       buscarPorId: jest.fn().mockResolvedValue(registro ?? null),
     });
     // Ordem do construtor: operacoes, empresas, grupos, clientes, vendedoras,
-    // produtos, formasPagamento, fornecedores.
+    // produtos, formasPagamento, fornecedores, locais.
     return new ResolverReferenciasErpService(
       vazio as never,
       repo(achados.empresa) as never,
@@ -153,6 +160,7 @@ describe('ResolverReferenciasErpService — entidade (a ponta pelo UUID)', () =>
       vazio as never,
       vazio as never,
       repo(achados.fornecedor) as never,
+      repo(achados.local) as never,
     );
   }
 
@@ -165,6 +173,7 @@ describe('ResolverReferenciasErpService — entidade (a ponta pelo UUID)', () =>
     ['cliente', { cliente: { id: ID, idErp: '2397' } }],
     ['fornecedor', { fornecedor: { id: ID, idErp: '555' } }],
     ['empresa', { empresa: { id: ID, idErp: '9000000018' } }],
+    ['local', { local: { id: ID, idErp: '9000000018' } }],
   ])('achado em %s, devolve o tipo certo e o id do ERP', async (tipo, achados) => {
     const r = await servicoComTres(achados).entidade(ID);
 
@@ -175,7 +184,22 @@ describe('ResolverReferenciasErpService — entidade (a ponta pelo UUID)', () =>
     });
   });
 
-  it('nao achado em nenhuma das tres: 400, com o UUID na mensagem', async () => {
+  /**
+   * O CASO QUE MOTIVOU A MUDANCA, em 24/09/2026: o UUID do local `ESTOQUE`
+   * chegando na ponta de ORIGEM de uma venda. Antes disto, 400.
+   */
+  it('o local de estoque resolve, e serve as DUAS pontas', async () => {
+    const servico = servicoComTres({
+      local: { id: ID, idErp: '9000000018' },
+    });
+
+    // E o mesmo metodo para origem e destino — a prova e que a chamada nao
+    // sabe de qual ponta veio.
+    await expect(servico.entidade(ID)).resolves.toMatchObject({ tipo: 'local' });
+    await expect(servico.entidade(ID)).resolves.toMatchObject({ tipo: 'local' });
+  });
+
+  it('nao achado em nenhuma das quatro: 400, com o UUID na mensagem', async () => {
     await expect(servicoComTres({}).entidade(ID)).rejects.toThrow(
       `entidade ${ID} nao existe`,
     );

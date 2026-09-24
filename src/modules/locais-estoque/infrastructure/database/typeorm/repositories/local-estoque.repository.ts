@@ -62,13 +62,20 @@ export class LocalEstoqueRepository implements ILocalEstoqueRepository {
   }
 
   private toOrm(e: LocalEstoque): Partial<LocalEstoqueOrmEntity> {
-    return { idErp: e.idErp, codigoErp: e.codigoErp, nome: e.nome, ativo: e.ativo };
+    return {
+      idErp: e.idErp,
+      idErpBruto: e.idErpBruto,
+      codigoErp: e.codigoErp,
+      nome: e.nome,
+      ativo: e.ativo,
+    };
   }
 
   private toDomain(o: LocalEstoqueOrmEntity): LocalEstoque {
     return LocalEstoque.create({
       id: o.id,
       idErp: o.idErp,
+      idErpBruto: o.idErpBruto,
       codigoErp: o.codigoErp,
       nome: o.nome,
       ativo: o.ativo,

@@ -6,6 +6,7 @@ import { EmpresasModule } from '../empresas/empresas.module';
 import { FormasPagamentoModule } from '../formas-pagamento/formas-pagamento.module';
 import { FornecedoresModule } from '../fornecedores/fornecedores.module';
 import { GruposEstoqueModule } from '../grupos-estoque/grupos-estoque.module';
+import { LocaisEstoqueModule } from '../locais-estoque/locais-estoque.module';
 import { OperacoesModule } from '../operacoes/operacoes.module';
 import { ProdutosModule } from '../produtos/produtos.module';
 import { VendedorasModule } from '../vendedoras/vendedoras.module';
@@ -47,6 +48,8 @@ import { MovimentacoesController } from './infrastructure/http/controllers/movim
     OperacoesModule,
     EmpresasModule,
     GruposEstoqueModule,
+    // A ponta da movimentacao passou a aceitar local de estoque em 24/09/2026.
+    LocaisEstoqueModule,
     ClientesModule,
     VendedorasModule,
     ProdutosModule,

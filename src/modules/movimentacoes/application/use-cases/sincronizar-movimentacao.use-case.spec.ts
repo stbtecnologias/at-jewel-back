@@ -425,3 +425,102 @@ describe('SincronizarMovimentacaoUseCase — as pontas pelo nosso UUID', () => {
     expect(mov.clienteIdErp).toBe('2397');
   });
 });
+
+/**
+ * O ECO DA GRAFIA — migracao 66, 24/09/2026.
+ *
+ * ==========================================================================
+ * Terceira vez que este problema aparece: operacoes (63), locais_estoque (65)
+ * e agora o cabecalho da movimentacao. O Lucas mandou "000001419828" pelo
+ * Thunder Client e recebeu "1419828".
+ *
+ * O QUE ESTES TESTES PROTEGEM e a separacao dos dois papeis: `idErp` canonico
+ * para CASAR (senao o reenvio na outra grafia duplicaria o documento) e
+ * `idErpBruto` fiel para ECOAR.
+ * ==========================================================================
+ */
+describe('SincronizarMovimentacaoUseCase — a grafia do id volta como veio', () => {
+  const COM_ZEROS = '000001419828';
+  const SEM_ZEROS = '1419828';
+
+  let repo: jest.Mocked<IMovimentacaoRepository>;
+
+  beforeEach(() => {
+    repo = makeRepoMock();
+    repo.sincronizar.mockImplementation(async (mov) => ({ mov, criada: true }));
+  });
+
+  async function sincronizar(idErpMovimentacao: string | number) {
+    const useCase = new SincronizarMovimentacaoUseCase(
+      repo,
+      resolverQueNaoAcha(),
+    );
+    await useCase.execute({
+      idErpMovimentacao,
+      dataMovimentacao: '2026-09-12T14:24:06',
+      valor: 27230,
+    });
+    return repo.sincronizar.mock.calls[0][0];
+  }
+
+  it('a chave e normalizada, o bruto guarda os zeros', async () => {
+    const mov = await sincronizar(COM_ZEROS);
+
+    expect(mov.idErp).toBe(SEM_ZEROS);
+    expect(mov.idErpBruto).toBe(COM_ZEROS);
+  });
+
+  it('a resposta devolve a grafia que ele mandou', async () => {
+    const mov = await sincronizar(COM_ZEROS);
+
+    expect(mov.toResumo().idErpMovimentacao).toBe(COM_ZEROS);
+  });
+
+  /** Sem zeros, os dois coincidem — e nada muda para quem ja mandava assim. */
+  it('sem zeros, canonico e eco sao o mesmo', async () => {
+    const mov = await sincronizar(SEM_ZEROS);
+
+    expect(mov.idErp).toBe(SEM_ZEROS);
+    expect(mov.toResumo().idErpMovimentacao).toBe(SEM_ZEROS);
+  });
+
+  /** O Safira serializa id como float. O `.0` nao e grafia, e ruido. */
+  it('o id numerico vira texto sem o .0 nas duas colunas', async () => {
+    const mov = await sincronizar(1419828);
+
+    expect(mov.idErp).toBe(SEM_ZEROS);
+    expect(mov.idErpBruto).toBe(SEM_ZEROS);
+  });
+
+  /**
+   * A COISA MAIS IMPORTANTE DESTA ROTA: o mesmo documento nas duas grafias
+   * continua sendo UM documento. Se o bruto virasse a chave, nasceriam dois.
+   */
+  it('as duas grafias produzem a MESMA chave de idempotencia', async () => {
+    const comZeros = await sincronizar(COM_ZEROS);
+    repo.sincronizar.mockClear();
+    const semZeros = await sincronizar(SEM_ZEROS);
+
+    expect(comZeros.idErp).toBe(semZeros.idErp);
+  });
+
+  /**
+   * Linha gravada antes da migracao 66 tem o bruto nulo. O backfill a cobre,
+   * mas um banco que ainda nao rodou nao pode ecoar nulo.
+   */
+  it('sem bruto, o eco cai no canonico', () => {
+    const mov = Movimentacao.create({
+      idErp: SEM_ZEROS,
+      idErpBruto: null,
+      dataMovimentacao: new Date(),
+      valor: 27230,
+      entrada: false,
+      saida: true,
+      ativo: true,
+      itens: [],
+      pagamentos: [],
+    } as never);
+
+    expect(mov.toResumo().idErpMovimentacao).toBe(SEM_ZEROS);
+  });
+});
