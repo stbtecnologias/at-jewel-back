@@ -1,6 +1,9 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { dataDoErp } from '../../../../shared/erp/data-do-erp';
-import { normalizarIdErp } from '../../../../shared/erp/normalizar-id-erp';
+import {
+  aparaIdErp,
+  normalizarIdErp,
+} from '../../../../shared/erp/normalizar-id-erp';
 import { MovimentacaoItem } from '../../domain/entities/movimentacao-item.entity';
 import { MovimentacaoPagamento } from '../../domain/entities/movimentacao-pagamento.entity';
 import { Movimentacao } from '../../domain/entities/movimentacao.entity';
@@ -110,6 +113,12 @@ export class SincronizarMovimentacaoUseCase {
       );
     }
 
+    // A GRAFIA QUE ELE MANDOU — migracao 66. Guardada ao lado do canonico e
+    // devolvida no `idErpMovimentacao` da resposta. Reenviar na outra grafia
+    // ATUALIZA o eco, e e o certo: o ultimo envio e que diz como ele escreve
+    // hoje. O documento continua sendo o mesmo, porque quem casa e `idErp`.
+    const idErpBruto = aparaIdErp(input.idErpMovimentacao);
+
     // O ERP manda a data SEM FUSO. `dataDoErp` a le como hora de parede da
     // loja; sem isso, o container em UTC deslocaria toda venda em 3 horas e as
     // que chegam a meia-noite cairiam no dia anterior.
@@ -204,6 +213,7 @@ export class SincronizarMovimentacaoUseCase {
 
     const movimentacao = Movimentacao.create({
       idErp,
+      idErpBruto,
       numero: input.numero ?? null,
       dataMovimentacao,
       operacaoId: operacao.id,

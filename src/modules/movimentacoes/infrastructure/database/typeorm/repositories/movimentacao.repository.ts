@@ -155,6 +155,7 @@ export class MovimentacaoRepository implements IMovimentacaoRepository {
   private toOrm(m: Movimentacao): Partial<MovimentacaoOrmEntity> {
     return {
       idErp: m.idErp,
+      idErpBruto: m.idErpBruto,
       numero: m.numero,
       dataMovimentacao: m.dataMovimentacao,
       operacaoId: m.operacaoId,
@@ -216,6 +217,7 @@ export class MovimentacaoRepository implements IMovimentacaoRepository {
     return Movimentacao.create({
       id: m.id,
       idErp: m.idErp,
+      idErpBruto: m.idErpBruto,
       numero: m.numero,
       dataMovimentacao: m.dataMovimentacao,
       operacaoId: m.operacaoId,

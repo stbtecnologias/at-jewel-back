@@ -31,6 +31,8 @@ export interface MovimentacaoProps {
   id?: string;
   /** `iderpmovimentacao` normalizado. Identidade e chave de idempotencia. */
   idErp: string;
+  /** O mesmo id COMO O INTEGRADOR MANDOU. So para o eco — migracao 66. */
+  idErpBruto?: string | null;
   numero?: number | null;
   dataMovimentacao: Date;
 
@@ -70,6 +72,7 @@ export interface MovimentacaoProps {
 export class Movimentacao {
   readonly id: string | undefined;
   readonly idErp: string;
+  readonly idErpBruto: string | null;
   readonly numero: number | null;
   readonly dataMovimentacao: Date;
 
@@ -107,6 +110,7 @@ export class Movimentacao {
   private constructor(props: MovimentacaoProps) {
     this.id = props.id;
     this.idErp = props.idErp;
+    this.idErpBruto = props.idErpBruto ?? null;
     this.numero = props.numero ?? null;
     this.dataMovimentacao = props.dataMovimentacao;
 
@@ -241,7 +245,10 @@ export class Movimentacao {
   toResumo(): Record<string, unknown> {
     return {
       id: this.id,
-      idErpMovimentacao: this.idErp,
+      // O BRUTO VENCE — migracao 66. Quem mandou "000001419828" recebe
+      // "000001419828" de volta; o canonico "1419828" continua sendo o que
+      // casa, e so aparece aqui nas linhas gravadas antes da coluna existir.
+      idErpMovimentacao: this.idErpBruto ?? this.idErp,
       numero: this.numero,
       dataMovimentacao: this.dataMovimentacao,
       operacaoId: this.operacaoId,
