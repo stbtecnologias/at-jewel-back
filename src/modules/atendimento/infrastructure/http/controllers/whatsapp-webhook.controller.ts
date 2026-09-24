@@ -85,6 +85,14 @@ export class WhatsappWebhookController {
       // Anastasia para a gestao, silencio para o resto.
       const resultado = await this.processar.execute({ ...msg, de });
 
+      // ATENCAO — ESTE REPASSE ESTA DESLIGADO DESDE 24/09/2026, e o que o
+      // cliente recebe hoje e o `return ignorado` la de baixo. A chave e a
+      // constante `TRIAGEM_DESLIGADA`, em `triagem.client.ts`, que faz o
+      // `disponivel()` ser sempre falso. O bloco abaixo fica INTEIRO de
+      // proposito — nada foi apagado, porque o fluxo novo deve reaproveitar
+      // parte disto. O texto que segue descreve como era, e volta a valer no
+      // dia em que religarem.
+      //
       // QUEM NAO E DA CASA E CLIENTE — e cliente tem dono: a triagem.
       //
       // Este era o ramo do silencio, e era ele que obrigava a escolher entre

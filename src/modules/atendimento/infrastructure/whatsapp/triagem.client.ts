@@ -5,6 +5,25 @@ import { ConfigService } from '@nestjs/config';
 const TIMEOUT_MS = 5_000;
 
 /**
+ * ==========================================================================
+ * A TRIAGEM ESTA DESLIGADA DESDE 24/09/2026 — DECISAO DO CLIENTE.
+ *
+ * Ela sai por completo e um fluxo novo sera desenhado. Ate la, quem escrever
+ * para o numero da loja sem ser da casa NAO RECEBE NADA: o webhook cai no ramo
+ * do silencio que ja existia antes de a triagem existir. Vendedora, gestao e
+ * catalogo continuam atendidos exatamente como antes — este desligamento fica
+ * DEPOIS do reconhecimento, e nenhum deles chega ate aqui.
+ *
+ * NADA FOI APAGADO, e isto e o pedido do Lucas: o desenho novo deve
+ * reaproveitar parte disto. O `encaminhar` continua inteiro e compilando, e o
+ * ramo do controller que chama daqui continua de pe e testado.
+ *
+ * PARA RELIGAR: troque esta constante para `false`. Nao ha mais nada a fazer.
+ * ==========================================================================
+ */
+const TRIAGEM_DESLIGADA = true;
+
+/**
  * Repassa para a TRIAGEM (`atwpp`) a mensagem de quem o canal interno nao
  * reconheceu.
  *
@@ -36,8 +55,15 @@ export class TriagemClient {
 
   constructor(private readonly config: ConfigService) {}
 
-  /** Sem URL configurada, o repasse simplesmente nao acontece (silencio). */
+  /**
+   * Sem URL configurada, o repasse simplesmente nao acontece (silencio).
+   *
+   * E desde 24/09/2026 ele nao acontece de jeito nenhum — ver
+   * `TRIAGEM_DESLIGADA`, logo acima. A checagem da URL fica onde estava,
+   * valendo de novo no dia em que a constante voltar a ser `false`.
+   */
   disponivel(): boolean {
+    if (TRIAGEM_DESLIGADA) return false;
     return Boolean(this.config.get<string>('TRIAGEM_WEBHOOK_URL')?.trim());
   }
 
