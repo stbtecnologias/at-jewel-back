@@ -1186,6 +1186,8 @@ describe('ProcessarFotoCatalogoUseCase — em qualquer ordem (o print do Yerlon)
       expect(whatsapp.enviarTexto).toHaveBeenCalledWith(
         DE,
         'Não consegui tratar essa imagem agora.',
+        // Pelo numero da Elena: o catalogo inteiro vive nele desde 25/09/2026.
+        'ELENA',
       );
       expect(useCase.temFotoComFalha(DE)).toBe(true);
 

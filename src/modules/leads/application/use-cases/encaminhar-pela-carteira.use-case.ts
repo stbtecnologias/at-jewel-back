@@ -206,7 +206,8 @@ export class EncaminharPelaCarteiraUseCase {
       const chatId = await this.whatsapp.resolverChatId(whatsapp);
       if (!chatId) return false;
 
-      await this.whatsapp.enviarTexto(chatId, this.mensagem(lead));
+      // Numero da Elena: quem recebe e a VENDEDORA dona da carteira.
+      await this.whatsapp.enviarTexto(chatId, this.mensagem(lead), 'ELENA');
       return true;
     } catch (err) {
       this.logger.error(

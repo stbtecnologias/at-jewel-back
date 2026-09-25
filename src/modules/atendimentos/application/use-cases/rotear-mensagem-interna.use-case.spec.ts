@@ -72,7 +72,7 @@ describe('RotearMensagemInternaUseCase', () => {
     consultarAgora: jest.Mock;
     intencao: jest.Mock;
   };
-  let whatsapp: { baixarMidia: jest.Mock };
+  let whatsapp: { baixarMidia: jest.Mock; numeroDoAgente: jest.Mock };
   let transcricao: { transcrever: jest.Mock; disponivel: jest.Mock };
   let useCase: RotearMensagemInternaUseCase;
 
@@ -135,7 +135,11 @@ describe('RotearMensagemInternaUseCase', () => {
         motivo: 'catalogo_intencao',
       }),
     };
-    whatsapp = { baixarMidia: jest.fn() };
+    whatsapp = {
+      baixarMidia: jest.fn(),
+      // O numero do outro agente, para a frase do desvio — ver "dois numeros".
+      numeroDoAgente: jest.fn().mockResolvedValue('558598490118'),
+    };
     transcricao = { transcrever: jest.fn(), disponivel: jest.fn(() => true) };
 
     useCase = new RotearMensagemInternaUseCase(
@@ -893,6 +897,205 @@ describe('RotearMensagemInternaUseCase', () => {
       // A CONSULTA VEM ANTES DO `codigo`: sem essa ordem, o BR26252 entraria
       // numa foto que estivesse sendo montada.
       expect(canalCatalogo.codigo).not.toHaveBeenCalled();
+    });
+  });
+
+  // ======================================================================
+  // DOIS NUMEROS — 25/09/2026
+  //
+  // O desenho original sempre foi um numero por agente; so havia um chip para
+  // testar. Com dois, o roteamento ganhou a segunda pergunta — PARA QUAL
+  // NUMERO escreveu — e a decisao do Lucas foi a separacao estrita.
+  //
+  // O QUE ESTES TESTES PROTEGEM, e nesta ordem de gravidade:
+  //
+  //   1. SEM o segundo numero configurado, NADA MUDA. O campo `agente` chega
+  //      `undefined` e o canal atende todo mundo, como sempre. Errar isto
+  //      quebraria producao no dia do deploy, dias antes de o chip existir.
+  //   2. Com dois, cada publico so e atendido no numero dele.
+  //   3. Quem erra de numero e da CASA ouve para onde ir; quem nao e da casa
+  //      continua sem saber que existe canal nenhum.
+  // ======================================================================
+  describe('dois numeros', () => {
+    it('SEM agente (um numero so) a vendedora continua sendo atendida', async () => {
+      identificarVendedora.execute.mockResolvedValue(VENDEDORA);
+
+      const r = await useCase.execute({ de: '558586467241@c.us', texto: 'quantos contatos eu tenho hoje?' });
+
+      expect(canalVendedora.execute).toHaveBeenCalled();
+      expect(r.motivo).not.toContain('desvio');
+    });
+
+    it('SEM agente (um numero so) a gestao continua sendo atendida', async () => {
+      identificarAdmin.execute.mockResolvedValue(ADMIN);
+
+      const r = await useCase.execute({ de: '558586467241@c.us', texto: 'quantos contatos eu tenho hoje?' });
+
+      expect(canalGestao.execute).toHaveBeenCalled();
+      expect(r.motivo).not.toContain('desvio');
+    });
+
+    it('vendedora no numero da Elena e atendida pela Elena', async () => {
+      identificarVendedora.execute.mockResolvedValue(VENDEDORA);
+
+      await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'quantos contatos eu tenho hoje?',
+        agente: 'ELENA',
+      });
+
+      expect(canalVendedora.execute).toHaveBeenCalled();
+    });
+
+    it('gestao no numero da Anastasia e atendida pela Anastasia', async () => {
+      identificarAdmin.execute.mockResolvedValue(ADMIN);
+
+      await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'quantos contatos eu tenho hoje?',
+        agente: 'ANASTASIA',
+      });
+
+      expect(canalGestao.execute).toHaveBeenCalled();
+    });
+
+    it('vendedora no numero da Anastasia ouve para onde ir — e nenhum agente responde', async () => {
+      identificarVendedora.execute.mockResolvedValue(VENDEDORA);
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'quantos contatos eu tenho hoje?',
+        agente: 'ANASTASIA',
+      });
+
+      expect(r.motivo).toBe('desvio_para_elena');
+      expect(r.resposta).toContain('Marina');
+      expect(canalVendedora.execute).not.toHaveBeenCalled();
+      expect(canalGestao.execute).not.toHaveBeenCalled();
+    });
+
+    it('gestao no numero da Elena ouve para onde ir', async () => {
+      identificarAdmin.execute.mockResolvedValue(ADMIN);
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'como foi a semana da equipe?',
+        agente: 'ELENA',
+      });
+
+      expect(r.motivo).toBe('desvio_para_anastasia');
+      expect(canalGestao.execute).not.toHaveBeenCalled();
+    });
+
+    /* A frase so serve se disser QUAL e o numero — e ele vem do WAHA, e nao de
+     * um env: trocou o chip, a frase acompanha. */
+    it('a frase do desvio traz o numero do outro agente, formatado', async () => {
+      identificarVendedora.execute.mockResolvedValue(VENDEDORA);
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'quantos contatos eu tenho hoje?',
+        agente: 'ANASTASIA',
+      });
+
+      expect(whatsapp.numeroDoAgente).toHaveBeenCalledWith('ELENA');
+      expect(r.resposta).toContain('(85) 9849-0118');
+    });
+
+    /* WAHA fora do ar, sessao caida: desviar sem dizer para onde ainda e
+     * melhor que calar — a pessoa ao menos sabe que errou de canal. */
+    it('sem conseguir ler o numero, desvia mesmo assim', async () => {
+      identificarVendedora.execute.mockResolvedValue(VENDEDORA);
+      whatsapp.numeroDoAgente.mockResolvedValue(null);
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'quantos contatos eu tenho hoje?',
+        agente: 'ANASTASIA',
+      });
+
+      expect(r.motivo).toBe('desvio_para_elena');
+      expect(r.resposta).toContain('outro número');
+    });
+
+    /* O DESVIO E SO PARA QUEM E DA CASA. Dizer "me chama no outro numero" a um
+     * desconhecido confirmaria que existe um segundo canal — e a regra do
+     * default-deny e justamente que ele nao descubra nada. */
+    it('desconhecido continua ouvindo silencio, nos dois numeros', async () => {
+      for (const agente of ['ANASTASIA', 'ELENA'] as const) {
+        const r = await useCase.execute({
+          de: '5511999999999@c.us',
+          texto: 'quantos contatos eu tenho hoje?',
+          agente,
+        });
+
+        expect(r.resposta).toBeNull();
+        expect(r.motivo).toBe('ignorado_remetente_desconhecido');
+      }
+    });
+
+    /* Quem e vendedora E tem login de gestao era um empate resolvido pela
+     * ORDEM das consultas (vendedora primeiro, deliberadamente). Com dois
+     * numeros quem decide e a propria pessoa, pelo numero que procurou. */
+    it('quem e as duas coisas e atendida pelo numero que escolheu', async () => {
+      identificarVendedora.execute.mockResolvedValue(VENDEDORA);
+      identificarAdmin.execute.mockResolvedValue(ADMIN);
+
+      await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'quantos contatos eu tenho hoje?',
+        agente: 'ANASTASIA',
+      });
+      expect(canalGestao.execute).toHaveBeenCalled();
+      expect(canalVendedora.execute).not.toHaveBeenCalled();
+
+      canalGestao.execute.mockClear();
+      canalVendedora.execute.mockClear();
+
+      await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'quantos contatos eu tenho hoje?',
+        agente: 'ELENA',
+      });
+      expect(canalVendedora.execute).toHaveBeenCalled();
+      expect(canalGestao.execute).not.toHaveBeenCalled();
+    });
+
+    /* O catalogo mora no numero da Elena. A foto que chega no da Anastasia
+     * nao some calada: quem tem permissao ouve para onde levar. */
+    it('foto no numero da Anastasia desvia em vez de ir para o catalogo', async () => {
+      identificarAdmin.execute.mockResolvedValue({
+        id: 'ad-9',
+        nome: 'Yerlon Braga',
+        role: 'ADMIN',
+      });
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: '0002',
+        agente: 'ANASTASIA',
+        imagem: { url: 'http://x/y.jpg', mimetype: 'image/jpeg' },
+      });
+
+      expect(r.motivo).toBe('desvio_para_elena');
+      expect(canalCatalogo.foto).not.toHaveBeenCalled();
+    });
+
+    it('foto no numero da Elena segue para o catalogo, como sempre', async () => {
+      identificarAdmin.execute.mockResolvedValue({
+        id: 'ad-9',
+        nome: 'Yerlon Braga',
+        role: 'ADMIN',
+      });
+
+      await useCase.execute({
+        de: '558586467241@c.us',
+        texto: '0002',
+        agente: 'ELENA',
+        imagem: { url: 'http://x/y.jpg', mimetype: 'image/jpeg' },
+      });
+
+      expect(canalCatalogo.foto).toHaveBeenCalled();
     });
   });
 });

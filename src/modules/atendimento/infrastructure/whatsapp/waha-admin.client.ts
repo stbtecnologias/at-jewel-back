@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { SessoesDaCasaService } from '../../application/sessoes-da-casa.service';
 import { montarUrlDeArquivo } from './arquivo-do-waha';
 
 export interface SessaoStatus {
@@ -69,7 +70,10 @@ const EVENTO_DA_VENDEDORA = 'message.any';
 export class WahaAdminClient {
   private readonly logger = new Logger(WahaAdminClient.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly sessoes: SessoesDaCasaService,
+  ) {}
 
   private get base(): string {
     return (this.config.get<string>('WAHA_BASE_URL') ?? '').replace(/\/$/, '');
@@ -186,15 +190,19 @@ export class WahaAdminClient {
    * vendedora envia — para sempre, porque ninguem recria uma sessao so por
    * isso. Esta chamada arruma no proximo "conectar".
    *
-   * NAO TOCA NA SESSAO DA LOJA: la `message` e o certo, e sobrescrever faria a
-   * agente reprocessar as proprias respostas.
+   * NAO TOCA EM NENHUM NUMERO DA CASA: la `message` e o certo, e sobrescrever
+   * faria a agente reprocessar as proprias respostas.
+   *
+   * DESDE 25/09/2026 SAO DOIS, e por isso a pergunta virou `ehDaCasa`. Com a
+   * comparacao antiga — so contra a sessao da Anastasia — a sessao da ELENA
+   * seria "consertada" para `message.any` no primeiro clique em Conectar, e
+   * ela passaria a ouvir o que ela mesma escreve. Conversaria sozinha.
    *
    * Idempotente por comparacao: so escreve quando o que esta la difere. Uma
    * escrita a toa a cada clique reiniciaria a sessao sem motivo.
    */
   private async garantirEventos(sessao: string): Promise<void> {
-    const loja = this.config.get<string>('WAHA_SESSION') ?? 'default';
-    if (sessao === loja) return;
+    if (this.sessoes.ehDaCasa(sessao)) return;
 
     try {
       const resp = await this.req('GET', `/api/sessions/${enc(sessao)}`);
@@ -264,7 +272,10 @@ export class WahaAdminClient {
    * Tempo. Nada quebra, e o aviso fica no log.
    */
   private async configDaLoja(): Promise<Record<string, unknown>> {
-    const loja = this.config.get<string>('WAHA_SESSION') ?? 'default';
+    // O MODELO E SEMPRE A SESSAO DA ANASTASIA, a que existe desde o comeco: e
+    // dela que se copia o endereco do webhook. A da Elena pode ser a mais
+    // nova de todas e nem ter sido conectada ainda.
+    const loja = this.sessoes.anastasia;
     try {
       const resp = await this.req('GET', `/api/sessions/${enc(loja)}`);
       if (!resp.ok) throw new Error(String(resp.status));

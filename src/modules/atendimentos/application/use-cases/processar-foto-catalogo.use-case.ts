@@ -673,7 +673,9 @@ export class ProcessarFotoCatalogoUseCase {
       }
 
       if (r.recado) {
-        await this.whatsapp.enviarTexto(chat, r.recado);
+        // TUDO DO CATALOGO SAI PELO NUMERO DA ELENA — e o numero em que o
+        // estoque e o marketing falam com o canal, desde 25/09/2026.
+        await this.whatsapp.enviarTexto(chat, r.recado, 'ELENA');
         return;
       }
       if (r.foto.status !== 'EM_APROVACAO' || !r.foto.arquivoId) return;
@@ -703,6 +705,8 @@ export class ProcessarFotoCatalogoUseCase {
               '"aprovo" põe no catálogo · "ajusta" e o quê refaz · "descarta" joga fora.'
           : 'Ficou assim — ainda sem o código da peça.\n' +
               '"aprovo" e ela entra assim que o código chegar · "ajusta" e o quê refaz · "descarta" joga fora.',
+        // Numero da Elena: o catalogo inteiro vive nele.
+        'ELENA',
       );
 
       this.sessao.marcarEnviada(chat, fotoId);
@@ -1464,6 +1468,8 @@ export class ProcessarFotoCatalogoUseCase {
           arquivo.conteudo,
           arquivo.mime,
           `${foto.codigoErp ?? 'Sem código'} — esperando sua resposta.`,
+          // Numero da Elena, como todo o resto do catalogo.
+          'ELENA',
         );
         // O RELOGIO REINICIA AQUI: o "aprovo" que vier depois responde a esta
         // imagem. Ver `foiVista`.
@@ -2491,6 +2497,7 @@ export class ProcessarFotoCatalogoUseCase {
         await Promise.all(
           fotos.map((f) => this.armazenamento.remover(f.arquivoId)),
         );
+        // Numero da Elena, como todo o resto do catalogo.
         await this.whatsapp.enviarTexto(
           chat,
           fotos.length === 1

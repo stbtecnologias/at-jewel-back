@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { SessoesDaCasaService } from './sessoes-da-casa.service';
 import { VENDEDORA_REPOSITORY } from '../../vendedoras/domain/ports/injection-tokens';
 import type { IVendedoraRepository } from '../../vendedoras/domain/ports/repositories/vendedora-repository.port';
 import {
@@ -12,8 +12,16 @@ export interface Conexao {
   /** O nome da sessao no WAHA. E ele que volta nas rotas seguintes. */
   sessao: string;
   rotulo: string;
-  /** null = a loja. */
+  /** null = numero da casa (Anastasia ou Elena). */
   vendedoraId: string | null;
+  /**
+   * `LOJA` e QUALQUER numero da casa — Anastasia e Elena.
+   *
+   * Nao virou `ANASTASIA`/`ELENA` de proposito: a tela usa `papel` para uma
+   * coisa so, avisar que desconectar um numero da casa e serio, e isso vale
+   * igual para os dois. Quem os distingue e o `rotulo`. Dividir aqui obrigaria
+   * o front a mudar sem ganhar nada.
+   */
   papel: 'LOJA' | 'VENDEDORA' | 'ORFA';
   /** WORKING | SCAN_QR_CODE | STARTING | STOPPED | FAILED | UNKNOWN */
   status: string;
@@ -26,7 +34,6 @@ export interface Conexao {
   atividadeEm: number | null;
 }
 
-const ROTULO_LOJA = 'Loja (Anastasia)';
 const PREFIXO = 'vend-';
 
 /** `vend-<uuid>`. O nome da sessao e DERIVADO do id da vendedora. */
@@ -36,7 +43,11 @@ const RE_SESSAO_VENDEDORA = new RegExp(
 );
 
 /**
- * As conexoes de WhatsApp: a da loja, e uma por vendedora.
+ * As conexoes de WhatsApp: as da CASA, e uma por vendedora.
+ *
+ * Desde 25/09/2026 a casa pode ter DUAS — Anastasia para a gestao, Elena para
+ * vendedoras e catalogo. Enquanto `WAHA_SESSION_ELENA` nao existir ha uma so,
+ * e a tela fica como sempre foi. Ver `SessoesDaCasaService`.
  *
  * ==========================================================================
  * NAO HA TABELA, E ISSO E DE PROPOSITO.
@@ -59,15 +70,10 @@ const RE_SESSAO_VENDEDORA = new RegExp(
 export class ConexoesService {
   constructor(
     private readonly waha: WahaAdminClient,
-    private readonly config: ConfigService,
+    private readonly sessoes: SessoesDaCasaService,
     @Inject(VENDEDORA_REPOSITORY)
     private readonly vendedoras: IVendedoraRepository,
   ) {}
-
-  /** A sessao da LOJA — a unica que fala com a IA. Segue vindo do env. */
-  get sessaoDaLoja(): string {
-    return this.config.get<string>('WAHA_SESSION') ?? 'default';
-  }
 
   /** O nome da sessao de uma vendedora. Puro: nao consulta nada. */
   nomeDaSessao(vendedoraId: string): string {
@@ -86,14 +92,14 @@ export class ConexoesService {
    * ISTO E BARREIRA DE SEGURANCA, e nao validacao de formulario. O nome entra
    * no CAMINHO da URL do WAHA, com a nossa API key no cabecalho — aceitar
    * qualquer string deixaria uma rota do painel alcancar qualquer endpoint do
-   * WAHA. So passam: a sessao da loja, e `vend-<uuid>` de vendedora que
+   * WAHA. So passam: as sessoes DA CASA, e `vend-<uuid>` de vendedora que
    * existe de fato.
    *
    * 404 e nao 400 de proposito: para quem chama, uma sessao que nao e nossa e
    * uma sessao que nao existe.
    */
   async exigirValida(sessao: string): Promise<void> {
-    if (sessao === this.sessaoDaLoja) return;
+    if (this.sessoes.ehDaCasa(sessao)) return;
 
     const vendedoraId = this.vendedoraDaSessao(sessao);
     if (vendedoraId) {
@@ -117,9 +123,10 @@ export class ConexoesService {
     ]);
 
     const porNome = new Map(sessoes.map((s) => [s.nome, s]));
-    const linhas: Conexao[] = [
-      montar(this.sessaoDaLoja, ROTULO_LOJA, null, 'LOJA', porNome),
-    ];
+    // Os numeros da casa primeiro — um so, ate a Elena ser configurada.
+    const linhas: Conexao[] = this.sessoes.todas.map((s) =>
+      montar(s, this.sessoes.rotuloDe(s), null, 'LOJA', porNome),
+    );
 
     for (const v of ativas) {
       if (!v.id) continue;
