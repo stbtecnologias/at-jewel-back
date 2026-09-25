@@ -121,6 +121,7 @@ describe('SessoesDaCasaService', () => {
     expect(comEnv({}).anastasia).toBe('default');
   });
 
+
   it('espaco em volta nao cria uma sessao diferente', () => {
     const service = comEnv({
       WAHA_SESSION: '  default  ',

@@ -27,7 +27,14 @@ import type { AgenteDaCasa } from '../domain/agente-da-casa';
 export class SessoesDaCasaService {
   constructor(private readonly config: ConfigService) {}
 
-  /** A sessao historica. Continua vindo de `WAHA_SESSION`. */
+  /**
+   * A sessao da Anastasia — a historica, e ela CONTINUA SENDO `WAHA_SESSION`.
+   *
+   * Nao ganhou um `WAHA_SESSION_ANASTASIA` para fazer par com o da Elena:
+   * decisao do Lucas em 25/09, porque local e producao ja tem
+   * `WAHA_SESSION=default` gravado, e um segundo nome para o mesmo valor cria
+   * mais duvida do que simetria resolve.
+   */
   get anastasia(): string {
     return this.config.get<string>('WAHA_SESSION')?.trim() || 'default';
   }
