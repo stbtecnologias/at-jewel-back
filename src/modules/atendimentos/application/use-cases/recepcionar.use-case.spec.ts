@@ -76,6 +76,12 @@ describe('RecepcionarUseCase', () => {
       expect(r.resposta).toContain('Bom dia, Marina!');
       expect(r.resposta).toContain('1 — Minhas vendas');
       expect(r.resposta).not.toContain('catálogo');
+      // O lead saiu do menu dela em 25/09, junto com o da gestao: sem
+      // triagem, lead nao nasce, e a lista vazia faria a vendedora concluir
+      // que ninguem esta encaminhando nada para ela.
+      expect(r.resposta).not.toContain('Leads que me mandaram');
+      // A consulta de peca e a ULTIMA, e passou de 7a para 6a com a saida.
+      expect(r.resposta).toContain('6 — Consultar peça ou preço');
     });
 
     it('o estoque vê as três do catálogo', () => {

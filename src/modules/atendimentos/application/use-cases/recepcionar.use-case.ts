@@ -211,10 +211,22 @@ export class RecepcionarUseCase {
           rotulo: 'Minha carteira agora',
           acao: frase('como está minha carteira agora?'),
         },
-        {
-          rotulo: 'Leads que me mandaram',
-          acao: frase('quais leads encaminharam para mim?'),
-        },
+        // ------------------------------------------------------------------
+        // FORA DO MENU DESDE 25/09/2026, pelo mesmo motivo do "Leads para
+        // encaminhar" da gestao: sem triagem, lead nao nasce.
+        //
+        // AQUI O ENGANO SERIA PIOR. A gestao que abre uma lista vazia conclui
+        // que nao ha fila; a VENDEDORA que abre a dela conclui que a gestao
+        // nao esta encaminhando nada para ela — e isso e uma queixa sobre
+        // alguem, nascida de uma tela que so esta descrevendo um fluxo que
+        // acabou.
+        //
+        // Volta junto com o convite da gestao, quando o fluxo novo existir.
+        // {
+        //   rotulo: 'Leads que me mandaram',
+        //   acao: frase('quais leads encaminharam para mim?'),
+        // },
+        // ------------------------------------------------------------------
         {
           rotulo: 'Meus contatos de hoje',
           acao: frase('quais são os meus contatos de hoje?'),
