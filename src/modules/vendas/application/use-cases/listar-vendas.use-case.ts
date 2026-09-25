@@ -1,5 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { VENDA_REPOSITORY } from '../../domain/ports/injection-tokens';
+import { VENDAS_LEITURA_REPOSITORY } from '../../domain/ports/repositories/vendas-leitura-repository.port';
+import type { IVendasLeituraRepository } from '../../domain/ports/repositories/vendas-leitura-repository.port';
+// A LEITURA DA TELA DE VENDAS VEM DA MOVIMENTACAO desde 25/09/2026 — ver
+// `vendas-leitura-repository.port.ts`. A tabela `vendas` tem zero linhas.
 import type {
   FiltroVenda,
   IVendaRepository,
@@ -9,8 +12,8 @@ import type {
 @Injectable()
 export class ListarVendasUseCase {
   constructor(
-    @Inject(VENDA_REPOSITORY)
-    private readonly vendaRepo: IVendaRepository,
+    @Inject(VENDAS_LEITURA_REPOSITORY)
+    private readonly vendaRepo: IVendasLeituraRepository,
   ) {}
 
   /**

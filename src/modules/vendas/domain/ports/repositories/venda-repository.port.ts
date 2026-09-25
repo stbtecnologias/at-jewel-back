@@ -121,6 +121,12 @@ export interface ResumoVendas {
     concluida: number;
     cancelada: number;
     pendente: number;
+    /**
+     * A DEVOLUCAO DE VENDA — 25/09/2026, junto com a leitura vinda da
+     * movimentacao. Antes disso nao havia onde contar: a tabela `vendas` nao
+     * distingue devolucao de cancelamento.
+     */
+    devolvida: number;
   };
 }
 
