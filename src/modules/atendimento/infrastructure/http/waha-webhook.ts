@@ -10,22 +10,29 @@
  * `event !== 'message'`: todo evento dela morria na primeira linha, antes de
  * qualquer roteamento.
  *
- * O SINTOMA FOI SILENCIO ABSOLUTO, E SO EM PRODUCAO — e foi isso que custou o
- * diagnostico. A Anastasia respondia (a sessao dela escuta `message`), a
- * Helena nao respondia nada, e no LOCAL a mesma Helena respondia normalmente
- * com a MESMA assinatura `message.any`.
+ * O SINTOMA FOI SILENCIO ABSOLUTO. A Anastasia respondia (a sessao dela escuta
+ * `message`) e a Helena nao respondia nada — em PRODUCAO e no HOMOLOG. Nos
+ * dois, trocar o evento da sessao para `message` a fez responder na mensagem
+ * seguinte. Dois ambientes, duas vezes, mesmo resultado.
  *
- * A diferenca era a versao do WAHA:
+ * ==========================================================================
+ * O QUE FICA EM ABERTO, e fica dito para ninguem repetir a deducao errada:
  *
- *   local      2026.8.2   entrega o evento com o nome `message`
- *   producao   2026.9.1   entrega com o nome `message.any`
+ *   local      WAHA 2026.8.2   `message.any`   RESPONDE
+ *   homolog    WAHA 2026.5.1   `message.any`   mudo
+ *   producao   WAHA 2026.9.1   `message.any`   mudo
  *
- * Mesmo codigo, mesma config de sessao, comportamentos diferentes. Provado em
- * 25/09 trocando o evento da sessao de producao para `message`: a Helena
- * respondeu na primeira mensagem.
+ * Cheguei a escrever que era a VERSAO do WAHA. Nao e: o homolog roda a mais
+ * VELHA das tres e se comporta como a mais nova. O local e a excecao, e o
+ * motivo dela nao foi encontrado em 25/09.
  *
- * E o silencio nao deixa rastro em log nenhum, porque descartar evento
- * desconhecido e o comportamento CORRETO para status, ack e presenca.
+ * Tambem NAO e a sessao em estado ruim: no homolog o restart sozinho, sem
+ * mexer no evento, nao mudou nada — so a troca mudou.
+ * ==========================================================================
+ *
+ * O SILENCIO NAO DEIXA RASTRO EM LOG NENHUM, porque descartar evento
+ * desconhecido e o comportamento CORRETO para status, ack e presenca. Foi o
+ * que fez o defeito sobreviver a tres ambientes sem ninguem ver.
  *
  * ACEITAR OS DOIS E CINTO E SUSPENSORIO: mesmo que alguem crie uma sessao com
  * o evento amplo de novo, a mensagem nao some calada. Quem filtra o que a
