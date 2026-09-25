@@ -6,6 +6,7 @@ import type {
   Lead,
 } from '../../domain/ports/repositories/lead-repository.port';
 import { AvisarGestaoDeLeadUseCase } from './avisar-gestao-de-lead.use-case';
+import { EncaminharPelaCarteiraUseCase } from './encaminhar-pela-carteira.use-case';
 import { RegistrarLeadUseCase } from './registrar-lead.use-case';
 
 function leadFake(over: Partial<Lead> = {}): Lead {
@@ -57,6 +58,7 @@ describe('RegistrarLeadUseCase', () => {
   let clientes: jest.Mocked<IClienteRepository>;
   let buscarCliente: jest.Mocked<BuscarClientePorWhatsappUseCase>;
   let avisarGestao: jest.Mocked<AvisarGestaoDeLeadUseCase>;
+  let encaminharPelaCarteira: jest.Mocked<EncaminharPelaCarteiraUseCase>;
 
   beforeEach(() => {
     process.env = { ...ORIGINAL_ENV };
@@ -73,13 +75,22 @@ describe('RegistrarLeadUseCase', () => {
 
     avisarGestao = {
       execute: jest.fn().mockResolvedValue(1),
+      avisarEncaminhadoPelaCarteira: jest.fn().mockResolvedValue(1),
+      avisarDonaIndisponivel: jest.fn().mockResolvedValue(1),
     } as unknown as jest.Mocked<AvisarGestaoDeLeadUseCase>;
+
+    // Por padrao a cliente NAO tem dona — o caminho de sempre, em que a gestao
+    // escolhe. Os testes da carteira trocam este retorno.
+    encaminharPelaCarteira = {
+      execute: jest.fn().mockResolvedValue({ status: 'SEM_DONA' }),
+    } as unknown as jest.Mocked<EncaminharPelaCarteiraUseCase>;
 
     useCase = new RegistrarLeadUseCase(
       leads,
       clientes,
       buscarCliente,
       avisarGestao,
+      encaminharPelaCarteira,
     );
   });
 
@@ -246,6 +257,88 @@ describe('RegistrarLeadUseCase', () => {
 
       // Perder a notificacao e ruim; perder o lead seria pior.
       expect(r.lead).toBeDefined();
+    });
+  });
+
+  /**
+   * A CARTEIRA DECIDE, E A GESTAO E INFORMADA — 23/09/2026.
+   *
+   * Regra do Lucas: "se o cliente tem uma vendedora associada, e tudo com
+   * ela". O que muda aqui e QUEM a gestao recebe: relato no lugar de pergunta.
+   */
+  describe('quando a cliente ja tem dona', () => {
+    beforeEach(() => {
+      leads.buscarAbertoPorHash.mockResolvedValue(leadFake({ nome: 'Ana Livia' }));
+      leads.buscarPorId.mockResolvedValue(leadFake({ nome: 'Ana Livia' }));
+    });
+
+    it('nao pergunta para a gestao — relata que abriu o atendimento', async () => {
+      encaminharPelaCarteira.execute.mockResolvedValue({
+        status: 'ATENDEU',
+        vendedoraNome: 'Helena',
+        atendimentoId: 'atend-1',
+        reusou: false,
+        avisada: true,
+      });
+
+      await useCase.execute({ whatsapp: '85999990001', prontoParaEncaminhar: true });
+
+      expect(avisarGestao.avisarEncaminhadoPelaCarteira).toHaveBeenCalledWith(
+        expect.anything(),
+        'Helena',
+        true,
+        false,
+      );
+      // A pergunta "para qual vendedora encaminho?" NAO sai.
+      expect(avisarGestao.execute).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Inativa devolve o lead para a fila, e o aviso diz por que caiu la — sem
+     * o motivo, a gestao veria um lead qualquer e escolheria no escuro.
+     */
+    it('dona inativa volta para a fila, com o motivo', async () => {
+      encaminharPelaCarteira.execute.mockResolvedValue({
+        status: 'DONA_INDISPONIVEL',
+        vendedoraNome: 'Helena',
+        motivo: 'está inativa',
+      });
+
+      await useCase.execute({ whatsapp: '85999990001', prontoParaEncaminhar: true });
+
+      expect(avisarGestao.avisarDonaIndisponivel).toHaveBeenCalledWith(
+        expect.anything(),
+        'Helena',
+        'está inativa',
+      );
+      expect(avisarGestao.execute).not.toHaveBeenCalled();
+    });
+
+    /** Sem dona, o caminho de sempre: a gestao escolhe. */
+    it('sem dona, a gestao continua escolhendo', async () => {
+      await useCase.execute({ whatsapp: '85999990001', prontoParaEncaminhar: true });
+
+      expect(avisarGestao.execute).toHaveBeenCalledTimes(1);
+      expect(avisarGestao.avisarEncaminhadoPelaCarteira).not.toHaveBeenCalled();
+    });
+
+    /**
+     * O LEAD E RELIDO depois do encaminhamento: o `encaminhar` gravou codigo,
+     * carimbo e fechamento, e e o carimbo que faz o lead virar ponto na
+     * timeline DELA. Devolver o objeto velho esconderia isso de quem chamou.
+     */
+    it('devolve o lead relido, ja com o encaminhamento gravado', async () => {
+      encaminharPelaCarteira.execute.mockResolvedValue({
+        status: 'ATENDEU',
+        vendedoraNome: 'Helena',
+        atendimentoId: 'atend-1',
+        reusou: false,
+        avisada: false,
+      });
+
+      await useCase.execute({ whatsapp: '85999990001', prontoParaEncaminhar: true });
+
+      expect(leads.buscarPorId).toHaveBeenCalled();
     });
   });
 });

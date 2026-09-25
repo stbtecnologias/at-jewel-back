@@ -42,6 +42,8 @@ export class OperacaoEmUsoError extends Error {
 export interface OperacaoProps {
   id?: string;
   idErp?: string | null;
+  /** O `idErp` como o ERP mandou, com os zeros. So para o eco — ver `toPublic`. */
+  idErpBruto?: string | null;
   codigoErp?: string | null;
   nome: string;
   classificacao: OperacaoClasse;
@@ -53,6 +55,7 @@ export interface OperacaoProps {
 export class OperacaoEntity {
   readonly id: string | undefined;
   readonly idErp: string | null;
+  readonly idErpBruto: string | null;
   readonly codigoErp: string | null;
   readonly nome: string;
   readonly classificacao: OperacaoClasse;
@@ -63,6 +66,7 @@ export class OperacaoEntity {
   private constructor(props: OperacaoProps) {
     this.id = props.id;
     this.idErp = props.idErp ?? null;
+    this.idErpBruto = props.idErpBruto ?? null;
     this.codigoErp = props.codigoErp ?? null;
     this.nome = props.nome;
     this.classificacao = props.classificacao;
@@ -75,10 +79,23 @@ export class OperacaoEntity {
     return new OperacaoEntity(props);
   }
 
+  /**
+   * ==========================================================================
+   * `idErpOperacao` DEVOLVE O BRUTO QUANDO EXISTE — 23/09/2026.
+   *
+   * O integrador manda "009000000324" e recebia "9000000324". O que esta em
+   * `id_erp` e a forma normalizada, e ela e a unica que casa com a
+   * `Movimentacao.operacaoid` do Safira, que chega NUMERICA. A ligacao sempre
+   * esteve certa — o que confundia era o eco.
+   *
+   * `idErpBruto` e so isso: o eco. Nao e chave e nao entra em busca. Nulo cai
+   * no `id_erp`, que e o caso das operacoes gravadas antes da migracao 63.
+   * ==========================================================================
+   */
   toPublic(): Record<string, unknown> {
     return {
       id: this.id,
-      idErpOperacao: this.idErp,
+      idErpOperacao: this.idErpBruto ?? this.idErp,
       codigoErp: this.codigoErp,
       nome: this.nome,
       classificacao: this.classificacao,

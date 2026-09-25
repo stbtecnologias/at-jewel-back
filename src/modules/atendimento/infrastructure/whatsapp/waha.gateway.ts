@@ -1,39 +1,98 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { SessoesDaCasaService } from '../../application/sessoes-da-casa.service';
+import type { AgenteDaCasa } from '../../domain/agente-da-casa';
 import type { IWhatsappGateway } from '../../domain/ports/whatsapp-gateway.port';
 import { montarUrlDeArquivo } from './arquivo-do-waha';
+
+/** Por quanto tempo o telefone de uma sessao vale sem perguntar de novo. */
+const TTL_NUMERO_MS = 10 * 60_000;
 
 /**
  * Gateway de WhatsApp via WAHA (WhatsApp HTTP API, self-hosted).
  * Envia mensagens pela send API do WAHA, autenticando por `X-Api-Key`.
- * Config via env: WAHA_BASE_URL, WAHA_API_KEY, WAHA_SESSION.
+ * Config via env: WAHA_BASE_URL, WAHA_API_KEY, WAHA_SESSION e
+ * WAHA_SESSION_ELENA (ver `SessoesDaCasaService`).
  *
  * ==========================================================================
- * ESTE ARQUIVO CONTINUA PRESO A UMA SESSAO SO, E ISSO E UMA GARANTIA.
+ * ESTE ARQUIVO SO FALA PELOS NUMEROS DA CASA, E ISSO E UMA GARANTIA.
  *
  * Em 08/09/2026 as sessoes viraram varias — uma por vendedora, alem da loja —
- * e o `WahaAdminClient` passou a receber qual delas como argumento. Aqui NAO.
+ * e o `WahaAdminClient` passou a receber qual delas como argumento. Aqui nao:
+ * este e o objeto que FALA, e enquanto ele so soubesse enviar pelo
+ * `WAHA_SESSION` nao existia caminho de codigo capaz de mandar mensagem pelo
+ * numero de uma vendedora.
  *
- * A diferenca e que este e o objeto que FALA. Enquanto ele so souber enviar
- * pelo `WAHA_SESSION`, nao existe caminho de codigo — nem por engano, nem por
- * uma tool de agente mal escrita amanha — capaz de mandar mensagem pelo numero
- * de uma vendedora. A limitacao E o mecanismo de seguranca.
+ * EM 25/09/2026 A CASA PASSOU A TER DOIS NUMEROS, e o comentario acima previa
+ * este dia: "se um dia for preciso enviar por outra sessao, isso e uma decisao
+ * de produto". Foi tomada — Anastasia para a gestao, Elena para as vendedoras.
  *
- * E a terceira das tres camadas descritas em `WahaAdminClient.conectar`. Se um
- * dia for preciso enviar por outra sessao, isso e uma decisao de produto sobre
- * a IA falar no lugar de uma pessoa — nao um parametro a mais.
+ * A GARANTIA NAO AFROUXOU, MUDOU DE FORMA. Quem chama nao diz mais uma sessao:
+ * diz um AGENTE, e so existem dois. A traducao para o nome tecnico acontece
+ * aqui dentro, pelo `SessoesDaCasaService`, e nao ha string de sessao vinda de
+ * fora em lugar nenhum. Uma tool de agente mal escrita amanha nao tem como
+ * pedir `vend-<uuid>`, porque `vend-<uuid>` nao e um valor que o tipo aceite.
+ *
+ * E a terceira das tres camadas descritas em `WahaAdminClient.conectar`.
  * ==========================================================================
  */
 @Injectable()
 export class WahaGateway implements IWhatsappGateway {
   private readonly logger = new Logger(WahaGateway.name);
+  /** Cache do telefone de cada sessao — ver `numeroDoAgente`. */
+  private readonly numeros = new Map<string, { numero: string | null; em: number }>();
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly sessoes: SessoesDaCasaService,
+  ) {}
+
+  /**
+   * O telefone conectado numa das sessoes da casa.
+   *
+   * GUARDADO POR ALGUNS MINUTOS: o numero de um chip nao muda, e sem cache
+   * todo desvio pagaria uma ida ao WAHA. O TTL curto existe so para o dia em
+   * que alguem TROCAR o chip — a frase se corrige sozinha, sem restart.
+   */
+  async numeroDoAgente(agente: AgenteDaCasa): Promise<string | null> {
+    const sessao = this.sessoes.sessaoDe(agente);
+    const guardado = this.numeros.get(sessao);
+    if (guardado && Date.now() - guardado.em < TTL_NUMERO_MS) {
+      return guardado.numero;
+    }
+
+    const baseUrl = this.config.get<string>('WAHA_BASE_URL');
+    const apiKey = this.config.get<string>('WAHA_API_KEY');
+    if (!baseUrl || !apiKey) return null;
+
+    try {
+      const resp = await fetch(
+        `${baseUrl.replace(/\/$/, '')}/api/sessions/${encodeURIComponent(sessao)}`,
+        { headers: { 'X-Api-Key': apiKey } },
+      );
+      if (!resp.ok) return null;
+      const dados = (await resp.json()) as { me?: { id?: string } | null };
+      // `me.id` vem como `558598490118@c.us`; so os digitos interessam.
+      const numero = dados.me?.id?.replace(/\D/g, '') || null;
+      this.numeros.set(sessao, { numero, em: Date.now() });
+      return numero;
+    } catch (err) {
+      // Sem numero o desvio ainda acontece, so que sem dizer qual — melhor
+      // que nao desviar.
+      this.logger.warn(
+        `Nao consegui ler o numero da sessao "${sessao}": ${err instanceof Error ? err.message : err}`,
+      );
+      return null;
+    }
+  }
 
   async resolverChatId(telefone: string): Promise<string | null> {
     const baseUrl = this.config.get<string>('WAHA_BASE_URL');
     const apiKey = this.config.get<string>('WAHA_API_KEY');
-    const session = this.config.get<string>('WAHA_SESSION') ?? 'default';
+    // CONSULTA, e nao envio: "este telefone tem WhatsApp?" tem a mesma
+    // resposta em qualquer sessao da casa. Fica na da Anastasia, que e a que
+    // sempre existe — a da Elena pode nem estar configurada ainda.
+    const session = this.sessoes.anastasia;
 
     if (!baseUrl || !apiKey) {
       this.logger.warn(
@@ -63,12 +122,17 @@ export class WahaGateway implements IWhatsappGateway {
     return dados.chatId;
   }
 
+  /**
+   * @see SessoesDaCasaService — a traducao de LID e CONSULTA, entao pergunta
+   * pela sessao da Anastasia, a que sempre existe. O LID e do contato, nao do
+   * numero da casa: a resposta e a mesma pelos dois.
+   */
   async resolverRemetente(de: string): Promise<string> {
     if (!de.endsWith('@lid')) return de;
 
     const baseUrl = this.config.get<string>('WAHA_BASE_URL');
     const apiKey = this.config.get<string>('WAHA_API_KEY');
-    const session = this.config.get<string>('WAHA_SESSION') ?? 'default';
+    const session = this.sessoes.anastasia;
 
     if (!baseUrl || !apiKey) {
       this.logger.warn(
@@ -101,10 +165,14 @@ export class WahaGateway implements IWhatsappGateway {
     }
   }
 
-  async enviarTexto(chatId: string, texto: string): Promise<void> {
+  async enviarTexto(
+    chatId: string,
+    texto: string,
+    agente: AgenteDaCasa = 'ANASTASIA',
+  ): Promise<void> {
     const baseUrl = this.config.get<string>('WAHA_BASE_URL');
     const apiKey = this.config.get<string>('WAHA_API_KEY');
-    const session = this.config.get<string>('WAHA_SESSION') ?? 'default';
+    const session = this.sessoes.sessaoDe(agente);
 
     if (!baseUrl || !apiKey) {
       this.logger.warn(
@@ -138,10 +206,11 @@ export class WahaGateway implements IWhatsappGateway {
     conteudo: Buffer,
     mime: string,
     legenda: string,
+    agente: AgenteDaCasa = 'ANASTASIA',
   ): Promise<void> {
     const baseUrl = this.config.get<string>('WAHA_BASE_URL');
     const apiKey = this.config.get<string>('WAHA_API_KEY');
-    const session = this.config.get<string>('WAHA_SESSION') ?? 'default';
+    const session = this.sessoes.sessaoDe(agente);
 
     if (!baseUrl || !apiKey) {
       this.logger.warn(

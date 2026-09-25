@@ -133,7 +133,7 @@ const METAS_TOOL: Anthropic.Tool = {
 const PRODUTOS_TOOL: Anthropic.Tool = {
   name: 'consultar_produtos',
   description:
-    'Procura pecas no catalogo e devolve descricao, preco de venda e quantidade em estoque. Use quando ela perguntar sobre produto — "quanto custa o brinco de esmeralda", "tem alianca de ouro 18k", "quantos pingentes de zirconia temos". Devolve no maximo seis pecas. Voce nao tem acesso a custo nem margem: se ela perguntar isso, diga que nao consegue ver.',
+    'Procura pecas no catalogo e devolve descricao, preco de venda e SE A PECA ESTA DISPONIVEL (disponivel/indisponivel). NAO ha quantidade: se perguntarem quantas tem, diga que voce ve apenas se a peca esta disponivel. Use quando ela perguntar sobre produto — "quanto custa o brinco de esmeralda", "tem alianca de ouro 18k", "quantos pingentes de zirconia temos". Devolve no maximo seis pecas. Voce nao tem acesso a custo nem margem: se ela perguntar isso, diga que nao consegue ver.',
   input_schema: {
     type: 'object',
     properties: {
@@ -141,6 +141,30 @@ const PRODUTOS_TOOL: Anthropic.Tool = {
         type: 'string',
         description:
           'O que procurar, nas palavras dela: nome da peca, categoria, familia, colecao, pedra, cor ou codigo do ERP. Ex.: "esmeralda", "alianca ouro 18k", "SEED-P0002".',
+      },
+    },
+    required: ['busca'],
+  },
+};
+
+/**
+ * O MESMO NOME, OUTRO CONTEUDO — e os dois nunca convivem.
+ *
+ * A vendedora ve disponivel/indisponivel; a gestao ve a quantidade. Sao dois
+ * handlers diferentes e dois canais diferentes, entao so um deles e
+ * registrado por chamada. O registro abaixo confere isso explicitamente.
+ */
+const GESTAO_PRODUTOS_TOOL: Anthropic.Tool = {
+  name: 'consultar_produtos',
+  description:
+    'Procura pecas no catalogo e devolve descricao, preco de venda e QUANTIDADE em estoque. Use quando perguntarem sobre produto — "quanto custa o brinco de esmeralda", "quantos aneis de diamante temos", "tem o CO25413".',
+  input_schema: {
+    type: 'object',
+    properties: {
+      busca: {
+        type: 'string',
+        description:
+          'O que procurar: nome da peca, categoria, familia, colecao, pedra, cor ou codigo do ERP.',
       },
     },
     required: ['busca'],
@@ -303,10 +327,49 @@ const GESTAO_PANORAMA_TOOL: Anthropic.Tool = {
       periodo: {
         type: 'string',
         enum: ['HOJE', 'SEMANA', 'MES'],
-        description: 'HOJE, SEMANA (sete dias) ou MES (trinta dias).',
+        description:
+          'HOJE, SEMANA (sete dias) ou MES — o mes do CALENDARIO, do dia 1 ate agora, que e o que se compara com a meta.',
       },
     },
     required: ['periodo'],
+  },
+};
+
+/**
+ * O QUE MAIS SAIU — 25/09/2026, e ela nao existia.
+ *
+ * Das 29 ferramentas, a unica que falava de produto era `consultar_produtos`,
+ * que responde preco e estoque: catalogo, nao historico. "Qual peca mais
+ * vendeu em agosto" nao tinha como ser respondido.
+ *
+ * ORDENA POR VALOR, e nao por quantidade: numa joalheria a peca que sai dez
+ * vezes costuma ser a mais barata da vitrine, e "o que mais vendeu" no sentido
+ * que interessa a gestao e o que mais FATUROU.
+ */
+const GESTAO_ITENS_TOOL: Anthropic.Tool = {
+  name: 'itens_mais_vendidos',
+  description:
+    'As pecas que mais faturaram num periodo, da maior para a menor, com quantidade e valor. Use para "qual peca mais vendeu", "o que mais saiu esse mes", "quais as pecas do mes". Devolve 10 por padrao; se ela pedir outro numero ("me da o top 5"), passe em `limite`. Com `vendedora`, so as pecas que AQUELA vendedora vendeu.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
+        description:
+          'HOJE (o padrao), ONTEM, SEMANA (sete dias), MES ou ANO — mes e ano sao os do CALENDARIO, nao janelas moveis.',
+      },
+      limite: {
+        type: 'number',
+        description: 'Quantas pecas listar. Padrao 10, teto 30.',
+      },
+      vendedora: {
+        type: 'string',
+        description:
+          'Nome de uma vendedora, como veio na conversa, para recortar so as pecas dela. Omita para a loja inteira.',
+      },
+    },
+    required: [],
   },
 };
 
@@ -405,7 +468,7 @@ const GESTAO_ENCAMINHAR_LEAD_TOOL: Anthropic.Tool = {
 const GESTAO_CARTEIRA_CLIENTE_TOOL: Anthropic.Tool = {
   name: 'de_quem_e_o_cliente',
   description:
-    'Diz em qual carteira um cliente esta, ou seja, de qual vendedora ele e. Use para "de quem e a Helena Gomes", "quem atende esse cliente". Esta informacao e exclusiva da administracao.',
+    'Diz em qual carteira um cliente esta, ou seja, de qual vendedora ele e. Use para "de quem e a Renata Gomes", "quem atende esse cliente". Esta informacao e exclusiva da administracao.',
   input_schema: {
     type: 'object',
     properties: {
@@ -529,7 +592,7 @@ const GESTAO_AGENDAR_TOOL: Anthropic.Tool = {
 const AGENDAR_TOOL: Anthropic.Tool = {
   name: 'agendar_contato',
   description:
-    'Coloca um contato com um cliente na agenda DELA, e agenda o lembrete. Use quando ela pedir para marcar, lembrar ou agendar — "me lembra de ligar pra Helena amanha as 10", "marca a Carla pra sexta as 15h". So funciona com cliente da carteira dela — NUNCA chame com um nome que veio de meus_leads: lead nao tem cadastro de cliente e a chamada vai falhar. Preencha quandoIso SEMPRE em ISO 8601 com fuso, calculado a partir da data de hoje informada acima. Se ela nao disser um horario, PERGUNTE antes de chamar — nao invente.',
+    'Coloca um contato com um cliente na agenda DELA, e agenda o lembrete. Use quando ela pedir para marcar, lembrar ou agendar — "me lembra de ligar pra Renata amanha as 10", "marca a Carla pra sexta as 15h". So funciona com cliente da carteira dela — NUNCA chame com um nome que veio de meus_leads: lead nao tem cadastro de cliente e a chamada vai falhar. Preencha quandoIso SEMPRE em ISO 8601 com fuso, calculado a partir da data de hoje informada acima. Se ela nao disser um horario, PERGUNTE antes de chamar — nao invente.',
   input_schema: {
     type: 'object',
     properties: {
@@ -667,6 +730,11 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoVendas) tools.push(GESTAO_VENDAS_TOOL);
     if (params.gestaoMetas) tools.push(GESTAO_METAS_TOOL);
     if (params.gestaoPanorama) tools.push(GESTAO_PANORAMA_TOOL);
+    if (params.gestaoItens) tools.push(GESTAO_ITENS_TOOL);
+    // So quando o canal NAO e o da vendedora — os dois usam o mesmo nome.
+    if (params.gestaoProdutos && !params.consultarProdutos) {
+      tools.push(GESTAO_PRODUTOS_TOOL);
+    }
     if (params.gestaoCarteiraDoCliente)
       tools.push(GESTAO_CARTEIRA_CLIENTE_TOOL);
     if (params.gestaoEncaminharLead) tools.push(GESTAO_ENCAMINHAR_LEAD_TOOL);
@@ -914,6 +982,34 @@ export class AnthropicClient implements ILlmClient {
             );
           }),
         );
+      } else if (toolUse.name === 'itens_mais_vendidos' && params.gestaoItens) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as {
+              periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+              limite?: number;
+              vendedora?: string;
+            };
+            const r = await params.gestaoItens!(e);
+
+            if (r.status === 'NAO_ENCONTRADA') {
+              return 'Nao achei essa vendedora na equipe. Diga isso e pergunte o nome de novo.';
+            }
+            if (r.status === 'AMBIGUA') {
+              return (
+                `Ha mais de uma vendedora com esse nome:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+                'Pergunte qual delas.'
+              );
+            }
+            if (r.linhas.length === 0) {
+              return 'Nenhuma peca vendida nesse periodo. Diga isso em uma frase, e ofereca outro periodo.';
+            }
+            return (
+              `Pecas que mais faturaram no periodo:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+              'Repasse os numeros exatamente como estao, sem somar nem arredondar.'
+            );
+          }),
+        );
       } else if (
         toolUse.name === 'panorama_da_equipe' &&
         params.gestaoPanorama
@@ -1063,6 +1159,27 @@ export class AnthropicClient implements ILlmClient {
             }
             return (
               `Metas dela:\n${metas.map((m) => `- ${m.linha}`).join('\n')}\n\n` +
+              'Repasse os numeros exatamente como estao.'
+            );
+          }),
+        );
+      } else if (
+        toolUse.name === 'consultar_produtos' &&
+        params.gestaoProdutos &&
+        !params.consultarProdutos
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const { produtos } = await params.gestaoProdutos!({
+              busca: String(
+                (toolUse.input as { busca?: string }).busca ?? '',
+              ).slice(0, 120),
+            });
+            if (produtos.length === 0) {
+              return 'Nenhuma peca encontrada com esse termo. Diga isso e pergunte se quer procurar de outro jeito.';
+            }
+            return (
+              `Pecas encontradas:\n${produtos.map((p) => `- ${p.linha}`).join('\n')}\n\n` +
               'Repasse os numeros exatamente como estao.'
             );
           }),

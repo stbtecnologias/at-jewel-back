@@ -120,9 +120,11 @@ export class DispararPendenciasUseCase {
       return 'ADIADA';
     }
 
+    // Numero da Elena: a pendencia e da VENDEDORA. Ver `avisar-vendedora`.
     await this.whatsapp.enviarTexto(
       chatId,
       montarTexto(pendencia, vendedora.nome, cliente.nome),
+      'ELENA',
     );
 
     // A cobranca fica esperando o relato — e por este status que a resposta da

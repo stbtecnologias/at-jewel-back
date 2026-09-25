@@ -169,7 +169,10 @@ export class AvisarVendedoraUseCase {
     }
 
     try {
-      await this.whatsapp.enviarTexto(chatId, texto);
+      // PELO NUMERO DA ELENA: quem recebe e uma VENDEDORA, e a resposta dela
+      // tem que cair no canal dela. Saindo pela Anastasia, o "ok, ja falo com
+      // ela" voltaria como "me chama no outro numero".
+      await this.whatsapp.enviarTexto(chatId, texto, 'ELENA');
     } catch (err) {
       // O erro fica no log; para a Anastasia vira uma frase.
       this.logger.error(

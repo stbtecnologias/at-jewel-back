@@ -14,6 +14,21 @@ import type {
 import { DefeitoOrmEntity } from '../entities/defeito.orm-entity';
 import { OcorrenciaFotoOrmEntity } from '../entities/ocorrencia-foto.orm-entity';
 
+/** O que a consulta de nomes devolve — nomes de coluna do Postgres. */
+interface LinhaDeNomes {
+  id: string;
+  produto_codigo: string | null;
+  produto_descricao: string | null;
+  cliente_nome: string | null;
+}
+
+/** O mesmo, em camelCase, do jeito que a entidade recebe. */
+interface NomesDaLinha {
+  produtoCodigo: string | null;
+  produtoDescricao: string | null;
+  clienteNome: string | null;
+}
+
 @Injectable()
 export class DefeitoRepository implements IDefeitoRepository {
   constructor(
@@ -39,9 +54,10 @@ export class DefeitoRepository implements IDefeitoRepository {
     });
     // AS FOTOS DA PAGINA NUMA CONSULTA SO, e nao uma por linha: com 20
     // ocorrencias na tela, o caminho ingenuo seriam 20 idas ao banco.
-    const fotos = await this.fotosDe(rows.map((r) => r.id));
+    const ids = rows.map((r) => r.id);
+    const [fotos, nomes] = await Promise.all([this.fotosDe(ids), this.nomesDe(ids)]);
     return {
-      data: rows.map((r) => this.toDomain(r, fotos.get(r.id) ?? [])),
+      data: rows.map((r) => this.toDomain(r, fotos.get(r.id) ?? [], nomes.get(r.id))),
       total,
     };
   }
@@ -49,8 +65,45 @@ export class DefeitoRepository implements IDefeitoRepository {
   async buscarPorId(id: string): Promise<Defeito | null> {
     const row = await this.repo.findOneBy({ id });
     if (!row) return null;
-    const fotos = await this.fotosDe([id]);
-    return this.toDomain(row, fotos.get(id) ?? []);
+    const [fotos, nomes] = await Promise.all([this.fotosDe([id]), this.nomesDe([id])]);
+    return this.toDomain(row, fotos.get(id) ?? [], nomes.get(id));
+  }
+
+  /**
+   * OS NOMES DA PAGINA NUMA CONSULTA SO — mesmo desenho do `fotosDe` acima, e
+   * pelo mesmo motivo: com 20 ocorrencias na tela, o caminho ingenuo seriam 20
+   * idas ao banco. A alternativa que existia era pior ainda — o navegador
+   * baixar as 7.116 pecas do catalogo para traduzir um punhado de linhas.
+   *
+   * OS DOIS JOINs SAO `LEFT`, e nao e detalhe: produto apagado nao pode sumir
+   * com a ocorrencia. Ela existe justamente para sobreviver a peca — e a foto
+   * dela e a prova que atravessa o tempo. Com `INNER`, apagar a peca apagaria
+   * a prova da tela.
+   */
+  private async nomesDe(ids: string[]): Promise<Map<string, NomesDaLinha>> {
+    const mapa = new Map<string, NomesDaLinha>();
+    if (ids.length === 0) return mapa;
+
+    const linhas: LinhaDeNomes[] = await this.repo.manager.query(
+      `SELECT d.id,
+              p.codigo_erp         AS produto_codigo,
+              p.descricao_etiqueta AS produto_descricao,
+              c.nome               AS cliente_nome
+         FROM defeitos_devolucoes d
+         LEFT JOIN produtos p ON p.id = d.produto_id
+         LEFT JOIN clientes c ON c.id = d.cliente_id
+        WHERE d.id = ANY($1::uuid[])`,
+      [ids],
+    );
+
+    for (const l of linhas) {
+      mapa.set(l.id, {
+        produtoCodigo: l.produto_codigo,
+        produtoDescricao: l.produto_descricao,
+        clienteNome: l.cliente_nome,
+      });
+    }
+    return mapa;
   }
 
   private async fotosDe(ids: string[]): Promise<Map<string, FotoOcorrencia[]>> {
@@ -182,11 +235,18 @@ export class DefeitoRepository implements IDefeitoRepository {
     };
   }
 
-  private toDomain(o: DefeitoOrmEntity, fotos: FotoOcorrencia[] = []): Defeito {
+  private toDomain(
+    o: DefeitoOrmEntity,
+    fotos: FotoOcorrencia[] = [],
+    nomes?: NomesDaLinha,
+  ): Defeito {
     return Defeito.create({
       id: o.id,
       produtoId: o.produtoId,
       clienteId: o.clienteId,
+      produtoCodigo: nomes?.produtoCodigo ?? null,
+      produtoDescricao: nomes?.produtoDescricao ?? null,
+      clienteNome: nomes?.clienteNome ?? null,
       fotos,
       tipo: o.tipo,
       descricao: o.descricao,

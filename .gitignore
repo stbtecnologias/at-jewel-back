@@ -28,3 +28,5 @@ Thumbs.db
 # que e CODIGO. O build local passava (o arquivo esta no disco) e o runner
 # falhava, porque ele clona do git.
 /armazenamento/
+.chave-teste-local
+.chave-teste-estoque

@@ -15,8 +15,10 @@
  */
 export interface LocalEstoqueProps {
   id?: string;
-  /** ID da linha no ERP: chave tecnica, imutavel. Identidade na sincronizacao. */
+  /** ID da linha no ERP: chave tecnica, imutavel. NORMALIZADO (migracao 65). */
   idErp?: string | null;
+  /** O mesmo id COMO O INTEGRADOR MANDOU. So para o eco da resposta. */
+  idErpBruto?: string | null;
   codigoErp?: string | null;
   nome: string;
   ativo: boolean;
@@ -27,6 +29,7 @@ export interface LocalEstoqueProps {
 export class LocalEstoque {
   readonly id: string | undefined;
   readonly idErp: string | null;
+  readonly idErpBruto: string | null;
   readonly codigoErp: string | null;
   readonly nome: string;
   readonly ativo: boolean;
@@ -36,6 +39,7 @@ export class LocalEstoque {
   private constructor(props: LocalEstoqueProps) {
     this.id = props.id;
     this.idErp = props.idErp ?? null;
+    this.idErpBruto = props.idErpBruto ?? null;
     this.codigoErp = props.codigoErp ?? null;
     this.nome = props.nome;
     this.ativo = props.ativo;
@@ -52,7 +56,12 @@ export class LocalEstoque {
       id: this.id,
       // Exposto com o sufixo da tabela para quem integra saber a que
       // cadastro o id pertence ao montar o payload.
-      idErpLocal: this.idErp,
+      //
+      // O BRUTO VENCE, E ESSE E O PONTO DA MIGRACAO 65: quem mandou
+      // "009000000018" recebe "009000000018" de volta. O `idErp` e o canonico,
+      // e so aparece aqui para as linhas antigas, gravadas antes da coluna
+      // existir — elas voltam a ecoar a grafia original no proximo reenvio.
+      idErpLocal: this.idErpBruto ?? this.idErp,
       codigoErp: this.codigoErp,
       nome: this.nome,
       ativo: this.ativo,

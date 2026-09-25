@@ -211,10 +211,22 @@ export class RecepcionarUseCase {
           rotulo: 'Minha carteira agora',
           acao: frase('como está minha carteira agora?'),
         },
-        {
-          rotulo: 'Leads que me mandaram',
-          acao: frase('quais leads encaminharam para mim?'),
-        },
+        // ------------------------------------------------------------------
+        // FORA DO MENU DESDE 25/09/2026, pelo mesmo motivo do "Leads para
+        // encaminhar" da gestao: sem triagem, lead nao nasce.
+        //
+        // AQUI O ENGANO SERIA PIOR. A gestao que abre uma lista vazia conclui
+        // que nao ha fila; a VENDEDORA que abre a dela conclui que a gestao
+        // nao esta encaminhando nada para ela — e isso e uma queixa sobre
+        // alguem, nascida de uma tela que so esta descrevendo um fluxo que
+        // acabou.
+        //
+        // Volta junto com o convite da gestao, quando o fluxo novo existir.
+        // {
+        //   rotulo: 'Leads que me mandaram',
+        //   acao: frase('quais leads encaminharam para mim?'),
+        // },
+        // ------------------------------------------------------------------
         {
           rotulo: 'Meus contatos de hoje',
           acao: frase('quais são os meus contatos de hoje?'),
@@ -245,10 +257,24 @@ export class RecepcionarUseCase {
           rotulo: 'Metas da equipe',
           acao: frase('como estão as metas da equipe neste mês?'),
         },
-        {
-          rotulo: 'Leads para encaminhar',
-          acao: frase('tem lead esperando encaminhamento?'),
-        },
+        // ------------------------------------------------------------------
+        // FORA DO MENU DESDE 25/09/2026 — a triagem saiu do ar no dia
+        // anterior, e com ela o unico caminho pelo qual lead NASCIA. O menu
+        // continuava oferecendo uma porta que nao recebe mais ninguem: o que
+        // aparecesse ali seria residuo antigo, ou algo vindo de um fluxo que
+        // nos nao conhecemos — e as duas coisas enganam quem esta lendo.
+        //
+        // NAO APAGADO, e nao e por economia: quando o fluxo novo de cliente
+        // for desenhado, o lead volta a nascer e esta linha volta com ele.
+        //
+        // AS FERRAMENTAS CONTINUAM DE PE. `panorama_de_leads`, `listar_leads`
+        // e `encaminhar_lead` respondem normalmente a quem PERGUNTAR — o que
+        // saiu foi o convite, nao a capacidade.
+        // {
+        //   rotulo: 'Leads para encaminhar',
+        //   acao: frase('tem lead esperando encaminhamento?'),
+        // },
+        // ------------------------------------------------------------------
         {
           rotulo: 'Agenda de contatos',
           acao: frase('quais contatos estão agendados para hoje?'),

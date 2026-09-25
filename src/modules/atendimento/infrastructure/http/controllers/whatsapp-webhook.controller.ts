@@ -15,6 +15,7 @@ import { contatoDoEvento, extrairMensagemRecebida, sessaoDoEvento } from '../wah
 import { WahaAuthGuard } from '../guards/waha-auth.guard';
 import { TriagemClient } from '../../whatsapp/triagem.client';
 import { ConexoesService } from '../../../application/conexoes.service';
+import { SessoesDaCasaService } from '../../../application/sessoes-da-casa.service';
 import { RegistrarContatoWhatsappUseCase } from '../../../../atendimentos/application/use-cases/registrar-contato-whatsapp.use-case';
 
 /**
@@ -32,6 +33,7 @@ export class WhatsappWebhookController {
   constructor(
     private readonly triagem: TriagemClient,
     private readonly conexoes: ConexoesService,
+    private readonly sessoes: SessoesDaCasaService,
     private readonly registrarContato: RegistrarContatoWhatsappUseCase,
     private readonly processar: RotearMensagemInternaUseCase,
     private readonly config: ConfigService,
@@ -46,10 +48,15 @@ export class WhatsappWebhookController {
     // ======================================================================
     // A PRIMEIRA PERGUNTA E "DE QUEM E ESTE NUMERO?", E ELA VEM ANTES DE TUDO.
     //
-    // So a sessao da LOJA fala com a IA. A mensagem que passa pelo numero de
-    // uma vendedora e REGISTRADA e nunca respondida: do outro lado esta uma
-    // cliente conversando com a vendedora de verdade, e responder ali seria a
-    // Anastasia falando por cima dela, numa conversa que nao e nossa.
+    // So os numeros DA CASA falam com a IA — desde 25/09/2026 sao dois,
+    // Anastasia e Elena. A mensagem que passa pelo numero de uma vendedora e
+    // REGISTRADA e nunca respondida: do outro lado esta uma cliente
+    // conversando com a vendedora de verdade, e responder ali seria a IA
+    // falando por cima dela, numa conversa que nao e nossa.
+    //
+    // A PERGUNTA E LISTA DE PERMISSAO, e nao "e diferente da loja?". Sessao
+    // que ninguem reconhece — de teste, criada na mao, de uma vendedora —
+    // cai toda no mesmo lugar: registra e cala.
     //
     // CAPTURAR NAO E RESPONDER, e o desvio abaixo e a linha que separa as
     // duas coisas: `registrarSemResponder` nao chama agente nenhum e nao
@@ -62,9 +69,17 @@ export class WhatsappWebhookController {
     // inteiro por causa de uma versao de payload.
     // ======================================================================
     const sessao = sessaoDoEvento(body);
-    if (sessao !== null && sessao !== this.conexoes.sessaoDaLoja) {
+    if (sessao !== null && !this.sessoes.ehDaCasa(sessao)) {
       return this.registrarSemResponder(sessao, body);
     }
+
+    // SO PREENCHE QUANDO HA DOIS NUMEROS DE VERDADE. Com um so, o roteador
+    // recebe `undefined` e atende todo mundo, como sempre — ver
+    // `MensagemDoCanal.agente`. Sem `session` no payload e o formato antigo,
+    // de quando havia uma sessao unica: vale como Anastasia.
+    const agente = this.sessoes.separadas
+      ? (sessao && this.sessoes.agenteDa(sessao)) || 'ANASTASIA'
+      : undefined;
 
     const msg = extrairMensagemRecebida(body);
     // Evento ignorado (status, ack, mensagem nossa, grupo, etc.): apenas ack.
@@ -83,8 +98,16 @@ export class WhatsappWebhookController {
       //
       // O roteador tambem decide QUAL agente responde: Elena para a vendedora,
       // Anastasia para a gestao, silencio para o resto.
-      const resultado = await this.processar.execute({ ...msg, de });
+      const resultado = await this.processar.execute({ ...msg, de, agente });
 
+      // ATENCAO — ESTE REPASSE ESTA DESLIGADO DESDE 24/09/2026, e o que o
+      // cliente recebe hoje e o `return ignorado` la de baixo. A chave e a
+      // constante `TRIAGEM_DESLIGADA`, em `triagem.client.ts`, que faz o
+      // `disponivel()` ser sempre falso. O bloco abaixo fica INTEIRO de
+      // proposito — nada foi apagado, porque o fluxo novo deve reaproveitar
+      // parte disto. O texto que segue descreve como era, e volta a valer no
+      // dia em que religarem.
+      //
       // QUEM NAO E DA CASA E CLIENTE — e cliente tem dono: a triagem.
       //
       // Este era o ramo do silencio, e era ele que obrigava a escolher entre
@@ -109,8 +132,11 @@ export class WhatsappWebhookController {
       if (!resultado.resposta) {
         return { ok: true, ignorado: true, motivo: resultado.motivo };
       }
-      // Responde para o chat resolvido, nunca para o LID.
-      await this.whatsapp.enviarTexto(de, resultado.resposta);
+      // Responde para o chat resolvido, nunca para o LID — e PELO MESMO
+      // NUMERO em que a mensagem chegou. Responder pelo outro faria a pessoa
+      // receber, de um numero que ela nao procurou, a resposta de uma conversa
+      // que ela abriu noutro lugar.
+      await this.whatsapp.enviarTexto(de, resultado.resposta, agente);
       // Fora de producao, devolve a resposta gerada para facilitar debug do
       // webhook (atras do token; e a mensagem da propria agente, nao PII).
       const debug =

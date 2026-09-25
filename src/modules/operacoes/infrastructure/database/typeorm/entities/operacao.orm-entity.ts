@@ -26,6 +26,14 @@ export class OperacaoOrmEntity {
   })
   idErp: string | null;
 
+  /**
+   * Migracao 63. Sem UNIQUE de proposito: e o mesmo id de `id_erp` noutra
+   * grafia, e um unico por cima dele rejeitaria duas operacoes diferentes que
+   * por acaso chegassem sem zero.
+   */
+  @Column({ name: 'id_erp_bruto', type: 'varchar', length: 50, nullable: true })
+  idErpBruto: string | null;
+
   @Column({
     name: 'codigo_erp',
     type: 'varchar',

@@ -95,6 +95,7 @@ export class OperacaoRepository implements IOperacaoRepository {
   private toOrm(o: OperacaoEntity): Partial<OperacaoOrmEntity> {
     return {
       idErp: o.idErp,
+      idErpBruto: o.idErpBruto,
       codigoErp: o.codigoErp,
       nome: o.nome,
       classificacao: o.classificacao,
@@ -106,6 +107,7 @@ export class OperacaoRepository implements IOperacaoRepository {
     return OperacaoEntity.create({
       id: o.id,
       idErp: o.idErp,
+      idErpBruto: o.idErpBruto,
       codigoErp: o.codigoErp,
       nome: o.nome,
       classificacao: o.classificacao,

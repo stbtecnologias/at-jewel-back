@@ -1,0 +1,53 @@
+--- 62 — O CODIGO DA CASA DA VENDEDORA VIRA `VD-####`
+---
+--- ==========================================================================
+--- POR QUE MEXER NUM PREFIXO QUE JA ESTAVA DECIDIDO.
+---
+--- A migracao 55 criou o `AT-####` para a vendedora, e era coerente sozinho:
+--- `AT` de A.T. Jewel, dizendo "este codigo e da casa".
+---
+--- Em 23/09/2026 o cliente ganhou o dele (migracao 61) e o Lucas propos a
+--- familia inteira, com a SIGLA DO CADASTRO no lugar da sigla da loja:
+---
+---   CL-0001   cliente
+---   VD-0001   vendedora
+---
+--- O argumento que decidiu: com `AT-` para tudo, o prefixo diz a ORIGEM mas
+--- nao diz DE QUE. Lendo `AT-0007` solto numa planilha ou numa conversa, nao
+--- da para saber se e gente que compra ou gente que vende. Com `VD-0007`, da.
+---
+--- ==========================================================================
+--- POR QUE AGORA, E POR QUE ISTO E QUASE CERTAMENTE UM NO-OP.
+---
+--- O gerador existe desde 08/09 e NUNCA PRODUZIU NADA. Conferido em
+--- 23/09/2026 no banco local (copia da producao) e na AWS:
+---
+---   SELECT count(*) FROM vendedoras WHERE codigo_erp ~ '^AT-';   ->  0 e 0
+---
+--- As 23 vendedoras vieram todas do ERP, com codigo proprio. Nao ha linha
+--- para converter — mas esta migracao existe assim mesmo por dois motivos:
+--- o HOMOLOG nao foi conferido, e sem ela o dia em que aparecesse um `AT-`
+--- perdido ele conviveria para sempre com os `VD-` novos, sem nada indicando
+--- que sao a mesma coisa.
+---
+--- ==========================================================================
+--- POR QUE E SEGURO RENOMEAR UMA CHAVE QUE TRES FKs REFERENCIAM.
+---
+--- As tres tem ON UPDATE CASCADE — conferido em 23/09/2026, nao presumido:
+---
+---   fk_clientes_vendedora_codigo   clientes.vendedora_codigo_erp
+---   fk_perfil_vendedora_aprovada   clientes_perfil.vendedora_aprovada_codigo
+---   fk_perfil_vendedora_sugerida   clientes_perfil.vendedora_sugerida_codigo
+---
+--- O Postgres arrasta as tres sozinho. A carteira acompanha, e e exatamente a
+--- propriedade que a 55 ja contava para poder gerar sem medo: "no dia em que
+--- o ERP trouxer o codigo real dela, trocar leva os clientes junto".
+---
+--- O UNIQUE de `codigo_erp` tambem nao atrapalha: `VD-0007` so colidiria com
+--- um `VD-0007` ja existente, e nao ha nenhum (o filtro do WHERE garante que
+--- so estamos criando o primeiro conjunto deles).
+--- ==========================================================================
+
+UPDATE vendedoras
+   SET codigo_erp = 'VD-' || substring(codigo_erp from 4)
+ WHERE codigo_erp ~ '^AT-[0-9]+$';

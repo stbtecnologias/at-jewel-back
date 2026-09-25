@@ -28,6 +28,15 @@ export class MovimentacaoOrmEntity {
   @Column({ name: 'id_erp', type: 'varchar', length: 50, unique: true })
   idErp: string;
 
+  /**
+   * O mesmo id COMO O INTEGRADOR MANDOU — migracao 66.
+   *
+   * Sem UNIQUE e fora de toda busca: quem casa e `idErp`, normalizado. Esta
+   * coluna serve so ao eco da API.
+   */
+  @Column({ name: 'id_erp_bruto', type: 'varchar', length: 50, nullable: true })
+  idErpBruto: string | null;
+
   @Column({ type: 'int', nullable: true })
   numero: number | null;
 

@@ -1,4 +1,8 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  aparaIdErp,
+  normalizarIdErp,
+} from '../../../../shared/erp/normalizar-id-erp';
 import { LocalEstoque } from '../../domain/entities/local-estoque.entity';
 import { LOCAL_ESTOQUE_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { ILocalEstoqueRepository } from '../../domain/ports/repositories/local-estoque-repository.port';
@@ -22,7 +26,14 @@ export class AtualizarLocalEstoqueUseCase {
     if (!atual) throw new NotFoundException(`LocalEstoque ${id} nao encontrada`);
 
     // `undefined` = campo ausente no PATCH, mantem o atual. `null` = limpar.
-    const idErp = input.idErp !== undefined ? input.idErp : atual.idErp;
+    //
+    // OS DOIS ANDAM JUNTOS — migracao 65. Campo ausente preserva o par como
+    // esta; vindo, o canonico normaliza e o bruto guarda a grafia. Separar os
+    // dois deixaria o eco apontando para um id que ja mudou.
+    const idErp =
+      input.idErp !== undefined ? normalizarIdErp(input.idErp) : atual.idErp;
+    const idErpBruto =
+      input.idErp !== undefined ? aparaIdErp(input.idErp) : atual.idErpBruto;
     const codigoErp = input.codigoErp !== undefined ? input.codigoErp : atual.codigoErp;
 
     if (idErp && idErp !== atual.idErp) {
@@ -47,6 +58,7 @@ export class AtualizarLocalEstoqueUseCase {
       LocalEstoque.create({
         id: atual.id,
         idErp,
+        idErpBruto,
         codigoErp,
         nome: input.nome ?? atual.nome,
         ativo: input.ativo !== undefined ? input.ativo : atual.ativo,

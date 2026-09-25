@@ -80,7 +80,7 @@ describe('LerConversaWhatsappUseCase', () => {
       buscarCliente as never,
       registrarLead as never,
       {
-        buscarPorId: jest.fn().mockResolvedValue({ codigoErp: 'AT-0001' }),
+        buscarPorId: jest.fn().mockResolvedValue({ codigoErp: 'VD-0001' }),
       } as never,
       { get: () => undefined } as never,
     );
@@ -123,7 +123,7 @@ describe('LerConversaWhatsappUseCase', () => {
         nome: 'Carla',
         resumoTriagem: 'Perguntou por brincos de ouro.',
         // Ja nasce com dona: escreveu para a Aline, e da Aline.
-        vendedoraSugeridaCodigo: 'AT-0001',
+        vendedoraSugeridaCodigo: 'VD-0001',
       }),
     );
     // NAO promove o lead: promover dispara WhatsApp para a gestao, e este
@@ -164,7 +164,7 @@ describe('LerConversaWhatsappUseCase', () => {
     expect(registrarLead.execute).toHaveBeenCalledWith(
       expect.objectContaining({
         whatsapp: '5585988887777',
-        vendedoraSugeridaCodigo: 'AT-0001',
+        vendedoraSugeridaCodigo: 'VD-0001',
       }),
     );
   });

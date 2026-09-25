@@ -1,3 +1,4 @@
+import { AtendimentoPersistenciaModule } from './atendimento-persistencia.module';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WhatsappGatewayModule } from '../atendimento/whatsapp-gateway.module';
@@ -6,6 +7,7 @@ import { LeadsModule } from '../leads/leads.module';
 import { MetasModule } from '../metas/metas.module';
 import { ProdutosModule } from '../produtos/produtos.module';
 import { CatalogosModule } from '../catalogos/catalogos.module';
+import { MovimentacoesModule } from '../movimentacoes/movimentacoes.module';
 import { VendasModule } from '../vendas/vendas.module';
 import { VendedorasModule } from '../vendedoras/vendedoras.module';
 import { AuthModule } from '../auth/auth.module';
@@ -61,6 +63,11 @@ import { ConversaWhatsappRepository } from './infrastructure/database/typeorm/re
     // WhatsApp da cliente e levar o ponto ate a conversa. Registrar a
     // entidade AQUI e o que da o repositorio ao `AtendimentoRepository` —
     // sem isto o modulo nem carrega.
+    // O repositorio vem daqui, e nao de um provider local: o modulo de LEADS
+    // tambem precisa dele desde 23/09 (a triagem abre atendimento), e este
+    // modulo importa LeadsModule — provendo nos dois lados existiriam duas
+    // instancias da mesma coisa.
+    AtendimentoPersistenciaModule,
     TypeOrmModule.forFeature([
       AtendimentoOrmEntity,
       AtendimentoInteracaoOrmEntity,
@@ -76,6 +83,10 @@ import { ConversaWhatsappRepository } from './infrastructure/database/typeorm/re
     // Vendas e metas: o que a vendedora consulta sobre si mesma no canal
     // interno. Os dois sao folhas (so TypeORM e Auth), entao nao ha ciclo.
     VendasModule,
+    // A venda lida da MOVIMENTACAO — 25/09/2026. Ver
+    // `vendas-movimentacao-repository.port.ts`: a tabela `vendas` deixou de
+    // ser a fonte, e quem pergunta sobre venda passa a vir daqui.
+    MovimentacoesModule,
     MetasModule,
     ProdutosModule,
     // Catalogo: o repositorio e o armazenamento vem de la. A foto chega por
@@ -93,7 +104,6 @@ import { ConversaWhatsappRepository } from './infrastructure/database/typeorm/re
     AuthModule,
   ],
   providers: [
-    { provide: ATENDIMENTO_REPOSITORY, useClass: AtendimentoRepository },
     {
       provide: CONVERSA_WHATSAPP_REPOSITORY,
       useClass: ConversaWhatsappRepository,
@@ -138,7 +148,9 @@ import { ConversaWhatsappRepository } from './infrastructure/database/typeorm/re
   // O webhook usa o ROTEADOR, nao os canais direto: e ele que decide se quem
   // escreveu e vendedora, gestao ou ninguem.
   exports: [
-    ATENDIMENTO_REPOSITORY,
+    // O MODULO, e nao o token: o Nest nao reexporta provider de outro modulo.
+    // Quem importava AtendimentosModule pelo repositorio continua alcancando-o.
+    AtendimentoPersistenciaModule,
     // A fila de conversas a ler: o webhook do modulo `atendimento`
     // (singular) enfileira, e o leitor de la consome.
     CONVERSA_WHATSAPP_REPOSITORY,

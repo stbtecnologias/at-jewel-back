@@ -1,13 +1,25 @@
+import type { AgenteDaCasa } from '../agente-da-casa';
+
 // Porta que abstrai o gateway de WhatsApp (implementada via WAHA na infra).
 // Mantem a aplicacao livre do provedor concreto — trocar WAHA por outro
 // gateway no futuro nao toca no use case.
 export interface IWhatsappGateway {
   /**
    * Envia uma mensagem de texto para um chat.
+   *
    * @param chatId identificador do chat no formato do WhatsApp (ex.: `5585...@c.us`).
    * @param texto  conteudo da mensagem.
+   * @param agente DE QUAL NUMERO a mensagem sai. Omitido, sai pelo da
+   *   Anastasia — que ate 25/09/2026 era o unico. Quem escreve para uma
+   *   VENDEDORA passa `'ELENA'`: o aviso tem que chegar pelo numero em que
+   *   ela pode responder, senao a resposta dela cai no canal errado e ouve
+   *   "me chama no outro numero".
    */
-  enviarTexto(chatId: string, texto: string): Promise<void>;
+  enviarTexto(
+    chatId: string,
+    texto: string,
+    agente?: AgenteDaCasa,
+  ): Promise<void>;
 
   /**
    * Envia uma imagem com legenda.
@@ -21,7 +33,19 @@ export interface IWhatsappGateway {
     conteudo: Buffer,
     mime: string,
     legenda: string,
+    agente?: AgenteDaCasa,
   ): Promise<void>;
+
+  /**
+   * O TELEFONE conectado num dos numeros da casa, so com digitos, ou `null`
+   * se aquela sessao nao esta conectada.
+   *
+   * Existe para o desvio educado de 25/09/2026: quem escreve para o numero
+   * errado ouve "me chama no outro numero", e a frase so serve se disser QUAL.
+   * O numero vem do WAHA, e nao de um env — trocou o chip, a frase acompanha,
+   * e nao ha variavel para esquecer de atualizar.
+   */
+  numeroDoAgente(agente: AgenteDaCasa): Promise<string | null>;
 
   /**
    * Descobre o `chatId` real de um telefone, perguntando ao provedor.

@@ -79,7 +79,7 @@ export const SCOPE_DESCRICAO: Record<ApiKeyScope, string> = {
     'Ler movimentacoes do ERP (vendas, devolucoes) e o cadastro de operacoes',
   'movimentacoes:write':
     'Sincronizar movimentacoes e manter o cadastro de operacoes (integracao do ERP)',
-  'agente_eventos:write': 'Registrar eventos da Anastasia/Elena/Sofia',
+  'agente_eventos:write': 'Registrar eventos da Anastasia/Helena/Sofia',
   'leads:read': 'Ler leads da triagem (fila do admin)',
   'leads:write': 'Registrar e atualizar a triagem do cliente (consumido pelo atwpp)',
 };
