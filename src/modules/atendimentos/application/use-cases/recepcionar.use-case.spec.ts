@@ -115,9 +115,13 @@ describe('RecepcionarUseCase', () => {
       );
 
       expect(r.resposta).toContain('1 — Panorama do dia');
-      // O catalogo e a ULTIMA linha da gestao, e desde 21/09 ela e a 7a:
-      // o funil entrou no meio da lista.
-      expect(r.resposta).toContain('7 — Enviar foto para o catálogo');
+      // O catalogo e a ULTIMA linha da gestao. Era a 7a desde 21/09, quando o
+      // funil entrou no meio; voltou a ser a 6a em 25/09, ao sair o "Leads
+      // para encaminhar" — a triagem tinha acabado e o lead deixou de nascer.
+      expect(r.resposta).toContain('6 — Enviar foto para o catálogo');
+      // E o que saiu, saiu mesmo: o convite nao pode reaparecer sem alguem
+      // decidir. As ferramentas de lead continuam respondendo a quem pergunta.
+      expect(r.resposta).not.toContain('Leads para encaminhar');
     });
 
     it('sem nome cadastrado, só o cumprimento — nunca "Bom dia, !"', () => {

@@ -245,10 +245,24 @@ export class RecepcionarUseCase {
           rotulo: 'Metas da equipe',
           acao: frase('como estão as metas da equipe neste mês?'),
         },
-        {
-          rotulo: 'Leads para encaminhar',
-          acao: frase('tem lead esperando encaminhamento?'),
-        },
+        // ------------------------------------------------------------------
+        // FORA DO MENU DESDE 25/09/2026 — a triagem saiu do ar no dia
+        // anterior, e com ela o unico caminho pelo qual lead NASCIA. O menu
+        // continuava oferecendo uma porta que nao recebe mais ninguem: o que
+        // aparecesse ali seria residuo antigo, ou algo vindo de um fluxo que
+        // nos nao conhecemos — e as duas coisas enganam quem esta lendo.
+        //
+        // NAO APAGADO, e nao e por economia: quando o fluxo novo de cliente
+        // for desenhado, o lead volta a nascer e esta linha volta com ele.
+        //
+        // AS FERRAMENTAS CONTINUAM DE PE. `panorama_de_leads`, `listar_leads`
+        // e `encaminhar_lead` respondem normalmente a quem PERGUNTAR — o que
+        // saiu foi o convite, nao a capacidade.
+        // {
+        //   rotulo: 'Leads para encaminhar',
+        //   acao: frase('tem lead esperando encaminhamento?'),
+        // },
+        // ------------------------------------------------------------------
         {
           rotulo: 'Agenda de contatos',
           acao: frase('quais contatos estão agendados para hoje?'),
