@@ -165,6 +165,9 @@ describe('o funil pela gestao (Anastasia)', () => {
     };
     servico = new FerramentasGestaoService(
       resolverVendedora as never,
+      // A consulta de venda, que desde 25/09 le a MOVIMENTACAO. Dublada aqui:
+      // estes testes descrevem o roteamento das ferramentas, nao o SQL.
+      { itens: jest.fn().mockResolvedValue({ linhas: [] }) } as never,
       { execute: jest.fn() } as never,
       { vendas: jest.fn(), metas: jest.fn() } as never,
       { semComprar: jest.fn(), maioresCompradores: jest.fn() } as never,

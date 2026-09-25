@@ -378,6 +378,19 @@ export type GestaoPanoramaHandler = (input: {
 }) => Promise<{ linhas: string[] }>;
 
 /**
+ * As pecas que mais faturaram. `vendedora` recorta so as dela.
+ *
+ * O `status` existe pelo mesmo motivo das outras ferramentas que resolvem
+ * nome: pedir "as pecas da Marina" com duas Marinas na equipe nao pode virar
+ * um chute.
+ */
+export type GestaoItensHandler = (input: {
+  periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+  limite?: number;
+  vendedora?: string;
+}) => Promise<{ status: 'OK' | 'AMBIGUA' | 'NAO_ENCONTRADA'; linhas: string[] }>;
+
+/**
  * De quem e este cliente. EXCLUSIVA DA GESTAO — e literalmente a pergunta que
  * a vendedora nao pode fazer (ver ELENA_INTERNA_SYSTEM).
  */
@@ -542,6 +555,7 @@ export interface ChatParams {
   gestaoVendas?: GestaoVendasHandler;
   gestaoMetas?: GestaoMetasHandler;
   gestaoPanorama?: GestaoPanoramaHandler;
+  gestaoItens?: GestaoItensHandler;
   gestaoCarteiraDoCliente?: GestaoCarteiraDoClienteHandler;
   gestaoEncaminharLead?: GestaoEncaminharLeadHandler;
   gestaoVendedoras?: GestaoVendedorasHandler;

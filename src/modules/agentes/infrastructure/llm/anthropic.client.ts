@@ -303,10 +303,49 @@ const GESTAO_PANORAMA_TOOL: Anthropic.Tool = {
       periodo: {
         type: 'string',
         enum: ['HOJE', 'SEMANA', 'MES'],
-        description: 'HOJE, SEMANA (sete dias) ou MES (trinta dias).',
+        description:
+          'HOJE, SEMANA (sete dias) ou MES — o mes do CALENDARIO, do dia 1 ate agora, que e o que se compara com a meta.',
       },
     },
     required: ['periodo'],
+  },
+};
+
+/**
+ * O QUE MAIS SAIU — 25/09/2026, e ela nao existia.
+ *
+ * Das 29 ferramentas, a unica que falava de produto era `consultar_produtos`,
+ * que responde preco e estoque: catalogo, nao historico. "Qual peca mais
+ * vendeu em agosto" nao tinha como ser respondido.
+ *
+ * ORDENA POR VALOR, e nao por quantidade: numa joalheria a peca que sai dez
+ * vezes costuma ser a mais barata da vitrine, e "o que mais vendeu" no sentido
+ * que interessa a gestao e o que mais FATUROU.
+ */
+const GESTAO_ITENS_TOOL: Anthropic.Tool = {
+  name: 'itens_mais_vendidos',
+  description:
+    'As pecas que mais faturaram num periodo, da maior para a menor, com quantidade e valor. Use para "qual peca mais vendeu", "o que mais saiu esse mes", "quais as pecas do mes". Devolve 10 por padrao; se ela pedir outro numero ("me da o top 5"), passe em `limite`. Com `vendedora`, so as pecas que AQUELA vendedora vendeu.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
+        description:
+          'HOJE (o padrao), ONTEM, SEMANA (sete dias), MES ou ANO — mes e ano sao os do CALENDARIO, nao janelas moveis.',
+      },
+      limite: {
+        type: 'number',
+        description: 'Quantas pecas listar. Padrao 10, teto 30.',
+      },
+      vendedora: {
+        type: 'string',
+        description:
+          'Nome de uma vendedora, como veio na conversa, para recortar so as pecas dela. Omita para a loja inteira.',
+      },
+    },
+    required: [],
   },
 };
 
@@ -667,6 +706,7 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoVendas) tools.push(GESTAO_VENDAS_TOOL);
     if (params.gestaoMetas) tools.push(GESTAO_METAS_TOOL);
     if (params.gestaoPanorama) tools.push(GESTAO_PANORAMA_TOOL);
+    if (params.gestaoItens) tools.push(GESTAO_ITENS_TOOL);
     if (params.gestaoCarteiraDoCliente)
       tools.push(GESTAO_CARTEIRA_CLIENTE_TOOL);
     if (params.gestaoEncaminharLead) tools.push(GESTAO_ENCAMINHAR_LEAD_TOOL);
@@ -911,6 +951,34 @@ export class AnthropicClient implements ILlmClient {
                 vendedora: String(e.vendedora ?? '').slice(0, 80),
               }),
               'meta',
+            );
+          }),
+        );
+      } else if (toolUse.name === 'itens_mais_vendidos' && params.gestaoItens) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as {
+              periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+              limite?: number;
+              vendedora?: string;
+            };
+            const r = await params.gestaoItens!(e);
+
+            if (r.status === 'NAO_ENCONTRADA') {
+              return 'Nao achei essa vendedora na equipe. Diga isso e pergunte o nome de novo.';
+            }
+            if (r.status === 'AMBIGUA') {
+              return (
+                `Ha mais de uma vendedora com esse nome:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+                'Pergunte qual delas.'
+              );
+            }
+            if (r.linhas.length === 0) {
+              return 'Nenhuma peca vendida nesse periodo. Diga isso em uma frase, e ofereca outro periodo.';
+            }
+            return (
+              `Pecas que mais faturaram no periodo:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+              'Repasse os numeros exatamente como estao, sem somar nem arredondar.'
             );
           }),
         );

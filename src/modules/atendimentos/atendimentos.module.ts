@@ -7,6 +7,7 @@ import { LeadsModule } from '../leads/leads.module';
 import { MetasModule } from '../metas/metas.module';
 import { ProdutosModule } from '../produtos/produtos.module';
 import { CatalogosModule } from '../catalogos/catalogos.module';
+import { MovimentacoesModule } from '../movimentacoes/movimentacoes.module';
 import { VendasModule } from '../vendas/vendas.module';
 import { VendedorasModule } from '../vendedoras/vendedoras.module';
 import { AuthModule } from '../auth/auth.module';
@@ -82,6 +83,10 @@ import { ConversaWhatsappRepository } from './infrastructure/database/typeorm/re
     // Vendas e metas: o que a vendedora consulta sobre si mesma no canal
     // interno. Os dois sao folhas (so TypeORM e Auth), entao nao ha ciclo.
     VendasModule,
+    // A venda lida da MOVIMENTACAO — 25/09/2026. Ver
+    // `vendas-movimentacao-repository.port.ts`: a tabela `vendas` deixou de
+    // ser a fonte, e quem pergunta sobre venda passa a vir daqui.
+    MovimentacoesModule,
     MetasModule,
     ProdutosModule,
     // Catalogo: o repositorio e o armazenamento vem de la. A foto chega por
