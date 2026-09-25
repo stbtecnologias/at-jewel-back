@@ -62,7 +62,7 @@ export const PERMISSOES: PermissaoDef[] = [
   { chave: 'vendedoras:read', label: 'Ver vendedoras', grupo: 'Vendedoras' },
   { chave: 'vendedoras:write', label: 'Editar vendedoras', grupo: 'Vendedoras' },
   { chave: 'agentes:anastasia', label: 'Conversar com a Anastasia', grupo: 'Agentes' },
-  { chave: 'agentes:elena', label: 'Conversar com a Elena', grupo: 'Agentes' },
+  { chave: 'agentes:elena', label: 'Conversar com a Helena', grupo: 'Agentes' },
   { chave: 'whatsapp:manage', label: 'Gerenciar WhatsApp', grupo: 'Administração' },
   { chave: 'usuarios:manage', label: 'Gerenciar usuários', grupo: 'Administração' },
   { chave: 'roles:manage', label: 'Gerenciar papéis e permissões', grupo: 'Administração' },

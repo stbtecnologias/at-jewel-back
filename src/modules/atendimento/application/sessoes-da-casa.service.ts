@@ -97,7 +97,7 @@ export class SessoesDaCasaService {
   /** O rotulo da linha na tela de Conexoes. */
   rotuloDe(sessao: string): string {
     const agente = this.agenteDa(sessao);
-    if (agente === 'ELENA') return 'Elena (vendedoras e catálogo)';
+    if (agente === 'ELENA') return 'Helena (vendedoras e catálogo)';
     // Com um numero so ele ainda e "a loja", que e como a tela sempre o
     // chamou; separados, cada um ganha o nome de quem atende.
     return this.separadas ? 'Anastasia (gestão)' : 'Loja (Anastasia)';

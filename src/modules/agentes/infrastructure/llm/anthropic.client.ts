@@ -405,7 +405,7 @@ const GESTAO_ENCAMINHAR_LEAD_TOOL: Anthropic.Tool = {
 const GESTAO_CARTEIRA_CLIENTE_TOOL: Anthropic.Tool = {
   name: 'de_quem_e_o_cliente',
   description:
-    'Diz em qual carteira um cliente esta, ou seja, de qual vendedora ele e. Use para "de quem e a Helena Gomes", "quem atende esse cliente". Esta informacao e exclusiva da administracao.',
+    'Diz em qual carteira um cliente esta, ou seja, de qual vendedora ele e. Use para "de quem e a Renata Gomes", "quem atende esse cliente". Esta informacao e exclusiva da administracao.',
   input_schema: {
     type: 'object',
     properties: {
@@ -529,7 +529,7 @@ const GESTAO_AGENDAR_TOOL: Anthropic.Tool = {
 const AGENDAR_TOOL: Anthropic.Tool = {
   name: 'agendar_contato',
   description:
-    'Coloca um contato com um cliente na agenda DELA, e agenda o lembrete. Use quando ela pedir para marcar, lembrar ou agendar — "me lembra de ligar pra Helena amanha as 10", "marca a Carla pra sexta as 15h". So funciona com cliente da carteira dela — NUNCA chame com um nome que veio de meus_leads: lead nao tem cadastro de cliente e a chamada vai falhar. Preencha quandoIso SEMPRE em ISO 8601 com fuso, calculado a partir da data de hoje informada acima. Se ela nao disser um horario, PERGUNTE antes de chamar — nao invente.',
+    'Coloca um contato com um cliente na agenda DELA, e agenda o lembrete. Use quando ela pedir para marcar, lembrar ou agendar — "me lembra de ligar pra Renata amanha as 10", "marca a Carla pra sexta as 15h". So funciona com cliente da carteira dela — NUNCA chame com um nome que veio de meus_leads: lead nao tem cadastro de cliente e a chamada vai falhar. Preencha quandoIso SEMPRE em ISO 8601 com fuso, calculado a partir da data de hoje informada acima. Se ela nao disser um horario, PERGUNTE antes de chamar — nao invente.',
   input_schema: {
     type: 'object',
     properties: {

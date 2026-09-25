@@ -556,8 +556,8 @@ export class RotearMensagemInternaUseCase {
 
     const texto =
       para === 'ELENA'
-        ? `${ola}Este número é o da Anastasia, que atende a gestão. Vendedoras e catálogo eu atendo como Elena, no outro número.${onde}`
-        : `${ola}Este número é o da Elena, que atende as vendedoras e o catálogo. Os dados da equipe eu vejo como Anastasia, no outro número.${onde}`;
+        ? `${ola}Este número é o da Anastasia, que atende a gestão. Vendedoras e catálogo eu atendo como Helena, no outro número.${onde}`
+        : `${ola}Este número é o da Helena, que atende as vendedoras e o catálogo. Os dados da equipe eu vejo como Anastasia, no outro número.${onde}`;
 
     return { resposta: texto, motivo: `desvio_para_${para.toLowerCase()}` };
   }

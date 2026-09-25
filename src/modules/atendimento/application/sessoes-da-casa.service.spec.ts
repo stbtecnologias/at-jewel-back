@@ -70,7 +70,7 @@ describe('SessoesDaCasaService', () => {
 
     it('os rotulos dizem quem atende o que', () => {
       expect(service.rotuloDe('default')).toBe('Anastasia (gestão)');
-      expect(service.rotuloDe('elena')).toBe('Elena (vendedoras e catálogo)');
+      expect(service.rotuloDe('elena')).toBe('Helena (vendedoras e catálogo)');
     });
 
     it('a ordem da tela e Anastasia primeiro', () => {
