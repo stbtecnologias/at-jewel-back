@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ListarMetasUseCase } from '../../../metas/application/use-cases/listar-metas.use-case';
 import { ProgressoMetaUseCase } from '../../../metas/application/use-cases/progresso-meta.use-case';
-import { ResumoVendasUseCase } from '../../../vendas/application/use-cases/resumo-vendas.use-case';
+import { ConsultarVendasUseCase } from '../../../movimentacoes/application/use-cases/consultar-vendas.use-case';
 
 export type PeriodoVendas = 'HOJE' | 'SEMANA' | 'MES';
 
@@ -38,27 +38,47 @@ export interface MetaDaVendedora {
 @Injectable()
 export class ConsultarDesempenhoVendedoraUseCase {
   constructor(
-    private readonly resumoVendas: ResumoVendasUseCase,
+    private readonly consultarVendas: ConsultarVendasUseCase,
     private readonly listarMetas: ListarMetasUseCase,
     private readonly progresso: ProgressoMetaUseCase,
   ) {}
 
+  /**
+   * ==========================================================================
+   * A FONTE MUDOU EM 25/09/2026: LE A MOVIMENTACAO, E NAO A TABELA `vendas`.
+   *
+   * Decisao do Lucas. A tabela `vendas` tem ZERO linhas e as vendas de verdade
+   * chegam do ERP como MOVIMENTACAO — 1.287 documentos de VENDA e 101 de
+   * DEVOLUCAO na copia de 25/09. Enquanto isto lia `vendas`, a Anastasia
+   * respondia "nenhuma venda no periodo" com R$ 66 milhoes no banco. Pior que
+   * vazio: parecia resposta, e quem perguntasse concluiria que a equipe nao
+   * vendeu.
+   *
+   * A ASSINATURA NAO MUDOU — por isso as ferramentas, os dois canais e os
+   * testes seguem iguais, e a troca acontece num ponto so.
+   *
+   * O QUE MUDOU NO NUMERO, e e melhoria: a DEVOLUCAO agora abate. Em agosto de
+   * 2026 foram R$ 279.680 devolvidos contra R$ 1,21 mi vendidos — 23%. Sem o
+   * abatimento o ranking chegava a inverter posicoes.
+   *
+   * E `MES` passou a ser o mes do CALENDARIO, e nao "ultimos 30 dias": quem
+   * pergunta "como esta o mes" compara com a meta do mes.
+   * ==========================================================================
+   */
   async vendas(
     vendedoraId: string,
     periodo: PeriodoVendas,
     agora: Date = new Date(),
   ): Promise<VendasDoPeriodo> {
-    const { de, ate } = janela(periodo, agora);
-
-    const resumo = await this.resumoVendas.execute({
-      vendedoraId: [vendedoraId],
-      dataDe: de,
-      dataAte: ate,
-    });
+    const resumo = await this.consultarVendas.resumo(
+      periodo,
+      vendedoraId,
+      agora,
+    );
 
     return {
-      quantidade: resumo.totalVendas,
-      receita: resumo.receitaTotal,
+      quantidade: resumo.quantidade,
+      receita: resumo.receita,
       ticketMedio: resumo.ticketMedio,
     };
   }
@@ -87,22 +107,12 @@ export class ConsultarDesempenhoVendedoraUseCase {
   }
 }
 
-/**
- * A janela de cada periodo, no fuso do servidor.
+/*
+ * A janela de cada periodo MUDOU DE CASA em 25/09/2026: vive no
+ * `ConsultarVendasUseCase`, junto com a consulta que a usa.
  *
- * Diferente da agenda, aqui HOJE comeca a MEIA-NOITE: "quantas vendas eu fiz
- * hoje" e uma pergunta sobre o que ja aconteceu, nao sobre o que vem.
- * SEMANA e MES sao os ultimos 7 e 30 dias corridos — nao a semana do calendario
- * nem o mes fechado —, porque e o que responde "como eu venho indo".
+ * O que ficava aqui dizia "SEMANA e MES sao os ultimos 7 e 30 dias corridos —
+ * nao a semana do calendario nem o mes fechado". A parte do MES foi revista:
+ * quem pergunta "como esta o mes" compara com a meta do mes, e uma janela
+ * movel de 30 dias nunca bate com numero nenhum que a gestao acompanha.
  */
-function janela(periodo: PeriodoVendas, agora: Date): { de: Date; ate: Date } {
-  const inicioDoDia = new Date(agora);
-  inicioDoDia.setHours(0, 0, 0, 0);
-
-  if (periodo === 'HOJE') return { de: inicioDoDia, ate: agora };
-
-  const dias = periodo === 'SEMANA' ? 7 : 30;
-  const de = new Date(inicioDoDia);
-  de.setDate(de.getDate() - (dias - 1));
-  return { de, ate: agora };
-}

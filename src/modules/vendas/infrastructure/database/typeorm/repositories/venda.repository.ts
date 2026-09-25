@@ -552,7 +552,10 @@ export class VendaRepository implements IVendaRepository {
       .groupBy('v.status')
       .getRawMany<{ status: StatusVenda; total: string }>();
 
-    const porStatus = { concluida: 0, cancelada: 0, pendente: 0 };
+    // `devolvida` nunca sai daqui: esta consulta le a tabela `vendas`, que
+    // nao tem esse estado. Ela existe no contrato para o read-model da
+    // movimentacao, que e quem sabe distinguir devolucao de cancelamento.
+    const porStatus = { concluida: 0, cancelada: 0, pendente: 0, devolvida: 0 };
     for (const r of statusRows) {
       if (r.status in porStatus) {
         porStatus[r.status] = Number(r.total);

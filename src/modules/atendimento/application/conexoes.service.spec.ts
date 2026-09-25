@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { ConexoesService } from './conexoes.service';
+import { SessoesDaCasaService } from './sessoes-da-casa.service';
 
 /**
  * A LISTA DE CONEXOES E DERIVADA, E O NOME DA SESSAO E BARREIRA.
@@ -38,11 +39,16 @@ describe('ConexoesService', () => {
       listar: jest.fn().mockResolvedValue([]),
       buscarPorId: jest.fn().mockResolvedValue(null),
     };
-    const config = { get: jest.fn().mockReturnValue('default') };
+    // Um numero so — `WAHA_SESSION` = 'default' e nenhuma Elena. E o estado
+    // de producao ate o segundo chip ser conectado, e o que estes testes
+    // descrevem. O servico vai INTEIRO: e ele quem responde "e da casa?".
+    const config = {
+      get: jest.fn((k: string) => (k === 'WAHA_SESSION' ? 'default' : undefined)),
+    };
 
     service = new ConexoesService(
       waha as never,
-      config as never,
+      new SessoesDaCasaService(config as never),
       vendedoras as never,
     );
   });

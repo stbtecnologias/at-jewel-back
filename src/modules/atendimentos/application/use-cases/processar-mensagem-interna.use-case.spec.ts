@@ -54,7 +54,9 @@ describe('ProcessarMensagemInternaUseCase', () => {
           familia: 'Ouro Branco',
           codigo: 'SEED-P0002',
           precoVenda: 7490.37,
-          emEstoque: 1,
+          // DISPONIVEL, e nao quantos — 25/09/2026. O numero deixou de existir
+          // no tipo, entao nao ha como ele vazar para o modelo.
+          disponivel: true,
         },
       ]),
     };
@@ -177,7 +179,10 @@ describe('ProcessarMensagemInternaUseCase', () => {
       expect(produtos.execute).toHaveBeenCalledWith('brinco');
       const linha = r.produtos[0].linha;
       expect(linha).toContain('7.490,37');
-      expect(linha).toContain('1 em estoque');
+      expect(linha).toContain('disponível');
+      // A QUANTIDADE NAO PODE APARECER de forma nenhuma: nem o numero, nem a
+      // frase que o carregava.
+      expect(linha).not.toContain('em estoque');
       expect(linha).not.toMatch(/custo|margem/i);
     });
 

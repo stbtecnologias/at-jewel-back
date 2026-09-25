@@ -11,12 +11,15 @@ import { OperacoesModule } from '../operacoes/operacoes.module';
 import { ProdutosModule } from '../produtos/produtos.module';
 import { VendedorasModule } from '../vendedoras/vendedoras.module';
 import { ResolverReferenciasErpService } from './application/resolver-referencias-erp.service';
+import { ConsultarVendasUseCase } from './application/use-cases/consultar-vendas.use-case';
 import { BuscarMovimentacaoPorIdErpUseCase } from './application/use-cases/buscar-movimentacao-por-id-erp.use-case';
 import { BuscarMovimentacaoUseCase } from './application/use-cases/buscar-movimentacao.use-case';
 import { ListarMovimentacoesUseCase } from './application/use-cases/listar-movimentacoes.use-case';
 import { RemoverMovimentacaoUseCase } from './application/use-cases/remover-movimentacao.use-case';
 import { SincronizarMovimentacaoUseCase } from './application/use-cases/sincronizar-movimentacao.use-case';
 import { MOVIMENTACAO_REPOSITORY } from './domain/ports/injection-tokens';
+import { VENDAS_MOVIMENTACAO_REPOSITORY } from './domain/ports/repositories/vendas-movimentacao-repository.port';
+import { VendasMovimentacaoRepository } from './infrastructure/database/typeorm/repositories/vendas-movimentacao.repository';
 import { MovimentacaoItemOrmEntity } from './infrastructure/database/typeorm/entities/movimentacao-item.orm-entity';
 import { MovimentacaoPagamentoOrmEntity } from './infrastructure/database/typeorm/entities/movimentacao-pagamento.orm-entity';
 import { MovimentacaoOrmEntity } from './infrastructure/database/typeorm/entities/movimentacao.orm-entity';
@@ -60,6 +63,11 @@ import { MovimentacoesController } from './infrastructure/http/controllers/movim
   controllers: [MovimentacoesController],
   providers: [
     ResolverReferenciasErpService,
+    ConsultarVendasUseCase,
+    {
+      provide: VENDAS_MOVIMENTACAO_REPOSITORY,
+      useClass: VendasMovimentacaoRepository,
+    },
     SincronizarMovimentacaoUseCase,
     BuscarMovimentacaoUseCase,
     BuscarMovimentacaoPorIdErpUseCase,
@@ -67,6 +75,8 @@ import { MovimentacoesController } from './infrastructure/http/controllers/movim
     RemoverMovimentacaoUseCase,
     { provide: MOVIMENTACAO_REPOSITORY, useClass: MovimentacaoRepository },
   ],
-  exports: [MOVIMENTACAO_REPOSITORY],
+  // A VENDA LIDA DA MOVIMENTACAO — 25/09/2026. Quem consulta venda passa a
+  // vir aqui, e nao a tabela `vendas`. Ver a porta para a decisao.
+  exports: [MOVIMENTACAO_REPOSITORY, ConsultarVendasUseCase],
 })
 export class MovimentacoesModule {}

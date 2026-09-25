@@ -1186,6 +1186,8 @@ describe('ProcessarFotoCatalogoUseCase — em qualquer ordem (o print do Yerlon)
       expect(whatsapp.enviarTexto).toHaveBeenCalledWith(
         DE,
         'Não consegui tratar essa imagem agora.',
+        // Pelo numero da Elena: o catalogo inteiro vive nele desde 25/09/2026.
+        'ELENA',
       );
       expect(useCase.temFotoComFalha(DE)).toBe(true);
 
@@ -1552,7 +1554,14 @@ describe('ProcessarFotoCatalogoUseCase — consultar uma peca', () => {
     expect(r?.resposta).toContain('BRINCO ESMERALDA OB 18K');
     // O CENTAVO FICA: quem consulta preco vai repetir o numero para alguem.
     expect(r?.resposta).toContain('7.490,37');
-    expect(r?.resposta).toContain('3 em estoque');
+    // DISPONIVEL, E NAO QUANTOS — 25/09/2026. A peca tem 3 no fixture, e o
+    // numero nao pode aparecer: a regra do canal do catalogo passou a ser a
+    // mesma da vendedora.
+    expect(r?.resposta).toContain('disponível');
+    // Sem "3 em estoque" — e nao basta procurar o "3" solto, que aparece no
+    // preco (7.490,37). O que nao pode existir e a frase da quantidade.
+    expect(r?.resposta).not.toMatch(/d+s+em estoque/);
+    expect(r?.resposta).not.toContain('em estoque');
     // SO LE: nenhuma foto e tocada.
     expect(catalogos.atualizarFoto).not.toHaveBeenCalled();
   });
@@ -1570,7 +1579,7 @@ describe('ProcessarFotoCatalogoUseCase — consultar uma peca', () => {
     useCase.pedirConsulta(DE);
     const r = await useCase.consulta(DE, 'BR26252');
 
-    expect(r?.resposta).toContain('sem saldo em estoque');
+    expect(r?.resposta).toContain('indisponível');
   });
 
   it('a descricao devolve a lista, com preco em cada linha', async () => {

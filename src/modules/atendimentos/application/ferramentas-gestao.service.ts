@@ -14,6 +14,8 @@ import type {
   GestaoPanoramaLeadsHandler,
   GestaoLeituraResultado,
   GestaoMetasHandler,
+  GestaoItensHandler,
+  GestaoProdutosHandler,
   GestaoPanoramaHandler,
   GestaoVendasHandler,
   GestaoAgendaHandler,
@@ -29,6 +31,8 @@ import {
   MINUTOS_LEMBRETE,
   type ResultadoAgendamentoGestao,
 } from './use-cases/agendar-contato-gestao.use-case';
+import { ConsultarVendasUseCase, LIMITE_PADRAO } from '../../movimentacoes/application/use-cases/consultar-vendas.use-case';
+import { ListarProdutosUseCase } from '../../produtos/application/use-cases/listar-produtos.use-case';
 import { ConsultarAgendaVendedoraUseCase } from './use-cases/consultar-agenda-vendedora.use-case';
 import { ConsultarCarteiraVendedoraUseCase } from './use-cases/consultar-carteira-vendedora.use-case';
 import { ConsultarDesempenhoVendedoraUseCase } from './use-cases/consultar-desempenho-vendedora.use-case';
@@ -69,6 +73,8 @@ export interface FerramentasGestao {
   gestaoVendas: GestaoVendasHandler;
   gestaoMetas: GestaoMetasHandler;
   gestaoPanorama: GestaoPanoramaHandler;
+  gestaoItens: GestaoItensHandler;
+  gestaoProdutos: GestaoProdutosHandler;
   gestaoAgendar: GestaoAgendarHandler;
   gestaoCarteiraDoCliente: GestaoCarteiraDoClienteHandler;
   gestaoEncaminharLead: GestaoEncaminharLeadHandler;
@@ -105,6 +111,8 @@ export interface FerramentasGestao {
 export class FerramentasGestaoService {
   constructor(
     private readonly resolverVendedora: ResolverVendedoraPorNomeUseCase,
+    private readonly consultarVendas: ConsultarVendasUseCase,
+    private readonly listarProdutos: ListarProdutosUseCase,
     private readonly agenda: ConsultarAgendaVendedoraUseCase,
     private readonly desempenho: ConsultarDesempenhoVendedoraUseCase,
     private readonly carteira: ConsultarCarteiraVendedoraUseCase,
@@ -189,6 +197,67 @@ export class FerramentasGestaoService {
           );
         });
         return { ...r, total };
+      },
+
+      // A PECA NO CATALOGO, COM A QUANTIDADE — 25/09/2026.
+      //
+      // O espelho da `consultarProdutos` da vendedora, que no mesmo dia passou
+      // a ver so disponivel/indisponivel. A gestao pode ver o numero: foi a
+      // decisao do Lucas ao separar quem ve o que.
+      //
+      // O SALDO VEM DA TABELA `estoque` — o `estoqueAtual` do
+      // `ListarProdutosUseCase` ja e o somatorio de la desde 17/09, e nao a
+      // coluna `produtos.estoque_atual`, que esta zerada na base inteira.
+      gestaoProdutos: async ({ busca }) => {
+        const achados = await this.listarProdutos.execute({
+          busca,
+          ativo: true,
+          limit: 6,
+        });
+        return {
+          produtos: achados.map((p) => ({
+            linha:
+              `${p.descricaoEtiqueta ?? `${p.categoria} ${p.familia}`}` +
+              `${p.codigoErp ? ` — código ${p.codigoErp}` : ''}: ` +
+              `${moeda(p.valorVenda)}, ` +
+              `${p.estoqueAtual > 0 ? `${p.estoqueAtual} em estoque` : 'sem estoque'}`,
+          })),
+        };
+      },
+
+      // O QUE MAIS SAIU — 25/09/2026. Le a MOVIMENTACAO, como todo o resto de
+      // venda desde hoje; ver `ConsultarVendasUseCase`.
+      gestaoItens: async ({ periodo, limite, vendedora }) => {
+        // O nome so e resolvido quando ela PEDE um recorte por vendedora — a
+        // pergunta comum e sobre a loja inteira, e nao paga essa consulta.
+        let vendedoraId: string | null = null;
+        if (vendedora?.trim()) {
+          const r = await this.resolverVendedora.execute(vendedora);
+          if (r.status === 'AMBIGUA') {
+            return { status: 'AMBIGUA', linhas: r.nomes };
+          }
+          if (r.status === 'NAO_ENCONTRADA') {
+            return { status: 'NAO_ENCONTRADA', linhas: r.sugestoes };
+          }
+          vendedoraId = r.id;
+        }
+
+        const { linhas } = await this.consultarVendas.itens(
+          periodo ?? 'HOJE',
+          limite ?? LIMITE_PADRAO,
+          vendedoraId,
+        );
+
+        return {
+          status: 'OK',
+          linhas: linhas.map((i) => {
+            const nome = i.descricao?.trim() || i.familia || 'Sem descrição';
+            // A QUANTIDADE SO APARECE QUANDO E MAIS DE UMA. Numa joalheria a
+            // peca e quase sempre unica, e "1 un" em toda linha e ruido.
+            const qtd = i.quantidade > 1 ? ` · ${i.quantidade} un` : '';
+            return `${i.codigoErp ?? '—'} ${nome} — ${moeda(i.valor)}${qtd}`;
+          }),
+        };
       },
 
       gestaoPanorama: async ({ periodo }) => {

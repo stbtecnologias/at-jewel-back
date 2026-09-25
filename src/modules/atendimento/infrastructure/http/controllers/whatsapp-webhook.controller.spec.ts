@@ -1,3 +1,4 @@
+import { SessoesDaCasaService } from '../../../application/sessoes-da-casa.service';
 import { WhatsappWebhookController } from './whatsapp-webhook.controller';
 
 /**
@@ -23,7 +24,13 @@ describe('WhatsappWebhookController — porta dos dois publicos', () => {
   let whatsapp: { resolverRemetente: jest.Mock; enviarTexto: jest.Mock };
   let triagem: { disponivel: jest.Mock; encaminhar: jest.Mock };
   let config: { get: jest.Mock };
-  let conexoes: { sessaoDaLoja: string; vendedoraDaSessao: jest.Mock };
+  let conexoes: { vendedoraDaSessao: jest.Mock };
+  /**
+   * As sessoes da casa, DE VERDADE e nao dubladas — quem decide "e da casa?"
+   * e o objeto real, e com ele dublado o teste do desvio nao provaria nada.
+   * Um numero so por padrao: e o estado de producao ate o segundo chip.
+   */
+  let sessoes: SessoesDaCasaService;
   let registrarContato: { execute: jest.Mock };
   let controller: WhatsappWebhookController;
 
@@ -38,10 +45,10 @@ describe('WhatsappWebhookController — porta dos dois publicos', () => {
       encaminhar: jest.fn().mockResolvedValue(undefined),
     };
     config = { get: jest.fn().mockReturnValue('production') };
-    conexoes = {
-      sessaoDaLoja: 'default',
-      vendedoraDaSessao: jest.fn().mockReturnValue('vd-1'),
-    };
+    conexoes = { vendedoraDaSessao: jest.fn().mockReturnValue('vd-1') };
+    sessoes = new SessoesDaCasaService({
+      get: (k: string) => (k === 'WAHA_SESSION' ? 'default' : undefined),
+    } as never);
     registrarContato = {
       execute: jest.fn().mockResolvedValue({ registrado: true, atendimentoId: 'at-1', tipo: 'CONTATO_CLIENTE' }),
     };
@@ -49,6 +56,7 @@ describe('WhatsappWebhookController — porta dos dois publicos', () => {
     controller = new WhatsappWebhookController(
       triagem as never,
       conexoes as never,
+      sessoes,
       registrarContato as never,
       processar as never,
       config as never,
@@ -97,6 +105,9 @@ describe('WhatsappWebhookController — porta dos dois publicos', () => {
     expect(whatsapp.enviarTexto).toHaveBeenCalledWith(
       '558598888777@c.us',
       'Sua agenda de hoje tem dois contatos.',
+      // `undefined` = um numero so, e ele responde por si. Com dois, aqui
+      // viria o agente em que a mensagem entrou.
+      undefined,
     );
   });
 
@@ -223,7 +234,10 @@ describe('WhatsappWebhookController — porta dos dois publicos', () => {
 
     /** O nome da sessao da loja vem do env, e nao e sempre "default". */
     it('respeita o WAHA_SESSION configurado', async () => {
-      conexoes.sessaoDaLoja = 'atjewel';
+      sessoes = new SessoesDaCasaService({
+        get: (k: string) => (k === 'WAHA_SESSION' ? 'atjewel' : undefined),
+      } as never);
+      (controller as unknown as { sessoes: SessoesDaCasaService }).sessoes = sessoes;
       processar.execute.mockResolvedValue({
         resposta: null,
         motivo: 'ignorado_remetente_desconhecido',

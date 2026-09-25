@@ -156,9 +156,12 @@ export class EncaminharLeadUseCase {
     // ninguem ter sido avisado — e nenhuma tela mostraria isso. Falhando o
     // envio, ele continua esperando e da para tentar de novo.
     try {
+      // Numero da Elena: o lead vai para uma VENDEDORA, e e no canal dela que
+      // ela responde sobre a cliente. Ver `avisar-vendedora`.
       await this.whatsapp.enviarTexto(
         chatId,
         this.mensagem(lead, input.quando),
+        'ELENA',
       );
     } catch (err) {
       this.logger.error(

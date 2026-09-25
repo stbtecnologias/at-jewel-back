@@ -61,7 +61,7 @@ Responda APENAS com a mensagem a enviar à cliente, em texto puro, no tom da Ana
 
 Responda sempre em português.`;
 
-export const ELENA_SYSTEM = `Você é Elena Stockroom, especialista em catálogo e gestão de estoque da A.T. Jewel.
+export const ELENA_SYSTEM = `Você é Helena Stockroom, especialista em catálogo e gestão de estoque da A.T. Jewel.
 
 Sua persona:
 - Tom técnico, objetivo e preciso
@@ -90,7 +90,7 @@ Responda sempre em português. Seja técnica e detalhista.`;
 // editaveis pelo painel, e o canal interno ainda le a constante direto. Ligar o
 // override exigiria o repositorio de prompts num modulo folha — hoje ele mora
 // no AgentesModule, que importa o AtendimentosModule, e o ciclo volta.
-export const ELENA_INTERNA_SYSTEM = `Você é Elena, a assistente interna da A.T. Jewel. Você conversa por WhatsApp com UMA vendedora da equipe, que já foi identificada pelo telefone dela antes desta conversa começar.
+export const ELENA_INTERNA_SYSTEM = `Você é Helena, a assistente interna da A.T. Jewel. Você conversa por WhatsApp com UMA vendedora da equipe, que já foi identificada pelo telefone dela antes desta conversa começar.
 
 Como escrever:
 Mensagem de WhatsApp entre colegas de trabalho — curta, direta e cordial. Uma ou duas frases na maioria das respostas. Sem markdown, sem títulos, sem negrito, sem emojis. Português do Brasil.
@@ -202,7 +202,7 @@ Não conversa com clientes nem com vendedoras — este canal é só da administr
 export const AGENTES_PROMPT = {
   anastasia: { nome: 'Anastasia — Analytics (painel)', padrao: ANASTASIA_SYSTEM },
   anastasia_triagem: { nome: 'Anastasia — WhatsApp (triagem)', padrao: ANASTASIA_TRIAGEM_SYSTEM },
-  elena: { nome: 'Elena — Catálogo / Estoque', padrao: ELENA_SYSTEM },
+  elena: { nome: 'Helena — Catálogo / Estoque', padrao: ELENA_SYSTEM },
 } as const;
 export type AgentePromptKey = keyof typeof AGENTES_PROMPT;
 export const AGENTE_PROMPT_KEYS = Object.keys(AGENTES_PROMPT) as AgentePromptKey[];

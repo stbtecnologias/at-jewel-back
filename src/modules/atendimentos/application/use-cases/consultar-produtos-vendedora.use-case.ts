@@ -7,11 +7,28 @@ const MAXIMO = 6;
 /**
  * O que a vendedora ve de um produto.
  *
- * REPARE NO QUE NAO EXISTE AQUI: `valorCusto` e `margemPercentual`. Nao e
- * omissao do prompt — e ausencia de campo. A decisao (Lucas, 20/08/2026) foi
- * que ela ve PRECO DE VENDA e quantidade; custo e margem sao informacao de
- * gestao. Como o objeto nao carrega, nenhuma instrucao no meio da conversa faz
- * o modelo revelar o que ele nunca recebeu.
+ * REPARE NO QUE NAO EXISTE AQUI: `valorCusto`, `margemPercentual` — e, desde
+ * 25/09/2026, A QUANTIDADE.
+ *
+ * Nao e omissao do prompt: e ausencia de campo. Como o objeto nao carrega,
+ * nenhuma instrucao no meio da conversa faz o modelo revelar o que ele nunca
+ * recebeu. Foi assim que custo e margem ficaram de fora em 20/08, e e assim
+ * que a quantidade fica agora.
+ *
+ * ==========================================================================
+ * ELA SABE SE TEM, E NAO QUANTO TEM — decisao do Lucas em 25/09/2026.
+ *
+ *   1  CO25413  COLAR RIVCOROA 16.92 CTS   disponivel     R$ 222.530,00
+ *   2  BR26278  BRINCO DTS 1.37 CTS        indisponivel   R$  98.040,00
+ *
+ * A vendedora precisa responder "tenho essa peca para te mostrar?" — e para
+ * isso um booleano basta. Saber que restam duas ou onze e informacao de
+ * gestao, e no WhatsApp ela viaja para fora da loja com a mesma facilidade
+ * com que chega.
+ *
+ * O CANAL DO CATALOGO (estoque/marketing) segue a MESMA regra, pela mesma
+ * decisao — ver `fichaDaPeca` em `ProcessarFotoCatalogoUseCase`.
+ * ==========================================================================
  */
 export interface ProdutoParaVendedora {
   descricao: string;
@@ -19,7 +36,8 @@ export interface ProdutoParaVendedora {
   familia: string;
   codigo: string | null;
   precoVenda: number;
-  emEstoque: number;
+  /** Tem saldo na loja? O QUANTO nao sai daqui. */
+  disponivel: boolean;
 }
 
 /**
@@ -46,7 +64,9 @@ export class ConsultarProdutosVendedoraUseCase {
       familia: p.familia,
       codigo: p.codigoErp,
       precoVenda: p.valorVenda,
-      emEstoque: p.estoqueAtual,
+      // O saldo vem da tabela `estoque` (ver `saldo-do-produto.ts`), e vira
+      // um SIM ou NAO aqui — o numero nao atravessa esta fronteira.
+      disponivel: p.estoqueAtual > 0,
     }));
   }
 }

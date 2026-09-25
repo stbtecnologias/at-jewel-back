@@ -354,6 +354,7 @@ export class AgendarContatoGestaoUseCase {
         );
         return 'FALHOU';
       }
+      // Numero da Elena: o aviso e para a VENDEDORA. Ver `avisar-vendedora`.
       await this.whatsapp.enviarTexto(
         chatId,
         montarAvisoDeAgendamento({

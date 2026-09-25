@@ -130,7 +130,9 @@ export class AvisarGestaoDeLeadUseCase {
           );
           continue;
         }
-        await this.whatsapp.enviarTexto(chatId, texto);
+        // Numero da Anastasia: o aviso e para a GESTAO, e e la que ela
+        // pergunta "de quem e essa cliente?".
+        await this.whatsapp.enviarTexto(chatId, texto, 'ANASTASIA');
         enviados++;
       } catch (err) {
         // Um destinatario com problema nao pode calar os outros.

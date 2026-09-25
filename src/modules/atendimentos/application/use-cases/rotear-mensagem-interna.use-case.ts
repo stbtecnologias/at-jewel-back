@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { BuscarAdminPorTelefoneUseCase } from '../../../auth/application/use-cases/buscar-admin-por-telefone.use-case';
+import type { AgenteDaCasa } from '../../../atendimento/domain/agente-da-casa';
 import { WHATSAPP_GATEWAY } from '../../../atendimento/domain/ports/injection-tokens';
 import type { IWhatsappGateway } from '../../../atendimento/domain/ports/whatsapp-gateway.port';
 import { TRANSCRICAO_SERVICE } from '../../../transcricao/domain/ports/injection-tokens';
@@ -23,6 +24,29 @@ import {
 export interface MensagemDoCanal {
   /** Chat de origem, ja traduzido de LID para telefone na borda HTTP. */
   de: string;
+  /**
+   * POR QUAL NUMERO DA CASA a mensagem entrou — a segunda pergunta do
+   * roteamento, desde 25/09/2026.
+   *
+   * Ate aqui so existia "quem escreve". Com dois chips existe tambem "para
+   * quem escreveu", e as duas podem discordar: a vendedora que procura a
+   * Anastasia quer, quase sempre, a Elena.
+   *
+   * ========================================================================
+   * AUSENTE = UM NUMERO SO, E ELE ATENDE TODO MUNDO.
+   *
+   * Esta e a diferenca entre um deploy tranquilo e um canal quebrado. O
+   * codigo dos dois numeros sobe antes de o segundo chip existir; enquanto
+   * `WAHA_SESSION_ELENA` nao for configurado, a borda nao preenche este campo
+   * e o roteador se comporta exatamente como antes — vendedora e gestao
+   * atendidas no mesmo numero, sem desvio nenhum.
+   *
+   * Nao e `'ANASTASIA'` por padrao de proposito: com um valor ali, a primeira
+   * vendedora a escrever depois do deploy ouviria "me chama no outro numero"
+   * apontando para um chip que ninguem conectou.
+   * ========================================================================
+   */
+  agente?: AgenteDaCasa;
   texto: string;
   audio?: AudioInterno;
   /**
@@ -46,7 +70,21 @@ export interface RespostaDoCanal {
  * Quem esta falando comigo — e, a partir disso, qual agente responde.
  *
  * ==========================================================================
- * DOIS CANAIS, UM NUMERO SO DE ENTRADA.
+ * DOIS CANAIS, E DESDE 25/09/2026 DOIS NUMEROS.
+ *
+ * A decisao do Lucas foi a SEPARACAO ESTRITA: cada numero atende o seu
+ * publico, e so ele.
+ *
+ *   numero da ELENA      -> vendedora ativa, e o canal do catalogo
+ *   numero da ANASTASIA  -> gestao
+ *   publico errado, mas RECONHECIDO -> "me chama no outro numero"
+ *   qualquer outro       -> silencio, nos dois
+ *
+ * O desvio existe porque a alternativa era pior dos dois lados: atender assim
+ * mesmo faria os dois numeros virarem sinonimos e a separacao so existiria no
+ * papel; calar faria a pessoa da casa achar que o sistema quebrou.
+ *
+ * A REGRA ANTIGA, para quando ha UM numero so (`WAHA_SESSION_ELENA` ausente):
  *
  *   telefone de vendedora ativa   -> Elena, que so enxerga o dela
  *   telefone de usuario de gestao -> Anastasia, que enxerga a equipe
@@ -120,6 +158,12 @@ export class RotearMensagemInternaUseCase {
         );
         return { resposta: null, motivo: 'ignorado_foto_sem_permissao' };
       }
+      // O CATALOGO MORA NO NUMERO DA ELENA. A foto que chega no da Anastasia
+      // nao e recusada em silencio: quem tem permissao ouve para onde levar.
+      // Com um numero so, nao ha para onde desviar — e ele atende tudo.
+      if (msg.agente === 'ANASTASIA') {
+        return this.desviar('ELENA', quem.nome ?? '');
+      }
       return this.canalCatalogo.foto({
         de: msg.de,
         nomeRemetente: quem.nome ?? '',
@@ -151,17 +195,21 @@ export class RotearMensagemInternaUseCase {
     // vendedora-antes-de-gestao: sem elas, todo texto do canal faria um
     // lookup de admin antes do de vendedora.
     // ---------------------------------------------------------------------
-    const esperandoCatalogo = this.canalCatalogo.temFotoEsperando(msg.de);
-    const esperandoCodigo = this.canalCatalogo.temCodigoEsperando(msg.de);
-    const esperandoConsulta = this.canalCatalogo.esperandoConsulta(msg.de);
-    const fotoComFalha = this.canalCatalogo.temFotoComFalha(msg.de);
+    // Nada de catalogo acontece fora do numero da Elena — nem as conversas
+    // que ficaram abertas. Os testes abaixo sao consultas em memoria, e sem
+    // esta linha eles rodariam a toa no numero da gestao.
+    const noCatalogo = msg.agente !== 'ANASTASIA';
+    const esperandoCatalogo = noCatalogo && this.canalCatalogo.temFotoEsperando(msg.de);
+    const esperandoCodigo = noCatalogo && this.canalCatalogo.temCodigoEsperando(msg.de);
+    const esperandoConsulta = noCatalogo && this.canalCatalogo.esperandoConsulta(msg.de);
+    const fotoComFalha = noCatalogo && this.canalCatalogo.temFotoComFalha(msg.de);
     if (
       esperandoCatalogo ||
       esperandoCodigo ||
       esperandoConsulta ||
       fotoComFalha ||
-      this.canalCatalogo.temFotoEmAprovacao(msg.de) ||
-      this.canalCatalogo.conversaAberta(msg.de)
+      (noCatalogo && this.canalCatalogo.temFotoEmAprovacao(msg.de)) ||
+      (noCatalogo && this.canalCatalogo.conversaAberta(msg.de))
     ) {
       const quem = await this.identificarAdmin.execute(
         telefone,
@@ -250,10 +298,30 @@ export class RotearMensagemInternaUseCase {
       }
     }
 
-    const vendedora = await this.identificarVendedora.execute(telefone);
-    const admin = vendedora
+    // ---------------------------------------------------------------------
+    // A ORDEM DAS CONSULTAS SEGUE O NUMERO, e isto resolve de graca um empate
+    // que antes era decidido no codigo.
+    //
+    // Quem e vendedora E tem login de gestao caia sempre no lado restrito,
+    // porque a vendedora era procurada primeiro. Com dois numeros quem decide
+    // e a propria pessoa, pelo numero que escolheu — e nenhuma ordem escrita
+    // aqui precisa arbitrar por ela.
+    //
+    // A consulta do publico DAQUELE numero vem primeiro; a outra so acontece
+    // para saber se cabe desvio ou silencio.
+    // ---------------------------------------------------------------------
+    // `undefined` = um numero so. Ver `MensagemDoCanal.agente`.
+    const separadas = msg.agente !== undefined;
+    const naAnastasia = msg.agente === 'ANASTASIA';
+
+    const gestaoPrimeiro = naAnastasia
+      ? await this.identificarAdmin.execute(telefone)
+      : null;
+    const vendedora = gestaoPrimeiro
       ? null
-      : await this.identificarAdmin.execute(telefone);
+      : await this.identificarVendedora.execute(telefone);
+    const admin =
+      gestaoPrimeiro ?? (vendedora ? null : await this.identificarAdmin.execute(telefone));
 
     // QUEM CUIDA DO CATALOGO E DA CASA, e ate 03/09/2026 caia na TRIAGEM: o
     // estoquista escrevia qualquer coisa que nao fosse "aprovo" e a Anastasia
@@ -275,6 +343,20 @@ export class RotearMensagemInternaUseCase {
         'Mensagem interna de remetente nao reconhecido — ignorada.',
       );
       return { resposta: null, motivo: 'ignorado_remetente_desconhecido' };
+    }
+
+    // ---------------------------------------------------------------------
+    // O NUMERO ERRADO, E A PESSOA E DA CASA: desvio educado.
+    //
+    // Depois do reconhecimento de proposito. Antes dele, a frase confirmaria a
+    // qualquer desconhecido que existe um segundo numero — e quem nao e da
+    // casa continua sem saber que existe canal nenhum.
+    // ---------------------------------------------------------------------
+    if (separadas && naAnastasia && !admin) {
+      return this.desviar('ELENA', vendedora?.nome ?? doCatalogo?.nome ?? '');
+    }
+    if (separadas && !naAnastasia && admin) {
+      return this.desviar('ANASTASIA', admin.nome ?? '');
     }
 
     let texto =
@@ -447,6 +529,39 @@ export class RotearMensagemInternaUseCase {
     });
   }
 
+  /**
+   * "Me chama no outro numero" — o desvio educado de 25/09/2026.
+   *
+   * ==========================================================================
+   * A FRASE DIZ QUAL E O NUMERO, e o numero vem do WAHA e nao de um env.
+   * Trocou o chip, a frase acompanha sozinha; nao ha variavel para alguem
+   * esquecer de atualizar, e nao ha como ela apontar para um numero velho.
+   *
+   * Sem conseguir ler o numero (sessao caida, WAHA fora do ar), a frase sai
+   * SEM ele. Desviar sem dizer para onde ainda e melhor que calar: a pessoa
+   * fica sabendo que errou de canal e pergunta a alguem.
+   * ==========================================================================
+   */
+  private async desviar(
+    para: AgenteDaCasa,
+    nome: string,
+  ): Promise<RespostaDoCanal> {
+    const numero = await this.whatsapp.numeroDoAgente(para);
+    const primeiro = nome.trim().split(/\s+/)[0];
+    const ola = primeiro ? `Oi, ${primeiro}! ` : '';
+
+    const onde = numero
+      ? ` Me chama no ${formatarNumero(numero)}.`
+      : ' Me chama no outro número da loja.';
+
+    const texto =
+      para === 'ELENA'
+        ? `${ola}Este número é o da Anastasia, que atende a gestão. Vendedoras e catálogo eu atendo como Helena, no outro número.${onde}`
+        : `${ola}Este número é o da Helena, que atende as vendedoras e o catálogo. Os dados da equipe eu vejo como Anastasia, no outro número.${onde}`;
+
+    return { resposta: texto, motivo: `desvio_para_${para.toLowerCase()}` };
+  }
+
   /** Igual ao do canal da vendedora: null = tinha audio e nao deu para ouvir. */
   private async resolverTexto(msg: MensagemDoCanal): Promise<string | null> {
     const digitado = msg.texto?.trim() ?? '';
@@ -483,4 +598,15 @@ export class RotearMensagemInternaUseCase {
     this.logger.debug(`Audio transcrito (${texto.length} caracteres).`);
     return texto;
   }
+}
+
+/**
+ * O telefone da sessao, legivel. So digitos entram; sai
+ * `(85) 98490-0118` quando o formato brasileiro casa, e os digitos crus
+ * quando nao casa — numero de outro pais, ou fixo, continua servindo.
+ */
+function formatarNumero(digitos: string): string {
+  const br = /^55(\d{2})(\d{4,5})(\d{4})$/.exec(digitos);
+  if (!br) return digitos;
+  return `(${br[1]}) ${br[2]}-${br[3]}`;
 }

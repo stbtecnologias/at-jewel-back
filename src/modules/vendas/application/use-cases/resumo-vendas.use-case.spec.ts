@@ -31,7 +31,7 @@ describe('ResumoVendasUseCase', () => {
       receitaTotal: 900,
       ticketMedio: 300,
       totalItens: 7,
-      porStatus: { concluida: 3, cancelada: 1, pendente: 2 },
+      porStatus: { concluida: 3, cancelada: 1, pendente: 2, devolvida: 0 },
     });
 
     const resultado = await useCase.execute({
@@ -50,7 +50,7 @@ describe('ResumoVendasUseCase', () => {
       receitaTotal: 900,
       ticketMedio: 300,
       totalItens: 7,
-      porStatus: { concluida: 3, cancelada: 1, pendente: 2 },
+      porStatus: { concluida: 3, cancelada: 1, pendente: 2, devolvida: 0 },
       periodo: { de: dataDe, ate: dataAte },
     });
   });
@@ -65,7 +65,7 @@ describe('ResumoVendasUseCase', () => {
       receitaTotal: 250,
       ticketMedio: 250,
       totalItens: 1,
-      porStatus: { concluida: 1, cancelada: 0, pendente: 0 },
+      porStatus: { concluida: 1, cancelada: 0, pendente: 0, devolvida: 0 },
     });
 
     await useCase.execute({ formaPagamento: ['pix'] });
@@ -79,7 +79,7 @@ describe('ResumoVendasUseCase', () => {
       receitaTotal: 0,
       ticketMedio: 0,
       totalItens: 0,
-      porStatus: { concluida: 0, cancelada: 0, pendente: 0 },
+      porStatus: { concluida: 0, cancelada: 0, pendente: 0, devolvida: 0 },
     });
 
     const resultado = await useCase.execute({});
@@ -96,7 +96,7 @@ describe('ResumoVendasUseCase', () => {
       receitaTotal: 500,
       ticketMedio: 250,
       totalItens: 4,
-      porStatus: { concluida: 2, cancelada: 0, pendente: 0 },
+      porStatus: { concluida: 2, cancelada: 0, pendente: 0, devolvida: 0 },
     });
 
     const resultado = await useCase.execute({ status: ['concluida'] });
@@ -106,6 +106,10 @@ describe('ResumoVendasUseCase', () => {
       concluida: 2,
       cancelada: 0,
       pendente: 0,
+      // A DEVOLUCAO entrou no contrato em 25/09/2026, com a leitura vinda da
+      // movimentacao: a tabela `vendas` nao distingue devolucao de
+      // cancelamento, e a movimentacao distingue.
+      devolvida: 0,
     });
   });
 });
