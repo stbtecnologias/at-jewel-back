@@ -384,6 +384,17 @@ export type GestaoPanoramaHandler = (input: {
  * nome: pedir "as pecas da Marina" com duas Marinas na equipe nao pode virar
  * um chute.
  */
+/**
+ * A peca no catalogo, COM A QUANTIDADE — so para a gestao.
+ *
+ * O espelho da `consultarProdutos` da vendedora, que desde 25/09/2026 ve
+ * apenas disponivel/indisponivel. A gestao pode ver o numero: decisao do
+ * Lucas no mesmo dia, respondendo a pergunta de quem podia ver o que.
+ */
+export type GestaoProdutosHandler = (input: {
+  busca: string;
+}) => Promise<{ produtos: { linha: string }[] }>;
+
 export type GestaoItensHandler = (input: {
   periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
   limite?: number;
@@ -556,6 +567,7 @@ export interface ChatParams {
   gestaoMetas?: GestaoMetasHandler;
   gestaoPanorama?: GestaoPanoramaHandler;
   gestaoItens?: GestaoItensHandler;
+  gestaoProdutos?: GestaoProdutosHandler;
   gestaoCarteiraDoCliente?: GestaoCarteiraDoClienteHandler;
   gestaoEncaminharLead?: GestaoEncaminharLeadHandler;
   gestaoVendedoras?: GestaoVendedorasHandler;

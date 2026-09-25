@@ -1662,10 +1662,16 @@ export class ProcessarFotoCatalogoUseCase {
     preco: number | null,
     estoque: number,
   ): string {
-    const saldo =
-      estoque > 0
-        ? `${estoque} em estoque`
-        : 'sem saldo em estoque — confere no sistema';
+    // DISPONIVEL, E NAO QUANTOS — 25/09/2026, decisao do Lucas. A regra e a
+    // mesma do canal da vendedora: quem consulta uma peca pelo WhatsApp
+    // precisa saber SE tem, e o quanto e informacao de gestao. Vale aqui
+    // tambem porque este canal e do estoque e do marketing.
+    //
+    // O NUMERO AINDA CHEGA NESTE METODO — diferente do canal da vendedora,
+    // onde o campo deixou de existir —, porque vem do agregado do produto,
+    // que tem outros usos no arquivo. A conversao acontece aqui, e nada
+    // abaixo desta linha ve a quantidade.
+    const saldo = estoque > 0 ? 'disponível' : 'indisponível';
     return `${codigo} · ${descricao.toUpperCase()}\n${this.emReais(preco)} · ${saldo}`;
   }
 

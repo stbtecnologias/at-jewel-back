@@ -380,11 +380,13 @@ export class FerramentasVendedoraService {
         const achados = await this.produtos.execute(busca);
         return {
           produtos: achados.map((p) => ({
+            // DISPONIVEL, E NAO QUANTOS — 25/09/2026. Ver
+            // `ProdutoParaVendedora`: o numero nao chega ate aqui.
             linha:
               `${p.descricao} (${p.categoria} / ${p.familia})` +
               `${p.codigo ? ` — código ${p.codigo}` : ''}: ` +
-              `${moeda(p.precoVenda)}, ` +
-              `${p.emEstoque === 0 ? 'sem estoque' : `${p.emEstoque} em estoque`}`,
+              `${p.disponivel ? 'disponível' : 'indisponível'}, ` +
+              `${moeda(p.precoVenda)}`,
           })),
         };
       },

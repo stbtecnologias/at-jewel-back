@@ -133,7 +133,7 @@ const METAS_TOOL: Anthropic.Tool = {
 const PRODUTOS_TOOL: Anthropic.Tool = {
   name: 'consultar_produtos',
   description:
-    'Procura pecas no catalogo e devolve descricao, preco de venda e quantidade em estoque. Use quando ela perguntar sobre produto — "quanto custa o brinco de esmeralda", "tem alianca de ouro 18k", "quantos pingentes de zirconia temos". Devolve no maximo seis pecas. Voce nao tem acesso a custo nem margem: se ela perguntar isso, diga que nao consegue ver.',
+    'Procura pecas no catalogo e devolve descricao, preco de venda e SE A PECA ESTA DISPONIVEL (disponivel/indisponivel). NAO ha quantidade: se perguntarem quantas tem, diga que voce ve apenas se a peca esta disponivel. Use quando ela perguntar sobre produto — "quanto custa o brinco de esmeralda", "tem alianca de ouro 18k", "quantos pingentes de zirconia temos". Devolve no maximo seis pecas. Voce nao tem acesso a custo nem margem: se ela perguntar isso, diga que nao consegue ver.',
   input_schema: {
     type: 'object',
     properties: {
@@ -141,6 +141,30 @@ const PRODUTOS_TOOL: Anthropic.Tool = {
         type: 'string',
         description:
           'O que procurar, nas palavras dela: nome da peca, categoria, familia, colecao, pedra, cor ou codigo do ERP. Ex.: "esmeralda", "alianca ouro 18k", "SEED-P0002".',
+      },
+    },
+    required: ['busca'],
+  },
+};
+
+/**
+ * O MESMO NOME, OUTRO CONTEUDO — e os dois nunca convivem.
+ *
+ * A vendedora ve disponivel/indisponivel; a gestao ve a quantidade. Sao dois
+ * handlers diferentes e dois canais diferentes, entao so um deles e
+ * registrado por chamada. O registro abaixo confere isso explicitamente.
+ */
+const GESTAO_PRODUTOS_TOOL: Anthropic.Tool = {
+  name: 'consultar_produtos',
+  description:
+    'Procura pecas no catalogo e devolve descricao, preco de venda e QUANTIDADE em estoque. Use quando perguntarem sobre produto — "quanto custa o brinco de esmeralda", "quantos aneis de diamante temos", "tem o CO25413".',
+  input_schema: {
+    type: 'object',
+    properties: {
+      busca: {
+        type: 'string',
+        description:
+          'O que procurar: nome da peca, categoria, familia, colecao, pedra, cor ou codigo do ERP.',
       },
     },
     required: ['busca'],
@@ -707,6 +731,10 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoMetas) tools.push(GESTAO_METAS_TOOL);
     if (params.gestaoPanorama) tools.push(GESTAO_PANORAMA_TOOL);
     if (params.gestaoItens) tools.push(GESTAO_ITENS_TOOL);
+    // So quando o canal NAO e o da vendedora — os dois usam o mesmo nome.
+    if (params.gestaoProdutos && !params.consultarProdutos) {
+      tools.push(GESTAO_PRODUTOS_TOOL);
+    }
     if (params.gestaoCarteiraDoCliente)
       tools.push(GESTAO_CARTEIRA_CLIENTE_TOOL);
     if (params.gestaoEncaminharLead) tools.push(GESTAO_ENCAMINHAR_LEAD_TOOL);
@@ -1131,6 +1159,27 @@ export class AnthropicClient implements ILlmClient {
             }
             return (
               `Metas dela:\n${metas.map((m) => `- ${m.linha}`).join('\n')}\n\n` +
+              'Repasse os numeros exatamente como estao.'
+            );
+          }),
+        );
+      } else if (
+        toolUse.name === 'consultar_produtos' &&
+        params.gestaoProdutos &&
+        !params.consultarProdutos
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const { produtos } = await params.gestaoProdutos!({
+              busca: String(
+                (toolUse.input as { busca?: string }).busca ?? '',
+              ).slice(0, 120),
+            });
+            if (produtos.length === 0) {
+              return 'Nenhuma peca encontrada com esse termo. Diga isso e pergunte se quer procurar de outro jeito.';
+            }
+            return (
+              `Pecas encontradas:\n${produtos.map((p) => `- ${p.linha}`).join('\n')}\n\n` +
               'Repasse os numeros exatamente como estao.'
             );
           }),

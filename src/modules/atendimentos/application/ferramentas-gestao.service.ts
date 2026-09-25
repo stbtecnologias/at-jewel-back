@@ -15,6 +15,7 @@ import type {
   GestaoLeituraResultado,
   GestaoMetasHandler,
   GestaoItensHandler,
+  GestaoProdutosHandler,
   GestaoPanoramaHandler,
   GestaoVendasHandler,
   GestaoAgendaHandler,
@@ -31,6 +32,7 @@ import {
   type ResultadoAgendamentoGestao,
 } from './use-cases/agendar-contato-gestao.use-case';
 import { ConsultarVendasUseCase, LIMITE_PADRAO } from '../../movimentacoes/application/use-cases/consultar-vendas.use-case';
+import { ListarProdutosUseCase } from '../../produtos/application/use-cases/listar-produtos.use-case';
 import { ConsultarAgendaVendedoraUseCase } from './use-cases/consultar-agenda-vendedora.use-case';
 import { ConsultarCarteiraVendedoraUseCase } from './use-cases/consultar-carteira-vendedora.use-case';
 import { ConsultarDesempenhoVendedoraUseCase } from './use-cases/consultar-desempenho-vendedora.use-case';
@@ -72,6 +74,7 @@ export interface FerramentasGestao {
   gestaoMetas: GestaoMetasHandler;
   gestaoPanorama: GestaoPanoramaHandler;
   gestaoItens: GestaoItensHandler;
+  gestaoProdutos: GestaoProdutosHandler;
   gestaoAgendar: GestaoAgendarHandler;
   gestaoCarteiraDoCliente: GestaoCarteiraDoClienteHandler;
   gestaoEncaminharLead: GestaoEncaminharLeadHandler;
@@ -109,6 +112,7 @@ export class FerramentasGestaoService {
   constructor(
     private readonly resolverVendedora: ResolverVendedoraPorNomeUseCase,
     private readonly consultarVendas: ConsultarVendasUseCase,
+    private readonly listarProdutos: ListarProdutosUseCase,
     private readonly agenda: ConsultarAgendaVendedoraUseCase,
     private readonly desempenho: ConsultarDesempenhoVendedoraUseCase,
     private readonly carteira: ConsultarCarteiraVendedoraUseCase,
@@ -193,6 +197,32 @@ export class FerramentasGestaoService {
           );
         });
         return { ...r, total };
+      },
+
+      // A PECA NO CATALOGO, COM A QUANTIDADE — 25/09/2026.
+      //
+      // O espelho da `consultarProdutos` da vendedora, que no mesmo dia passou
+      // a ver so disponivel/indisponivel. A gestao pode ver o numero: foi a
+      // decisao do Lucas ao separar quem ve o que.
+      //
+      // O SALDO VEM DA TABELA `estoque` — o `estoqueAtual` do
+      // `ListarProdutosUseCase` ja e o somatorio de la desde 17/09, e nao a
+      // coluna `produtos.estoque_atual`, que esta zerada na base inteira.
+      gestaoProdutos: async ({ busca }) => {
+        const achados = await this.listarProdutos.execute({
+          busca,
+          ativo: true,
+          limit: 6,
+        });
+        return {
+          produtos: achados.map((p) => ({
+            linha:
+              `${p.descricaoEtiqueta ?? `${p.categoria} ${p.familia}`}` +
+              `${p.codigoErp ? ` — código ${p.codigoErp}` : ''}: ` +
+              `${moeda(p.valorVenda)}, ` +
+              `${p.estoqueAtual > 0 ? `${p.estoqueAtual} em estoque` : 'sem estoque'}`,
+          })),
+        };
       },
 
       // O QUE MAIS SAIU — 25/09/2026. Le a MOVIMENTACAO, como todo o resto de

@@ -66,6 +66,8 @@ describe('FerramentasGestaoService', () => {
       // A consulta de venda, que desde 25/09 le a MOVIMENTACAO. Dublada aqui:
       // estes testes descrevem o roteamento das ferramentas, nao o SQL.
       { itens: jest.fn().mockResolvedValue({ linhas: [] }) } as never,
+      // A consulta de catalogo da GESTAO, com quantidade — dublada.
+      { execute: jest.fn().mockResolvedValue([]) } as never,
       agenda as never,
       desempenho as never,
       carteira as never,
