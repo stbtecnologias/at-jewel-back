@@ -1,4 +1,45 @@
 /**
+ * ESTE EVENTO E UMA MENSAGEM? — 25/09/2026.
+ *
+ * ==========================================================================
+ * O WAHA TEM DOIS NOMES PARA A MESMA COISA, E ACEITAR SO UM CALOU A HELENA.
+ *
+ * `message` e so o que CHEGA; `message.any` traz os dois sentidos. A sessao
+ * da Helena nasceu escutando `message.any` — defeito do caminho de criacao,
+ * corrigido no `WahaAdminClient` no mesmo dia —, e aqui a condicao era
+ * `event !== 'message'`: todo evento dela morria na primeira linha, antes de
+ * qualquer roteamento.
+ *
+ * O SINTOMA FOI SILENCIO ABSOLUTO, E SO EM PRODUCAO — e foi isso que custou o
+ * diagnostico. A Anastasia respondia (a sessao dela escuta `message`), a
+ * Helena nao respondia nada, e no LOCAL a mesma Helena respondia normalmente
+ * com a MESMA assinatura `message.any`.
+ *
+ * A diferenca era a versao do WAHA:
+ *
+ *   local      2026.8.2   entrega o evento com o nome `message`
+ *   producao   2026.9.1   entrega com o nome `message.any`
+ *
+ * Mesmo codigo, mesma config de sessao, comportamentos diferentes. Provado em
+ * 25/09 trocando o evento da sessao de producao para `message`: a Helena
+ * respondeu na primeira mensagem.
+ *
+ * E o silencio nao deixa rastro em log nenhum, porque descartar evento
+ * desconhecido e o comportamento CORRETO para status, ack e presenca.
+ *
+ * ACEITAR OS DOIS E CINTO E SUSPENSORIO: mesmo que alguem crie uma sessao com
+ * o evento amplo de novo, a mensagem nao some calada. Quem filtra o que a
+ * agente nao deve responder e o `fromMe`, logo abaixo, que sempre esteve la.
+ * ==========================================================================
+ */
+function ehEventoDeMensagem(evento: string | undefined): boolean {
+  // Sem `event` no corpo e o formato antigo do WAHA, de quando so havia um
+  // tipo — continua valendo, como em toda a borda.
+  if (!evento) return true;
+  return evento === 'message' || evento === 'message.any';
+}
+
+/**
  * Shape (parcial) do evento que o WAHA envia ao webhook. O payload e amplo e
  * varia por engine/versao; tipamos apenas o que usamos e parseamos defensivo.
  */
@@ -123,7 +164,7 @@ export function contatoDoEvento(body: unknown): {
     payload?: { to?: string; timestamp?: number };
   };
 
-  if (b.event && b.event !== 'message') return null;
+  if (!ehEventoDeMensagem(b.event)) return null;
 
   const payload = b.payload ?? {};
   const daVendedora = payload.fromMe === true;
@@ -171,7 +212,7 @@ export function contatoDoEvento(body: unknown): {
 export function extrairMensagemRecebida(body: unknown): MensagemWhatsapp | null {
   const b = (body ?? {}) as WahaWebhookBody;
 
-  if (b.event && b.event !== 'message') return null;
+  if (!ehEventoDeMensagem(b.event)) return null;
 
   const payload = b.payload ?? {};
   const de = typeof payload.from === 'string' ? payload.from : '';

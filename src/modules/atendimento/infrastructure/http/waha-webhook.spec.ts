@@ -152,3 +152,60 @@ describe('extrairMensagemRecebida', () => {
     expect(r).toBeNull();
   });
 });
+
+/**
+ * O NOME DO EVENTO MUDA COM A VERSÃO DO WAHA — 25/09/2026.
+ *
+ * ==========================================================================
+ * Este bloco existe por causa de um silêncio de produção que custou uma tarde.
+ *
+ * A sessão da Helena foi criada escutando `message.any`. O parser aceitava só
+ * `message`, e:
+ *
+ *   local      WAHA 2026.8.2   entregava como `message`      -> respondia
+ *   produção   WAHA 2026.9.1   entrega como `message.any`    -> descartado
+ *
+ * Mesmo código, mesma config, e a Helena muda só em produção. Sem erro em log
+ * nenhum, porque descartar evento desconhecido é o comportamento certo para
+ * status, ack e presença.
+ *
+ * O QUE ESTES TESTES PROTEGEM: que os dois nomes continuem valendo, e que
+ * `fromMe` siga sendo quem filtra o que a agente não deve responder — e não o
+ * nome do evento.
+ * ==========================================================================
+ */
+describe('o nome do evento, nas duas versões do WAHA', () => {
+  const corpo = (event: string | undefined) => ({
+    ...(event ? { event } : {}),
+    session: 'elena',
+    payload: { from: '558586467241@c.us', fromMe: false, body: 'tem agenda?' },
+  });
+
+  it.each(['message', 'message.any', undefined])(
+    'aceita o evento %s',
+    (event) => {
+      const r = extrairMensagemRecebida(corpo(event));
+
+      expect(r).not.toBeNull();
+      expect(r?.texto).toBe('tem agenda?');
+    },
+  );
+
+  it('continua descartando o que não é mensagem', () => {
+    expect(extrairMensagemRecebida(corpo('message.ack'))).toBeNull();
+    expect(extrairMensagemRecebida(corpo('presence.update'))).toBeNull();
+    expect(extrairMensagemRecebida(corpo('session.status'))).toBeNull();
+  });
+
+  /* `message.any` traz os dois sentidos, e a agente não pode responder ao que
+   * ela mesma escreveu — quem filtra isso é o `fromMe`, não o evento. */
+  it('no evento amplo, o que a própria agente enviou não vira mensagem', () => {
+    const daAgente = {
+      event: 'message.any',
+      session: 'elena',
+      payload: { from: '558586467241@c.us', fromMe: true, body: 'Oi, Aline!' },
+    };
+
+    expect(extrairMensagemRecebida(daAgente)).toBeNull();
+  });
+});

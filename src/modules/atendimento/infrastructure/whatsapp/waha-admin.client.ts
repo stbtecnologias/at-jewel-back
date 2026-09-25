@@ -170,7 +170,7 @@ export class WahaAdminClient {
         await this.req('POST', '/api/sessions', {
           name: sessao,
           start: true,
-          config: await this.configDaLoja(),
+          config: await this.configDaLoja(sessao),
         });
       }
     } else if (atual.status === 'FAILED') {
@@ -271,7 +271,7 @@ export class WahaAdminClient {
    * nasce sem — e o pior que acontece e o contato nao virar ponto na Linha do
    * Tempo. Nada quebra, e o aviso fica no log.
    */
-  private async configDaLoja(): Promise<Record<string, unknown>> {
+  private async configDaLoja(destino: string): Promise<Record<string, unknown>> {
     // O MODELO E SEMPRE A SESSAO DA ANASTASIA, a que existe desde o comeco: e
     // dela que se copia o endereco do webhook. A da Elena pode ser a mais
     // nova de todas e nem ter sido conectada ainda.
@@ -289,8 +289,26 @@ export class WahaAdminClient {
         );
         return {};
       }
+      // ====================================================================
+      // O EVENTO AMPLO E SO PARA O NUMERO DA VENDEDORA — 25/09/2026.
+      //
+      // Ate aqui TODA sessao nova nascia com `message.any`, e em 25/09 isso
+      // calou a Helena: o parser da borda so aceitava `message`, entao todo
+      // evento do numero dela morria antes do roteamento. Silencio absoluto,
+      // sem erro em log nenhum.
+      //
+      // A regra certa e a que o resto do arquivo ja seguia: `message.any`
+      // existe porque no numero da vendedora O QUE SAI E O DADO. Num numero
+      // da CASA ele so faria a agente ouvir as proprias respostas.
+      // ====================================================================
+      const eventos = this.sessoes.ehDaCasa(destino)
+        ? undefined // a config da loja ja vem com `message` — copiar como esta
+        : [EVENTO_DA_VENDEDORA];
+
       return {
-        webhooks: webhooks.map((w) => ({ ...w, events: [EVENTO_DA_VENDEDORA] })),
+        webhooks: webhooks.map((w) =>
+          eventos ? { ...w, events: eventos } : { ...w },
+        ),
       };
     } catch (err) {
       this.logger.warn(
