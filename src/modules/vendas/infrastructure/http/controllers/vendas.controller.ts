@@ -99,14 +99,15 @@ export class VendasController {
     @Query() filtros: FiltroVendaDto,
     @Request() req: { user: JwtPayload },
   ) {
-    // Isolamento (RF-USU-02): se restrito, forca a vendedora propria e ignora
-    // qualquer vendedoraId vindo do cliente; a gestao usa o filtro escolhido.
-    const restrito = await this.escopo.vendedoraIdRestrito(req.user);
+    // Isolamento (RF-USU-02, e o recorte de EQUIPE desde 29/09/2026): quando
+    // ha recorte ele MANDA, e o vendedoraId vindo do cliente e ignorado; quem
+    // ve a loja inteira usa o filtro escolhido na tela.
+    const restrito = await this.escopo.recorteDeVendas(req.user);
     return this.listar.execute({
       dataDe: filtros.dataDe ? new Date(filtros.dataDe) : undefined,
       dataAte: filtros.dataAte ? new Date(filtros.dataAte) : undefined,
       clienteId: filtros.clienteId,
-      vendedoraId: restrito ? [restrito] : filtros.vendedoraId,
+      vendedoraId: restrito ?? filtros.vendedoraId,
       status: filtros.status,
       formaPagamento: filtros.formaPagamento,
       limit: filtros.limit,
@@ -123,11 +124,11 @@ export class VendasController {
     @Query() filtros: FiltroResumoVendaDto,
     @Request() req: { user: JwtPayload },
   ) {
-    const restrito = await this.escopo.vendedoraIdRestrito(req.user);
+    const restrito = await this.escopo.recorteDeVendas(req.user);
     return this.resumo.execute({
       dataDe: filtros.dataDe ? new Date(filtros.dataDe) : undefined,
       dataAte: filtros.dataAte ? new Date(filtros.dataAte) : undefined,
-      vendedoraId: restrito ? [restrito] : filtros.vendedoraId,
+      vendedoraId: restrito ?? filtros.vendedoraId,
       status: filtros.status,
       formaPagamento: filtros.formaPagamento,
     });
@@ -139,14 +140,23 @@ export class VendasController {
   // O RECORTE INTEIRO desde 11/09/2026. O DTO sempre aceitou status, forma e
   // vendedora; esta rota os descartava e passava so as datas — o "Top
   // vendedoras" ignorava o filtro que o resto da tela respeitava.
+  //
+  // E O RECORTE DE EQUIPE TAMBEM, desde 29/09/2026 — esta rota era a que mais
+  // precisava dele. `vendas:read_all` sozinho a abria inteira, e ela e
+  // literalmente a lista de quem vendeu quanto: sem o recorte, a gerente veria
+  // o desempenho das vendedoras dos outros times ao lado do das dela.
   @Get('comparativo')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @Permissions('vendas:read_all')
-  async comparativoVendedoras(@Query() filtros: FiltroResumoVendaDto) {
+  async comparativoVendedoras(
+    @Query() filtros: FiltroResumoVendaDto,
+    @Request() req: { user: JwtPayload },
+  ) {
+    const restrito = await this.escopo.recorteDeVendas(req.user);
     return this.comparativo.execute({
       dataDe: filtros.dataDe ? new Date(filtros.dataDe) : undefined,
       dataAte: filtros.dataAte ? new Date(filtros.dataAte) : undefined,
-      vendedoraId: filtros.vendedoraId,
+      vendedoraId: restrito ?? filtros.vendedoraId,
       status: filtros.status,
       formaPagamento: filtros.formaPagamento,
     });
@@ -162,11 +172,11 @@ export class VendasController {
     @Query() filtros: FiltroResumoVendaDto,
     @Request() req: { user: JwtPayload },
   ) {
-    const restrito = await this.escopo.vendedoraIdRestrito(req.user);
+    const restrito = await this.escopo.recorteDeVendas(req.user);
     return this.serieMensal.execute({
       dataDe: filtros.dataDe ? new Date(filtros.dataDe) : undefined,
       dataAte: filtros.dataAte ? new Date(filtros.dataAte) : undefined,
-      vendedoraId: restrito ? [restrito] : filtros.vendedoraId,
+      vendedoraId: restrito ?? filtros.vendedoraId,
       status: filtros.status,
       formaPagamento: filtros.formaPagamento,
     });

@@ -253,6 +253,25 @@ export interface IVendaRepository {
   resolverVendedoraIdPorAdminUser(adminUserId: string): Promise<string | null>;
 
   /**
+   * As vendedoras da equipe pela qual este usuario responde — 29/09/2026,
+   * requisito RF-08.
+   *
+   * ========================================================================
+   * `null` E `[]` SAO COISAS DIFERENTES, E CONFUNDI-LOS INVERTE A FALHA.
+   *
+   *   null -> a pessoa NAO tem equipe (`admin_users.equipe_id` e NULL).
+   *           Sem recorte de equipe; vale a regra antiga.
+   *   []   -> a equipe existe e esta VAZIA. O recorte e legitimo, e o
+   *           resultado correto e nenhuma venda.
+   *
+   * Devolvendo `[]` para os dois casos, uma equipe recem-criada — cadastrada
+   * antes de as vendedoras serem vinculadas — mostraria a LOJA INTEIRA a
+   * gerente, que e exatamente o oposto do que este recorte existe para fazer.
+   * ========================================================================
+   */
+  vendedorasDaEquipeDoUsuario(adminUserId: string): Promise<string[] | null>;
+
+  /**
    * Comparativo de desempenho por vendedora (RF-USU-02) para a gestao. Agrega
    * vendas ativas por vendedora no RECORTE DA TELA — periodo, vendedora,
    * status (padrao `concluida`) e forma de pagamento —, ordenado por receita

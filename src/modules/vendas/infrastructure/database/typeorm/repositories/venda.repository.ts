@@ -324,6 +324,30 @@ export class VendaRepository implements IVendaRepository {
     return rows[0]?.id ?? null;
   }
 
+  async vendedorasDaEquipeDoUsuario(
+    adminUserId: string,
+  ): Promise<string[] | null> {
+    // DUAS CONSULTAS, e nao um JOIN, porque as respostas sao diferentes: sem
+    // equipe e `null` (sem recorte), equipe vazia e `[]` (recorte legitimo que
+    // nao devolve nada). Um JOIN devolveria zero linhas nos dois casos e
+    // apagaria a distincao — ver o comentario da porta.
+    const equipe = await this.dataSource.query<{ equipe_id: string | null }[]>(
+      `SELECT equipe_id FROM admin_users WHERE id = $1 LIMIT 1`,
+      [adminUserId],
+    );
+
+    const equipeId = equipe[0]?.equipe_id ?? null;
+    if (!equipeId) return null;
+
+    // SO AS ATIVAS: quem saiu da equipe nao vende mais, e somar o historico
+    // dela ao numero da gerente diria que o time faturou o que nao faturou.
+    const vendedoras = await this.dataSource.query<{ id: string }[]>(
+      `SELECT id FROM vendedoras WHERE equipe_id = $1 AND ativo`,
+      [equipeId],
+    );
+    return vendedoras.map((v) => v.id);
+  }
+
   async comparativoPorVendedora(
     filtros: RecorteVenda,
   ): Promise<ComparativoVendedora[]> {
