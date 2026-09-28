@@ -595,7 +595,7 @@ describe('RotearMensagemInternaUseCase', () => {
       });
 
       expect(r.motivo).toBe('fora_do_escopo_menu');
-      expect(r.resposta).toContain('Enviar foto para o catálogo');
+      expect(r.resposta).toContain('foto com o código');
       expect(canalCatalogo.conversa).not.toHaveBeenCalled();
       expect(canalGestao.execute).not.toHaveBeenCalled();
       expect(canalVendedora.execute).not.toHaveBeenCalled();
@@ -741,7 +741,7 @@ describe('RotearMensagemInternaUseCase', () => {
    * prova o ENCAIXE: a saudacao chega ate a recepcao, o numero vira o fluxo
    * certo, e nada disso atravessa uma conversa em curso.
    */
-  describe('a recepção: o menu do perfil', () => {
+  describe('a recepção: a frase do perfil', () => {
     const ESTOQUISTA = { id: 'ad-9', nome: 'Faby Rocha', role: 'ESTOQUISTA' };
     const soCatalogo = () =>
       identificarAdmin.execute.mockImplementation(
@@ -749,9 +749,10 @@ describe('RotearMensagemInternaUseCase', () => {
           Promise.resolve(permissao === 'catalogo:write' ? ESTOQUISTA : null),
       );
 
-    it('"Olá" do estoque devolve o menu, e não a lista de catálogos', async () => {
-      // O print do Lucas: "Olá" respondia com os catálogos abertos e o modo de
-      // usar. Continua sendo a opção 3 — mas agora ele SABE que tem opção.
+    it('"Olá" do estoque responde numa frase, e não com a lista de catálogos', async () => {
+      // O print do Lucas de 15/09: "Olá" respondia com os catálogos abertos e
+      // o modo de usar. Continua não respondendo isso — mas desde 29/09 a
+      // resposta é uma frase, e não um menu numerado.
       soCatalogo();
 
       const r = await useCase.execute({
@@ -760,8 +761,7 @@ describe('RotearMensagemInternaUseCase', () => {
       });
 
       expect(r.motivo).toBe('recepcao_menu');
-      expect(r.resposta).toContain('Faby');
-      expect(r.resposta).toContain('Enviar foto para o catálogo');
+      expect(r.resposta).toContain('foto com o código');
       expect(canalCatalogo.conversa).not.toHaveBeenCalled();
     });
 
@@ -771,7 +771,6 @@ describe('RotearMensagemInternaUseCase', () => {
       const r = await useCase.execute({ de: '558586467241@c.us', texto: 'oi' });
 
       expect(r.motivo).toBe('recepcao_menu');
-      expect(r.resposta).toContain('Minhas vendas');
       expect(canalVendedora.execute).not.toHaveBeenCalled();
     });
 
@@ -784,51 +783,53 @@ describe('RotearMensagemInternaUseCase', () => {
       });
 
       expect(r.motivo).toBe('recepcao_menu');
-      expect(r.resposta).toContain('Panorama do dia');
       expect(canalGestao.execute).not.toHaveBeenCalled();
     });
 
-    it('o "1" do estoque abre a conversa do catálogo', async () => {
-      soCatalogo();
-      await useCase.execute({ de: '558586467241@c.us', texto: 'Olá' });
-
-      const r = await useCase.execute({ de: '558586467241@c.us', texto: '1' });
-
-      expect(r.motivo).toBe('catalogo_intencao');
-      // A FRASE VAI ESCRITA, e nunca o "1": o `intencao` lê o texto procurando
-      // número de catálogo, e um "1" solto viraria o catálogo #1.
-      expect(canalCatalogo.intencao).toHaveBeenCalledWith(
-        '558586467241@c.us',
-        expect.stringContaining('foto'),
-      );
-    });
-
-    it('o "3" do estoque lista os catálogos abertos', async () => {
-      soCatalogo();
-      await useCase.execute({ de: '558586467241@c.us', texto: 'Olá' });
-
-      const r = await useCase.execute({ de: '558586467241@c.us', texto: '3' });
-
-      expect(r.motivo).toBe('catalogo_conversa');
-      expect(canalCatalogo.conversa).toHaveBeenCalled();
-    });
-
-    it('o número da vendedora vira pergunta e vai para a Elena', async () => {
+    /**
+     * O MENU NUMERADO SAIU EM 29/09/2026 — pedido do Lucas, "mais natural,
+     * sem essa pegada de chatbot".
+     *
+     * ====================================================================
+     * O QUE ESTES DOIS TESTES PROTEGEM NAO E A AUSENCIA DO MENU. E que o
+     * numero volte a ser TEXTO COMUM, seguindo o caminho de sempre.
+     *
+     * O risco de uma remocao pela metade era armar a escolha sem mostrar a
+     * lista: aí um "2" digitado por outro motivo dispararia uma acao que
+     * ninguem ofereceu. Aqui se prova que nao ha escolha armada — o numero
+     * chega ao canal como o texto que a pessoa escreveu.
+     * ====================================================================
+     */
+    it('o "1" da vendedora chega na Elena como texto, e não vira pergunta pronta', async () => {
       identificarVendedora.execute.mockResolvedValue(VENDEDORA);
+      await useCase.execute({ de: '558586467241@c.us', texto: 'oi' });
+
+      await useCase.execute({ de: '558586467241@c.us', texto: '1' });
+
+      expect(canalVendedora.execute).toHaveBeenCalledWith({
+        de: '558586467241@c.us',
+        texto: '1',
+      });
+    });
+
+    it('o "1" do estoque não abre mais a conversa do catálogo sozinho', async () => {
+      soCatalogo();
       await useCase.execute({ de: '558586467241@c.us', texto: 'oi' });
 
       const r = await useCase.execute({ de: '558586467241@c.us', texto: '1' });
 
-      expect(r.resposta).toBe('da elena');
-      expect(canalVendedora.execute).toHaveBeenCalledWith({
-        de: '558586467241@c.us',
-        texto: 'como estão minhas vendas hoje?',
-      });
+      // Um "1" solto deixou de ser comando. Ele cai no fora-do-escopo, que
+      // responde a MESMA frase — e é a resposta honesta: o canal não sabe o
+      // que fazer com um número sozinho, e diz o que sabe fazer.
+      expect(r.motivo).toBe('fora_do_escopo_menu');
+      expect(r.resposta).toContain('foto com o código');
+      expect(canalCatalogo.conversa).not.toHaveBeenCalled();
+      expect(canalCatalogo.pedirConsulta).not.toHaveBeenCalled();
     });
 
-    it('com foto esperando catálogo, "oi" segue o fluxo e não vira menu', async () => {
-      // A conversa em curso manda. Um menu no meio da classificação faria a
-      // pessoa perder o que estava fazendo.
+    it('com foto esperando catálogo, "oi" segue o fluxo e não vira recepção', async () => {
+      // A conversa em curso manda. Uma saudação no meio da classificação
+      // faria a pessoa perder o que estava fazendo.
       soCatalogo();
       canalCatalogo.temFotoEsperando.mockReturnValue(true);
 
@@ -841,64 +842,16 @@ describe('RotearMensagemInternaUseCase', () => {
       expect(canalCatalogo.resposta).toHaveBeenCalled();
     });
 
-    it('falar outra coisa FECHA o menu: o número seguinte não é escolha', async () => {
-      // A Elena e a Anastasia respondem listas numeradas. Com o menu ainda de
-      // pé, o "2" que responde a LISTA delas viraria "Minhas metas".
-      identificarVendedora.execute.mockResolvedValue(VENDEDORA);
-      await useCase.execute({ de: '558586467241@c.us', texto: 'oi' });
-
-      await useCase.execute({
-        de: '558586467241@c.us',
-        texto: 'quais peças de esmeralda eu tenho?',
-      });
-      const r = await useCase.execute({ de: '558586467241@c.us', texto: '2' });
-
-      // O "2" chega na Elena como o texto que é, e não vira opção de menu.
-      expect(r.resposta).toBe('da elena');
-      expect(canalVendedora.execute).toHaveBeenLastCalledWith({
-        de: '558586467241@c.us',
-        texto: '2',
-      });
-    });
-
     it('a saudação COM pergunta dentro segue para o agente, como antes', async () => {
-      identificarAdmin.execute.mockResolvedValue(ADMIN);
+      identificarVendedora.execute.mockResolvedValue(VENDEDORA);
 
       const r = await useCase.execute({
         de: '558586467241@c.us',
-        texto: 'bom dia, como estão as vendas?',
+        texto: 'oi, como estão minhas vendas?',
       });
 
-      expect(r.resposta).toBe('da anastasia');
-    });
-
-    it('o "2" do estoque pede a peça, e a resposta seguinte é a consulta', async () => {
-      soCatalogo();
-      await useCase.execute({ de: '558586467241@c.us', texto: 'Olá' });
-
-      const pedido = await useCase.execute({
-        de: '558586467241@c.us',
-        texto: '2',
-      });
-      expect(pedido.motivo).toBe('catalogo_consulta_pedida');
-
-      // Agora o canal está esperando a peça: o código digitado em seguida é
-      // consulta, e não código de foto.
-      canalCatalogo.esperandoConsulta.mockReturnValue(true);
-      canalCatalogo.consulta.mockResolvedValue({
-        resposta: 'BR26252 · ANEL · R$ 1.000,00 · 3 em estoque',
-        motivo: 'consulta_por_codigo',
-      });
-
-      const r = await useCase.execute({
-        de: '558586467241@c.us',
-        texto: 'BR26252',
-      });
-
-      expect(r.motivo).toBe('consulta_por_codigo');
-      // A CONSULTA VEM ANTES DO `codigo`: sem essa ordem, o BR26252 entraria
-      // numa foto que estivesse sendo montada.
-      expect(canalCatalogo.codigo).not.toHaveBeenCalled();
+      expect(r.resposta).toBe('da elena');
+      expect(canalVendedora.execute).toHaveBeenCalled();
     });
   });
 
@@ -1382,8 +1335,8 @@ describe('RotearMensagemInternaUseCase — a consulta do Lucas, de ponta a ponta
 
     const menu = await falar('oi');
     expect(menu.motivo).toBe('recepcao_menu');
-    // O menu promete: "Responde o número ou me diz o que precisa."
-    expect(menu.resposta).toContain('me diz o que precisa');
+    // A frase convida sem listar opcao numerada (29/09/2026).
+    expect(menu.resposta).toContain('foto com o código');
 
     const r = await falar('quero consultar uma peça');
     expect(r.motivo).toBe('catalogo_consulta_pedida');
@@ -1399,7 +1352,7 @@ describe('RotearMensagemInternaUseCase — a consulta do Lucas, de ponta a ponta
     const r = await falar('qual minha carteira?');
 
     expect(r.motivo).toBe('fora_do_escopo_menu');
-    expect(r.resposta).toContain('Enviar foto para o catálogo');
+    expect(r.resposta).toContain('foto com o código');
     expect(catalogos.listarAbertos).not.toHaveBeenCalled();
   });
 

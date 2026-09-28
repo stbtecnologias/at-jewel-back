@@ -63,8 +63,8 @@ describe('RecepcionarUseCase', () => {
     });
   });
 
-  describe('o menu de cada perfil', () => {
-    it('a vendedora vê o dela, e nada de catálogo', () => {
+  describe('a frase de cada perfil', () => {
+    it('a vendedora ouve o que e dela, e nada de catalogo', () => {
       const r = useCase.saudar(
         DE,
         { vendedora: true, gestao: false, catalogo: false },
@@ -74,17 +74,11 @@ describe('RecepcionarUseCase', () => {
 
       expect(r.motivo).toBe('recepcao_menu');
       expect(r.resposta).toContain('Bom dia, Marina!');
-      expect(r.resposta).toContain('1 — Minhas vendas');
+      expect(r.resposta).toContain('suas vendas');
       expect(r.resposta).not.toContain('catálogo');
-      // O lead saiu do menu dela em 25/09, junto com o da gestao: sem
-      // triagem, lead nao nasce, e a lista vazia faria a vendedora concluir
-      // que ninguem esta encaminhando nada para ela.
-      expect(r.resposta).not.toContain('Leads que me mandaram');
-      // A consulta de peca e a ULTIMA, e passou de 7a para 6a com a saida.
-      expect(r.resposta).toContain('6 — Consultar peça ou preço');
     });
 
-    it('o estoque vê as três do catálogo', () => {
+    it('o estoque ouve o convite da foto', () => {
       const r = useCase.saudar(
         DE,
         { vendedora: false, gestao: false, catalogo: true },
@@ -92,12 +86,10 @@ describe('RecepcionarUseCase', () => {
         MANHA,
       );
 
-      expect(r.resposta).toContain('1 — Enviar foto para o catálogo');
-      expect(r.resposta).toContain('2 — Consultar uma peça');
-      expect(r.resposta).toContain('3 — Ver os catálogos abertos');
+      expect(r.resposta).toContain('foto com o código');
     });
 
-    it('a gestão SEM catálogo não recebe a linha de foto', () => {
+    it('a gestao SEM catalogo nao ouve a linha de foto', () => {
       const r = useCase.saudar(
         DE,
         { vendedora: false, gestao: true, catalogo: false },
@@ -105,14 +97,13 @@ describe('RecepcionarUseCase', () => {
         MANHA,
       );
 
-      expect(r.resposta).toContain('1 — Panorama do dia');
-      expect(r.resposta).not.toContain('Enviar foto');
+      expect(r.resposta).toContain('vendas, metas, agenda e o funil');
+      expect(r.resposta).not.toContain('foto');
     });
 
-    it('quem acumula gestão e catálogo vê as duas coisas', () => {
-      // O caso do Yerlon: ADM que também fotografa. Até aqui o texto dele ia
-      // inteiro para a Anastasia, e o caminho do catálogo só existia se ele
-      // soubesse dizer a frase certa.
+    it('quem acumula gestao e catalogo ouve as duas coisas', () => {
+      // O caso do Yerlon: ADM que tambem fotografa. Sem isto ele nao saberia
+      // que pode mandar a foto por aqui.
       const r = useCase.saudar(
         DE,
         { vendedora: false, gestao: true, catalogo: true },
@@ -120,17 +111,11 @@ describe('RecepcionarUseCase', () => {
         MANHA,
       );
 
-      expect(r.resposta).toContain('1 — Panorama do dia');
-      // O catalogo e a ULTIMA linha da gestao. Era a 7a desde 21/09, quando o
-      // funil entrou no meio; voltou a ser a 6a em 25/09, ao sair o "Leads
-      // para encaminhar" — a triagem tinha acabado e o lead deixou de nascer.
-      expect(r.resposta).toContain('6 — Enviar foto para o catálogo');
-      // E o que saiu, saiu mesmo: o convite nao pode reaparecer sem alguem
-      // decidir. As ferramentas de lead continuam respondendo a quem pergunta.
-      expect(r.resposta).not.toContain('Leads para encaminhar');
+      expect(r.resposta).toContain('vendas, metas, agenda e o funil');
+      expect(r.resposta).toContain('foto para o catálogo');
     });
 
-    it('sem nome cadastrado, só o cumprimento — nunca "Bom dia, !"', () => {
+    it('sem nome cadastrado, so o cumprimento — nunca "Bom dia, !"', () => {
       const r = useCase.saudar(
         DE,
         { vendedora: false, gestao: false, catalogo: true },
@@ -138,10 +123,10 @@ describe('RecepcionarUseCase', () => {
         MANHA,
       );
 
-      expect(r.resposta.startsWith('Bom dia! Aqui')).toBe(true);
+      expect(r.resposta.startsWith('Bom dia! ')).toBe(true);
     });
 
-    it('o cumprimento segue o relógio da loja', () => {
+    it('o cumprimento segue o relogio da loja', () => {
       const tarde = new Date('2026-09-15T15:00:00-03:00');
       const noite = new Date('2026-09-15T21:00:00-03:00');
       const perfil = { vendedora: false, gestao: false, catalogo: true };
@@ -155,75 +140,70 @@ describe('RecepcionarUseCase', () => {
     });
   });
 
-  describe('o número depois do menu', () => {
-    const estoque = { vendedora: false, gestao: false, catalogo: true };
+  /**
+   * O MENU NUMERADO SAIU EM 29/09/2026.
+   *
+   * ========================================================================
+   * Pedido do Lucas: "mais natural, sem essa pegada de chatbot, e ser breve".
+   *
+   * Estes testes nao descrevem uma ausencia por descuido — descrevem a
+   * GARANTIA que substituiu o menu: nada de lista numerada, e, sobretudo,
+   * NENHUMA escolha armada.
+   *
+   * O segundo e o que importa. `RecepcaoService` continua de pe para um
+   * desenho futuro (botoes do WhatsApp, por exemplo), e religar o menu sem
+   * mostrar a lista faria um "2" digitado por outro motivo virar uma acao que
+   * ninguem ofereceu. Este arquivo quebra se isso acontecer.
+   * ========================================================================
+   */
+  describe('o menu numerado, que saiu', () => {
+    const perfis = [
+      ['vendedora', { vendedora: true, gestao: false, catalogo: false }],
+      ['gestao', { vendedora: false, gestao: true, catalogo: false }],
+      ['catalogo', { vendedora: false, gestao: false, catalogo: true }],
+    ] as const;
 
-    it('"1" vira a ação da primeira linha', () => {
-      useCase.saudar(DE, estoque, 'Yerlon', MANHA);
+    it.each(perfis)('a saudacao de %s nao traz lista numerada', (_nome, perfil) => {
+      const r = useCase.saudar(DE, perfil, 'Yerlon', MANHA);
 
-      expect(useCase.escolhida(DE, '1')?.acao).toEqual({
-        tipo: 'catalogo_foto',
-      });
+      expect(r.resposta).not.toMatch(/^\s*\d+\s*[—.-]/m);
+      expect(r.resposta).not.toContain('Responde o número');
     });
 
-    it('o número da vendedora vira a FRASE que ela teria escrito', () => {
-      useCase.saudar(
-        DE,
-        { vendedora: true, gestao: false, catalogo: false },
-        'Marina',
-        MANHA,
-      );
+    it.each(perfis)('a saudacao de %s nao ARMA escolha por numero', (_nome, perfil) => {
+      useCase.saudar(DE, perfil, 'Yerlon', MANHA);
 
-      const acao = useCase.escolhida(DE, '1')?.acao;
-      expect(acao).toEqual({
-        tipo: 'frase',
-        texto: 'como estão minhas vendas hoje?',
-      });
-    });
-
-    it('sem menu na tela, número não é escolha', () => {
-      // O "1" de quem nunca viu menu — ou de quem ja escolheu — segue o
-      // caminho de sempre.
-      expect(useCase.escolhida(DE, '1')).toBeNull();
-    });
-
-    it('a escolha CONSOME o menu: o segundo "1" já é do fluxo', () => {
-      useCase.saudar(DE, estoque, 'Yerlon', MANHA);
-
-      expect(useCase.escolhida(DE, '1')).not.toBeNull();
-      expect(useCase.escolhida(DE, '1')).toBeNull();
-    });
-
-    it('número fora da lista não é escolha', () => {
-      useCase.saudar(DE, estoque, 'Yerlon', MANHA);
-
-      // O menu do estoque tem três linhas.
-      expect(useCase.escolhida(DE, '7')).toBeNull();
-    });
-
-    it('número acompanhado de texto não é escolha', () => {
-      useCase.saudar(DE, estoque, 'Yerlon', MANHA);
-
-      expect(useCase.escolhida(DE, '1 peça de ouro')).toBeNull();
-    });
-
-    it('o menu vence em dez minutos', () => {
-      jest.useFakeTimers();
-      try {
-        jest.setSystemTime(new Date('2026-09-15T09:00:00-03:00'));
-        useCase.saudar(DE, estoque, 'Yerlon', MANHA);
-
-        jest.setSystemTime(new Date('2026-09-15T09:10:01-03:00'));
-        expect(useCase.escolhida(DE, '1')).toBeNull();
-      } finally {
-        jest.useRealTimers();
+      // A garantia central: sem lista na tela, numero nao aciona nada.
+      for (const digitado of ['1', '2', '3', '6']) {
+        expect(useCase.escolhida(DE, digitado)).toBeNull();
       }
     });
 
-    it('o menu de um remetente não vale para outro', () => {
-      useCase.saudar(DE, estoque, 'Yerlon', MANHA);
+    it('o fora-do-escopo tambem responde numa frase', () => {
+      const r = useCase.naoSeiFazer(
+        DE,
+        { vendedora: false, gestao: true, catalogo: false },
+        'Lucas Barbosa',
+      );
 
-      expect(useCase.escolhida('558599999999@c.us', '1')).toBeNull();
+      expect(r.resposta).toContain('Lucas, isso eu não faço por aqui.');
+      expect(r.resposta).toContain('vendas, metas, agenda e o funil');
+      expect(r.resposta).not.toMatch(/^\s*\d+\s*[—.-]/m);
+      expect(useCase.escolhida(DE, '1')).toBeNull();
+    });
+
+    it('a resposta cabe numa mensagem de WhatsApp', () => {
+      // "sem muito textão": o menu da gestao tinha 6 linhas e ~200 caracteres
+      // de lista. A frase inteira tem de caber no que alguem le sem rolar.
+      const r = useCase.saudar(
+        DE,
+        { vendedora: false, gestao: true, catalogo: true },
+        'Yerlon',
+        MANHA,
+      );
+
+      expect(r.resposta.split('\n')).toHaveLength(1);
+      expect(r.resposta.length).toBeLessThan(200);
     });
   });
 });
