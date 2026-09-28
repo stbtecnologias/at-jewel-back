@@ -502,9 +502,15 @@ const GESTAO_POR_FAMILIA_TOOL: Anthropic.Tool = {
         description:
           'MES (o padrao) e ANO sao os do CALENDARIO. Para um mes especifico de um ano passado — "outubro de 2025" — use `de` e `ate`.',
       },
+      mes: {
+        type: 'number',
+        description:
+          'De 1 a 12 — use quando ela disser um mes SEM ano: "em outubro", "nos meses de dezembro", "no natal". Traz TODOS os anos, quebrado por ano ("outubro/2025 — Fulana: 4 brincos"). Com `mes`, o `periodo` e as datas sao ignorados. Para UM outubro especifico — "outubro de 2025" — use `de` e `ate` em vez deste campo.',
+      },
       limite: {
         type: 'number',
-        description: 'Quantas vendedoras listar. Padrao 10, teto 30.',
+        description:
+          'Quantas vendedoras listar. Padrao 10. Com `mes`, e quantas POR ANO, e o padrao e 1 — so a campea de cada ano.',
       },
       ...DATAS_LIVRES,
     },
@@ -1204,6 +1210,7 @@ export class AnthropicClient implements ILlmClient {
             const e = toolUse.input as {
               familia?: string;
               limite?: number;
+              mes?: number;
               periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
               de?: string;
               ate?: string;
@@ -1211,6 +1218,7 @@ export class AnthropicClient implements ILlmClient {
             const r = await params.gestaoPorFamilia!({
               familia: String(e.familia ?? '').slice(0, 40),
               limite: e.limite,
+              mes: e.mes,
               periodo: e.periodo,
               de: e.de,
               ate: e.ate,

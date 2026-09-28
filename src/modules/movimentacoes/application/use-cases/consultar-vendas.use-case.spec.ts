@@ -58,6 +58,11 @@ describe('ConsultarVendasUseCase', () => {
           return [];
         },
       ),
+      // O mes recorrente NAO recebe janela — ele monta a propria pelo
+      // `extract(month)`. Por isso nao entra na lista de janelas conferidas.
+      rankingPorFamiliaNoMes: jest.fn(
+        async (_mes: number, _familia: string, _porAno: number) => [],
+      ),
     };
     useCase = new ConsultarVendasUseCase(repo);
   });

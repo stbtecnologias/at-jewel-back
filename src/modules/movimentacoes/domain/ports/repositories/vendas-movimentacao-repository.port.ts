@@ -70,6 +70,11 @@ export interface VendedoraPorFamilia {
   valor: number;
 }
 
+/** A mesma linha, carimbada com o ano. Ver `rankingPorFamiliaNoMes`. */
+export interface VendedoraPorFamiliaNoAno extends VendedoraPorFamilia {
+  ano: number;
+}
+
 export interface IVendasMovimentacaoRepository {
   /**
    * O resumo do periodo. Com `vendedoraId`, so o dela — e e assim que a
@@ -125,6 +130,35 @@ export interface IVendasMovimentacaoRepository {
     familia: string,
     limite: number,
   ): Promise<VendedoraPorFamilia[]>;
+
+  /**
+   * O MESMO MES, EM TODOS OS ANOS — 28/09/2026.
+   *
+   * ========================================================================
+   * NAO SAI DE UMA JANELA `de`/`ate`, E E POR ISSO QUE EXISTE.
+   *
+   * "Qual vendedora mais vende brinco em outubro?" nao pergunta por um
+   * outubro: pergunta pelos outubros. Todo o resto deste arquivo trabalha com
+   * uma janela CONTINUA — um inicio e um fim —, e outubro de 2023 mais
+   * outubro de 2025 nao e um intervalo, e sim um `extract(month) = 10`
+   * atravessando os anos.
+   *
+   * Responder isso com a janela livre exigiria uma chamada por ano, e antes
+   * saber quais anos tem dado — que e outra consulta ainda.
+   *
+   * QUEBRADO POR ANO, e nao somado: a resposta que o Lucas descreveu e "em
+   * outubro de 2025 foi essa, em 2024 foi essa". Um total dos tres outubros
+   * esconderia justamente a virada, que e o que a pergunta procura.
+   * ========================================================================
+   *
+   * @param mes 1 a 12.
+   * @param porAno quantas vendedoras por ano. 1 devolve so a campea de cada.
+   */
+  rankingPorFamiliaNoMes(
+    mes: number,
+    familia: string,
+    porAno: number,
+  ): Promise<VendedoraPorFamiliaNoAno[]>;
 }
 
 export const VENDAS_MOVIMENTACAO_REPOSITORY = Symbol(

@@ -5,6 +5,7 @@ import type {
   IVendasMovimentacaoRepository,
   ItemMaisVendido,
   VendedoraPorFamilia,
+  VendedoraPorFamiliaNoAno,
   JanelaDeVendas,
   ResumoDeVendas,
   VendedoraNoRanking,
@@ -239,6 +240,75 @@ export class VendasMovimentacaoRepository
     );
 
     return linhas.map((l) => ({
+      vendedoraId: l.vendedora_id,
+      nome: l.nome,
+      quantidade: Number(l.quantidade),
+      valor: Number(l.valor),
+    }));
+  }
+  async rankingPorFamiliaNoMes(
+    mes: number,
+    familia: string,
+    porAno: number,
+  ): Promise<VendedoraPorFamiliaNoAno[]> {
+    // ====================================================================
+    // O `ROW_NUMBER` E O QUE FAZ O "TOP N POR ANO".
+    //
+    // Sem ele, um `LIMIT` cortaria o ranking INTEIRO e nao o de cada ano: os
+    // dez primeiros poderiam ser todos de 2025, e 2023 sumiria da resposta
+    // sem nada dizer. A pergunta e "quem ganhou em cada outubro", entao o
+    // corte tem de ser por ano.
+    //
+    // A DEVOLUCAO ABATE, pelo mesmo motivo do `rankingPorFamilia`: e ranking
+    // de PESSOA. E o `HAVING > 0` tira quem so devolveu — quantidade negativa
+    // e verdade sobre o saldo e absurdo como resposta a "quem mais vendeu".
+    // ====================================================================
+    const linhas = await this.ds.query<
+      {
+        ano: string;
+        vendedora_id: string;
+        nome: string;
+        quantidade: string;
+        valor: string;
+      }[]
+    >(
+      `
+      WITH por_ano AS (
+        SELECT extract(year from m.data_movimentacao)::int AS ano,
+               v.id   AS vendedora_id,
+               v.nome AS nome,
+               COALESCE(sum(i.quantidade) FILTER (WHERE m.saida), 0)
+                 - COALESCE(sum(i.quantidade) FILTER (WHERE m.entrada), 0) AS quantidade,
+               COALESCE(sum(i.quantidade * i.valor_unitario) FILTER (WHERE m.saida), 0)
+                 - COALESCE(sum(i.quantidade * i.valor_unitario) FILTER (WHERE m.entrada), 0) AS valor
+          FROM movimentacoes_itens i
+          JOIN movimentacoes m ON m.id = i.movimentacao_id
+          JOIN produtos p      ON p.id = i.produto_id
+          JOIN vendedoras v    ON v.id = m.vendedora_id
+         WHERE m.ativo
+           AND i.ativo
+           AND extract(month from m.data_movimentacao) = $1
+           AND upper(p.familia) = upper($2::text)
+         GROUP BY 1, 2, 3
+        HAVING COALESCE(sum(i.quantidade) FILTER (WHERE m.saida), 0)
+                 - COALESCE(sum(i.quantidade) FILTER (WHERE m.entrada), 0) > 0
+      )
+      SELECT ano, vendedora_id, nome, quantidade, valor
+        FROM (
+          SELECT *,
+                 row_number() OVER (
+                   PARTITION BY ano ORDER BY quantidade DESC, valor DESC
+                 ) AS posicao
+            FROM por_ano
+        ) r
+       WHERE r.posicao <= $3
+       ORDER BY ano DESC, quantidade DESC
+      `,
+      [mes, familia, porAno],
+    );
+
+    return linhas.map((l) => ({
+      ano: Number(l.ano),
       vendedoraId: l.vendedora_id,
       nome: l.nome,
       quantidade: Number(l.quantidade),

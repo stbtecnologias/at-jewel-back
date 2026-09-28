@@ -73,6 +73,60 @@ const DISPONIBILIDADE_LEGIVEL: Record<string, string> = {
   FERIAS: 'de férias',
 };
 
+/**
+ * "anel" -> "anéis", e nao "anels".
+ *
+ * ==========================================================================
+ * PARECE FRESCURA E NAO E. O primeiro teste contra o banco devolveu
+ * "CAMILA BRITO: 7 anels", e essa frase sai no WhatsApp da dona da loja.
+ *
+ * A LISTA DE FAMILIAS E FECHADA E PEQUENA — o catalogo tem umas vinte —, o
+ * que torna isto conferivel: BRINCO, ANEL, COLAR, PULSEIRA, PINGENTE,
+ * PIERCING, VASO, BOWL, LIVRO, ABAJUR, BANDEJA. Nao e um pluralizador de
+ * portugues, e o suficiente para esses.
+ *
+ * As terminacoes em ordem importam: `-el` casa antes de `-l`, senao "anel"
+ * cairia na regra geral de `-l` e viraria "anelis".
+ *
+ * O QUE ELE NAO RESOLVE, e fica dito: familia que ja chega no plural
+ * ("ARGOLAS") ou invariavel ("OCULOS") ganha um "es" indevido. Sao duas na
+ * base inteira, e a linha continua legivel — trocar isso por uma tabela de
+ * excecoes seria mais codigo do que o problema merece.
+ * ==========================================================================
+ */
+function noPlural(palavra: string): string {
+  const p = palavra.toLowerCase();
+
+  if (p.endsWith('ão')) return `${p.slice(0, -2)}ões`;
+  if (p.endsWith('el')) return `${p.slice(0, -2)}éis`;
+  if (p.endsWith('al')) return `${p.slice(0, -2)}ais`;
+  if (p.endsWith('ol')) return `${p.slice(0, -2)}óis`;
+  if (p.endsWith('il')) return `${p.slice(0, -2)}is`;
+  if (p.endsWith('m')) return `${p.slice(0, -1)}ns`;
+  // Terminadas em `s` ja servem de plural ("oculos"): mexer piora.
+  if (p.endsWith('s')) return p;
+  if (/[rz]$/.test(p)) return `${p}es`;
+  return `${p}s`;
+}
+
+/** "4 brincos", "1 anel" — a unidade concorda com o numero. */
+function pecas(quantidade: number, familia: string): string {
+  const nome = familia.toLowerCase();
+  return `${quantidade} ${quantidade === 1 ? nome : noPlural(nome)}`;
+}
+
+/**
+ * Os meses por extenso, para a linha do mes recorrente.
+ *
+ * Escrito aqui e nao com `toLocaleDateString`: o container e Alpine e o ICU do
+ * Node ja mordeu este projeto antes (ver a memoria do fuso). Doze palavras
+ * fixas nao dependem de locale instalado.
+ */
+const MESES = [
+  'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
+  'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro',
+];
+
 /** Janela padrao quando nao dizem "hoje" nem "esta semana". */
 const DIAS_PADRAO_FEEDBACK = 7;
 
@@ -459,13 +513,41 @@ export class FerramentasGestaoService {
        * "ninguem vendeu isso".
        * ================================================================
        */
-      gestaoPorFamilia: async ({ familia, limite, periodo, de, ate }) => {
+      gestaoPorFamilia: async ({ familia, limite, mes, periodo, de, ate }) => {
         const familias = await this.listarProdutos.familias();
         const casada = familias.find(
           (f) => f.toUpperCase() === familia.trim().toUpperCase(),
         );
         if (!casada) {
           return { status: 'FAMILIA_DESCONHECIDA', linhas: [], familias };
+        }
+
+        // ================================================================
+        // O MES RECORRENTE MANDA EM TUDO, e vem antes das datas.
+        //
+        // "Quem mais vende brinco em outubro" nao pergunta por um outubro —
+        // pergunta pelos outubros. E um corte que atravessa os anos, e nao
+        // uma janela: se `mes` veio, `de`/`ate` e `periodo` nao se aplicam.
+        //
+        // A RESPOSTA VEM QUEBRADA POR ANO, e nao somada: "em outubro de 2025
+        // foi essa, em 2024 foi essa" e o que a pergunta procura. O total dos
+        // tres outubros esconderia a virada.
+        // ================================================================
+        if (mes && mes >= 1 && mes <= 12) {
+          const porAno = await this.consultarVendas.porFamiliaNoMes(
+            casada,
+            mes,
+            limite ?? 1,
+          );
+          const daEquipe = porAno.filter((l) => alcanca(l.vendedoraId));
+
+          return {
+            status: 'OK',
+            linhas: daEquipe.map(
+              (l) =>
+                `${MESES[mes - 1]}/${l.ano} — ${l.nome}: ${pecas(l.quantidade, casada)}, ${moeda(l.valor)}`,
+            ),
+          };
         }
 
         const datas = datasDeRecorte(de, ate);
@@ -490,11 +572,9 @@ export class FerramentasGestaoService {
 
         return {
           status: 'OK',
-          linhas: daEquipe.map((l) => {
-            const peca = casada.toLowerCase();
-            const unidade = l.quantidade === 1 ? peca : `${peca}s`;
-            return `${l.nome}: ${l.quantidade} ${unidade}, ${moeda(l.valor)}`;
-          }),
+          linhas: daEquipe.map(
+            (l) => `${l.nome}: ${pecas(l.quantidade, casada)}, ${moeda(l.valor)}`,
+          ),
         };
       },
 

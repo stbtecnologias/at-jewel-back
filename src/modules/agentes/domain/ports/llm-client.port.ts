@@ -415,7 +415,18 @@ export type GestaoMetasHandler = (input: {
  * separavam tipo sem agrupar por quem vendeu.
  */
 export type GestaoPorFamiliaHandler = (
-  input: { familia: string; limite?: number } & RecorteDeTempo,
+  input: {
+    familia: string;
+    limite?: number;
+    /**
+     * 1 a 12 — "esse mes, em TODOS os anos".
+     *
+     * Quando vem, manda em tudo: nao e uma janela `de`/`ate`, e sim um corte
+     * que atravessa os anos, e a resposta vem quebrada por ano. Ver
+     * `rankingPorFamiliaNoMes`.
+     */
+    mes?: number;
+  } & RecorteDeTempo,
 ) => Promise<{
   status: 'OK' | 'FAMILIA_DESCONHECIDA';
   linhas: string[];

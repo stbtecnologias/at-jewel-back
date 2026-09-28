@@ -1,4 +1,4 @@
-import { FerramentasGestaoService } from './ferramentas-gestao.service';
+import { FerramentasGestaoService, moeda } from './ferramentas-gestao.service';
 
 /**
  * O ESCOPO ESTREITO DA GESTAO — 28/09/2026.
@@ -532,5 +532,142 @@ describe('o periodo livre nas ferramentas de venda', () => {
 
     expect(consultarVendas.resumoEntre).toHaveBeenCalled();
     expect(r.linhas[0]).toContain('4 vendas');
+  });
+});
+
+/**
+ * "QUEM MAIS VENDE BRINCO EM OUTUBRO?" — 28/09/2026.
+ *
+ * ==========================================================================
+ * A PERGUNTA QUE NENHUMA FERRAMENTA RESPONDIA, E A ARMADILHA DELA.
+ *
+ * "Em outubro" sem ano nao e uma janela: e um corte que ATRAVESSA os anos. Um
+ * `de`/`ate` responderia UM outubro; a pergunta quer os outubros, quebrados
+ * por ano — "em 2025 foi essa, em 2024 foi essa".
+ *
+ * O `mes` manda em tudo quando vem, e estes testes existem para que ninguem
+ * "simplifique" isso transformando `mes` numa janela do ano corrente.
+ * ==========================================================================
+ */
+describe('o ranking por tipo de peça', () => {
+  let consultarVendas: {
+    porFamilia: jest.Mock;
+    porFamiliaEntre: jest.Mock;
+    porFamiliaNoMes: jest.Mock;
+  };
+  let listarProdutos: { execute: jest.Mock; familias: jest.Mock };
+  let servico: FerramentasGestaoService;
+
+  beforeEach(() => {
+    consultarVendas = {
+      porFamilia: jest.fn().mockResolvedValue({ linhas: [] }),
+      porFamiliaEntre: jest.fn().mockResolvedValue([]),
+      porFamiliaNoMes: jest.fn().mockResolvedValue([
+        { ano: 2025, vendedoraId: 'vd-1', nome: 'Keyciane', quantidade: 4, valor: 60605 },
+        { ano: 2024, vendedoraId: 'vd-2', nome: 'Faby', quantidade: 6, valor: 364623 },
+      ]),
+    };
+    listarProdutos = {
+      execute: jest.fn().mockResolvedValue([]),
+      familias: jest.fn().mockResolvedValue(['BRINCO', 'ANEL', 'PULSEIRA']),
+    };
+
+    servico = new FerramentasGestaoService(
+      { execute: jest.fn() } as never,
+      consultarVendas as never,
+      listarProdutos as never,
+      { execute: jest.fn() } as never,
+      { vendas: jest.fn(), metas: jest.fn() } as never,
+      { semComprar: jest.fn(), maioresCompradores: jest.fn() } as never,
+      { execute: jest.fn() } as never,
+      { listar: jest.fn(), detalhe: jest.fn(), resumo: jest.fn() } as never,
+      { doDia: jest.fn() } as never,
+      { execute: jest.fn() } as never,
+      { listar: jest.fn().mockResolvedValue([]), buscarPorId: jest.fn() } as never,
+      { buscarPorNomeParcial: jest.fn() } as never,
+      { listarAguardandoGestao: jest.fn() } as never,
+    );
+  });
+
+  const pedir = (entrada: Record<string, unknown>) =>
+    servico.montar({}).gestaoPorFamilia(entrada as never);
+
+  describe('o mês recorrente', () => {
+    it('quebra por ano, com o mês por extenso', async () => {
+      const r = await pedir({ familia: 'brinco', mes: 10 });
+
+      // O `moeda()` e nao a string escrita a mao: o `Intl` separa o "R$" do
+      // numero com ESPACO NAO-SEPARAVEL (U+00A0), e um espaco comum aqui
+      // reprova um codigo certo com as duas linhas parecendo IDENTICAS na tela.
+      expect(r.linhas).toEqual([
+        `outubro/2025 — Keyciane: 4 brincos, ${moeda(60605)}`,
+        `outubro/2024 — Faby: 6 brincos, ${moeda(364623)}`,
+      ]);
+    });
+
+    it('o mês GANHA das datas e do período — não é uma janela', async () => {
+      await pedir({ familia: 'brinco', mes: 10, periodo: 'ANO', de: '2026-01-01', ate: '2026-12-31' });
+
+      expect(consultarVendas.porFamiliaNoMes).toHaveBeenCalled();
+      expect(consultarVendas.porFamiliaEntre).not.toHaveBeenCalled();
+      expect(consultarVendas.porFamilia).not.toHaveBeenCalled();
+    });
+
+    it('o padrão é 1 por ano — a campeã de cada', async () => {
+      await pedir({ familia: 'brinco', mes: 10 });
+
+      expect(consultarVendas.porFamiliaNoMes).toHaveBeenCalledWith('BRINCO', 10, 1);
+    });
+
+    it.each([0, 13, -1, 99])('mês inválido (%s) cai na janela normal', async (mes) => {
+      await pedir({ familia: 'brinco', mes });
+
+      expect(consultarVendas.porFamiliaNoMes).not.toHaveBeenCalled();
+      expect(consultarVendas.porFamilia).toHaveBeenCalled();
+    });
+  });
+
+  describe('a família', () => {
+    it('casa sem caixa e usa o nome do catálogo na consulta', async () => {
+      await pedir({ familia: '  BrInCo ', mes: 10 });
+
+      expect(consultarVendas.porFamiliaNoMes).toHaveBeenCalledWith('BRINCO', 10, 1);
+    });
+
+    it('nome que não existe devolve a LISTA, e não uma resposta vazia', async () => {
+      // Zero linhas seria indistinguivel de "ninguem vendeu bracelete".
+      const r = await pedir({ familia: 'bracelete', mes: 10 });
+
+      expect(r.status).toBe('FAMILIA_DESCONHECIDA');
+      expect(r.familias).toEqual(['BRINCO', 'ANEL', 'PULSEIRA']);
+      expect(consultarVendas.porFamiliaNoMes).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('o plural, que saiu errado no primeiro teste real', () => {
+    it.each([
+      ['ANEL', 7, '7 anéis'],
+      ['ANEL', 1, '1 anel'],
+      ['BRINCO', 4, '4 brincos'],
+      ['PULSEIRA', 3, '3 pulseiras'],
+    ])('%s x%s vira "%s"', async (familia, quantidade, esperado) => {
+      listarProdutos.familias.mockResolvedValue([familia]);
+      consultarVendas.porFamiliaNoMes.mockResolvedValue([
+        { ano: 2025, vendedoraId: 'vd-1', nome: 'X', quantidade, valor: 100 },
+      ]);
+
+      const r = await pedir({ familia, mes: 10 });
+
+      expect(r.linhas[0]).toContain(esperado);
+    });
+  });
+
+  it('o recorte de equipe vale aqui também', async () => {
+    const r = await servico
+      .montar({ equipe: ['vd-1'] })
+      .gestaoPorFamilia({ familia: 'brinco', mes: 10 } as never);
+
+    expect(r.linhas).toHaveLength(1);
+    expect(r.linhas[0]).toContain('Keyciane');
   });
 });

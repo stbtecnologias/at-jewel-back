@@ -158,6 +158,22 @@ export class ConsultarVendasUseCase {
       limitar(limite),
     );
   }
+
+  /**
+   * O mesmo mes, em todos os anos — "quem mais vende brinco em outubro".
+   *
+   * `porAno` NAO passa pelo `limitar`: aquele teto (30) e para uma lista que
+   * alguem le no WhatsApp, e aqui o numero multiplica pelos anos que houver.
+   * Tres por ano em quatro anos ja sao doze linhas. O padrao e 1 — a campea
+   * de cada outubro, que e a pergunta.
+   */
+  async porFamiliaNoMes(familia: string, mes: number, porAno = 1) {
+    return this.vendas.rankingPorFamiliaNoMes(
+      mes,
+      familia,
+      Math.min(Math.max(Math.trunc(porAno) || 1, 1), 5),
+    );
+  }
 }
 
 /**
