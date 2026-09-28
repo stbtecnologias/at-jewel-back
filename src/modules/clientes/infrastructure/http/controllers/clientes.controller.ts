@@ -127,7 +127,8 @@ export class ClientesController {
       ...filtros,
       ...(await this.recorte(req)),
     });
-    return clientes.map((c) => c.toPublic());
+    const mascarar = await this.mascarar(req);
+    return clientes.map((c) => c.toPublic(mascarar));
   }
 
   /**
@@ -144,6 +145,20 @@ export class ClientesController {
     if (!req.user) return {};
     const restrito = await this.escopo.codigoErpRestrito(req.user);
     return restrito ? { vendedoraCodigoErp: restrito } : {};
+  }
+
+  /**
+   * O contato deste cliente sai mascarado? — RF-10, 29/09/2026.
+   *
+   * SEM `req.user` E CHAMADA POR API KEY — o integrador, que e a FONTE do
+   * cadastro e mandou o telefone para ca. Mascarar o que ele mesmo enviou
+   * quebraria a ida e volta sem proteger nada. A chave e emitida e revogada na
+   * tela de API Keys, entao a decisao de confiar continua sendo de gente.
+   */
+  private async mascarar(req: { user?: JwtPayload }): Promise<boolean> {
+    if (!req.user) return false;
+    const restrito = await this.escopo.codigoErpRestrito(req.user);
+    return this.escopo.mascararContato(req.user, restrito);
   }
 
   /**
@@ -250,7 +265,7 @@ export class ClientesController {
   ) {
     const cliente = await this.buscarPorIdErp.execute(idErp);
     await this.exigirNoEscopo(req, cliente.vendedoraCodigoErp);
-    return cliente.toPublic();
+    return cliente.toPublic(await this.mascarar(req));
   }
 
   @Get(':id')
@@ -263,7 +278,7 @@ export class ClientesController {
   ) {
     const cliente = await this.buscar.execute(id);
     await this.exigirNoEscopo(req, cliente.vendedoraCodigoErp);
-    return cliente.toPublic();
+    return cliente.toPublic(await this.mascarar(req));
   }
 
   /**
@@ -312,7 +327,10 @@ export class ClientesController {
   @UseGuards(JwtOrApiKeyGuard)
   @Permissions('clientes:write')
   @RequireScopes('clientes:write')
-  async criarCliente(@Body() dto: CriarClienteDto) {
+  async criarCliente(
+    @Body() dto: CriarClienteDto,
+    @Request() req: { user?: JwtPayload },
+  ) {
     const cliente = await this.criar.execute({
       idErp: dto.idErpCliente,
       codigoErp: dto.codigoErp,
@@ -328,7 +346,7 @@ export class ClientesController {
       observacaoGeral: dto.observacaoGeral,
       vendedoraCodigoErp: dto.vendedoraCodigoErp,
     });
-    return cliente.toPublic();
+    return cliente.toPublic(await this.mascarar(req));
   }
 
   // Atualiza o CADASTRO (tabela `clientes`). Nao confundir com
@@ -342,6 +360,7 @@ export class ClientesController {
   async atualizarCliente(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AtualizarClienteDto,
+    @Request() req: { user?: JwtPayload },
   ) {
     const cliente = await this.atualizarCadastro.execute(id, {
       idErp: dto.idErpCliente,
@@ -359,7 +378,7 @@ export class ClientesController {
       observacaoCredito: dto.observacaoCredito,
       vendedoraCodigoErp: dto.vendedoraCodigoErp,
     });
-    return cliente.toPublic();
+    return cliente.toPublic(await this.mascarar(req));
   }
 
   // Exclusao FISICA. O desligamento do dia a dia e PATCH com `ativo: false`.
@@ -383,6 +402,7 @@ export class ClientesController {
   async atualizar(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AtualizarPerfilClienteDto,
+    @Request() req: { user?: JwtPayload },
   ) {
     const cliente = await this.atualizarPerfil.execute(id, {
       estadoConversa: dto.estadoConversa,
@@ -413,6 +433,6 @@ export class ClientesController {
       faixaEtaria: dto.faixaEtaria,
       idade: dto.idade,
     });
-    return cliente.toPublic();
+    return cliente.toPublic(await this.mascarar(req));
   }
 }

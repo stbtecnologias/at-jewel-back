@@ -83,4 +83,64 @@ describe('EscopoClientesService — o recorte que o MEL-23 pede', () => {
       expect(svc.podeVer('VD01', null)).toBe(false);
     });
   });
+
+  /**
+   * QUEM VE O CONTATO SEM MASCARA — requisito RF-10, 29/09/2026.
+   *
+   * ========================================================================
+   * A MATRIZ TEM TRES LINHAS E A REGRA TEM DUAS CONDICOES.
+   *
+   *   Vendedora  -> sem mascara, "apenas dos proprios clientes"
+   *   Gerente    -> mascarado
+   *   Equipe AT  -> sem mascara
+   *
+   * A primeira e a terceira saem da MESMA pergunta: quem esta restrito a uma
+   * carteira so ve os proprios clientes, entao "sem mascara nos proprios" e
+   * "sem mascara" sao a mesma coisa para ela. Quem enxerga a base inteira ve
+   * mascarado, a nao ser que tenha `clientes:contato`.
+   *
+   * Estes testes existem para que a regra continue DERIVADA do escopo. Se
+   * alguem escrever uma terceira condicao — por papel, por nome —, ela
+   * divergira do isolamento da carteira na primeira correcao feita de um lado
+   * so, e a mascara passara a discordar de quem ve o que.
+   * ========================================================================
+   */
+  describe('mascararContato', () => {
+    it('vendedora restrita a propria carteira NAO recebe mascara', async () => {
+      // Os clientes da resposta dela sao dela: nao ha outros para esconder.
+      permissions.possui.mockResolvedValue(false);
+      const svc = await montar(permissions, repo);
+
+      expect(await svc.mascararContato(VENDEDORA, 'VD01')).toBe(false);
+    });
+
+    it('nem consulta a permissao quando ja esta restrita', async () => {
+      permissions.possui.mockResolvedValue(false);
+      const svc = await montar(permissions, repo);
+
+      await svc.mascararContato(VENDEDORA, 'VD01');
+
+      expect(permissions.possui).not.toHaveBeenCalled();
+    });
+
+    it('quem ve a base inteira SEM `clientes:contato` recebe mascara', async () => {
+      // O caso da gerente: `clientes:read_all` sim, contato nao.
+      permissions.possui.mockResolvedValue(false);
+      const svc = await montar(permissions, repo);
+
+      expect(await svc.mascararContato(GESTAO, undefined)).toBe(true);
+      expect(permissions.possui).toHaveBeenCalledWith(
+        'GERENTE',
+        'clientes:contato',
+      );
+    });
+
+    it('quem ve a base inteira COM `clientes:contato` nao recebe mascara', async () => {
+      // O caso da Equipe AT.
+      permissions.possui.mockResolvedValue(true);
+      const svc = await montar(permissions, repo);
+
+      expect(await svc.mascararContato(GESTAO, undefined)).toBe(false);
+    });
+  });
 });

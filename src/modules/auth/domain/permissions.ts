@@ -73,6 +73,14 @@ export const PERMISSOES: PermissaoDef[] = [
   // e-mail e limite de credito de todo mundo. Quem so tem `clientes:read`
   // passa a ver os clientes da PROPRIA vendedora.
   { chave: 'clientes:read_all', label: 'Ver clientes de todas as vendedoras', grupo: 'Clientes' },
+  // O CONTATO SEM MASCARA — 29/09/2026, requisito RF-10.
+  //
+  // So faz diferenca para quem ve a carteira INTEIRA: quem esta restrito a
+  // propria ja ve os seus clientes sem mascara, porque sao dela. Ver
+  // `EscopoClientesService.mascararContato`.
+  //
+  // Nasce sem nenhum papel marcado (RN-03, negar por padrao).
+  { chave: 'clientes:contato', label: 'Ver telefone e e-mail do cliente sem máscara', grupo: 'Clientes' },
   { chave: 'clientes:write', label: 'Criar, editar e remover clientes', grupo: 'Clientes' },
   { chave: 'analytics:read', label: 'Ver analytics', grupo: 'Analytics' },
   { chave: 'metas:read', label: 'Ver metas', grupo: 'Metas' },
