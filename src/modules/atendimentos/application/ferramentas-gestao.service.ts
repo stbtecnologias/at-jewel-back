@@ -31,7 +31,11 @@ import {
   MINUTOS_LEMBRETE,
   type ResultadoAgendamentoGestao,
 } from './use-cases/agendar-contato-gestao.use-case';
-import { ConsultarVendasUseCase, LIMITE_PADRAO } from '../../movimentacoes/application/use-cases/consultar-vendas.use-case';
+import {
+  ConsultarVendasUseCase,
+  LIMITE_MAXIMO,
+  LIMITE_PADRAO,
+} from '../../movimentacoes/application/use-cases/consultar-vendas.use-case';
 import { ListarProdutosUseCase } from '../../produtos/application/use-cases/listar-produtos.use-case';
 import { ConsultarAgendaVendedoraUseCase } from './use-cases/consultar-agenda-vendedora.use-case';
 import { ConsultarCarteiraVendedoraUseCase } from './use-cases/consultar-carteira-vendedora.use-case';
@@ -387,30 +391,64 @@ export class FerramentasGestaoService {
         };
       },
 
+      /**
+       * "Quem vendeu mais esse mes" — a equipe no periodo.
+       *
+       * ================================================================
+       * QUEM VENDEU NO PERIODO APARECE, TENHA SAIDO OU NAO — 28/09/2026.
+       *
+       * Ate aqui esta ferramenta percorria `vendedoras.listar({ativo:true})`
+       * e perguntava o desempenho de uma por uma. Duas coisas erradas nisso,
+       * e a primeira e a que o Lucas apontou:
+       *
+       * 1. VENDA E HISTORICO. Quem saiu em setembro vendeu em agosto, e o
+       *    agosto dela e da equipe. Listando so as ativas, o ranking de um
+       *    mes passado MUDAVA quando alguem era desligado — e encolhia. Na
+       *    base, em 28/09: quatro desligadas respondiam por 29,7% de agosto,
+       *    e o panorama daquele mes simplesmente nao as mostrava.
+       *
+       * 2. UMA CONSULTA POR VENDEDORA. Com 23 na equipe seriam 23 idas ao
+       *    banco para montar uma frase.
+       *
+       * O `ranking` resolve as duas: uma consulta so, com `JOIN vendedoras`
+       * sem filtro de ativo e `HAVING count(saida) > 0` — ou seja, QUEM
+       * VENDEU, e a devolucao ja abatida na vendedora certa.
+       *
+       * AS ATIVAS SEM VENDA CONTINUAM ENTRANDO, no fim da lista. "Quem esta
+       * atras" e pergunta legitima, e omitir o zero esconderia a resposta —
+       * mas so faz sentido para quem ainda trabalha aqui: "Fulana (saiu):
+       * nenhuma venda" seria ruido puro.
+       * ================================================================
+       */
       gestaoPanorama: async ({ periodo }) => {
+        // Teto alto: o ranking corta por limite, e aqui a lista e a equipe
+        // inteira. Sem isto, a vendedora de menor faturamento sumiria da
+        // comparacao sem nada dizer.
+        const { linhas: ranking } = await this.consultarVendas.ranking(
+          periodo,
+          LIMITE_MAXIMO,
+        );
+
+        // O RECORTE DE EQUIPE. Esta ferramenta nao passa pelo `comVendedora`
+        // — ela nao resolve nome, percorre lista —, entao a checagem e
+        // explicita. E a mais importante das tres: sem ela, "quem vendeu
+        // mais" devolveria o ranking da LOJA para a gerente de um time so.
+        const venderam = ranking.filter((r) => alcanca(r.vendedoraId));
+
+        const linhas = venderam.map(
+          (r) =>
+            `${r.nome}: ${r.quantidade} ${r.quantidade === 1 ? 'venda' : 'vendas'}, ${moeda(r.valor)}`,
+        );
+
+        // As que ainda trabalham aqui e nao venderam, no fim.
+        const comVenda = new Set(venderam.map((r) => r.vendedoraId));
         const ativas = await this.vendedoras.listar({ ativo: true });
-        const linhas: { texto: string; receita: number }[] = [];
         for (const v of ativas) {
-          if (!v.id) continue;
-          // O RECORTE DE EQUIPE. Esta ferramenta nao passa pelo
-          // `comVendedora` — ela nao resolve nome, percorre a lista —, entao
-          // a checagem tem de ser explicita aqui. E ela e a mais importante
-          // das duas: sem isso, "quem vendeu mais esse mes" devolveria o
-          // ranking da LOJA para a gerente de um time so.
-          if (!alcanca(v.id)) continue;
-          const r = await this.desempenho.vendas(v.id, periodo);
-          // Quem nao vendeu entra tambem: "quem esta atras" e uma pergunta
-          // legitima, e omitir o zero esconderia exatamente a resposta.
-          linhas.push({
-            texto:
-              r.quantidade === 0
-                ? `${v.nome}: nenhuma venda`
-                : `${v.nome}: ${r.quantidade} ${r.quantidade === 1 ? 'venda' : 'vendas'}, ${moeda(r.receita)}`,
-            receita: r.receita,
-          });
+          if (!v.id || comVenda.has(v.id) || !alcanca(v.id)) continue;
+          linhas.push(`${v.nome}: nenhuma venda`);
         }
-        linhas.sort((a, b) => b.receita - a.receita);
-        return { linhas: linhas.map((l) => l.texto) };
+
+        return { linhas };
       },
 
       gestaoAgendar: async ({ cliente, vendedora, quandoIso, modo }) => {

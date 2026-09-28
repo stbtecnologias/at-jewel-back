@@ -23,6 +23,7 @@ import { JwtOrApiKeyGuard } from '../../../../auth/infrastructure/http/guards/jw
 import { PermissionsGuard } from '../../../../auth/infrastructure/http/guards/permissions.guard';
 import { ScopesGuard } from '../../../../auth/infrastructure/http/guards/scopes.guard';
 import type { JwtPayload } from '../../../../auth/infrastructure/http/strategies/jwt.strategy';
+import { mascararTelefone } from '../../../domain/entities/cliente.entity';
 import { EscopoClientesService } from '../../../application/escopo-clientes.service';
 import { AtualizarClienteUseCase } from '../../../application/use-cases/atualizar-cliente.use-case';
 import { AtualizarPerfilClienteUseCase } from '../../../application/use-cases/atualizar-perfil-cliente.use-case';
@@ -185,6 +186,7 @@ export class ClientesController {
     @Request() req: { user: JwtPayload },
   ) {
     const restrito = await this.escopo.codigoErpRestrito(req.user);
+    const mascarar = await this.escopo.mascararContato(req.user, restrito);
     const clientes = await this.listar.execute({
       ...filtros,
       // O recorte GANHA do filtro da tela: sem isto, digitar o código de outra
@@ -199,16 +201,32 @@ export class ClientesController {
       nomeFantasia: c.nomeFantasia,
       ativo: c.ativo,
       vendedoraCodigoErp: c.vendedoraCodigoErp,
-      // O TELEFONE ENTRA, e o resto da PII continua fora.
+      // O TELEFONE ENTRA, E DESDE 28/09/2026 ELE PODE VIR MASCARADO.
       //
-      // Pedido pelo Lucas em 04/09: quem abre a lista quer ligar. Cabe porque
-      // o recorte do MEL-23 ja limita QUEM ve cada linha — a vendedora ve os
+      // Pedido pelo Lucas em 04/09: quem abre a lista quer ligar. Cabia porque
+      // o recorte do MEL-23 ja limitava QUEM ve cada linha — a vendedora ve os
       // telefones da carteira dela, que sao os clientes que ela atende.
       //
-      // E-mail, limite de credito e as duas observacoes continuam fora: nada
-      // disso se usa numa lista, e cada campo a mais e um campo que aparece na
-      // tela aberta em cima do balcao.
-      telefone1: c.telefone1,
+      // ================================================================
+      // O QUE MUDOU: APARECEU UM PERFIL QUE VE A BASE INTEIRA E NAO E A
+      // EQUIPE AT.
+      //
+      // A gerente tem `clientes:read_all`, entao o recorte nao a limita — e
+      // sem mascara ela teria mil telefones de cliente numa tela so. O
+      // requisito RF-10 pede o contrario.
+      //
+      // ESTA ROTA PASSOU BATIDO na primeira volta: eu mascarei o
+      // `Cliente.toPublic()`, que serve o `GET /clientes` e os detalhes, e
+      // esqueci que a TABELA do painel nao usa nenhum dos dois — ela tem
+      // payload proprio, montado aqui. O Lucas viu na tela, com os telefones
+      // inteiros, no primeiro teste do C1.
+      //
+      // A licao, e ela vale para a proxima: um campo sensivel nao se protege
+      // no serializador, se protege em TODA porta por onde ele sai.
+      // ================================================================
+      telefone1: mascarar
+        ? mascararTelefone(c.telefone1)
+        : c.telefone1,
     }));
   }
 

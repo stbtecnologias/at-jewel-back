@@ -269,6 +269,7 @@ describe('o recorte de equipe nas ferramentas de gestao', () => {
   let resolverVendedora: { execute: jest.Mock };
   let vendedoras: { listar: jest.Mock; buscarPorId: jest.Mock };
   let desempenho: { vendas: jest.Mock; metas: jest.Mock };
+  let consultarVendas: { ranking: jest.Mock; itens: jest.Mock };
   let servico: FerramentasGestaoService;
 
   beforeEach(() => {
@@ -286,10 +287,21 @@ describe('o recorte de equipe nas ferramentas de gestao', () => {
         .mockResolvedValue({ quantidade: 2, receita: 1000, ticketMedio: 500 }),
       metas: jest.fn(),
     };
+    // O ranking devolve QUEM VENDEU — inclusive quem ja saiu. A Marina e da
+    // equipe; a Beatriz e de fora e serve para provar o recorte.
+    consultarVendas = {
+      ranking: jest.fn().mockResolvedValue({
+        linhas: [
+          { vendedoraId: MARINA_ID, nome: 'Marina', codigoErp: 'VD01', quantidade: 3, valor: 9000 },
+          { vendedoraId: DE_FORA_ID, nome: 'Beatriz', codigoErp: 'VD09', quantidade: 5, valor: 20000 },
+        ],
+      }),
+      itens: jest.fn().mockResolvedValue({ linhas: [] }),
+    };
 
     servico = new FerramentasGestaoService(
       resolverVendedora as never,
-      { itens: jest.fn().mockResolvedValue({ linhas: [] }) } as never,
+      consultarVendas as never,
       { execute: jest.fn().mockResolvedValue([]) } as never,
       { execute: jest.fn().mockResolvedValue([]) } as never,
       desempenho as never,
