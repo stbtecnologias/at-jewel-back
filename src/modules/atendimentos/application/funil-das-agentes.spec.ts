@@ -183,7 +183,7 @@ describe('o funil pela gestao (Anastasia)', () => {
     );
   });
 
-  const montar = () => servico.montar(null);
+  const montar = () => servico.montar();
 
   it('sem nome, traz a loja e uma linha por vendedora, da maior para a menor', async () => {
     auditoria.resumo.mockResolvedValue({

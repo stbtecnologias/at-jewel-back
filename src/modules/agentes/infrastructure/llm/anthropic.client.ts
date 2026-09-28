@@ -373,6 +373,56 @@ const GESTAO_ITENS_TOOL: Anthropic.Tool = {
   },
 };
 
+/**
+ * A MESMA FERRAMENTA, PARA QUEM NAO VE A LOJA — 29/09/2026.
+ *
+ * Quem gerencia as vendedoras (papel GERENTE_VENDAS, sem `analytics:read`)
+ * pergunta "o que a Camila mais vendeu" e nunca "o que a loja mais vendeu": o
+ * `itens_mais_vendidos` sem vendedora e a unica das 17 ferramentas de gestao
+ * que responde sobre a loja inteira, em dinheiro.
+ *
+ * ==========================================================================
+ * E UMA SEGUNDA TOOL, E NAO UM AVISO NO SYSTEM PROMPT.
+ *
+ * Instruir o modelo a "nao perguntar pela loja" seria regra de prompt, e prompt
+ * nao e permissao: basta a conversa tomar outro rumo para ele tentar. Aqui a
+ * pergunta nao chega a existir — o `required` faz a propria API recusar a
+ * chamada sem vendedora.
+ *
+ * E o mesmo principio do canal da vendedora, onde o escopo e AUSENCIA DE
+ * CAMINHO e nao regra escrita: la nenhuma ferramenta aceita "de quem".
+ * ==========================================================================
+ *
+ * A descricao tambem muda, e nao so o `required`. Ela e o que o modelo le para
+ * decidir se a ferramenta serve: deixar "omita para a loja inteira" ali faria
+ * ele oferecer a quem nao pode, e depois se desculpar.
+ */
+const GESTAO_ITENS_DA_VENDEDORA_TOOL: Anthropic.Tool = {
+  name: 'itens_mais_vendidos',
+  description:
+    'As pecas que uma VENDEDORA mais faturou num periodo, da maior para a menor, com quantidade e valor. Use para "o que a Camila mais vendeu esse mes", "quais pecas sairam com a Marina". Devolve 10 por padrao; se ela pedir outro numero ("me da o top 5"), passe em `limite`. SEMPRE exige a vendedora — esta consulta nao responde pela loja inteira. Se ela perguntar "o que mais vendeu" sem dizer de quem, pergunte de qual vendedora.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
+        description:
+          'HOJE (o padrao), ONTEM, SEMANA (sete dias), MES ou ANO — mes e ano sao os do CALENDARIO, nao janelas moveis.',
+      },
+      limite: {
+        type: 'number',
+        description: 'Quantas pecas listar. Padrao 10, teto 30.',
+      },
+      vendedora: {
+        type: 'string',
+        description: 'Nome da vendedora, como veio na conversa.',
+      },
+    },
+    required: ['vendedora'],
+  },
+};
+
 const GESTAO_CARTEIRA_TOOL: Anthropic.Tool = {
   name: 'carteira_de_vendedora',
   description:
@@ -730,7 +780,15 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoVendas) tools.push(GESTAO_VENDAS_TOOL);
     if (params.gestaoMetas) tools.push(GESTAO_METAS_TOOL);
     if (params.gestaoPanorama) tools.push(GESTAO_PANORAMA_TOOL);
-    if (params.gestaoItens) tools.push(GESTAO_ITENS_TOOL);
+    // Uma OU outra, nunca as duas: elas tem o mesmo `name`, e declarar as duas
+    // deixaria o modelo com dois contratos para a mesma ferramenta.
+    if (params.gestaoItens) {
+      tools.push(
+        params.gestaoItensExigeVendedora
+          ? GESTAO_ITENS_DA_VENDEDORA_TOOL
+          : GESTAO_ITENS_TOOL,
+      );
+    }
     // So quando o canal NAO e o da vendedora — os dois usam o mesmo nome.
     if (params.gestaoProdutos && !params.consultarProdutos) {
       tools.push(GESTAO_PRODUTOS_TOOL);
@@ -992,6 +1050,12 @@ export class AnthropicClient implements ILlmClient {
             };
             const r = await params.gestaoItens!(e);
 
+            // Faltou dizer DE QUEM, e quem pergunta nao ve a loja inteira.
+            // Nao e "nao encontrei": e uma pergunta incompleta, e dizer o
+            // contrario faria a resposta soar como dado ausente.
+            if (r.status === 'EXIGE_VENDEDORA') {
+              return 'Esta consulta e sempre por vendedora. Pergunte de qual vendedora ela quer as pecas, sem mencionar permissao nem limitacao de acesso.';
+            }
             if (r.status === 'NAO_ENCONTRADA') {
               return 'Nao achei essa vendedora na equipe. Diga isso e pergunte o nome de novo.';
             }

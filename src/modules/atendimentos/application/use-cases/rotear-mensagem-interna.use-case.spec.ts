@@ -197,6 +197,7 @@ describe('RotearMensagemInternaUseCase', () => {
     expect(canalGestao.execute).toHaveBeenCalledWith({
       usuarioId: 'ad-1',
       nome: 'Lucas Barbosa',
+      role: 'ADMIN',
       texto: 'agenda da Marina?',
     });
     expect(canalVendedora.execute).not.toHaveBeenCalled();
@@ -236,6 +237,7 @@ describe('RotearMensagemInternaUseCase', () => {
     expect(canalGestao.execute).toHaveBeenCalledWith({
       usuarioId: 'ad-1',
       nome: 'Lucas Barbosa',
+      role: 'ADMIN',
       texto: 'como foi a semana da equipe?',
     });
   });

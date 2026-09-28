@@ -15,6 +15,7 @@ import type {
 } from '../../domain/ports/llm-client.port';
 import { FerramentasGestaoService } from '../../../atendimentos/application/ferramentas-gestao.service';
 import { PermissionsService } from '../../../auth/application/permissions.service';
+import { PERMISSAO_GESTAO } from '../../../auth/application/use-cases/buscar-admin-por-telefone.use-case';
 import { AvisarVendedoraUseCase } from './avisar-vendedora.use-case';
 import type { IAgentePromptsRepository } from '../../domain/ports/repositories/agente-prompts-repository.port';
 import { ANASTASIA_SYSTEM } from '../personas';
@@ -31,9 +32,12 @@ export interface SolicitanteChat {
   // Rotulo de fallback (email do token) quando o staff nao tem nome cadastrado.
   nomeFallback: string;
   /**
-   * Papel do token. Decide se as ferramentas de GESTAO entram — pelo mesmo
-   * criterio do WhatsApp (`vendas:read_all`), para nao existir uma segunda
-   * lista de regras que alguem esqueceria de atualizar.
+   * Papel do token. Decide DUAS coisas, e sao independentes:
+   *
+   *   `agentes:anastasia` -> as ferramentas de gestao entram (mesmo criterio
+   *                          do WhatsApp, ver `PERMISSAO_GESTAO`)
+   *   `analytics:read`    -> elas podem falar da LOJA, e nao so de cada
+   *                          vendedora (ver `verLoja` no montar)
    */
   role?: string;
 }
@@ -81,10 +85,24 @@ Agora sao ${agoraLocal()} (fuso da loja). Use isto para interpretar "hoje", "ama
     // dos acontecimentos — as ferramentas nasceram para resolver o problema de
     // quem esta na rua.
     //
-    // O criterio e o MESMO dos dois lados: `vendas:read_all`. Mexer nas
+    // O criterio e o MESMO dos dois lados: `PERMISSAO_GESTAO`. Mexer nas
     // permissoes de um papel muda painel e WhatsApp juntos.
     const podeGerir = solicitante?.role
-      ? await this.permissoes.possui(solicitante.role, 'vendas:read_all')
+      ? await this.permissoes.possui(solicitante.role, PERMISSAO_GESTAO)
+      : false;
+
+    // E A LOJA, ELA PODE VER? — 29/09/2026, junto com o papel GERENTE_VENDAS.
+    //
+    // Das ferramentas de gestao, UMA fala da loja inteira e em dinheiro:
+    // `itens_mais_vendidos` sem vendedora. Quem gerencia as vendedoras ve o
+    // desempenho de cada uma e nao o faturamento geral, entao para ela essa
+    // ferramenta passa a EXIGIR uma vendedora — ver `montar({ verLoja })`.
+    //
+    // O criterio e `analytics:read`, que ja guarda o modulo de Analytics
+    // inteiro no painel ("dashboards e KPIs gerenciais"). Mesma chave, mesma
+    // resposta nas duas portas.
+    const verLoja = solicitante?.role
+      ? await this.permissoes.possui(solicitante.role, 'analytics:read')
       : false;
 
     return this.llm.chatComFerramentas({
@@ -96,7 +114,12 @@ Agora sao ${agoraLocal()} (fuso da loja). Use isto para interpretar "hoje", "ama
       // portas — a tela renderiza, a conversa de WhatsApp nao.
       // O nome vai junto porque o agendamento agora AVISA a vendedora, e ela
       // precisa saber de quem veio o compromisso. Nao muda escopo nenhum.
-      ...(podeGerir ? this.ferramentasGestao.montar(solicitante?.nomeFallback) : {}),
+      ...(podeGerir
+        ? this.ferramentasGestao.montar({
+            solicitante: solicitante?.nomeFallback,
+            verLoja,
+          })
+        : {}),
       // So habilita a tool registrar_demanda quando conhecemos quem conversa.
       registrarDemanda: solicitante
         ? this.montarHandlerDemanda(solicitante)

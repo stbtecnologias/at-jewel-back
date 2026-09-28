@@ -86,6 +86,40 @@ export interface FerramentasGestao {
   gestaoDiaDaVendedora: GestaoDiaDaVendedoraHandler;
   gestaoFunil: GestaoFunilHandler;
   gestaoPanoramaLeads: GestaoPanoramaLeadsHandler;
+  /**
+   * NAO E UM HANDLER — e um aviso que viaja junto para o cliente do LLM.
+   *
+   * Ele entra no `ChatParams` pelo mesmo espalhamento dos handlers, e la decide
+   * QUAL versao do `itens_mais_vendidos` e declarada ao modelo: a que aceita a
+   * loja inteira, ou a que exige uma vendedora.
+   *
+   * Vive aqui, e nao num parametro a parte de quem chama, para que as tres
+   * portas (WhatsApp, painel e o que vier) nao possam esquecer de passa-lo — o
+   * `montar` e o unico lugar que decide, e o resultado carrega a decisao.
+   */
+  gestaoItensExigeVendedora?: boolean;
+}
+
+/** O que o `montar` precisa saber sobre quem esta do outro lado. */
+export interface ContextoGestao {
+  /**
+   * Nome de quem esta falando. Entra apenas no AVISO que a vendedora recebe —
+   * "A Fernanda agendou o cliente..." —, para ela saber de quem veio o
+   * compromisso. Nao muda o que ferramenta nenhuma enxerga.
+   */
+  solicitante?: string | null;
+  /**
+   * Pode ver a LOJA, e nao so cada vendedora? — 29/09/2026.
+   *
+   * `false` estreita o `itens_mais_vendidos`: ele passa a exigir uma vendedora,
+   * entao "o que a Camila mais vendeu" continua de pe e "o que a loja mais
+   * vendeu" deixa de existir. Nenhuma outra ferramenta muda, porque nenhuma
+   * outra fala da loja em dinheiro.
+   *
+   * O PADRAO E `false` DE PROPOSITO. Quem esquecer de informar recebe o escopo
+   * ESTREITO — um esquecimento tira uma resposta, e nao abre o faturamento.
+   */
+  verLoja?: boolean;
 }
 
 /**
@@ -129,13 +163,18 @@ export class FerramentasGestaoService {
   ) {}
 
   /**
-   * @param solicitante nome de quem esta do outro lado. Entra apenas no AVISO
-   *   que a vendedora recebe — "A Fernanda agendou o cliente..." —, para ela
-   *   saber de quem veio o compromisso. Nao muda o que a ferramenta pode ver:
-   *   o escopo da gestao ja e o mesmo para toda a administracao.
+   * @param ctx quem esta do outro lado — ver `ContextoGestao`.
+   *
+   *   Era `montar(solicitante?: string)` ate 29/09/2026. Virou objeto quando o
+   *   escopo deixou de ser o mesmo para toda a administracao: o papel
+   *   GERENTE_VENDAS gerencia as vendedoras e nao ve o faturamento da loja.
    */
-  montar(solicitante?: string | null): FerramentasGestao {
+  montar(ctx: ContextoGestao = {}): FerramentasGestao {
+    const { solicitante, verLoja = false } = ctx;
+
     return {
+      gestaoItensExigeVendedora: !verLoja,
+
       gestaoAgenda: async ({ vendedora, periodo }) =>
         this.comVendedora(vendedora, async (id) => {
           const compromissos = await this.agenda.execute(id, periodo);
@@ -228,6 +267,24 @@ export class FerramentasGestaoService {
       // O QUE MAIS SAIU — 25/09/2026. Le a MOVIMENTACAO, como todo o resto de
       // venda desde hoje; ver `ConsultarVendasUseCase`.
       gestaoItens: async ({ periodo, limite, vendedora }) => {
+        // ================================================================
+        // A SEGUNDA BARREIRA DO ESCOPO ESTREITO, E ELA E DE PROPOSITO.
+        //
+        // A primeira e o `input_schema`: sem `verLoja` o modelo recebe a
+        // versao da tool que declara `vendedora` como obrigatoria, e a API
+        // recusa a chamada sem ela. Esta aqui existe porque schema e um
+        // PEDIDO — vale enquanto ninguem mexer na lista de tools, e quem
+        // mexer nao vai lembrar deste arquivo.
+        //
+        // Mesmo desenho do `BuscarAdminPorTelefoneUseCase`, que confere
+        // telefone E permissao: duas barreiras independentes para o mesmo
+        // erro, porque o erro aqui e silencioso — entregar o faturamento da
+        // loja a quem nao pode ve-lo nao levanta excecao nenhuma.
+        // ================================================================
+        if (!verLoja && !vendedora?.trim()) {
+          return { status: 'EXIGE_VENDEDORA', linhas: [] };
+        }
+
         // O nome so e resolvido quando ela PEDE um recorte por vendedora — a
         // pergunta comum e sobre a loja inteira, e nao paga essa consulta.
         let vendedoraId: string | null = null;

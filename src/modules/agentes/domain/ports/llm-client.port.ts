@@ -395,11 +395,23 @@ export type GestaoProdutosHandler = (input: {
   busca: string;
 }) => Promise<{ produtos: { linha: string }[] }>;
 
+/**
+ * O que mais saiu, por valor.
+ *
+ * `EXIGE_VENDEDORA` e o unico status que nao fala de dado: quem pergunta nao
+ * pode ver a loja inteira (falta `analytics:read`) e nao disse de qual
+ * vendedora quer. Nao e erro nem vazio — e um pedido de complemento, e a
+ * resposta ao modelo tem que dizer isso, senao ele anuncia "nao encontrei" para
+ * uma pergunta que so faltou um nome.
+ */
 export type GestaoItensHandler = (input: {
   periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
   limite?: number;
   vendedora?: string;
-}) => Promise<{ status: 'OK' | 'AMBIGUA' | 'NAO_ENCONTRADA'; linhas: string[] }>;
+}) => Promise<{
+  status: 'OK' | 'AMBIGUA' | 'NAO_ENCONTRADA' | 'EXIGE_VENDEDORA';
+  linhas: string[];
+}>;
 
 /**
  * De quem e este cliente. EXCLUSIVA DA GESTAO — e literalmente a pergunta que
@@ -567,6 +579,16 @@ export interface ChatParams {
   gestaoMetas?: GestaoMetasHandler;
   gestaoPanorama?: GestaoPanoramaHandler;
   gestaoItens?: GestaoItensHandler;
+  /**
+   * Declara a versao ESTREITA do `itens_mais_vendidos`, em que `vendedora` e
+   * obrigatoria — para quem gerencia as vendedoras e nao ve o faturamento da
+   * loja (sem `analytics:read`).
+   *
+   * Vem junto com os handlers, do `FerramentasGestaoService.montar`, e nao de
+   * um parametro proprio de quem chama: assim nenhuma porta pode montar as
+   * ferramentas e esquecer de dizer qual escopo e.
+   */
+  gestaoItensExigeVendedora?: boolean;
   gestaoProdutos?: GestaoProdutosHandler;
   gestaoCarteiraDoCliente?: GestaoCarteiraDoClienteHandler;
   gestaoEncaminharLead?: GestaoEncaminharLeadHandler;

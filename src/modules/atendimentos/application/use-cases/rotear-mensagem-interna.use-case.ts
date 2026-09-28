@@ -522,9 +522,15 @@ export class RotearMensagemInternaUseCase {
 
     // O ID vai junto: e a chave da memoria de conversa dele. Telefone nao
     // serve — numero muda de dono, e a conversa nao pode ir junto.
+    //
+    // O PAPEL TAMBEM, desde 29/09/2026: passar pela porta deixou de significar
+    // ver tudo igual. Quem gerencia as vendedoras (GERENTE_VENDAS) recebe as
+    // mesmas 17 ferramentas, mas nenhuma delas fala da loja em dinheiro — ver
+    // `MensagemGestao.role`.
     return this.canalGestao.execute({
       usuarioId: admin!.id,
       nome: admin!.nome,
+      role: admin!.role,
       texto,
     });
   }

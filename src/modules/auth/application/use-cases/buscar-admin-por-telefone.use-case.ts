@@ -7,15 +7,35 @@ import type { IAdminUserRepository } from '../../domain/ports/repositories/admin
 import { PermissionsService } from '../permissions.service';
 
 /**
- * Permissao que separa gestao de vendedora.
+ * Permissao que abre o canal da Anastasia.
  *
- * "Ver vendas de TODAS as vendedoras (comparativo)" e literalmente o que
- * distingue os dois papeis no painel — quem a tem enxerga a equipe, quem nao
- * tem enxerga a si mesma. Reusar a mesma chave aqui mantem um criterio so:
- * mexer nas permissoes de um papel muda o painel e o WhatsApp juntos, e nao
+ * ==========================================================================
+ * ERA `vendas:read_all` ATE 29/09/2026, E A TROCA E DE CRITERIO, NAO DE NOME.
+ *
+ * A chave antiga significa "ver vendas de TODAS as vendedoras (comparativo)",
+ * e no painel ela abre a TELA DE VENDAS — o `EscopoVendasService` para de
+ * recortar por vendedora quando a encontra, e o resumo daquela tela vira o da
+ * loja inteira. Ou seja: quem tinha a porta do WhatsApp tinha, pelo mesmo
+ * cadeado, o faturamento geral na tela.
+ *
+ * Isso impedia o papel GERENTE_VENDAS — quem gerencia as vendedoras e nao ve o
+ * faturamento da loja. Sem separar as duas coisas, so havia o extremo: ou ela
+ * perdia o canal, ou ganhava a tela.
+ *
+ * `agentes:anastasia` ja existia e ja e exigida nas rotas do chat da Anastasia
+ * no painel (`AgentesController`). Ela se chama "Conversar com a Anastasia",
+ * que e exatamente o que esta porta decide — o nome passou a dizer a verdade.
+ *
+ * A TROCA FOI NEUTRA no dia em que entrou: ADMIN e GERENTE tinham as DUAS
+ * chaves, SUPERADMIN tem o curinga, e ESTOQUISTA/VENDEDORA nao tinham nenhuma.
+ * Ninguem ganhou nem perdeu o canal — conferido no banco antes de mexer.
+ * ==========================================================================
+ *
+ * O que NAO mudou: continua sendo uma chave so para as duas portas (WhatsApp e
+ * painel), entao mexer nas permissoes de um papel muda as duas juntas e nao
  * existe uma segunda lista para esquecer de atualizar.
  */
-export const PERMISSAO_GESTAO = 'vendas:read_all';
+export const PERMISSAO_GESTAO = 'agentes:anastasia';
 
 /**
  * De quem e este telefone, do lado da GESTAO? Espelha o

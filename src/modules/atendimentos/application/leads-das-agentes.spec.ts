@@ -445,7 +445,7 @@ describe('o panorama de leads da gestao (Anastasia)', () => {
     );
   });
 
-  const montar = () => servico.montar(null);
+  const montar = () => servico.montar();
 
   it('sem nome: conta os estados, mostra a fila e soma por vendedora', async () => {
     leads.panoramaDeLeads.mockResolvedValue({

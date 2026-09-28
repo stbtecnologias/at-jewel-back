@@ -4,6 +4,7 @@ import { limparEHigienizar } from '../../../../shared/http/sanitize/sanitize-tex
 import { ANASTASIA_GESTAO_SYSTEM } from '../../../agentes/application/personas';
 import { LLM_CLIENT } from '../../../agentes/domain/ports/injection-tokens';
 import type { ILlmClient } from '../../../agentes/domain/ports/llm-client.port';
+import { PermissionsService } from '../../../auth/application/permissions.service';
 import { FerramentasGestaoService } from '../ferramentas-gestao.service';
 import { MemoriaConversaService } from '../memoria-conversa.service';
 
@@ -12,6 +13,19 @@ export interface MensagemGestao {
   usuarioId: string;
   /** Nome de quem esta falando, para a agente tratar pelo primeiro nome. */
   nome: string | null;
+  /**
+   * Papel de quem esta falando — 29/09/2026.
+   *
+   * QUEM ENTROU NAO VE MAIS TUDO IGUAL. Ate aqui, passar pela porta
+   * (`PERMISSAO_GESTAO`) dava as 17 ferramentas com o mesmo alcance para toda a
+   * administracao. Com o papel GERENTE_VENDAS isso deixou de valer: ele
+   * gerencia as vendedoras e nao ve o faturamento da loja.
+   *
+   * O PAPEL, e nao a permissao ja resolvida, porque quem monta as ferramentas e
+   * este use case. Deixar o roteador resolver espalharia a regra por dois
+   * arquivos, e o segundo e o que ninguem lembra de atualizar.
+   */
+  role: string;
   texto: string;
 }
 
@@ -52,6 +66,7 @@ export class ProcessarMensagemGestaoUseCase {
   constructor(
     private readonly ferramentas: FerramentasGestaoService,
     private readonly memoria: MemoriaConversaService,
+    private readonly permissoes: PermissionsService,
     @Inject(LLM_CLIENT)
     private readonly llm: ILlmClient,
     private readonly config: ConfigService,
@@ -81,7 +96,15 @@ export class ProcessarMensagemGestaoUseCase {
         graficos: false,
         // O nome de quem fala vai junto: quando ele agenda, a vendedora recebe
         // um aviso dizendo de quem veio o compromisso.
-        ...this.ferramentas.montar(msg.nome),
+        //
+        // O `verLoja` decide se as ferramentas podem falar da LOJA ou so de
+        // cada vendedora — ver `ContextoGestao`. A chave e `analytics:read`,
+        // a mesma que guarda o modulo de Analytics no painel: uma so, para a
+        // resposta nao depender da porta por onde a pergunta entrou.
+        ...this.ferramentas.montar({
+          solicitante: msg.nome,
+          verLoja: await this.permissoes.possui(msg.role, 'analytics:read'),
+        }),
       });
 
       // So guarda o que deu certo. Turno com falha na memoria faria a proxima
