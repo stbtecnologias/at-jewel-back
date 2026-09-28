@@ -4,6 +4,7 @@ import { limparEHigienizar } from '../../../../shared/http/sanitize/sanitize-tex
 import { ANASTASIA_GESTAO_SYSTEM } from '../../../agentes/application/personas';
 import { LLM_CLIENT } from '../../../agentes/domain/ports/injection-tokens';
 import type { ILlmClient } from '../../../agentes/domain/ports/llm-client.port';
+import { CombinadosService } from '../../../agentes/application/combinados.service';
 import { PermissionsService } from '../../../auth/application/permissions.service';
 import { EscopoVendasService } from '../../../vendas/application/escopo-vendas.service';
 import { FerramentasGestaoService } from '../ferramentas-gestao.service';
@@ -69,6 +70,7 @@ export class ProcessarMensagemGestaoUseCase {
     private readonly memoria: MemoriaConversaService,
     private readonly permissoes: PermissionsService,
     private readonly escopo: EscopoVendasService,
+    private readonly combinados: CombinadosService,
     @Inject(LLM_CLIENT)
     private readonly llm: ILlmClient,
     private readonly config: ConfigService,
@@ -76,11 +78,18 @@ export class ProcessarMensagemGestaoUseCase {
 
   async execute(msg: MensagemGestao): Promise<RespostaGestao> {
     const primeiroNome = msg.nome?.trim().split(/\s+/)[0] ?? null;
+
+    // OS COMBINADOS ENTRAM NO PROMPT — ANA-16, 28/09/2026. Vem do banco a cada
+    // mensagem, e e isso que os faz sobreviver a restart e valer tambem no
+    // painel. Vazio quando nao ha nenhum, e aí o prompt fica como era.
+    const combinados = await this.combinados.paraPrompt('anastasia');
+
     const system =
       `${ANASTASIA_GESTAO_SYSTEM}\n\n` +
       (primeiroNome ? `Você está falando com ${primeiroNome}. ` : '') +
       `Agora são ${agoraLocal()} (fuso da loja) — use isto para entender "hoje", ` +
-      `"amanhã" e horários relativos.`;
+      `"amanhã" e horários relativos.` +
+      (combinados ? `\n\n${combinados}` : '');
 
     // A conversa anterior, se houver. Sem isso, "e a Beatriz?" ou "pode
     // transferir" chegariam como frases soltas. Ver MemoriaConversaService.
@@ -119,6 +128,13 @@ export class ProcessarMensagemGestaoUseCase {
           // pergunta com resposta diferente conforme a porta.
           equipe: await this.escopo.equipeDoUsuario(msg.usuarioId),
         }),
+
+        // OS COMBINADOS — ANA-16 e ANA-18. Ficam FORA do
+        // `FerramentasGestaoService` de proposito: aquele e o que a agente
+        // sabe sobre a LOJA, e isto e o que ela sabe sobre ela mesma. Misturar
+        // os dois faria a lista de ferramentas de negocio crescer com uma que
+        // nao consulta dado nenhum.
+        ...this.combinados.handlers('anastasia', msg.usuarioId),
       });
 
       // So guarda o que deu certo. Turno com falha na memoria faria a proxima

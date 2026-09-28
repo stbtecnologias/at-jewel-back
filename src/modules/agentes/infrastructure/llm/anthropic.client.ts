@@ -469,6 +469,60 @@ const GESTAO_ITENS_DA_VENDEDORA_TOOL: Anthropic.Tool = {
   },
 };
 
+/**
+ * OS COMBINADOS — ANA-16 e ANA-18, 28/09/2026.
+ *
+ * ==========================================================================
+ * "GUARDAR" E O VERBO, E ELE E DELIBERADO.
+ *
+ * Nao e "criar alerta" nem "configurar aviso": a agente guarda e LEMBRA, e nao
+ * dispara sozinha. Chamar a ferramenta de alerta faria o modelo prometer o que
+ * ela nao faz — e quem combinasse "me avise as 8h" esperaria o telefone tocar.
+ *
+ * A descricao diz isso com todas as letras porque e a unica coisa que o modelo
+ * le antes de decidir usar.
+ * ==========================================================================
+ */
+const GUARDAR_COMBINADO_TOOL: Anthropic.Tool = {
+  name: 'guardar_combinado',
+  description:
+    'Guarda uma instrucao que a equipe combinou com voce, para nao esquecer entre conversas nem depois de o sistema reiniciar. Use quando disserem "de agora em diante...", "sempre que...", "lembre que...", "combinado: ...". VOCE GUARDA E LEMBRA — nao passa a avisar ninguem sozinha, porque voce so age quando alguem escreve. Se o combinado for um aviso automatico, guarde e diga isso.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      texto: {
+        type: 'string',
+        description:
+          'O combinado, na forma mais curta que preserve o sentido. Ate 300 caracteres. Escreva do jeito que a pessoa reconheceria depois — e o texto que ela vai ver quando pedir a lista.',
+      },
+    },
+    required: ['texto'],
+  },
+};
+
+const LISTAR_COMBINADOS_TOOL: Anthropic.Tool = {
+  name: 'listar_combinados',
+  description:
+    'Lista o que ja foi combinado com voce, numerado. Use quando perguntarem "o que voce lembra?", "quais combinados a gente tem?", "o que eu ja te pedi?" — e SEMPRE antes de esquecer algum, porque o numero para esquecer vem desta lista.',
+  input_schema: { type: 'object', properties: {} },
+};
+
+const ESQUECER_COMBINADO_TOOL: Anthropic.Tool = {
+  name: 'esquecer_combinado',
+  description:
+    'Desfaz um combinado, pelo numero que apareceu em `listar_combinados`. Use quando pedirem "esquece aquilo", "pode tirar o segundo", "nao precisa mais me avisar disso". CHAME `listar_combinados` ANTES se voce nao acabou de mostrar a lista — o numero e a posicao nela, e chutar apaga o combinado errado.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      numero: {
+        type: 'number',
+        description: 'A posicao na lista, comecando em 1.',
+      },
+    },
+    required: ['numero'],
+  },
+};
+
 const GESTAO_CARTEIRA_TOOL: Anthropic.Tool = {
   name: 'carteira_de_vendedora',
   description:
@@ -825,6 +879,9 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoAgenda) tools.push(GESTAO_AGENDA_TOOL);
     if (params.gestaoVendas) tools.push(GESTAO_VENDAS_TOOL);
     if (params.gestaoMetas) tools.push(GESTAO_METAS_TOOL);
+    if (params.guardarCombinado) tools.push(GUARDAR_COMBINADO_TOOL);
+    if (params.listarCombinados) tools.push(LISTAR_COMBINADOS_TOOL);
+    if (params.esquecerCombinado) tools.push(ESQUECER_COMBINADO_TOOL);
     if (params.gestaoPanorama) tools.push(GESTAO_PANORAMA_TOOL);
     // Uma OU outra, nunca as duas: elas tem o mesmo `name`, e declarar as duas
     // deixaria o modelo com dois contratos para a mesma ferramenta.
@@ -1092,6 +1149,73 @@ export class AnthropicClient implements ILlmClient {
               }),
               'meta',
             );
+          }),
+        );
+      } else if (
+        toolUse.name === 'guardar_combinado' &&
+        params.guardarCombinado
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const { texto } = toolUse.input as { texto?: string };
+            const r = await params.guardarCombinado!({
+              texto: String(texto ?? '').slice(0, 400),
+            });
+
+            // CADA RECUSA DIZ O QUE FAZER, e nao so o que houve. "Nao deu" faz
+            // a agente pedir desculpa e parar; dizendo o teto, ela devolve a
+            // conversa para quem pode resolver.
+            if (r.status === 'VAZIO') {
+              return 'Nao veio combinado nenhum. Pergunte o que ela quer que voce lembre.';
+            }
+            if (r.status === 'LONGO') {
+              return `Longo demais (teto de ${r.teto} caracteres). Peca para resumir, ou proponha voce uma versao curta e confirme antes de guardar.`;
+            }
+            if (r.status === 'CHEIO') {
+              return `Ja ha ${r.teto} combinados guardados, que e o maximo. Mostre a lista com listar_combinados e pergunte qual sai para este entrar.`;
+            }
+            return (
+              'Guardado. Confirme em uma frase, com as SUAS palavras, e diga que ' +
+              'vale daqui em diante. Se o combinado for um aviso automatico, diga ' +
+              'tambem que voce nao dispara sozinha — que precisa que perguntem.'
+            );
+          }),
+        );
+      } else if (
+        toolUse.name === 'listar_combinados' &&
+        params.listarCombinados
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const { linhas } = await params.listarCombinados!();
+            if (linhas.length === 0) {
+              return 'Nao ha combinado guardado. Diga isso em uma frase.';
+            }
+            return (
+              `Combinados guardados:\n${linhas.join('\n')}\n\n` +
+              'Repasse a lista com os numeros — eles sao o que ela usa para pedir ' +
+              'para esquecer algum.'
+            );
+          }),
+        );
+      } else if (
+        toolUse.name === 'esquecer_combinado' &&
+        params.esquecerCombinado
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const { numero } = toolUse.input as { numero?: number };
+            const r = await params.esquecerCombinado!({
+              numero: Number(numero ?? 0),
+            });
+
+            if (r.status === 'NAO_ACHEI') {
+              // O numero errado NAO apaga nada, e a agente tem de dizer isso —
+              // "pronto, esqueci" sobre um combinado que continua valendo e o
+              // pior desfecho possivel aqui.
+              return 'Nao ha combinado nessa posicao. Mostre a lista de novo e pergunte qual e.';
+            }
+            return `Esquecido: "${r.texto}". Confirme em uma frase, dizendo qual era.`;
           }),
         );
       } else if (toolUse.name === 'itens_mais_vendidos' && params.gestaoItens) {

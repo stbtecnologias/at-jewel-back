@@ -1,5 +1,6 @@
 import { AtendimentoPersistenciaModule } from './atendimento-persistencia.module';
 import { AgenteEventosModule } from '../agente-eventos/agente-eventos.module';
+import { CombinadosModule } from '../agentes/combinados.module';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WhatsappGatewayModule } from '../atendimento/whatsapp-gateway.module';
@@ -106,6 +107,9 @@ import { ConversaWhatsappRepository } from './infrastructure/database/typeorm/re
     // O registro da consulta restrita da vendedora (RN-01g, 28/09/2026).
     // Modulo folha — so TypeORM e Auth —, entao nao ha ciclo.
     AgenteEventosModule,
+    // Os combinados da Anastasia (ANA-16). Modulo folha: so TypeORM. Importar
+    // o AgentesModule inteiro fecharia ciclo — ele importa ESTE.
+    CombinadosModule,
   ],
   providers: [
     {

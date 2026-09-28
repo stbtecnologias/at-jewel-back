@@ -15,6 +15,7 @@ import type {
 } from '../../domain/ports/llm-client.port';
 import { FerramentasGestaoService } from '../../../atendimentos/application/ferramentas-gestao.service';
 import { PermissionsService } from '../../../auth/application/permissions.service';
+import { CombinadosService } from '../combinados.service';
 import { EscopoVendasService } from '../../../vendas/application/escopo-vendas.service';
 import { PERMISSAO_GESTAO } from '../../../auth/application/use-cases/buscar-admin-por-telefone.use-case';
 import { AvisarVendedoraUseCase } from './avisar-vendedora.use-case';
@@ -56,6 +57,7 @@ export class ChatAnastasiaUseCase {
     private readonly ferramentasGestao: FerramentasGestaoService,
     private readonly permissoes: PermissionsService,
     private readonly escopoVendas: EscopoVendasService,
+    private readonly combinados: CombinadosService,
   ) {}
 
   async execute(
@@ -75,9 +77,16 @@ export class ChatAnastasiaUseCase {
 
 Agora sao ${agoraLocal()} (fuso da loja). Use isto para interpretar "hoje", "amanhã", "sexta" e horários relativos.`;
 
+    // OS COMBINADOS — ANA-16 e ANA-23. A MESMA lista do WhatsApp: o que foi
+    // combinado por la vale aqui, e vice-versa. E o requisito ANA-23 inteiro
+    // ("a mesma memoria e os mesmos dados nos dois canais") resolvido por vir
+    // do banco, e nao por sincronizar nada.
+    const combinados = await this.combinados.paraPrompt('anastasia');
+    const comCombinados = combinados ? `${comData}\n\n${combinados}` : comData;
+
     const system = contexto
-      ? `${comData}\n\nContexto da aba aberta: ${contexto.aba ?? 'não informada'}.\nDados disponíveis no momento: ${JSON.stringify(contexto.dados ?? {})}`
-      : comData;
+      ? `${comCombinados}\n\nContexto da aba aberta: ${contexto.aba ?? 'não informada'}.\nDados disponíveis no momento: ${JSON.stringify(contexto.dados ?? {})}`
+      : comCombinados;
 
     // AS MESMAS FERRAMENTAS DO WHATSAPP, quando o papel permite.
     //
@@ -137,6 +146,11 @@ Agora sao ${agoraLocal()} (fuso da loja). Use isto para interpretar "hoje", "ama
             verQuantidade,
             equipe,
           })
+        : {}),
+      // Os combinados valem para quem entrou no canal, e nao so no WhatsApp:
+      // e o ANA-23 ("a mesma memoria nos dois canais").
+      ...(podeGerir
+        ? this.combinados.handlers('anastasia', solicitante?.userId ?? null)
         : {}),
       // So habilita a tool registrar_demanda quando conhecemos quem conversa.
       registrarDemanda: solicitante

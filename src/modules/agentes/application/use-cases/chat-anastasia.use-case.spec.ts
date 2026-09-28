@@ -36,6 +36,7 @@ describe('ChatAnastasiaUseCase (tool registrar_demanda)', () => {
   let ferramentasGestao: { montar: jest.Mock };
   let permissoes: { possui: jest.Mock };
   let escopoVendas: { equipeDoUsuario: jest.Mock };
+  let combinados: { paraPrompt: jest.Mock; handlers: jest.Mock };
   let useCase: ChatAnastasiaUseCase;
 
   beforeEach(() => {
@@ -51,6 +52,12 @@ describe('ChatAnastasiaUseCase (tool registrar_demanda)', () => {
     permissoes = { possui: jest.fn(async () => false) };
     // Sem equipe: o comportamento historico, e o de todo mundo hoje.
     escopoVendas = { equipeDoUsuario: jest.fn(async () => null) };
+    // Sem combinado guardado: o prompt fica como era, e as ferramentas dos
+    // combinados nao entram.
+    combinados = {
+      paraPrompt: jest.fn(async () => ''),
+      handlers: jest.fn(() => ({})),
+    };
 
     useCase = new ChatAnastasiaUseCase(
       llm,
@@ -61,6 +68,7 @@ describe('ChatAnastasiaUseCase (tool registrar_demanda)', () => {
       ferramentasGestao as never,
       permissoes as never,
       escopoVendas as never,
+      combinados as never,
     );
   });
 

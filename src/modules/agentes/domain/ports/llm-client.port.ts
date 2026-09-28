@@ -395,6 +395,27 @@ export type GestaoMetasHandler = (input: {
   vendedora: string;
 }) => Promise<GestaoLeituraResultado>;
 
+/**
+ * OS COMBINADOS — ANA-16 e ANA-18, 28/09/2026.
+ *
+ * Tres verbos porque sao tres coisas que a equipe faz com eles: combinar,
+ * conferir o que ja combinou e desfazer. O documento pede os tres ("ver e
+ * corrigir as instrucoes que a Anastasia guardou").
+ */
+export type GuardarCombinadoHandler = (input: {
+  texto: string;
+}) => Promise<{ status: 'OK' | 'VAZIO' | 'LONGO' | 'CHEIO'; teto?: number }>;
+
+export type ListarCombinadosHandler = () => Promise<{
+  /** Uma linha por combinado, ja numerada — e o numero serve ao esquecer. */
+  linhas: string[];
+}>;
+
+export type EsquecerCombinadoHandler = (input: {
+  /** A posicao na lista que `listar_combinados` mostrou, comecando em 1. */
+  numero: number;
+}) => Promise<{ status: 'OK' | 'NAO_ACHEI'; texto?: string }>;
+
 /** Comparativo da equipe inteira — nao resolve nome, entao nao tem status. */
 /**
  * A carteira de UMA vendedora, vista pela gestao.
@@ -622,6 +643,9 @@ export interface ChatParams {
   gestaoAgenda?: GestaoAgendaHandler;
   gestaoVendas?: GestaoVendasHandler;
   gestaoMetas?: GestaoMetasHandler;
+  guardarCombinado?: GuardarCombinadoHandler;
+  listarCombinados?: ListarCombinadosHandler;
+  esquecerCombinado?: EsquecerCombinadoHandler;
   gestaoPanorama?: GestaoPanoramaHandler;
   gestaoItens?: GestaoItensHandler;
   /**
