@@ -279,6 +279,41 @@ const GESTAO_AGENDA_TOOL: Anthropic.Tool = {
   },
 };
 
+/**
+ * O PERIODO LIVRE, nas tres ferramentas de venda — 28/09/2026.
+ *
+ * ==========================================================================
+ * NASCEU DE UMA RECUSA QUE NAO DEVIA EXISTIR.
+ *
+ * O Lucas perguntou "o que a Camila mais vendeu nos ultimos 6 meses" e a
+ * Anastasia respondeu que "nao da para escolher exatamente seis meses — as
+ * opcoes sao hoje, ontem, semana, mes ou ano".
+ *
+ * Era limitacao NOSSA, numa pergunta que o banco responde sem esforco: os
+ * metodos `resumoEntre`, `itensEntre` e `rankingEntre` existiam desde 25/09 e
+ * ninguem os chamava. A ferramenta so sabia falar o enum.
+ *
+ * O ENUM FICA, e nao e redundancia: `MES` e `ANO` sao os do CALENDARIO, que e
+ * o que se compara com a meta. O modelo calculando "o mes" chutaria trinta
+ * dias para tras e daria um numero que nao bate com nada que a gestao segue.
+ *
+ * DUPLICADO NAS TRES de proposito — a descricao de `periodo` e diferente em
+ * cada uma (enums diferentes, padroes diferentes), entao so este par e comum.
+ * ==========================================================================
+ */
+const DATAS_LIVRES = {
+  de: {
+    type: 'string' as const,
+    description:
+      'Inicio do periodo, AAAA-MM-DD. Use com `ate` quando o recorte pedido nao couber no `periodo`: "ultimos 6 meses", "de janeiro a marco", "agosto", "do dia 10 ate hoje". VOCE calcula as datas a partir da data de hoje, que esta no inicio desta conversa.',
+  },
+  ate: {
+    type: 'string' as const,
+    description:
+      'Fim do periodo, AAAA-MM-DD, e ele CONTA INTEIRO. So vale junto com `de` — mandando um so, ele e ignorado. Com os dois preenchidos, o `periodo` nao e usado.',
+  },
+};
+
 const GESTAO_VENDAS_TOOL: Anthropic.Tool = {
   name: 'vendas_de_vendedora',
   description:
@@ -296,6 +331,7 @@ const GESTAO_VENDAS_TOOL: Anthropic.Tool = {
         description:
           'HOJE = desde a meia-noite; SEMANA = os ultimos sete dias; MES = os ultimos trinta dias. Omita se nao souber — assume SEMANA, e voce diz na resposta qual recorte usou.',
       },
+      ...DATAS_LIVRES,
     },
     required: ['vendedora'],
   },
@@ -320,7 +356,7 @@ const GESTAO_METAS_TOOL: Anthropic.Tool = {
 const GESTAO_PANORAMA_TOOL: Anthropic.Tool = {
   name: 'panorama_da_equipe',
   description:
-    'Compara as vendas de TODAS as vendedoras ativas num periodo, da maior para a menor. Use quando a pergunta for sobre a equipe e nao sobre uma pessoa — "como foi a semana da equipe", "quem vendeu mais esse mes", "quem esta atras".',
+    'Compara as vendas da equipe num periodo, da maior para a menor. Use quando a pergunta for sobre a equipe e nao sobre uma pessoa — "como foi a semana da equipe", "quem vendeu mais esse mes", "quem esta atras". Quem vendeu no periodo aparece, mesmo tendo saido depois; quem continua na equipe e nao vendeu aparece no fim.',
   input_schema: {
     type: 'object',
     properties: {
@@ -330,8 +366,9 @@ const GESTAO_PANORAMA_TOOL: Anthropic.Tool = {
         description:
           'HOJE, SEMANA (sete dias) ou MES — o mes do CALENDARIO, do dia 1 ate agora, que e o que se compara com a meta.',
       },
+      ...DATAS_LIVRES,
     },
-    required: ['periodo'],
+    required: [],
   },
 };
 
@@ -368,6 +405,7 @@ const GESTAO_ITENS_TOOL: Anthropic.Tool = {
         description:
           'Nome de uma vendedora, como veio na conversa, para recortar so as pecas dela. Omita para a loja inteira.',
       },
+      ...DATAS_LIVRES,
     },
     required: [],
   },
@@ -418,6 +456,7 @@ const GESTAO_ITENS_DA_VENDEDORA_TOOL: Anthropic.Tool = {
         type: 'string',
         description: 'Nome da vendedora, como veio na conversa.',
       },
+      ...DATAS_LIVRES,
     },
     required: ['vendedora'],
   },
@@ -1018,11 +1057,19 @@ export class AnthropicClient implements ILlmClient {
             const e = toolUse.input as {
               vendedora?: string;
               periodo?: PeriodoVendasLlm;
+              de?: string;
+              ate?: string;
             };
             return textoDaLeituraDeGestao(
               await params.gestaoVendas!({
                 vendedora: String(e.vendedora ?? '').slice(0, 80),
-                periodo: e.periodo ?? 'SEMANA',
+                // O ATALHO SO VALE SEM AS DATAS. Mandando `de` e `ate`, o
+                // enum e ignorado la dentro — e por isso o padrao nao entra
+                // aqui: fixar um valor faria o handler achar que houve
+                // escolha de periodo quando nao houve.
+                periodo: e.periodo,
+                de: e.de,
+                ate: e.ate,
               }),
               'venda',
             );
@@ -1047,6 +1094,8 @@ export class AnthropicClient implements ILlmClient {
               periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
               limite?: number;
               vendedora?: string;
+              de?: string;
+              ate?: string;
             };
             const r = await params.gestaoItens!(e);
 
@@ -1080,9 +1129,15 @@ export class AnthropicClient implements ILlmClient {
       ) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as { periodo?: PeriodoVendasLlm };
+            const e = toolUse.input as {
+              periodo?: PeriodoVendasLlm;
+              de?: string;
+              ate?: string;
+            };
             const { linhas } = await params.gestaoPanorama!({
-              periodo: e.periodo ?? 'SEMANA',
+              periodo: e.periodo,
+              de: e.de,
+              ate: e.ate,
             });
             if (linhas.length === 0) {
               return 'Nenhuma vendedora ativa com venda nesse periodo. Diga isso em uma frase.';

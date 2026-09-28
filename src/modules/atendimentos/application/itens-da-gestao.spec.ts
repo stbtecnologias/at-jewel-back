@@ -407,3 +407,130 @@ describe('o recorte de equipe nas ferramentas de gestao', () => {
     });
   });
 });
+
+/**
+ * O PERIODO LIVRE — 28/09/2026.
+ *
+ * ==========================================================================
+ * NASCEU DE UMA RECUSA QUE NAO DEVIA EXISTIR.
+ *
+ * O Lucas perguntou "o que a Camila mais vendeu nos ultimos 6 meses" e recebeu
+ * "nao da para escolher exatamente seis meses". Era limitacao nossa: os
+ * metodos `resumoEntre`, `itensEntre` e `rankingEntre` existiam desde 25/09 e
+ * ninguem os chamava.
+ *
+ * O QUE ESTES TESTES PROTEGEM E A RECUSA SILENCIOSA. Quem preenche as datas e
+ * o MODELO, e ele erra as vezes. Uma data impossivel aceita viraria um periodo
+ * errado e MUDO; caindo no atalho, o periodo tambem e outro, mas a agente diz
+ * qual recorte usou. Entre os dois, o que se percebe.
+ * ==========================================================================
+ */
+describe('o periodo livre nas ferramentas de venda', () => {
+  let consultarVendas: {
+    ranking: jest.Mock;
+    rankingEntre: jest.Mock;
+    itens: jest.Mock;
+    itensEntre: jest.Mock;
+    resumoEntre: jest.Mock;
+  };
+  let servico: FerramentasGestaoService;
+
+  beforeEach(() => {
+    consultarVendas = {
+      ranking: jest.fn().mockResolvedValue({ linhas: [] }),
+      rankingEntre: jest.fn().mockResolvedValue([]),
+      itens: jest.fn().mockResolvedValue({ linhas: [] }),
+      itensEntre: jest.fn().mockResolvedValue([]),
+      resumoEntre: jest
+        .fn()
+        .mockResolvedValue({ quantidade: 4, receita: 8000, ticketMedio: 2000 }),
+    };
+
+    servico = new FerramentasGestaoService(
+      {
+        execute: jest.fn().mockResolvedValue({
+          status: 'OK',
+          id: 'vd-1',
+          nome: 'Camila',
+          codigoErp: 'VD01',
+        }),
+      } as never,
+      consultarVendas as never,
+      { execute: jest.fn().mockResolvedValue([]) } as never,
+      { execute: jest.fn().mockResolvedValue([]) } as never,
+      { vendas: jest.fn(), metas: jest.fn() } as never,
+      { semComprar: jest.fn(), maioresCompradores: jest.fn() } as never,
+      { execute: jest.fn() } as never,
+      { listar: jest.fn(), detalhe: jest.fn(), resumo: jest.fn() } as never,
+      { doDia: jest.fn() } as never,
+      { execute: jest.fn() } as never,
+      { listar: jest.fn().mockResolvedValue([]), buscarPorId: jest.fn() } as never,
+      { buscarPorNomeParcial: jest.fn() } as never,
+      { listarAguardandoGestao: jest.fn() } as never,
+    );
+  });
+
+  const itens = (extra: Record<string, unknown>) =>
+    servico.montar({ verLoja: true }).gestaoItens(extra as never);
+
+  describe('quando as datas chegam certas', () => {
+    it('usa a janela livre e NAO o atalho', async () => {
+      await itens({ de: '2026-04-01', ate: '2026-09-28', limite: 10 });
+
+      expect(consultarVendas.itensEntre).toHaveBeenCalled();
+      expect(consultarVendas.itens).not.toHaveBeenCalled();
+    });
+
+    it('o fim entra como data, e o dia inteiro conta no use case', async () => {
+      await itens({ de: '2026-08-01', ate: '2026-08-31' });
+
+      const [de, ate] = consultarVendas.itensEntre.mock.calls[0];
+      expect(de.getFullYear()).toBe(2026);
+      expect(de.getMonth() + 1).toBe(8);
+      expect(de.getDate()).toBe(1);
+      expect(ate.getDate()).toBe(31);
+    });
+
+    it('o atalho e ignorado quando as datas vem juntas', async () => {
+      await itens({ periodo: 'HOJE', de: '2026-01-01', ate: '2026-03-31' });
+
+      expect(consultarVendas.itensEntre).toHaveBeenCalled();
+      expect(consultarVendas.itens).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('quando a data nao presta, cai no atalho — e nao responde errado calado', () => {
+    it.each([
+      ['so o inicio', { de: '2026-04-01' }],
+      ['so o fim', { ate: '2026-09-28' }],
+      ['formato errado', { de: '01/04/2026', ate: '28/09/2026' }],
+      ['dia que nao existe', { de: '2026-02-30', ate: '2026-03-31' }],
+      ['mes que nao existe', { de: '2026-13-01', ate: '2026-13-31' }],
+      ['inicio depois do fim', { de: '2026-09-28', ate: '2026-04-01' }],
+      ['texto solto', { de: 'ultimos 6 meses', ate: 'hoje' }],
+    ])('%s', async (_nome, entrada) => {
+      await itens({ ...entrada, periodo: 'MES' });
+
+      expect(consultarVendas.itensEntre).not.toHaveBeenCalled();
+      expect(consultarVendas.itens).toHaveBeenCalled();
+    });
+  });
+
+  it('o panorama tambem aceita a janela livre', async () => {
+    await servico
+      .montar({})
+      .gestaoPanorama({ de: '2026-04-01', ate: '2026-09-28' });
+
+    expect(consultarVendas.rankingEntre).toHaveBeenCalled();
+    expect(consultarVendas.ranking).not.toHaveBeenCalled();
+  });
+
+  it('as vendas de UMA vendedora tambem', async () => {
+    const r = await servico
+      .montar({})
+      .gestaoVendas({ vendedora: 'Camila', de: '2026-04-01', ate: '2026-09-28' });
+
+    expect(consultarVendas.resumoEntre).toHaveBeenCalled();
+    expect(r.linhas[0]).toContain('4 vendas');
+  });
+});

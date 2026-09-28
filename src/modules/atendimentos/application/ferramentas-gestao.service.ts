@@ -241,9 +241,18 @@ export class FerramentasGestaoService {
           );
         }),
 
-      gestaoVendas: async ({ vendedora, periodo }) =>
+      gestaoVendas: async ({ vendedora, periodo, de, ate }) =>
         this.comVendedora(equipe, vendedora, async (id) => {
-          const v = await this.desempenho.vendas(id, periodo);
+          const datas = datasDe(de, ate);
+          const v = datas
+            ? await this.consultarVendas
+                .resumoEntre(datas.de, datas.ate, id)
+                .then((r) => ({
+                  quantidade: r.quantidade,
+                  receita: r.receita,
+                  ticketMedio: r.ticketMedio,
+                }))
+            : await this.desempenho.vendas(id, periodo ?? 'SEMANA');
           if (v.quantidade === 0) return [];
           return [
             `${v.quantidade} ${v.quantidade === 1 ? 'venda' : 'vendas'}, ` +
@@ -334,7 +343,7 @@ export class FerramentasGestaoService {
 
       // O QUE MAIS SAIU — 25/09/2026. Le a MOVIMENTACAO, como todo o resto de
       // venda desde hoje; ver `ConsultarVendasUseCase`.
-      gestaoItens: async ({ periodo, limite, vendedora }) => {
+      gestaoItens: async ({ periodo, limite, vendedora, de, ate }) => {
         // ================================================================
         // A SEGUNDA BARREIRA DO ESCOPO ESTREITO, E ELA E DE PROPOSITO.
         //
@@ -373,11 +382,21 @@ export class FerramentasGestaoService {
           vendedoraId = r.id;
         }
 
-        const { linhas } = await this.consultarVendas.itens(
-          periodo ?? 'HOJE',
-          limite ?? LIMITE_PADRAO,
-          vendedoraId,
-        );
+        const datas = datasDe(de, ate);
+        const linhas = datas
+          ? await this.consultarVendas.itensEntre(
+              datas.de,
+              datas.ate,
+              limite ?? LIMITE_PADRAO,
+              vendedoraId,
+            )
+          : (
+              await this.consultarVendas.itens(
+                periodo ?? 'HOJE',
+                limite ?? LIMITE_PADRAO,
+                vendedoraId,
+              )
+            ).linhas;
 
         return {
           status: 'OK',
@@ -420,14 +439,19 @@ export class FerramentasGestaoService {
        * nenhuma venda" seria ruido puro.
        * ================================================================
        */
-      gestaoPanorama: async ({ periodo }) => {
+      gestaoPanorama: async ({ periodo, de, ate }) => {
         // Teto alto: o ranking corta por limite, e aqui a lista e a equipe
         // inteira. Sem isto, a vendedora de menor faturamento sumiria da
         // comparacao sem nada dizer.
-        const { linhas: ranking } = await this.consultarVendas.ranking(
-          periodo,
-          LIMITE_MAXIMO,
-        );
+        const datas = datasDe(de, ate);
+        const ranking = datas
+          ? await this.consultarVendas.rankingEntre(
+              datas.de,
+              datas.ate,
+              LIMITE_MAXIMO,
+            )
+          : (await this.consultarVendas.ranking(periodo ?? 'MES', LIMITE_MAXIMO))
+              .linhas;
 
         // O RECORTE DE EQUIPE. Esta ferramenta nao passa pelo `comVendedora`
         // — ela nao resolve nome, percorre lista —, entao a checagem e
@@ -1021,6 +1045,61 @@ function somarEtapas(porEtapa: ContagemPorEtapa[]): ContagemPorEtapa {
       NAO_AVANCOU: 0,
     },
   );
+}
+
+/** `AAAA-MM-DD` — o formato que o modelo manda, e o unico que se aceita. */
+const RE_DATA = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * As datas do recorte livre, ou `null` para cair no atalho — 28/09/2026.
+ *
+ * ==========================================================================
+ * SO COM AS DUAS, E SO SE FIZEREM SENTIDO.
+ *
+ * Quem preenche este campo e o MODELO, convertendo "ultimos 6 meses" em datas.
+ * Ele acerta quase sempre — ja e assim que ele agenda "amanha as 17h" — e
+ * "quase" e o motivo desta funcao existir.
+ *
+ * `null` em qualquer duvida, e isso e deliberado: cair no atalho devolve um
+ * periodo ERRADO mas EXPLICADO ("o mes", e a agente diz qual recorte usou);
+ * aceitar uma data torta devolve um periodo errado e MUDO. Entre os dois, o
+ * que se percebe.
+ *
+ * O QUE DERRUBA PARA `null`:
+ *   - uma das duas faltando — meia janela nao e janela
+ *   - formato fora de `AAAA-MM-DD`
+ *   - data que nao existe (31/02 vira 03/03 no `new Date`, calado)
+ *   - inicio depois do fim — invertido, o SQL devolveria vazio sem dizer nada
+ *
+ * O FIM E O DIA INTEIRO: o `fimDoDia` do `ConsultarVendasUseCase` cuida disso.
+ * "De 01/08 a 31/08" tem de incluir as vendas do dia 31, e uma janela que para
+ * a meia-noite perderia um dia de faturamento todo mes.
+ * ==========================================================================
+ */
+function datasDe(de?: string, ate?: string): { de: Date; ate: Date } | null {
+  if (!de || !ate) return null;
+
+  const ini = dataOuNulo(de);
+  const fim = dataOuNulo(ate);
+  if (!ini || !fim || ini > fim) return null;
+
+  return { de: ini, ate: fim };
+}
+
+function dataOuNulo(texto: string): Date | null {
+  const m = RE_DATA.exec(texto.trim());
+  if (!m) return null;
+
+  const [, ano, mes, dia] = m;
+  const d = new Date(`${ano}-${mes}-${dia}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+
+  // O `new Date` NORMALIZA em silencio: "2026-02-31" vira 3 de marco. Comparar
+  // o dia de volta e o que pega isso — sem esta linha, uma data impossivel
+  // viraria uma janela plausivel e ninguem notaria.
+  return d.getDate() === Number(dia) && d.getMonth() + 1 === Number(mes)
+    ? d
+    : null;
 }
 
 function saldoEmPalavras(estoque: number, verQuantidade: boolean): string {

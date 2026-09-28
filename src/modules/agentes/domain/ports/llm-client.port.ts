@@ -343,10 +343,44 @@ export type GestaoAgendaHandler = (input: {
   periodo: PeriodoAgendaLlm;
 }) => Promise<GestaoLeituraResultado>;
 
-export type GestaoVendasHandler = (input: {
-  vendedora: string;
-  periodo: PeriodoVendasLlm;
-}) => Promise<GestaoLeituraResultado>;
+/**
+ * O RECORTE DE TEMPO DE UMA PERGUNTA DE VENDA — 28/09/2026.
+ *
+ * ==========================================================================
+ * O ATALHO **OU** AS DATAS, E FOI O SEGUNDO QUE FALTAVA.
+ *
+ * Ate hoje as ferramentas de venda so aceitavam o enum. O Lucas perguntou "o
+ * que a Camila mais vendeu nos ultimos 6 meses" e recebeu:
+ *
+ *   "Nao da para escolher exatamente seis meses — as opcoes sao hoje,
+ *    ontem, semana, mes ou ano."
+ *
+ * Uma recusa por limitacao NOSSA, numa pergunta que o banco responde sem
+ * esforco: o `ConsultarVendasUseCase` ja tinha `resumoEntre`, `itensEntre` e
+ * `rankingEntre` desde 25/09, prontos e sem ninguem chamando.
+ *
+ * QUEM CALCULA AS DATAS E O MODELO, e isso ja e pratica aqui: o system prompt
+ * diz que horas sao agora, e e assim que ele converte "amanha as 17h" para
+ * agendar. "Ultimos 6 meses" e a mesma conta.
+ *
+ * O ATALHO NAO SAIU, e nao e redundancia: `MES` e `ANO` sao o mes e o ano do
+ * CALENDARIO, que e o que se compara com a meta. O modelo calculando "o mes"
+ * chutaria trinta dias para tras e daria um numero que nao bate com nada que
+ * a gestao acompanha.
+ * ==========================================================================
+ */
+export interface RecorteDeTempo {
+  /** O atalho. Ignorado quando `de` e `ate` vem preenchidos. */
+  periodo?: PeriodoVendasLlm;
+  /** Inicio, `AAAA-MM-DD`. So vale junto com `ate`. */
+  de?: string;
+  /** Fim, `AAAA-MM-DD`, INCLUSIVE — o dia inteiro conta. */
+  ate?: string;
+}
+
+export type GestaoVendasHandler = (
+  input: { vendedora: string } & RecorteDeTempo,
+) => Promise<GestaoLeituraResultado>;
 
 export type GestaoMetasHandler = (input: {
   vendedora: string;
@@ -373,9 +407,9 @@ export type GestaoMelhoresHandler = (input: {
   ultimosMeses?: number;
 }) => Promise<GestaoLeituraResultado & { total?: number }>;
 
-export type GestaoPanoramaHandler = (input: {
-  periodo: PeriodoVendasLlm;
-}) => Promise<{ linhas: string[] }>;
+export type GestaoPanoramaHandler = (
+  input: RecorteDeTempo,
+) => Promise<{ linhas: string[] }>;
 
 /**
  * As pecas que mais faturaram. `vendedora` recorta so as dela.
@@ -404,11 +438,13 @@ export type GestaoProdutosHandler = (input: {
  * resposta ao modelo tem que dizer isso, senao ele anuncia "nao encontrei" para
  * uma pergunta que so faltou um nome.
  */
-export type GestaoItensHandler = (input: {
-  periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
-  limite?: number;
-  vendedora?: string;
-}) => Promise<{
+export type GestaoItensHandler = (
+  input: {
+    periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+    limite?: number;
+    vendedora?: string;
+  } & Pick<RecorteDeTempo, 'de' | 'ate'>,
+) => Promise<{
   status: 'OK' | 'AMBIGUA' | 'NAO_ENCONTRADA' | 'EXIGE_VENDEDORA';
   linhas: string[];
 }>;
