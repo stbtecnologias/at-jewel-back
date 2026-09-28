@@ -1,4 +1,5 @@
 import { AtendimentoPersistenciaModule } from './atendimento-persistencia.module';
+import { AgenteEventosModule } from '../agente-eventos/agente-eventos.module';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WhatsappGatewayModule } from '../atendimento/whatsapp-gateway.module';
@@ -102,6 +103,9 @@ import { ConversaWhatsappRepository } from './infrastructure/database/typeorm/re
     TranscricaoModule,
     // Reconhecimento do ADM pelo telefone (BuscarAdminPorTelefoneUseCase).
     AuthModule,
+    // O registro da consulta restrita da vendedora (RN-01g, 29/09/2026).
+    // Modulo folha — so TypeORM e Auth —, entao nao ha ciclo.
+    AgenteEventosModule,
   ],
   providers: [
     {

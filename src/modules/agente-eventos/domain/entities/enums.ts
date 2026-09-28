@@ -32,6 +32,11 @@ export type TipoEventoAgente =
   | 'consulta_respondida'
   | 'catalogo_atualizado'
   | 'imagem_gerada'
+  // A vendedora perguntou o que o perfil dela nao ve: quantidade por peca ou
+  // custo. NAO E EVENTO DE SEGURANCA — a barreira e a ausencia do dado, e a
+  // pergunta ja nao tinha resposta. Este registro existe porque a Equipe AT
+  // pediu para enxergar quando ela acontece (requisito RN-01(g), 29/09/2026).
+  | 'consulta_restrita'
   // Sofia — SLA e seguranca
   | 'sla_violado_repasse'
   | 'sla_violado_primeiro_contato'
@@ -61,6 +66,7 @@ export const TIPOS_EVENTO_VALIDOS: readonly TipoEventoAgente[] = [
   'consulta_respondida',
   'catalogo_atualizado',
   'imagem_gerada',
+  'consulta_restrita',
   'sla_violado_repasse',
   'sla_violado_primeiro_contato',
   'relatorio_gerado',

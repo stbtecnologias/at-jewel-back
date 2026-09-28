@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -10,6 +11,7 @@ import {
   Patch,
   Post,
   Query,
+  Request,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -25,6 +27,8 @@ import {
 } from '../../../application/use-cases/foto-produto.use-case';
 import { RequireScopes } from '../../../../auth/infrastructure/http/decorators/scopes.decorator';
 import { JwtOrApiKeyGuard } from '../../../../auth/infrastructure/http/guards/jwt-or-api-key.guard';
+import { EscopoProdutosService } from '../../../application/escopo-produtos.service';
+import type { OpcoesDeExibicao } from '../../../../erp/domain/entities/produto.entity';
 import { AlertasEstoqueUseCase } from '../../../application/use-cases/alertas-estoque.use-case';
 import { SaldoDoProdutoUseCase } from '../../../application/use-cases/saldo-do-produto.use-case';
 import { AtualizarProdutoUseCase } from '../../../application/use-cases/atualizar-produto.use-case';
@@ -57,13 +61,35 @@ export class ProdutosController {
     private readonly alertasEstoque: AlertasEstoqueUseCase,
     private readonly saldoDoProduto: SaldoDoProdutoUseCase,
     private readonly fotoProduto: FotoProdutoUseCase,
+    private readonly escopo: EscopoProdutosService,
   ) {}
+
+  /**
+   * O que quem esta chamando pode ver da peca — 29/09/2026.
+   *
+   * DOIS CAMINHOS ENTRAM AQUI, porque as rotas aceitam `JwtOrApiKeyGuard`:
+   * pessoa (`req.user`, com papel) e integrador (`req.apiKey`, sem papel). O
+   * integrador e a FONTE do custo e do saldo — recortar o que ele mesmo manda
+   * quebraria a integracao sem proteger nada. Ver `paraIntegrador`.
+   */
+  private async opcoes(req: {
+    user?: { role: string };
+  }): Promise<OpcoesDeExibicao> {
+    return req.user
+      ? this.escopo.opcoesDe(req.user)
+      : this.escopo.paraIntegrador();
+  }
 
   @Get()
   @UseGuards(JwtOrApiKeyGuard)
   @RequireScopes('produtos:read')
-  async listar(@Query() filtros: FiltroProdutoDto) {
-    return this.listarProdutos.execute(filtros);
+  async listar(
+    @Query() filtros: FiltroProdutoDto,
+    @Request() req: { user?: { role: string } },
+  ) {
+    const opcoes = await this.opcoes(req);
+    const produtos = await this.listarProdutos.execute(filtros);
+    return produtos.map((p) => p.toPublic(opcoes));
   }
 
   // Valores distintos para filtros (declarado antes de :id para nao colidir).
@@ -79,9 +105,20 @@ export class ProdutosController {
   @UseGuards(JwtOrApiKeyGuard)
   @RequireScopes('produtos:read')
   async alertas(
+    @Request() req: { user?: { role: string } },
     @Query('limite') limite?: string,
     @Query('dias') dias?: string,
   ) {
+    // CADA LINHA DE ALERTA CARREGA O `estoqueAtual` da peca (ver
+    // `ProdutoAlerta`), entao esta rota e quantidade por peca com outro nome —
+    // e ainda a mais reveladora delas, porque devolve exatamente as pecas com
+    // saldo BAIXO. Vale a mesma chave do saldo.
+    const { quantidade } = await this.opcoes(req);
+    if (!quantidade) {
+      throw new ForbiddenException(
+        'Sem permissão para ver a quantidade em estoque por peça.',
+      );
+    }
     return this.alertasEstoque.execute(
       limite ? Number(limite) : undefined,
       dias ? Number(dias) : undefined,
@@ -94,34 +131,67 @@ export class ProdutosController {
   @Get('iderp/:id')
   @UseGuards(JwtOrApiKeyGuard)
   @RequireScopes('produtos:read')
-  async buscarPeloIdErp(@Param('id') idErp: string) {
-    return this.buscarProdutoPorIdErp.execute(idErp);
+  async buscarPeloIdErp(
+    @Param('id') idErp: string,
+    @Request() req: { user?: { role: string } },
+  ) {
+    const produto = await this.buscarProdutoPorIdErp.execute(idErp);
+    return produto.toPublic(await this.opcoes(req));
   }
 
   /**
    * Onde esta o saldo da peca: empresa, local e grupo, so as linhas com
    * quantidade. A soma e o `estoqueAtual` que ja vem no produto.
    */
+  //
+  // ESTA ROTA E QUANTIDADE PURA — e por isso ela nao tem versao reduzida.
+  //
+  // O que ela devolve sao as linhas de saldo por empresa, local e grupo, cada
+  // uma com o numero. Sem os numeros sobrariam os LUGARES, que a listagem ja
+  // devolve em `posicoes`. Entao ou a pessoa pode ver quantidade, ou nao ha o
+  // que responder aqui: 403, e nao um corpo vazio que pareceria peca sem saldo.
   @Get(':id/estoque')
   @UseGuards(JwtOrApiKeyGuard)
   @RequireScopes('produtos:read')
-  async estoque(@Param('id', ParseUUIDPipe) id: string) {
+  async estoque(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Request() req: { user?: { role: string } },
+  ) {
+    const { quantidade } = await this.opcoes(req);
+    if (!quantidade) {
+      throw new ForbiddenException(
+        'Sem permissão para ver a quantidade em estoque por peça.',
+      );
+    }
     return this.saldoDoProduto.execute(id);
   }
 
   @Get(':id')
   @UseGuards(JwtOrApiKeyGuard)
   @RequireScopes('produtos:read')
-  async buscar(@Param('id', ParseUUIDPipe) id: string) {
-    return this.buscarProduto.execute(id);
+  async buscar(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Request() req: { user?: { role: string } },
+  ) {
+    const produto = await this.buscarProduto.execute(id);
+    return produto.toPublic(await this.opcoes(req));
   }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(JwtOrApiKeyGuard)
   @RequireScopes('produtos:write')
-  async criar(@Body() dto: CriarProdutoDto) {
-    return this.criarProduto.execute(dtoParaInput(dto));
+  //
+  // AS ROTAS DE ESCRITA TAMBEM SERIALIZAM, e nao e excesso de zelo: `produtos
+  // :write` e uma chave, `produtos:custo` e outra, e a regra RN-03 (negar por
+  // padrao) permite um papel ter a primeira sem a segunda. Devolver a entidade
+  // crua no ECO do POST entregaria pela resposta o que o GET recusa.
+  async criar(
+    @Body() dto: CriarProdutoDto,
+    @Request() req: { user?: { role: string } },
+  ) {
+    const produto = await this.criarProduto.execute(dtoParaInput(dto));
+    return produto.toPublic(await this.opcoes(req));
   }
 
   // Cadastro em LOTE (ate 200 itens), all-or-nothing numa transacao.
@@ -129,11 +199,18 @@ export class ProdutosController {
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(JwtOrApiKeyGuard)
   @RequireScopes('produtos:write')
-  async criarLote(@Body() dto: CriarProdutosLoteDto) {
+  async criarLote(
+    @Body() dto: CriarProdutosLoteDto,
+    @Request() req: { user?: { role: string } },
+  ) {
     const produtos = await this.criarProdutosLote.execute(
       dto.produtos.map(dtoParaInput),
     );
-    return { criados: produtos.length, produtos };
+    const opcoes = await this.opcoes(req);
+    return {
+      criados: produtos.length,
+      produtos: produtos.map((p) => p.toPublic(opcoes)),
+    };
   }
 
   @Patch(':id')
@@ -142,8 +219,9 @@ export class ProdutosController {
   async atualizar(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AtualizarProdutoDto,
+    @Request() req: { user?: { role: string } },
   ) {
-    return this.atualizarProduto.execute(id, {
+    const produto = await this.atualizarProduto.execute(id, {
       idErp: dto.id_erp_produto,
       categoria: dto.categoria,
       familia: dto.familia,
@@ -164,6 +242,7 @@ export class ProdutosController {
       fotoUrl: dto.foto_url,
       ativo: dto.ativo,
     });
+    return produto.toPublic(await this.opcoes(req));
   }
 
   /**

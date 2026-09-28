@@ -25,6 +25,24 @@ export const PERMISSOES: PermissaoDef[] = [
   // preco, cadastro e apagamento nao e. MARKETING precisa da primeira e nao
   // deve ter a segunda — com uma chave so, teria as duas.
   { chave: 'produtos:foto', label: 'Subir e trocar a foto do produto', grupo: 'Produtos' },
+  // ==========================================================================
+  // AS TRES CHAVES DO DADO SENSIVEL DA PECA — 29/09/2026.
+  //
+  // Elas saem da matriz de permissoes do documento de requisitos, uma por
+  // linha, e por isso sao TRES e nao uma: a matriz trata custo, quantidade por
+  // peca e valor financeiro do estoque como decisoes separadas, e a gerente
+  // recebe respostas diferentes em cada uma.
+  //
+  // NASCEM SEM NENHUM PAPEL MARCADO (regra RN-03, negar por padrao). Quem
+  // precisar concede pela tela de Papeis; SUPERADMIN entra pelo curinga.
+  //
+  // O QUE ELAS NAO FAZEM: conceder acesso. `produtos:read` continua sendo a
+  // porta da peca — estas so decidem QUANTO dela sai. Sem `produtos:read`
+  // nenhuma das tres serve para nada.
+  // ==========================================================================
+  { chave: 'produtos:custo', label: 'Ver o preço de custo da peça (e a margem)', grupo: 'Produtos' },
+  { chave: 'estoque:quantidade', label: 'Ver a quantidade em estoque por peça', grupo: 'Produtos' },
+  { chave: 'estoque:valor', label: 'Ver o valor financeiro do estoque (R$)', grupo: 'Produtos' },
   { chave: 'ocorrencias:read', label: 'Ver ocorrências', grupo: 'Produtos' },
   { chave: 'ocorrencias:write', label: 'Registrar ocorrências', grupo: 'Produtos' },
   { chave: 'consignacoes:read', label: 'Ver consignações', grupo: 'Produtos' },

@@ -54,6 +54,13 @@ export const CHAVES_PAYLOAD_PERMITIDAS: ReadonlySet<string> = new Set<string>([
   // quando o agendador existir.
   'canal', // meio do aviso: whatsapp | email
   'origem', // quem disparou: painel | agendador | webhook
+
+  // --- Consulta restrita da vendedora (RN-01g), 29/09/2026 ---
+  // Rotulo FECHADO: 'quantidade' | 'custo'. Nunca o texto da pergunta — ele
+  // pode citar cliente, e a REGRA DE OURO deste modulo e que PII nao entra no
+  // payload. O assunto responde o que a Equipe AT quer saber ("perguntaram
+  // sobre custo") sem carregar o que ela nao precisa saber.
+  'assuntoRestrito',
 ]);
 
 /**

@@ -16,6 +16,8 @@ import {
 import { BuscarVendedoraPorWhatsappUseCase } from '../../../vendedoras/application/use-cases/buscar-vendedora-por-whatsapp.use-case';
 import { ATENDIMENTO_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { IAtendimentoRepository } from '../../domain/ports/repositories/atendimento-repository.port';
+import { RegistrarEventoUseCase } from '../../../agente-eventos/application/use-cases/registrar-evento.use-case';
+import { assuntosRestritosEm } from '../assunto-restrito';
 import { FerramentasVendedoraService } from '../ferramentas-vendedora.service';
 import { MemoriaConversaService } from '../memoria-conversa.service';
 
@@ -99,6 +101,7 @@ export class ProcessarMensagemInternaUseCase {
     private readonly transcricao: ITranscricao,
     private readonly memoria: MemoriaConversaService,
     private readonly config: ConfigService,
+    private readonly eventos: RegistrarEventoUseCase,
   ) {}
 
   async execute(msg: MensagemInterna): Promise<RespostaInterna> {
@@ -160,6 +163,13 @@ export class ProcessarMensagemInternaUseCase {
     const chave = MemoriaConversaService.chaveVendedora(vendedoraId);
     const historico = this.memoria.carregar(chave);
     const pergunta = limparEHigienizar(textoDaMensagem);
+
+    // O REGISTRO DO RN-01(g) — 29/09/2026. Nao muda a resposta, nao bloqueia
+    // nada e nao e esperado: a Equipe AT pediu para ENXERGAR quando a
+    // vendedora pergunta por quantidade ou custo. A barreira ja esta no lugar
+    // (a ferramenta dela devolve `disponivel`, sem numero), entao aqui e so
+    // visibilidade de gestao. Ver `assunto-restrito.ts`.
+    await this.registrarConsultaRestrita(vendedoraId, pergunta);
 
     try {
       const { texto } = await this.llm.chatComFerramentas({
@@ -249,6 +259,53 @@ export class ProcessarMensagemInternaUseCase {
     // So o tamanho no log: o conteudo e do mesmo nivel de sigilo da mensagem.
     this.logger.debug(`Audio transcrito (${texto.length} caracteres).`);
     return texto;
+  }
+
+  /**
+   * O registro do requisito RN-01(g) — 29/09/2026.
+   *
+   * ========================================================================
+   * NAO E BARREIRA, E VISIBILIDADE. E POR ISSO NUNCA DERRUBA A RESPOSTA.
+   *
+   * A vendedora nao alcanca quantidade nem custo por caminho nenhum: a
+   * ferramenta dela devolve `disponivel: boolean` desde 25/09 e a API de
+   * produtos omite os campos desde 29/09. Perguntar ja nao funcionava.
+   *
+   * O pedido da Equipe AT foi enxergar QUANDO a pergunta acontece. Entao o
+   * `catch` aqui e deliberado: se o registro falhar — banco fora, payload
+   * recusado —, a vendedora nao pode ficar sem resposta por causa de uma
+   * linha de auditoria que ninguem estava esperando naquele instante. O erro
+   * vai para o log da aplicacao, onde tem dono.
+   *
+   * VAI O ASSUNTO, NUNCA O TEXTO. A pergunta dela pode citar cliente, e a
+   * regra de ouro do `agente_eventos` e que PII nao entra no payload.
+   * ========================================================================
+   */
+  private async registrarConsultaRestrita(
+    vendedoraId: string,
+    pergunta: string,
+  ): Promise<void> {
+    const assuntos = assuntosRestritosEm(pergunta);
+    if (assuntos.length === 0) return;
+
+    try {
+      // Um evento por assunto: "qual o custo e quantas tem" e uma pergunta so
+      // com duas respostas negadas, e juntar as duas numa linha faria a
+      // contagem por assunto mentir.
+      for (const assunto of assuntos) {
+        await this.eventos.execute({
+          agente: 'elena',
+          tipoEvento: 'consulta_restrita',
+          vendedoraId,
+          payload: { assuntoRestrito: assunto },
+        });
+      }
+    } catch (err) {
+      this.logger.error(
+        `Falha ao registrar consulta restrita da vendedora ${vendedoraId}: ` +
+          `${err instanceof Error ? err.message : err}`,
+      );
+    }
   }
 
   /**

@@ -34,10 +34,12 @@ describe('ProcessarMensagemInternaUseCase', () => {
   let whatsapp: { baixarMidia: jest.Mock };
   let transcricao: { transcrever: jest.Mock; disponivel: jest.Mock };
   let memoria: { carregar: jest.Mock; registrar: jest.Mock };
+  let eventos: { execute: jest.Mock };
   let useCase: ProcessarMensagemInternaUseCase;
 
   beforeEach(() => {
     identificar = { execute: jest.fn().mockResolvedValue(VENDEDORA) };
+    eventos = { execute: jest.fn().mockResolvedValue(undefined) };
     relato = { execute: jest.fn().mockResolvedValue({ status: 'SEM_PENDENCIA' }) };
     agenda = { execute: jest.fn().mockResolvedValue([]) };
     desempenho = {
@@ -114,6 +116,7 @@ describe('ProcessarMensagemInternaUseCase', () => {
       transcricao as never,
       memoria as never,
       { get: jest.fn(() => undefined) } as unknown as ConfigService,
+      eventos as never,
     );
   });
 
@@ -362,5 +365,94 @@ describe('ProcessarMensagemInternaUseCase', () => {
 
     expect(r.motivo).toBe('falha_agente');
     expect(r.resposta).toContain('de novo');
+  });
+
+  /**
+   * O REGISTRO DA CONSULTA RESTRITA — requisito RN-01(g), 29/09/2026.
+   *
+   * A Equipe AT pediu para ENXERGAR quando a vendedora pergunta por quantidade
+   * ou custo. Note o que estes testes NAO checam: que a resposta muda. Ela nao
+   * muda — a barreira e a ausencia do dado, nao este registro.
+   */
+  describe('consulta restrita (RN-01g)', () => {
+    it('pergunta por quantidade vira evento, com o assunto e sem o texto', async () => {
+      await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'quantas peças tem do CO26185?',
+      });
+
+      expect(eventos.execute).toHaveBeenCalledWith({
+        agente: 'elena',
+        tipoEvento: 'consulta_restrita',
+        vendedoraId: VENDEDORA.id,
+        payload: { assuntoRestrito: 'quantidade' },
+      });
+    });
+
+    it('pergunta por custo vira evento', async () => {
+      await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'qual o preço de custo dessa peça?',
+      });
+
+      expect(eventos.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ payload: { assuntoRestrito: 'custo' } }),
+      );
+    });
+
+    it('O TEXTO DA PERGUNTA NUNCA ENTRA NO PAYLOAD', async () => {
+      // Ela pode citar cliente, e a regra de ouro do agente_eventos e que PII
+      // nao entra no payload. Este teste e o que impede alguem de "melhorar" o
+      // registro colocando a frase junto.
+      await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'quantas peças tem para a dona Marina Albuquerque?',
+      });
+
+      const enviado = JSON.stringify(eventos.execute.mock.calls[0][0]);
+      expect(enviado).not.toContain('Marina');
+      expect(enviado).not.toContain('Albuquerque');
+    });
+
+    it('a resposta continua normal — o registro nao interrompe nada', async () => {
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'quantas peças tem?',
+      });
+
+      expect(r.motivo).toBe('conversa');
+      expect(llm.chatComFerramentas).toHaveBeenCalled();
+    });
+
+    it('falha ao registrar NAO derruba a resposta da vendedora', async () => {
+      // Uma linha de auditoria que ninguem estava esperando naquele instante
+      // nao pode deixar a vendedora sem resposta.
+      eventos.execute.mockRejectedValue(new Error('banco fora'));
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'qual o custo?',
+      });
+
+      expect(r.motivo).toBe('conversa');
+    });
+
+    it('pergunta comum nao registra nada', async () => {
+      await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'qual minha agenda de amanhã?',
+      });
+
+      expect(eventos.execute).not.toHaveBeenCalled();
+    });
+
+    it('preco de VENDA nao e consulta restrita — ela pode e deve saber', async () => {
+      await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'qual o preço desse anel?',
+      });
+
+      expect(eventos.execute).not.toHaveBeenCalled();
+    });
   });
 });
