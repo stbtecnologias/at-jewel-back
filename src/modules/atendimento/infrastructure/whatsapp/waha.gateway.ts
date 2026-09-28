@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { LimiteDeEnvioService } from '../../application/limite-de-envio.service';
 import { SessoesDaCasaService } from '../../application/sessoes-da-casa.service';
 import type { AgenteDaCasa } from '../../domain/agente-da-casa';
 import type { IWhatsappGateway } from '../../domain/ports/whatsapp-gateway.port';
@@ -45,6 +46,7 @@ export class WahaGateway implements IWhatsappGateway {
   constructor(
     private readonly config: ConfigService,
     private readonly sessoes: SessoesDaCasaService,
+    private readonly limite: LimiteDeEnvioService,
   ) {}
 
   /**
@@ -181,6 +183,14 @@ export class WahaGateway implements IWhatsappGateway {
       return;
     }
 
+    // O TETO DE ENVIO (RF-12) MORA AQUI porque este e o unico lugar por onde
+    // toda mensagem passa — agente, agendador, aviso de lead, catalogo. Posto
+    // em qualquer caso de uso, sobraria o proximo caso de uso sem ele.
+    //
+    // Depois da guarda de configuracao de proposito: sem WAHA nada e enviado,
+    // e contar tentativa que nao saiu encheria a janela a toa.
+    this.limite.registrar(chatId, session);
+
     const url = `${baseUrl.replace(/\/$/, '')}/api/sendText`;
     const resp = await fetch(url, {
       method: 'POST',
@@ -218,6 +228,10 @@ export class WahaGateway implements IWhatsappGateway {
       );
       return;
     }
+
+    // Imagem conta no MESMO teto do texto: para a Meta e uma mensagem, e o
+    // que dispara bloqueio e o volume, nao o formato.
+    this.limite.registrar(chatId, session);
 
     const url = `${baseUrl.replace(/\/$/, '')}/api/sendImage`;
     const resp = await fetch(url, {
