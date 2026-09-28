@@ -8,7 +8,7 @@ import type { IVendaRepository } from '../domain/ports/repositories/venda-reposi
  * autenticado, QUE VENDAS ele alcanca.
  *
  * ==========================================================================
- * TRES ESTADOS DESDE 29/09/2026, E NAO MAIS DOIS.
+ * TRES ESTADOS DESDE 28/09/2026, E NAO MAIS DOIS.
  *
  * Ate aqui era binario: ou a pessoa via a loja inteira (`vendas:read_all`), ou
  * via so a propria carteira. O documento de requisitos de 28/09 introduziu o

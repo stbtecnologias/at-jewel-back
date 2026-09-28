@@ -64,7 +64,7 @@ describe('RecepcionarUseCase', () => {
   });
 
   /**
-   * A SAUDACAO NAO OFERECE NADA — 29/09/2026.
+   * A SAUDACAO NAO OFERECE NADA — 28/09/2026.
    *
    * ======================================================================
    * Pedido do Lucas: "Bom dia, Lucas! Em que posso ajudar hoje? ou algo
@@ -176,7 +176,7 @@ describe('RecepcionarUseCase', () => {
   });
 
   /**
-   * O MENU NUMERADO SAIU EM 29/09/2026.
+   * O MENU NUMERADO SAIU EM 28/09/2026.
    *
    * ========================================================================
    * Pedido do Lucas: "mais natural, sem essa pegada de chatbot, e ser breve".

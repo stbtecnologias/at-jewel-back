@@ -751,7 +751,7 @@ describe('RotearMensagemInternaUseCase', () => {
 
     it('"Olá" do estoque recebe só o cumprimento — não a lista de catálogos', async () => {
       // O print do Lucas de 15/09: "Olá" respondia com os catálogos abertos e
-      // o modo de usar. Continua não respondendo isso — e desde 29/09 também
+      // o modo de usar. Continua não respondendo isso — e desde 28/09 também
       // não responde com o que ele PODE fazer: só cumprimenta.
       soCatalogo();
 
@@ -813,7 +813,7 @@ describe('RotearMensagemInternaUseCase', () => {
     });
 
     /**
-     * O MENU NUMERADO SAIU EM 29/09/2026 — pedido do Lucas, "mais natural,
+     * O MENU NUMERADO SAIU EM 28/09/2026 — pedido do Lucas, "mais natural,
      * sem essa pegada de chatbot".
      *
      * ====================================================================
@@ -1358,7 +1358,7 @@ describe('RotearMensagemInternaUseCase — a consulta do Lucas, de ponta a ponta
 
   it('depois do cumprimento, dizer o que precisa continua funcionando', async () => {
     // Era "com o menu na tela, dizer o que precisa funciona como o numero".
-    // O menu saiu em 29/09, e o que este teste protege agora e o que sobrou —
+    // O menu saiu em 28/09, e o que este teste protege agora e o que sobrou —
     // e e o que sempre importou: NAO precisar de menu para pedir o que quer.
     const { falar, catalogos } = montar();
 

@@ -26,7 +26,7 @@ export const PERMISSOES: PermissaoDef[] = [
   // deve ter a segunda — com uma chave so, teria as duas.
   { chave: 'produtos:foto', label: 'Subir e trocar a foto do produto', grupo: 'Produtos' },
   // ==========================================================================
-  // AS TRES CHAVES DO DADO SENSIVEL DA PECA — 29/09/2026.
+  // AS TRES CHAVES DO DADO SENSIVEL DA PECA — 28/09/2026.
   //
   // Elas saem da matriz de permissoes do documento de requisitos, uma por
   // linha, e por isso sao TRES e nao uma: a matriz trata custo, quantidade por
@@ -73,7 +73,7 @@ export const PERMISSOES: PermissaoDef[] = [
   // e-mail e limite de credito de todo mundo. Quem so tem `clientes:read`
   // passa a ver os clientes da PROPRIA vendedora.
   { chave: 'clientes:read_all', label: 'Ver clientes de todas as vendedoras', grupo: 'Clientes' },
-  // O CONTATO SEM MASCARA — 29/09/2026, requisito RF-10.
+  // O CONTATO SEM MASCARA — 28/09/2026, requisito RF-10.
   //
   // So faz diferenca para quem ve a carteira INTEIRA: quem esta restrito a
   // propria ja ve os seus clientes sem mascara, porque sao dela. Ver

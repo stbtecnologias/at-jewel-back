@@ -368,7 +368,7 @@ describe('ProcessarMensagemInternaUseCase', () => {
   });
 
   /**
-   * O REGISTRO DA CONSULTA RESTRITA — requisito RN-01(g), 29/09/2026.
+   * O REGISTRO DA CONSULTA RESTRITA — requisito RN-01(g), 28/09/2026.
    *
    * A Equipe AT pediu para ENXERGAR quando a vendedora pergunta por quantidade
    * ou custo. Note o que estes testes NAO checam: que a resposta muda. Ela nao

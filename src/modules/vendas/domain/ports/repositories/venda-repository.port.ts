@@ -253,7 +253,7 @@ export interface IVendaRepository {
   resolverVendedoraIdPorAdminUser(adminUserId: string): Promise<string | null>;
 
   /**
-   * As vendedoras da equipe pela qual este usuario responde — 29/09/2026,
+   * As vendedoras da equipe pela qual este usuario responde — 28/09/2026,
    * requisito RF-08.
    *
    * ========================================================================

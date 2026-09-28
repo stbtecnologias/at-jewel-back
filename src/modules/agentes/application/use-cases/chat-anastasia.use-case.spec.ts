@@ -153,7 +153,7 @@ describe('ChatAnastasiaUseCase (tool registrar_demanda)', () => {
     });
 
     /**
-     * O SEGUNDO CRITERIO, E ELE E INDEPENDENTE DO PRIMEIRO — 29/09/2026.
+     * O SEGUNDO CRITERIO, E ELE E INDEPENDENTE DO PRIMEIRO — 28/09/2026.
      *
      * Entrar no canal e ver a loja sao duas perguntas. O papel GERENTE_VENDAS
      * responde SIM para a primeira e NAO para a segunda, e e o unico teste que

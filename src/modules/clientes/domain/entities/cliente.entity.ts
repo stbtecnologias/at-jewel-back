@@ -85,7 +85,7 @@ export class Cliente {
    * E sem campo `perfil` (que vai serializado separadamente se carregado).
    *
    * ========================================================================
-   * O CONTATO PODE VIR MASCARADO — 29/09/2026, requisito RF-10.
+   * O CONTATO PODE VIR MASCARADO — 28/09/2026, requisito RF-10.
    *
    * A matriz do documento de requisitos diz: "Telefone do cliente sem
    * mascara — Vendedora: apenas dos proprios clientes. Gerente: mascarado.

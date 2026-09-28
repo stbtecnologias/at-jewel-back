@@ -58,7 +58,7 @@ const RE_SAUDACAO =
  * "O QUE VOCE FAZ?" — a pergunta que MERECE a lista.
  *
  * ==========================================================================
- * SEPARADO DA SAUDACAO EM 29/09/2026, E A SEPARACAO E O PEDIDO.
+ * SEPARADO DA SAUDACAO EM 28/09/2026, E A SEPARACAO E O PEDIDO.
  *
  * O Lucas: "Bom dia, Lucas! Em que posso ajudar hoje? ou algo assim. Aí se a
  * pessoa perguntar o que você pode fazer, aí você passaria — mas não queria
@@ -91,7 +91,7 @@ function normalizar(texto: string): string {
 }
 
 /**
- * O QUE EU FACO, NUMA FRASE — 29/09/2026.
+ * O QUE EU FACO, NUMA FRASE — 28/09/2026.
  *
  * ==========================================================================
  * SUBSTITUIU O MENU NUMERADO, E A DIFERENCA E DE TOM, NAO DE CONTEUDO.
@@ -169,7 +169,7 @@ export class RecepcionarUseCase {
     agora = new Date(),
   ): { resposta: string; motivo: string } {
     // ======================================================================
-    // NADA DE LISTA LOGO DE CARA — 29/09/2026.
+    // NADA DE LISTA LOGO DE CARA — 28/09/2026.
     //
     // Pedido do Lucas: "Bom dia, Lucas! Em que posso ajudar hoje? ou algo
     // assim. Aí se a pessoa perguntar o que você pode fazer, aí você
@@ -268,7 +268,7 @@ export class RecepcionarUseCase {
     }
 
     // ======================================================================
-    // SEM `oferecer`: O MENU NUMERADO SAIU EM 29/09/2026.
+    // SEM `oferecer`: O MENU NUMERADO SAIU EM 28/09/2026.
     //
     // Pedido do Lucas: "vamos ser mais natural, sem essa pegada de chatbot, e
     // ser breve, sem muito textão". Seis linhas numeradas e um "responde o
@@ -319,7 +319,7 @@ export class RecepcionarUseCase {
    * soubesse dizer a frase certa.
    */
   // ========================================================================
-  // PARADO DESDE 29/09/2026 — NINGUEM CHAMA ESTE METODO HOJE.
+  // PARADO DESDE 28/09/2026 — NINGUEM CHAMA ESTE METODO HOJE.
   //
   // Ele montava o menu numerado, que saiu a pedido do Lucas ("mais natural,
   // sem pegada de chatbot"). Nao foi apagado de proposito, e o motivo e o

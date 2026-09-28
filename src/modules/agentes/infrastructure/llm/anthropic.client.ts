@@ -374,7 +374,7 @@ const GESTAO_ITENS_TOOL: Anthropic.Tool = {
 };
 
 /**
- * A MESMA FERRAMENTA, PARA QUEM NAO VE A LOJA — 29/09/2026.
+ * A MESMA FERRAMENTA, PARA QUEM NAO VE A LOJA — 28/09/2026.
  *
  * Quem gerencia as vendedoras (papel GERENTE_VENDAS, sem `analytics:read`)
  * pergunta "o que a Camila mais vendeu" e nunca "o que a loja mais vendeu": o

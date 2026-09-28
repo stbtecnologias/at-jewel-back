@@ -35,14 +35,14 @@ const PADRAO_POR_DESTINO = 30;
 const PADRAO_POR_NUMERO = 300;
 
 /**
- * O TETO DE ENVIO PELO WHATSAPP — requisito RF-12, 29/09/2026.
+ * O TETO DE ENVIO PELO WHATSAPP — requisito RF-12, 28/09/2026.
  *
  * ==========================================================================
  * ISTO NAO E O QUE IMPEDE DISPARO EM MASSA. E A REDE EMBAIXO.
  *
  * O que impede disparo em massa e nao existir caminho para ele: sem endpoint,
  * sem tela, sem comando, sem job que mande para varios contatos (auditado em
- * 29/09, requisito RF-11). O documento pede este limite como protecao contra
+ * 28/09, requisito RF-11). O documento pede este limite como protecao contra
  * "envio em lote ACIDENTAL" — laco que nao termina, retry sem teto, fila
  * represada que despeja de uma vez depois de o servidor voltar.
  *

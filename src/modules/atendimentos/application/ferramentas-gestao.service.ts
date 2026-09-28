@@ -112,7 +112,7 @@ export interface ContextoGestao {
    */
   solicitante?: string | null;
   /**
-   * Pode ver a LOJA, e nao so cada vendedora? — 29/09/2026.
+   * Pode ver a LOJA, e nao so cada vendedora? — 28/09/2026.
    *
    * `false` estreita o `itens_mais_vendidos`: ele passa a exigir uma vendedora,
    * entao "o que a Camila mais vendeu" continua de pe e "o que a loja mais
@@ -124,7 +124,7 @@ export interface ContextoGestao {
    */
   verLoja?: boolean;
   /**
-   * Pode ver a QUANTIDADE por peca? — 29/09/2026, requisito P-04.
+   * Pode ver a QUANTIDADE por peca? — 28/09/2026, requisito P-04.
    *
    * `false` faz o `consultar_produtos` responder "disponivel" / "sem estoque"
    * em vez do numero, que e o que a gerente precisa: saber se a peca atende e
@@ -138,7 +138,7 @@ export interface ContextoGestao {
    */
   verQuantidade?: boolean;
   /**
-   * AS VENDEDORAS QUE ESTA PESSOA ALCANCA — 29/09/2026, requisitos RF-06 e
+   * AS VENDEDORAS QUE ESTA PESSOA ALCANCA — 28/09/2026, requisitos RF-06 e
    * RF-08.
    *
    * ==========================================================================
@@ -208,7 +208,7 @@ export class FerramentasGestaoService {
   /**
    * @param ctx quem esta do outro lado — ver `ContextoGestao`.
    *
-   *   Era `montar(solicitante?: string)` ate 29/09/2026. Virou objeto quando o
+   *   Era `montar(solicitante?: string)` ate 28/09/2026. Virou objeto quando o
    *   escopo deixou de ser o mesmo para toda a administracao: o papel
    *   GERENTE_VENDAS gerencia as vendedoras e nao ve o faturamento da loja.
    */
@@ -295,7 +295,7 @@ export class FerramentasGestaoService {
       // O espelho da `consultarProdutos` da vendedora.
       //
       // ==================================================================
-      // A QUANTIDADE DEIXOU DE SER DA GESTAO INTEIRA — 29/09/2026.
+      // A QUANTIDADE DEIXOU DE SER DA GESTAO INTEIRA — 28/09/2026.
       //
       // Em 25/09 a decisao foi "a gestao pode ver o numero", e valia para
       // todo mundo que entrasse no canal. O documento de requisitos de 28/09
@@ -813,7 +813,7 @@ export class FerramentasGestaoService {
    *
    * ==========================================================================
    * O RECORTE DE EQUIPE ENTRA AQUI, E POR ISSO VALE NAS NOVE DE UMA VEZ —
-   * 29/09/2026.
+   * 28/09/2026.
    *
    * Cada handler poderia conferir por conta propria. Seriam nove checagens
    * identicas, e a decima ferramenta — a que alguem acrescentar no ano que vem

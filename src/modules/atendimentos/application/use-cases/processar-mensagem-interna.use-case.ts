@@ -164,7 +164,7 @@ export class ProcessarMensagemInternaUseCase {
     const historico = this.memoria.carregar(chave);
     const pergunta = limparEHigienizar(textoDaMensagem);
 
-    // O REGISTRO DO RN-01(g) — 29/09/2026. Nao muda a resposta, nao bloqueia
+    // O REGISTRO DO RN-01(g) — 28/09/2026. Nao muda a resposta, nao bloqueia
     // nada e nao e esperado: a Equipe AT pediu para ENXERGAR quando a
     // vendedora pergunta por quantidade ou custo. A barreira ja esta no lugar
     // (a ferramenta dela devolve `disponivel`, sem numero), entao aqui e so
@@ -262,14 +262,14 @@ export class ProcessarMensagemInternaUseCase {
   }
 
   /**
-   * O registro do requisito RN-01(g) — 29/09/2026.
+   * O registro do requisito RN-01(g) — 28/09/2026.
    *
    * ========================================================================
    * NAO E BARREIRA, E VISIBILIDADE. E POR ISSO NUNCA DERRUBA A RESPOSTA.
    *
    * A vendedora nao alcanca quantidade nem custo por caminho nenhum: a
    * ferramenta dela devolve `disponivel: boolean` desde 25/09 e a API de
-   * produtos omite os campos desde 29/09. Perguntar ja nao funcionava.
+   * produtos omite os campos desde 28/09. Perguntar ja nao funcionava.
    *
    * O pedido da Equipe AT foi enxergar QUANDO a pergunta acontece. Entao o
    * `catch` aqui e deliberado: se o registro falhar — banco fora, payload

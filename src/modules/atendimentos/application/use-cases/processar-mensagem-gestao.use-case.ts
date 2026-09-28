@@ -15,7 +15,7 @@ export interface MensagemGestao {
   /** Nome de quem esta falando, para a agente tratar pelo primeiro nome. */
   nome: string | null;
   /**
-   * Papel de quem esta falando — 29/09/2026.
+   * Papel de quem esta falando — 28/09/2026.
    *
    * QUEM ENTROU NAO VE MAIS TUDO IGUAL. Ate aqui, passar pela porta
    * (`PERMISSAO_GESTAO`) dava as 17 ferramentas com o mesmo alcance para toda a
@@ -112,7 +112,7 @@ export class ProcessarMensagemGestaoUseCase {
             msg.role,
             'estoque:quantidade',
           ),
-          // AS VENDEDORAS QUE ELA ALCANCA — 29/09/2026. Vem do MESMO
+          // AS VENDEDORAS QUE ELA ALCANCA — 28/09/2026. Vem do MESMO
           // `EscopoVendasService` que a tela de Vendas usa: uma regra, duas
           // portas. Sem isso, a gerente de um time veria o desempenho das
           // vendedoras dos outros pelo WhatsApp e nao pelo painel — a mesma

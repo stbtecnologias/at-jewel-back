@@ -112,7 +112,7 @@ export class Produto {
   }
 
   /**
-   * A peca como ela sai pela API — 29/09/2026.
+   * A peca como ela sai pela API — 28/09/2026.
    *
    * ==========================================================================
    * O CAMPO NAO VAI NULO: ELE NAO EXISTE NO OBJETO.
@@ -123,7 +123,7 @@ export class Produto {
    * `estoqueAtual: null` num item e `estoqueAtual: 3` no outro entrega quais
    * pecas tem saldo. Campo ausente nao responde nada disso.
    *
-   * ATE 29/09/2026 O CONTROLLER DEVOLVIA A ENTIDADE CRUA, e por isso
+   * ATE 28/09/2026 O CONTROLLER DEVOLVIA A ENTIDADE CRUA, e por isso
    * `valorCusto`, `valorCompra`, `margemPercentual` e `estoqueAtual` viajavam
    * para qualquer um com `produtos:read` — inclusive o papel VENDEDORA, que
    * tem essa permissao. O canal de WhatsApp dela ja estava fechado desde

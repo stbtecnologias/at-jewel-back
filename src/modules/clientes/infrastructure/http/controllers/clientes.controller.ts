@@ -148,7 +148,7 @@ export class ClientesController {
   }
 
   /**
-   * O contato deste cliente sai mascarado? — RF-10, 29/09/2026.
+   * O contato deste cliente sai mascarado? — RF-10, 28/09/2026.
    *
    * SEM `req.user` E CHAMADA POR API KEY — o integrador, que e a FONTE do
    * cadastro e mandou o telefone para ca. Mascarar o que ele mesmo enviou

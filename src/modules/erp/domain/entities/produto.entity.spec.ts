@@ -1,7 +1,7 @@
 import { Produto, type ProdutoProps } from './produto.entity';
 
 /**
- * O QUE SAI DA PECA PELA API — 29/09/2026.
+ * O QUE SAI DA PECA PELA API — 28/09/2026.
  *
  * ==========================================================================
  * O QUE ESTE ARQUIVO PROTEGE: A CHAVE AUSENTE, E NAO O VALOR NULO.
@@ -11,7 +11,7 @@ import { Produto, type ProdutoProps } from './produto.entity';
  * `toHaveProperty` / `not.toHaveProperty`, e nao comparacao de valor —
  * `valorCusto: null` passaria num teste de valor e falharia o requisito.
  *
- * Ate 29/09 o controller devolvia a entidade crua, entao `valorCusto`,
+ * Ate 28/09 o controller devolvia a entidade crua, entao `valorCusto`,
  * `valorCompra`, `margemPercentual` e `estoqueAtual` viajavam para qualquer um
  * com `produtos:read` — inclusive o papel VENDEDORA, que tem essa permissao.
  * ==========================================================================

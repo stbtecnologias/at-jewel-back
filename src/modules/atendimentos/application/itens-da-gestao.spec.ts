@@ -1,7 +1,7 @@
 import { FerramentasGestaoService } from './ferramentas-gestao.service';
 
 /**
- * O ESCOPO ESTREITO DA GESTAO — 29/09/2026.
+ * O ESCOPO ESTREITO DA GESTAO — 28/09/2026.
  *
  * ==========================================================================
  * O QUE ESTE ARQUIVO PROTEGE: QUEM GERENCIA AS VENDEDORAS NAO VE A LOJA.
@@ -140,7 +140,7 @@ describe('itens_mais_vendidos e o escopo de quem pergunta', () => {
 });
 
 /**
- * A QUANTIDADE POR PECA NA CONSULTA DE CATALOGO — 29/09/2026.
+ * A QUANTIDADE POR PECA NA CONSULTA DE CATALOGO — 28/09/2026.
  *
  * ==========================================================================
  * ISTO REVERTE UMA DECISAO DE 25/09, E A REVERSAO E O PONTO.

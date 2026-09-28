@@ -103,7 +103,7 @@ import { ConversaWhatsappRepository } from './infrastructure/database/typeorm/re
     TranscricaoModule,
     // Reconhecimento do ADM pelo telefone (BuscarAdminPorTelefoneUseCase).
     AuthModule,
-    // O registro da consulta restrita da vendedora (RN-01g, 29/09/2026).
+    // O registro da consulta restrita da vendedora (RN-01g, 28/09/2026).
     // Modulo folha — so TypeORM e Auth —, entao nao ha ciclo.
     AgenteEventosModule,
   ],

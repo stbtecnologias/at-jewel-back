@@ -99,7 +99,7 @@ export class VendasController {
     @Query() filtros: FiltroVendaDto,
     @Request() req: { user: JwtPayload },
   ) {
-    // Isolamento (RF-USU-02, e o recorte de EQUIPE desde 29/09/2026): quando
+    // Isolamento (RF-USU-02, e o recorte de EQUIPE desde 28/09/2026): quando
     // ha recorte ele MANDA, e o vendedoraId vindo do cliente e ignorado; quem
     // ve a loja inteira usa o filtro escolhido na tela.
     const restrito = await this.escopo.recorteDeVendas(req.user);
@@ -141,7 +141,7 @@ export class VendasController {
   // vendedora; esta rota os descartava e passava so as datas — o "Top
   // vendedoras" ignorava o filtro que o resto da tela respeitava.
   //
-  // E O RECORTE DE EQUIPE TAMBEM, desde 29/09/2026 — esta rota era a que mais
+  // E O RECORTE DE EQUIPE TAMBEM, desde 28/09/2026 — esta rota era a que mais
   // precisava dele. `vendas:read_all` sozinho a abria inteira, e ela e
   // literalmente a lista de quem vendeu quanto: sem o recorte, a gerente veria
   // o desempenho das vendedoras dos outros times ao lado do das dela.

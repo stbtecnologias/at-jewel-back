@@ -1,7 +1,7 @@
 import { mascararEmail, mascararTelefone } from './cliente.entity';
 
 /**
- * A MASCARA DE CONTATO — requisito RF-10, 29/09/2026.
+ * A MASCARA DE CONTATO — requisito RF-10, 28/09/2026.
  *
  * ==========================================================================
  * MASCARA, E NAO AUSENCIA — a diferenca e o desenho.

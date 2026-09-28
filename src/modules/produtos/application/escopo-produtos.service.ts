@@ -3,7 +3,7 @@ import { PermissionsService } from '../../auth/application/permissions.service';
 import type { OpcoesDeExibicao } from '../../erp/domain/entities/produto.entity';
 
 /**
- * O QUE ESTE USUARIO PODE VER DA PECA — 29/09/2026.
+ * O QUE ESTE USUARIO PODE VER DA PECA — 28/09/2026.
  *
  * ==========================================================================
  * O TERCEIRO SERVICO DA MESMA FAMILIA, E DE PROPOSITO.

@@ -50,7 +50,7 @@ describe('EscopoVendasService (RF-USU-02)', () => {
   });
 
   /**
-   * O RECORTE COMPLETO — os tres estados (RF-06, RF-08, 29/09/2026).
+   * O RECORTE COMPLETO — os tres estados (RF-06, RF-08, 28/09/2026).
    *
    * ========================================================================
    * O TESTE QUE MAIS IMPORTA AQUI E O DA ORDEM DAS PERGUNTAS.

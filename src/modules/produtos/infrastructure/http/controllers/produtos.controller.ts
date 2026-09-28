@@ -65,7 +65,7 @@ export class ProdutosController {
   ) {}
 
   /**
-   * O que quem esta chamando pode ver da peca — 29/09/2026.
+   * O que quem esta chamando pode ver da peca — 28/09/2026.
    *
    * DOIS CAMINHOS ENTRAM AQUI, porque as rotas aceitam `JwtOrApiKeyGuard`:
    * pessoa (`req.user`, com papel) e integrador (`req.apiKey`, sem papel). O

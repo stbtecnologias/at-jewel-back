@@ -180,7 +180,7 @@ export class AnalyticsController {
    * O inventario: quantas pecas, quanto valem, e a quebra por categoria.
    *
    * ========================================================================
-   * O `valorTotal` SAI PARA QUEM NAO TEM `estoque:valor` — 29/09/2026.
+   * O `valorTotal` SAI PARA QUEM NAO TEM `estoque:valor` — 28/09/2026.
    *
    * A matriz do documento de requisitos separa duas linhas que vinham juntas
    * neste objeto desde sempre: "quantidade TOTAL em estoque" a gerente PODE

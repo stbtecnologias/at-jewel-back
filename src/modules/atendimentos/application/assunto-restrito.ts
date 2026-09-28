@@ -1,12 +1,12 @@
 /**
- * A VENDEDORA PERGUNTOU O QUE NAO PODE SABER? — 29/09/2026.
+ * A VENDEDORA PERGUNTOU O QUE NAO PODE SABER? — 28/09/2026.
  *
  * ==========================================================================
  * ISTO NAO E UMA BARREIRA. E UM REGISTRO.
  *
  * A barreira mora onde tem de morar: o dado nao existe no que chega ao modelo.
  * A ferramenta da vendedora devolve `disponivel: boolean` desde 25/09, e a API
- * de produtos omite custo e saldo desde 29/09 — ela pode perguntar o que
+ * de produtos omite custo e saldo desde 28/09 — ela pode perguntar o que
  * quiser, nao ha o que responder.
  *
  * O que este arquivo faz e atender ao requisito RN-01(g): "quando perguntas

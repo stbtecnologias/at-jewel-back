@@ -93,7 +93,7 @@ Agora sao ${agoraLocal()} (fuso da loja). Use isto para interpretar "hoje", "ama
       ? await this.permissoes.possui(solicitante.role, PERMISSAO_GESTAO)
       : false;
 
-    // E A LOJA, ELA PODE VER? — 29/09/2026, junto com o papel GERENTE_VENDAS.
+    // E A LOJA, ELA PODE VER? — 28/09/2026, junto com o papel GERENTE_VENDAS.
     //
     // Das ferramentas de gestao, UMA fala da loja inteira e em dinheiro:
     // `itens_mais_vendidos` sem vendedora. Quem gerencia as vendedoras ve o
@@ -107,7 +107,7 @@ Agora sao ${agoraLocal()} (fuso da loja). Use isto para interpretar "hoje", "ama
       ? await this.permissoes.possui(solicitante.role, 'analytics:read')
       : false;
 
-    // E A QUANTIDADE POR PECA? — 29/09/2026, requisito P-04. Outra pergunta e
+    // E A QUANTIDADE POR PECA? — 28/09/2026, requisito P-04. Outra pergunta e
     // outra chave: a gerente ve o faturamento da equipe dela e NAO ve o saldo
     // da peca, entao as duas nao podem sair da mesma permissao.
     const verQuantidade = solicitante?.role

@@ -10,7 +10,7 @@ import { PermissionsService } from '../permissions.service';
  * Permissao que abre o canal da Anastasia.
  *
  * ==========================================================================
- * ERA `vendas:read_all` ATE 29/09/2026, E A TROCA E DE CRITERIO, NAO DE NOME.
+ * ERA `vendas:read_all` ATE 28/09/2026, E A TROCA E DE CRITERIO, NAO DE NOME.
  *
  * A chave antiga significa "ver vendas de TODAS as vendedoras (comparativo)",
  * e no painel ela abre a TELA DE VENDAS — o `EscopoVendasService` para de

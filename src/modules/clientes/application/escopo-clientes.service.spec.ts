@@ -85,7 +85,7 @@ describe('EscopoClientesService — o recorte que o MEL-23 pede', () => {
   });
 
   /**
-   * QUEM VE O CONTATO SEM MASCARA — requisito RF-10, 29/09/2026.
+   * QUEM VE O CONTATO SEM MASCARA — requisito RF-10, 28/09/2026.
    *
    * ========================================================================
    * A MATRIZ TEM TRES LINHAS E A REGRA TEM DUAS CONDICOES.
