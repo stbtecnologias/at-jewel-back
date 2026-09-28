@@ -470,6 +470,49 @@ const GESTAO_ITENS_DA_VENDEDORA_TOOL: Anthropic.Tool = {
 };
 
 /**
+ * QUEM MAIS VENDE UM TIPO DE PECA — 28/09/2026.
+ *
+ * ==========================================================================
+ * A PERGUNTA QUE NENHUMA DAS OUTRAS RESPONDIA.
+ *
+ * "Qual a vendedora que mais vende brinco?" caia num vao: o
+ * `panorama_da_equipe` soma TUDO que cada uma vendeu, sem separar tipo, e o
+ * `itens_mais_vendidos` separa tipo mas agrupa por PECA. A agente respondia
+ * "nao da para cruzar", e estava certa.
+ *
+ * ORDENADO POR QUANTIDADE, ao contrario das outras: "quem mais vende brinco"
+ * espera "a Aline, 23 brincos". O valor vai na mesma linha.
+ * ==========================================================================
+ */
+const GESTAO_POR_FAMILIA_TOOL: Anthropic.Tool = {
+  name: 'quem_mais_vende',
+  description:
+    'O ranking das vendedoras para UM tipo de peca, da que mais vendeu para a que menos vendeu, com quantidade e valor. Use para "quem vende mais brinco", "qual vendedora mais vendeu anel esse ano", "quem e a melhor em colar". Conta PECAS, nao faturamento — e a devolucao ja esta abatida. Para o ranking geral, sem separar tipo, use panorama_da_equipe.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      familia: {
+        type: 'string',
+        description:
+          'O tipo de peca, como a pessoa falou: "brinco", "anel", "colar", "pulseira". Se o nome nao existir no catalogo, a resposta traz a lista dos que existem — repasse e pergunte qual.',
+      },
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
+        description:
+          'MES (o padrao) e ANO sao os do CALENDARIO. Para um mes especifico de um ano passado — "outubro de 2025" — use `de` e `ate`.',
+      },
+      limite: {
+        type: 'number',
+        description: 'Quantas vendedoras listar. Padrao 10, teto 30.',
+      },
+      ...DATAS_LIVRES,
+    },
+    required: ['familia'],
+  },
+};
+
+/**
  * OS COMBINADOS — ANA-16 e ANA-18, 28/09/2026.
  *
  * ==========================================================================
@@ -879,6 +922,7 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoAgenda) tools.push(GESTAO_AGENDA_TOOL);
     if (params.gestaoVendas) tools.push(GESTAO_VENDAS_TOOL);
     if (params.gestaoMetas) tools.push(GESTAO_METAS_TOOL);
+    if (params.gestaoPorFamilia) tools.push(GESTAO_POR_FAMILIA_TOOL);
     if (params.guardarCombinado) tools.push(GUARDAR_COMBINADO_TOOL);
     if (params.listarCombinados) tools.push(LISTAR_COMBINADOS_TOOL);
     if (params.esquecerCombinado) tools.push(ESQUECER_COMBINADO_TOOL);
@@ -1148,6 +1192,46 @@ export class AnthropicClient implements ILlmClient {
                 vendedora: String(e.vendedora ?? '').slice(0, 80),
               }),
               'meta',
+            );
+          }),
+        );
+      } else if (
+        toolUse.name === 'quem_mais_vende' &&
+        params.gestaoPorFamilia
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as {
+              familia?: string;
+              limite?: number;
+              periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
+              de?: string;
+              ate?: string;
+            };
+            const r = await params.gestaoPorFamilia!({
+              familia: String(e.familia ?? '').slice(0, 40),
+              limite: e.limite,
+              periodo: e.periodo,
+              de: e.de,
+              ate: e.ate,
+            });
+
+            // A FAMILIA QUE NAO EXISTE VIRA PERGUNTA, e nao 'ninguem vendeu':
+            // zero linhas seria indistinguivel de um periodo sem venda, e a
+            // pessoa concluiria que ninguem vendeu brinco naquele mes.
+            if (r.status === 'FAMILIA_DESCONHECIDA') {
+              return (
+                'Esse tipo de peca nao existe no catalogo. Os que existem: ' +
+                (r.familias ?? []).join(', ') +
+                '. Diga isso e pergunte qual deles ela quer.'
+              );
+            }
+            if (r.linhas.length === 0) {
+              return 'Ninguem vendeu esse tipo de peca no periodo. Diga isso em uma frase.';
+            }
+            return (
+              `Ranking no periodo:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+              'A primeira linha e a resposta. Repasse os numeros exatamente como estao.'
             );
           }),
         );

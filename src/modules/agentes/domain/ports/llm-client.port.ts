@@ -379,8 +379,13 @@ export type GestaoAgendaHandler = (input: {
  * ==========================================================================
  */
 export interface RecorteDeTempo {
-  /** O atalho. Ignorado quando `de` e `ate` vem preenchidos. */
-  periodo?: PeriodoVendasLlm;
+  /**
+   * O atalho. Ignorado quando `de` e `ate` vem preenchidos.
+   *
+   * ONTEM e ANO entraram em 28/09/2026: o `ConsultarVendasUseCase` sempre
+   * respondeu os cinco, e eram os TIPOS que andavam mais estreitos que ele.
+   */
+  periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
   /** Inicio, `AAAA-MM-DD`. So vale junto com `ate`. */
   de?: string;
   /** Fim, `AAAA-MM-DD`, INCLUSIVE — o dia inteiro conta. */
@@ -402,6 +407,22 @@ export type GestaoMetasHandler = (input: {
  * conferir o que ja combinou e desfazer. O documento pede os tres ("ver e
  * corrigir as instrucoes que a Anastasia guardou").
  */
+/**
+ * QUEM MAIS VENDE UM TIPO DE PECA — 28/09/2026.
+ *
+ * A pergunta do Lucas: "qual a vendedora que mais vende brinco?". Nenhuma das
+ * ferramentas respondia — o ranking somava tudo sem separar tipo, e os itens
+ * separavam tipo sem agrupar por quem vendeu.
+ */
+export type GestaoPorFamiliaHandler = (
+  input: { familia: string; limite?: number } & RecorteDeTempo,
+) => Promise<{
+  status: 'OK' | 'FAMILIA_DESCONHECIDA';
+  linhas: string[];
+  /** As familias que existem, quando o nome nao casou. */
+  familias?: string[];
+}>;
+
 export type GuardarCombinadoHandler = (input: {
   texto: string;
 }) => Promise<{ status: 'OK' | 'VAZIO' | 'LONGO' | 'CHEIO'; teto?: number }>;
@@ -643,6 +664,7 @@ export interface ChatParams {
   gestaoAgenda?: GestaoAgendaHandler;
   gestaoVendas?: GestaoVendasHandler;
   gestaoMetas?: GestaoMetasHandler;
+  gestaoPorFamilia?: GestaoPorFamiliaHandler;
   guardarCombinado?: GuardarCombinadoHandler;
   listarCombinados?: ListarCombinadosHandler;
   esquecerCombinado?: EsquecerCombinadoHandler;

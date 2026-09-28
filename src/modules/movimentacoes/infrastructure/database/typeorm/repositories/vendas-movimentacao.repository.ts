@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 import type {
   IVendasMovimentacaoRepository,
   ItemMaisVendido,
+  VendedoraPorFamilia,
   JanelaDeVendas,
   ResumoDeVendas,
   VendedoraNoRanking,
@@ -129,6 +130,7 @@ export class VendasMovimentacaoRepository
     janela: JanelaDeVendas,
     limite: number,
     vendedoraId?: string | null,
+    familia?: string | null,
   ): Promise<ItemMaisVendido[]> {
     // SO AS SAIDAS. A devolucao nao abate item por item de proposito: ela
     // volta o documento inteiro, e descontar a peca devolvida de "o que mais
@@ -159,11 +161,15 @@ export class VendasMovimentacaoRepository
          AND m.data_movimentacao >= $1
          AND m.data_movimentacao <= $2
          AND ($4::uuid IS NULL OR m.vendedora_id = $4::uuid)
+         -- A familia casa por IGUALDADE sem caixa, e nao por LIKE: no catalogo
+         -- ela e um rotulo fechado ('BRINCO', 'ANEL'), e um LIKE faria
+         -- "anel" tambem trazer "PAINEL" se um dia existir.
+         AND ($5::text IS NULL OR upper(p.familia) = upper($5::text))
        GROUP BY p.id, p.codigo_erp, p.descricao_etiqueta, p.familia
        ORDER BY valor DESC
        LIMIT $3
       `,
-      [janela.de, janela.ate, limite, vendedoraId ?? null],
+      [janela.de, janela.ate, limite, vendedoraId ?? null, familia ?? null],
     );
 
     return linhas.map((l) => ({
@@ -171,6 +177,70 @@ export class VendasMovimentacaoRepository
       codigoErp: l.codigo_erp,
       descricao: l.descricao,
       familia: l.familia,
+      quantidade: Number(l.quantidade),
+      valor: Number(l.valor),
+    }));
+  }
+
+  async rankingPorFamilia(
+    janela: JanelaDeVendas,
+    familia: string,
+    limite: number,
+  ): Promise<VendedoraPorFamilia[]> {
+    // ====================================================================
+    // AQUI A DEVOLUCAO ABATE — e o `itensMaisVendidos`, logo acima, NAO.
+    //
+    // Nao e incoerencia: sao perguntas diferentes.
+    //
+    //   "que peca mais saiu"  -> a peca saiu, e voltar e outro evento. Abater
+    //                            misturaria as duas coisas (decisao registrada
+    //                            no metodo acima).
+    //   "quem mais VENDEU"    -> se ela vendeu dez e tres voltaram, ela vendeu
+    //                            sete. Um ranking de PESSOAS que nao abate
+    //                            premia quem vende e perde a venda.
+    //
+    // E e a mesma regra do `rankingDeVendedoras`, que abate desde 25/09 — este
+    // ranking e o irmao dele com um filtro, e tem de contar igual.
+    // ====================================================================
+    const linhas = await this.ds.query<
+      {
+        vendedora_id: string;
+        nome: string;
+        quantidade: string;
+        valor: string;
+      }[]
+    >(
+      `
+      SELECT v.id   AS vendedora_id,
+             v.nome AS nome,
+             COALESCE(sum(i.quantidade) FILTER (WHERE m.saida), 0)
+               - COALESCE(sum(i.quantidade) FILTER (WHERE m.entrada), 0) AS quantidade,
+             COALESCE(sum(i.quantidade * i.valor_unitario) FILTER (WHERE m.saida), 0)
+               - COALESCE(sum(i.quantidade * i.valor_unitario) FILTER (WHERE m.entrada), 0) AS valor
+        FROM movimentacoes_itens i
+        JOIN movimentacoes m ON m.id = i.movimentacao_id
+        JOIN produtos p      ON p.id = i.produto_id
+        JOIN vendedoras v    ON v.id = m.vendedora_id
+       WHERE m.ativo
+         AND i.ativo
+         AND m.data_movimentacao >= $1
+         AND m.data_movimentacao <= $2
+         AND upper(p.familia) = upper($3::text)
+       GROUP BY v.id, v.nome
+      -- QUEM SO DEVOLVEU NO PERIODO FICA DE FORA: sem esta linha ela
+      -- apareceria com quantidade negativa no ranking de "quem mais vende",
+      -- que e verdade sobre o saldo e absurdo como resposta.
+      HAVING COALESCE(sum(i.quantidade) FILTER (WHERE m.saida), 0)
+               - COALESCE(sum(i.quantidade) FILTER (WHERE m.entrada), 0) > 0
+       ORDER BY quantidade DESC, valor DESC
+       LIMIT $4
+      `,
+      [janela.de, janela.ate, familia, limite],
+    );
+
+    return linhas.map((l) => ({
+      vendedoraId: l.vendedora_id,
+      nome: l.nome,
       quantidade: Number(l.quantidade),
       valor: Number(l.valor),
     }));

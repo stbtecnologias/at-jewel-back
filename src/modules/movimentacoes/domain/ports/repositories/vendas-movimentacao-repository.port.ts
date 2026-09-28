@@ -61,6 +61,15 @@ export interface ItemMaisVendido {
   valor: number;
 }
 
+/** Uma vendedora no ranking de um tipo de peca. Ver `rankingPorFamilia`. */
+export interface VendedoraPorFamilia {
+  vendedoraId: string;
+  nome: string;
+  /** Pecas daquela familia, com a devolucao ja abatida. */
+  quantidade: number;
+  valor: number;
+}
+
 export interface IVendasMovimentacaoRepository {
   /**
    * O resumo do periodo. Com `vendedoraId`, so o dela — e e assim que a
@@ -78,7 +87,8 @@ export interface IVendasMovimentacaoRepository {
   ): Promise<VendedoraNoRanking[]>;
 
   /**
-   * As pecas que mais sairam. Com `vendedoraId`, so as dela.
+   * As pecas que mais sairam. Com `vendedoraId`, so as dela; com `familia`,
+   * so as daquele tipo.
    *
    * ORDENADO POR VALOR, e nao por quantidade: numa joalheria a peca que sai
    * dez vezes costuma ser a mais barata da vitrine, e "o que mais vendeu" no
@@ -88,7 +98,33 @@ export interface IVendasMovimentacaoRepository {
     janela: JanelaDeVendas,
     limite: number,
     vendedoraId?: string | null,
+    familia?: string | null,
   ): Promise<ItemMaisVendido[]>;
+
+  /**
+   * QUEM MAIS VENDEU UM TIPO DE PECA — 28/09/2026.
+   *
+   * ========================================================================
+   * E O RANKING QUE FALTAVA, E ELE NAO SAI DOS OUTROS DOIS.
+   *
+   * Pergunta do Lucas: "qual a vendedora que mais vende brinco?". O
+   * `rankingDeVendedoras` soma TUDO que cada uma vendeu, sem separar tipo; o
+   * `itensMaisVendidos` separa por peca mas agrupa por PRODUTO, e nao por
+   * quem vendeu. Cruzar os dois exigiria uma consulta por vendedora, e a
+   * agente respondia "nao da para cruzar" — que era verdade.
+   *
+   * ORDENADO POR QUANTIDADE, e aqui isto DIVERGE do resto de proposito. Nos
+   * outros rankings a ordem e por valor, porque "o que mais vendeu" para a
+   * gestao quer dizer o que mais faturou. Aqui a pergunta e "quem mais VENDE
+   * brinco", e a resposta esperada e "a Aline, 23 brincos". O valor vai junto
+   * na linha, para quem quiser os dois.
+   * ========================================================================
+   */
+  rankingPorFamilia(
+    janela: JanelaDeVendas,
+    familia: string,
+    limite: number,
+  ): Promise<VendedoraPorFamilia[]>;
 }
 
 export const VENDAS_MOVIMENTACAO_REPOSITORY = Symbol(

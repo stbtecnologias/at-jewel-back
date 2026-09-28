@@ -13,6 +13,7 @@ import type {
   GestaoFeedbacksHandler,
   GestaoFunilHandler,
   GestaoPanoramaLeadsHandler,
+  GestaoPorFamiliaHandler,
   GestaoLeituraResultado,
   GestaoMetasHandler,
   GestaoItensHandler,
@@ -94,6 +95,7 @@ export interface FerramentasGestao {
   gestaoDiaDaVendedora: GestaoDiaDaVendedoraHandler;
   gestaoFunil: GestaoFunilHandler;
   gestaoPanoramaLeads: GestaoPanoramaLeadsHandler;
+  gestaoPorFamilia: GestaoPorFamiliaHandler;
   /**
    * NAO E UM HANDLER — e um aviso que viaja junto para o cliente do LLM.
    *
@@ -440,6 +442,62 @@ export class FerramentasGestaoService {
        * nenhuma venda" seria ruido puro.
        * ================================================================
        */
+      /**
+       * "Quem mais vende brinco?" — 28/09/2026.
+       *
+       * ================================================================
+       * A FAMILIA E CONFERIDA ANTES DE CONSULTAR, e a recusa LISTA as que
+       * existem.
+       *
+       * O modelo escreve a familia a partir do que a pessoa falou, e as duas
+       * linguas nao batem: ela diz "bracelete" e o catalogo tem "PULSEIRA".
+       * Consultando direto, "bracelete" devolveria zero linhas — e zero e
+       * indistinguivel de "ninguem vendeu bracelete neste periodo".
+       *
+       * Devolver a lista das familias transforma um beco numa pergunta: a
+       * agente volta com "temos brinco, anel, colar... qual delas?" em vez de
+       * "ninguem vendeu isso".
+       * ================================================================
+       */
+      gestaoPorFamilia: async ({ familia, limite, periodo, de, ate }) => {
+        const familias = await this.listarProdutos.familias();
+        const casada = familias.find(
+          (f) => f.toUpperCase() === familia.trim().toUpperCase(),
+        );
+        if (!casada) {
+          return { status: 'FAMILIA_DESCONHECIDA', linhas: [], familias };
+        }
+
+        const datas = datasDeRecorte(de, ate);
+        const linhas = datas
+          ? await this.consultarVendas.porFamiliaEntre(
+              casada,
+              datas.de,
+              datas.ate,
+              limite ?? LIMITE_PADRAO,
+            )
+          : (
+              await this.consultarVendas.porFamilia(
+                casada,
+                periodo ?? 'MES',
+                limite ?? LIMITE_PADRAO,
+              )
+            ).linhas;
+
+        // O RECORTE DE EQUIPE, como no panorama: sem ele, "quem vende mais
+        // brinco" devolveria a loja para a gerente de um time so.
+        const daEquipe = linhas.filter((l) => alcanca(l.vendedoraId));
+
+        return {
+          status: 'OK',
+          linhas: daEquipe.map((l) => {
+            const peca = casada.toLowerCase();
+            const unidade = l.quantidade === 1 ? peca : `${peca}s`;
+            return `${l.nome}: ${l.quantidade} ${unidade}, ${moeda(l.valor)}`;
+          }),
+        };
+      },
+
       gestaoPanorama: async ({ periodo, de, ate }) => {
         // Teto alto: o ranking corta por limite, e aqui a lista e a equipe
         // inteira. Sem isto, a vendedora de menor faturamento sumiria da
