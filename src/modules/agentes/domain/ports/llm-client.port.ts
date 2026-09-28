@@ -104,8 +104,17 @@ export type RegistrarRelatoHandler = () => Promise<RegistrarRelatoLlmResultado>;
 // outras: sem "de quem" no input. O periodo e a unica escolha do modelo.
 export type PeriodoVendasLlm = 'HOJE' | 'SEMANA' | 'MES';
 
-export interface ConsultarVendasLlmInput {
-  periodo: PeriodoVendasLlm;
+/**
+ * O que ela pergunta sobre as PROPRIAS vendas.
+ *
+ * Ganhou `de`/`ate` em 28/09/2026, pelo mesmo motivo do lado da gestao: ela
+ * perguntou "e no ano?" e ouviu "nao consigo puxar por ano, so tenho hoje,
+ * ultimos sete dias e ultimos trinta dias". O `ConsultarVendasUseCase` sabe
+ * responder por ANO e por datas soltas desde 25/09 — a ferramenta e que nao
+ * deixava pedir.
+ */
+export interface ConsultarVendasLlmInput extends Pick<RecorteDeTempo, 'de' | 'ate'> {
+  periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
 }
 
 export interface ConsultarVendasLlmResultado {

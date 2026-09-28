@@ -1,3 +1,4 @@
+import { datasDeRecorte } from '../../../shared/tempo/recorte-de-datas';
 import { Inject, Injectable } from '@nestjs/common';
 import type {
   AgendarContatoHandler,
@@ -353,8 +354,16 @@ export class FerramentasVendedoraService {
         };
       },
 
-      consultarVendas: async ({ periodo }) => {
-        const v = await this.desempenho.vendas(vendedoraId, periodo);
+      consultarVendas: async ({ periodo, de, ate }) => {
+        // O PERIODO LIVRE, como na gestao — 28/09/2026. Ela perguntou "e no
+        // ano?" e ouviu que so havia hoje, semana e mes. Era limitacao da
+        // ferramenta: o use case responde por ANO e por datas soltas desde
+        // 25/09.
+        const datas = datasDeRecorte(de, ate);
+        const v = datas
+          ? await this.desempenho.vendasEntre(vendedoraId, datas.de, datas.ate)
+          : await this.desempenho.vendas(vendedoraId, periodo ?? 'MES');
+
         if (v.quantidade === 0) {
           return { resumo: 'nenhuma venda concluída nesse período' };
         }

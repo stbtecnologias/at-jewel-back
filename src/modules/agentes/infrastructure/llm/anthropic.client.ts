@@ -105,21 +105,63 @@ const AGENDA_TOOL: Anthropic.Tool = {
   },
 };
 
+/**
+ * O PERIODO LIVRE, nas tres ferramentas de venda — 28/09/2026.
+ *
+ * ==========================================================================
+ * NASCEU DE UMA RECUSA QUE NAO DEVIA EXISTIR.
+ *
+ * O Lucas perguntou "o que a Camila mais vendeu nos ultimos 6 meses" e a
+ * Anastasia respondeu que "nao da para escolher exatamente seis meses — as
+ * opcoes sao hoje, ontem, semana, mes ou ano".
+ *
+ * Era limitacao NOSSA, numa pergunta que o banco responde sem esforco: os
+ * metodos `resumoEntre`, `itensEntre` e `rankingEntre` existiam desde 25/09 e
+ * ninguem os chamava. A ferramenta so sabia falar o enum.
+ *
+ * O ENUM FICA, e nao e redundancia: `MES` e `ANO` sao os do CALENDARIO, que e
+ * o que se compara com a meta. O modelo calculando "o mes" chutaria trinta
+ * dias para tras e daria um numero que nao bate com nada que a gestao segue.
+ *
+ * DUPLICADO NAS TRES de proposito — a descricao de `periodo` e diferente em
+ * cada uma (enums diferentes, padroes diferentes), entao so este par e comum.
+ * ==========================================================================
+ */
+const DATAS_LIVRES = {
+  de: {
+    type: 'string' as const,
+    description:
+      'Inicio do periodo, AAAA-MM-DD. Use com `ate` quando o recorte pedido nao couber no `periodo`: "ultimos 6 meses", "de janeiro a marco", "agosto", "do dia 10 ate hoje". VOCE calcula as datas a partir da data de hoje, que esta no inicio desta conversa.',
+  },
+  ate: {
+    type: 'string' as const,
+    description:
+      'Fim do periodo, AAAA-MM-DD, e ele CONTA INTEIRO. So vale junto com `de` — mandando um so, ele e ignorado. Com os dois preenchidos, o `periodo` nao e usado.',
+  },
+};
+
 const VENDAS_TOOL: Anthropic.Tool = {
   name: 'consultar_vendas',
   description:
-    'Consulta quantas vendas ELA fez e quanto faturou num periodo. Use quando ela perguntar sobre o proprio desempenho — "quantas vendas eu fiz hoje", "como foi minha semana", "quanto vendi no mes". Sao sempre as vendas DELA: voce nao escolhe de quem, o sistema resolve pelo telefone de quem esta falando.',
+    'Consulta quantas vendas ELA fez e quanto faturou num periodo. Use quando ela perguntar sobre o proprio desempenho — "quantas vendas eu fiz hoje", "como foi minha semana", "quanto vendi no mes", "e no ano?". Sao sempre as vendas DELA: voce nao escolhe de quem, o sistema resolve pelo telefone de quem esta falando.',
   input_schema: {
     type: 'object',
     properties: {
       periodo: {
         type: 'string',
-        enum: ['HOJE', 'SEMANA', 'MES'],
+        // ONTEM e ANO entraram em 28/09/2026 — o use case sempre respondeu os
+        // cinco, e so a ferramenta era estreita.
+        enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
         description:
-          'HOJE = desde a meia-noite; SEMANA = os ultimos sete dias; MES = os ultimos trinta dias.',
+          // A DESCRICAO ANTIGA MENTIA: dizia "MES = os ultimos trinta dias", e
+          // a janela sempre foi do dia 1. A agente repetia isso na resposta
+          // ("nos ultimos trinta dias voce nao fechou nenhuma venda") enquanto
+          // o numero era do mes do calendario.
+          'HOJE = desde a meia-noite; ONTEM = o dia anterior inteiro; SEMANA = os ultimos sete dias; MES = do dia 1 ate agora; ANO = de 1o de janeiro ate agora. MES e ANO sao os do CALENDARIO, nao janelas moveis.',
       },
+      ...DATAS_LIVRES,
     },
-    required: ['periodo'],
+    required: [],
   },
 };
 
@@ -276,41 +318,6 @@ const GESTAO_AGENDA_TOOL: Anthropic.Tool = {
       },
     },
     required: ['vendedora'],
-  },
-};
-
-/**
- * O PERIODO LIVRE, nas tres ferramentas de venda — 28/09/2026.
- *
- * ==========================================================================
- * NASCEU DE UMA RECUSA QUE NAO DEVIA EXISTIR.
- *
- * O Lucas perguntou "o que a Camila mais vendeu nos ultimos 6 meses" e a
- * Anastasia respondeu que "nao da para escolher exatamente seis meses — as
- * opcoes sao hoje, ontem, semana, mes ou ano".
- *
- * Era limitacao NOSSA, numa pergunta que o banco responde sem esforco: os
- * metodos `resumoEntre`, `itensEntre` e `rankingEntre` existiam desde 25/09 e
- * ninguem os chamava. A ferramenta so sabia falar o enum.
- *
- * O ENUM FICA, e nao e redundancia: `MES` e `ANO` sao os do CALENDARIO, que e
- * o que se compara com a meta. O modelo calculando "o mes" chutaria trinta
- * dias para tras e daria um numero que nao bate com nada que a gestao segue.
- *
- * DUPLICADO NAS TRES de proposito — a descricao de `periodo` e diferente em
- * cada uma (enums diferentes, padroes diferentes), entao so este par e comum.
- * ==========================================================================
- */
-const DATAS_LIVRES = {
-  de: {
-    type: 'string' as const,
-    description:
-      'Inicio do periodo, AAAA-MM-DD. Use com `ate` quando o recorte pedido nao couber no `periodo`: "ultimos 6 meses", "de janeiro a marco", "agosto", "do dia 10 ate hoje". VOCE calcula as datas a partir da data de hoje, que esta no inicio desta conversa.',
-  },
-  ate: {
-    type: 'string' as const,
-    description:
-      'Fim do periodo, AAAA-MM-DD, e ele CONTA INTEIRO. So vale junto com `de` — mandando um so, ele e ignorado. Com os dois preenchidos, o `periodo` nao e usado.',
   },
 };
 
@@ -1258,10 +1265,18 @@ export class AnthropicClient implements ILlmClient {
       ) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as {
+              periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
+              de?: string;
+              ate?: string;
+            };
+            // Sem padrao fixo aqui: com `de` e `ate` preenchidos o atalho e
+            // ignorado la dentro, e cravar 'HOJE' faria o handler achar que
+            // houve escolha de periodo quando nao houve.
             const { resumo } = await params.consultarVendas!({
-              periodo:
-                (toolUse.input as { periodo?: PeriodoVendasLlm }).periodo ??
-                'HOJE',
+              periodo: e.periodo,
+              de: e.de,
+              ate: e.ate,
             });
             return (
               `Vendas dela no periodo: ${resumo}. Repasse estes numeros exatamente ` +

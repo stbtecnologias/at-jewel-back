@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { diasDeCalendario } from '../../../shared/tempo/dias-de-calendario';
+import { datasDeRecorte } from '../../../shared/tempo/recorte-de-datas';
 import type {
   GestaoCarteiraHandler,
   GestaoMelhoresHandler,
@@ -243,7 +244,7 @@ export class FerramentasGestaoService {
 
       gestaoVendas: async ({ vendedora, periodo, de, ate }) =>
         this.comVendedora(equipe, vendedora, async (id) => {
-          const datas = datasDe(de, ate);
+          const datas = datasDeRecorte(de, ate);
           const v = datas
             ? await this.consultarVendas
                 .resumoEntre(datas.de, datas.ate, id)
@@ -382,7 +383,7 @@ export class FerramentasGestaoService {
           vendedoraId = r.id;
         }
 
-        const datas = datasDe(de, ate);
+        const datas = datasDeRecorte(de, ate);
         const linhas = datas
           ? await this.consultarVendas.itensEntre(
               datas.de,
@@ -443,7 +444,7 @@ export class FerramentasGestaoService {
         // Teto alto: o ranking corta por limite, e aqui a lista e a equipe
         // inteira. Sem isto, a vendedora de menor faturamento sumiria da
         // comparacao sem nada dizer.
-        const datas = datasDe(de, ate);
+        const datas = datasDeRecorte(de, ate);
         const ranking = datas
           ? await this.consultarVendas.rankingEntre(
               datas.de,
@@ -1045,61 +1046,6 @@ function somarEtapas(porEtapa: ContagemPorEtapa[]): ContagemPorEtapa {
       NAO_AVANCOU: 0,
     },
   );
-}
-
-/** `AAAA-MM-DD` — o formato que o modelo manda, e o unico que se aceita. */
-const RE_DATA = /^(\d{4})-(\d{2})-(\d{2})$/;
-
-/**
- * As datas do recorte livre, ou `null` para cair no atalho — 28/09/2026.
- *
- * ==========================================================================
- * SO COM AS DUAS, E SO SE FIZEREM SENTIDO.
- *
- * Quem preenche este campo e o MODELO, convertendo "ultimos 6 meses" em datas.
- * Ele acerta quase sempre — ja e assim que ele agenda "amanha as 17h" — e
- * "quase" e o motivo desta funcao existir.
- *
- * `null` em qualquer duvida, e isso e deliberado: cair no atalho devolve um
- * periodo ERRADO mas EXPLICADO ("o mes", e a agente diz qual recorte usou);
- * aceitar uma data torta devolve um periodo errado e MUDO. Entre os dois, o
- * que se percebe.
- *
- * O QUE DERRUBA PARA `null`:
- *   - uma das duas faltando — meia janela nao e janela
- *   - formato fora de `AAAA-MM-DD`
- *   - data que nao existe (31/02 vira 03/03 no `new Date`, calado)
- *   - inicio depois do fim — invertido, o SQL devolveria vazio sem dizer nada
- *
- * O FIM E O DIA INTEIRO: o `fimDoDia` do `ConsultarVendasUseCase` cuida disso.
- * "De 01/08 a 31/08" tem de incluir as vendas do dia 31, e uma janela que para
- * a meia-noite perderia um dia de faturamento todo mes.
- * ==========================================================================
- */
-function datasDe(de?: string, ate?: string): { de: Date; ate: Date } | null {
-  if (!de || !ate) return null;
-
-  const ini = dataOuNulo(de);
-  const fim = dataOuNulo(ate);
-  if (!ini || !fim || ini > fim) return null;
-
-  return { de: ini, ate: fim };
-}
-
-function dataOuNulo(texto: string): Date | null {
-  const m = RE_DATA.exec(texto.trim());
-  if (!m) return null;
-
-  const [, ano, mes, dia] = m;
-  const d = new Date(`${ano}-${mes}-${dia}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return null;
-
-  // O `new Date` NORMALIZA em silencio: "2026-02-31" vira 3 de marco. Comparar
-  // o dia de volta e o que pega isso — sem esta linha, uma data impossivel
-  // viraria uma janela plausivel e ninguem notaria.
-  return d.getDate() === Number(dia) && d.getMonth() + 1 === Number(mes)
-    ? d
-    : null;
 }
 
 function saldoEmPalavras(estoque: number, verQuantidade: boolean): string {
