@@ -246,3 +246,152 @@ describe('consultar_produtos da gestao e a quantidade', () => {
     });
   });
 });
+
+/**
+ * O RECORTE DE EQUIPE NAS FERRAMENTAS DA ANASTASIA — RF-06 e RF-08.
+ *
+ * ==========================================================================
+ * O QUE ESTE ARQUIVO PROTEGE: AS DUAS PORTAS CONCORDAM.
+ *
+ * A tela de Vendas ja recortava por equipe pelo `EscopoVendasService`. Se o
+ * WhatsApp nao recortasse, a MESMA pergunta teria resposta diferente conforme
+ * a porta — o sintoma que o codigo deste projeto avisa em varios lugares para
+ * nao deixar acontecer, porque ninguem descobre olhando uma tela so.
+ *
+ * `null` = sem equipe = alcanca todas. E o estado de todo mundo hoje, e por
+ * isso este recorte entrou sem mudar comportamento de ninguem.
+ * ==========================================================================
+ */
+describe('o recorte de equipe nas ferramentas de gestao', () => {
+  const MARINA_ID = 'vd-1';
+  const DE_FORA_ID = 'vd-9';
+
+  let resolverVendedora: { execute: jest.Mock };
+  let vendedoras: { listar: jest.Mock; buscarPorId: jest.Mock };
+  let desempenho: { vendas: jest.Mock; metas: jest.Mock };
+  let servico: FerramentasGestaoService;
+
+  beforeEach(() => {
+    resolverVendedora = { execute: jest.fn() };
+    vendedoras = {
+      listar: jest.fn().mockResolvedValue([
+        { id: MARINA_ID, nome: 'Marina', statusDisponibilidade: 'DISPONIVEL', especialidades: [] },
+        { id: DE_FORA_ID, nome: 'Beatriz', statusDisponibilidade: 'DISPONIVEL', especialidades: [] },
+      ]),
+      buscarPorId: jest.fn(),
+    };
+    desempenho = {
+      vendas: jest
+        .fn()
+        .mockResolvedValue({ quantidade: 2, receita: 1000, ticketMedio: 500 }),
+      metas: jest.fn(),
+    };
+
+    servico = new FerramentasGestaoService(
+      resolverVendedora as never,
+      { itens: jest.fn().mockResolvedValue({ linhas: [] }) } as never,
+      { execute: jest.fn().mockResolvedValue([]) } as never,
+      { execute: jest.fn().mockResolvedValue([]) } as never,
+      desempenho as never,
+      { semComprar: jest.fn(), maioresCompradores: jest.fn() } as never,
+      { execute: jest.fn() } as never,
+      { listar: jest.fn(), detalhe: jest.fn(), resumo: jest.fn() } as never,
+      { doDia: jest.fn() } as never,
+      { execute: jest.fn() } as never,
+      vendedoras as never,
+      { buscarPorNomeParcial: jest.fn() } as never,
+      { listarAguardandoGestao: jest.fn() } as never,
+    );
+  });
+
+  const soMarina = { equipe: [MARINA_ID] };
+
+  describe('vendas_de_vendedora', () => {
+    it('responde pela vendedora DA equipe', async () => {
+      resolverVendedora.execute.mockResolvedValue({
+        status: 'OK', id: MARINA_ID, nome: 'Marina', codigoErp: 'VD01',
+      });
+
+      const r = await servico.montar(soMarina).gestaoVendas({
+        vendedora: 'Marina', periodo: 'MES',
+      });
+
+      expect(r.status).toBe('OK');
+    });
+
+    it('vendedora de FORA responde "nao encontrada" — e nao "sem permissao"', async () => {
+      resolverVendedora.execute.mockResolvedValue({
+        status: 'OK', id: DE_FORA_ID, nome: 'Beatriz', codigoErp: 'VD09',
+      });
+
+      const r = await servico.montar(soMarina).gestaoVendas({
+        vendedora: 'Beatriz', periodo: 'MES',
+      });
+
+      // A gerente de um time nao precisa saber quem esta no outro: dizer
+      // "voce nao pode ver a Beatriz" confirmaria que a Beatriz existe.
+      expect(r.status).toBe('NAO_ENCONTRADA');
+      expect(desempenho.vendas).not.toHaveBeenCalled();
+    });
+
+    it('e as SUGESTOES tambem vem vazias', async () => {
+      // Devolver "voce quis dizer Beatriz?" entregaria pela lista o que a
+      // recusa acabou de esconder.
+      resolverVendedora.execute.mockResolvedValue({
+        status: 'OK', id: DE_FORA_ID, nome: 'Beatriz', codigoErp: 'VD09',
+      });
+
+      const r = await servico.montar(soMarina).gestaoVendas({
+        vendedora: 'Beatriz', periodo: 'MES',
+      });
+
+      expect(r.nomes).toEqual([]);
+    });
+
+    it('sem equipe, alcanca todas — o comportamento historico', async () => {
+      resolverVendedora.execute.mockResolvedValue({
+        status: 'OK', id: DE_FORA_ID, nome: 'Beatriz', codigoErp: 'VD09',
+      });
+
+      const r = await servico.montar({}).gestaoVendas({
+        vendedora: 'Beatriz', periodo: 'MES',
+      });
+
+      expect(r.status).toBe('OK');
+    });
+  });
+
+  describe('panorama_da_equipe', () => {
+    it('lista so as da equipe', async () => {
+      const r = await servico.montar(soMarina).gestaoPanorama({ periodo: 'MES' });
+
+      expect(r.linhas).toHaveLength(1);
+      expect(r.linhas[0]).toContain('Marina');
+      expect(r.linhas[0]).not.toContain('Beatriz');
+    });
+
+    it('sem equipe, lista as duas', async () => {
+      const r = await servico.montar({}).gestaoPanorama({ periodo: 'MES' });
+
+      expect(r.linhas).toHaveLength(2);
+    });
+  });
+
+  describe('listar_vendedoras', () => {
+    it('oferece so quem a gerente alcanca', async () => {
+      // Oferecer um nome de outro time faria ela encaminhar para fora do
+      // alcance, e o erro so apareceria depois.
+      const r = await servico.montar(soMarina).gestaoVendedoras();
+
+      expect(r.linhas).toEqual(['Marina']);
+    });
+  });
+
+  describe('equipe VAZIA', () => {
+    it('nao alcanca ninguem — e nao vira "todas"', async () => {
+      const r = await servico.montar({ equipe: [] }).gestaoPanorama({ periodo: 'MES' });
+
+      expect(r.linhas).toEqual([]);
+    });
+  });
+});

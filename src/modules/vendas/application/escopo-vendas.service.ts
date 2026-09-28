@@ -90,4 +90,27 @@ export class EscopoVendasService {
     const restrito = await this.vendedoraIdRestrito(user);
     return restrito === undefined ? undefined : [restrito];
   }
+
+  /**
+   * SO a equipe, sem a regra de permissao — para as ferramentas das agentes.
+   *
+   * ========================================================================
+   * POR QUE NAO O `recorteDeVendas` NO WHATSAPP.
+   *
+   * Aquele responde "que vendas esta pessoa alcanca", e para isso precisa do
+   * `vendas:read_all` e do vinculo com uma vendedora — conceitos da TELA de
+   * vendas, que lanca 403 para quem nao tem nenhum dos dois.
+   *
+   * No canal da Anastasia quem entrou ja foi reconhecido pela porta
+   * (`agentes:anastasia`), e a pergunta que resta e so uma: de QUEM ela pode
+   * falar. Reusar o outro metodo faria uma ADMIN sem vinculo de vendedora
+   * levar 403 no meio de uma conversa de WhatsApp — um erro de tela vazando
+   * para um canal que nao tem tela.
+   *
+   * `null` = sem equipe = alcanca todas, que e o comportamento historico.
+   * ========================================================================
+   */
+  async equipeDoUsuario(adminUserId: string): Promise<string[] | null> {
+    return this.vendaRepo.vendedorasDaEquipeDoUsuario(adminUserId);
+  }
 }

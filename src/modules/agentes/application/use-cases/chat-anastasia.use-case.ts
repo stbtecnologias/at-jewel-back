@@ -15,6 +15,7 @@ import type {
 } from '../../domain/ports/llm-client.port';
 import { FerramentasGestaoService } from '../../../atendimentos/application/ferramentas-gestao.service';
 import { PermissionsService } from '../../../auth/application/permissions.service';
+import { EscopoVendasService } from '../../../vendas/application/escopo-vendas.service';
 import { PERMISSAO_GESTAO } from '../../../auth/application/use-cases/buscar-admin-por-telefone.use-case';
 import { AvisarVendedoraUseCase } from './avisar-vendedora.use-case';
 import type { IAgentePromptsRepository } from '../../domain/ports/repositories/agente-prompts-repository.port';
@@ -54,6 +55,7 @@ export class ChatAnastasiaUseCase {
     private readonly avisarVendedora: AvisarVendedoraUseCase,
     private readonly ferramentasGestao: FerramentasGestaoService,
     private readonly permissoes: PermissionsService,
+    private readonly escopoVendas: EscopoVendasService,
   ) {}
 
   async execute(
@@ -112,6 +114,13 @@ Agora sao ${agoraLocal()} (fuso da loja). Use isto para interpretar "hoje", "ama
       ? await this.permissoes.possui(solicitante.role, 'estoque:quantidade')
       : false;
 
+    // E DE QUEM ELA PODE FALAR — o recorte de equipe, o mesmo da tela de
+    // Vendas e do canal de WhatsApp. `null` = sem equipe = todas, que e o
+    // comportamento de sempre.
+    const equipe = solicitante
+      ? await this.escopoVendas.equipeDoUsuario(solicitante.userId)
+      : null;
+
     return this.llm.chatComFerramentas({
       model,
       system,
@@ -126,6 +135,7 @@ Agora sao ${agoraLocal()} (fuso da loja). Use isto para interpretar "hoje", "ama
             solicitante: solicitante?.nomeFallback,
             verLoja,
             verQuantidade,
+            equipe,
           })
         : {}),
       // So habilita a tool registrar_demanda quando conhecemos quem conversa.

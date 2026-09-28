@@ -39,7 +39,10 @@ import { ConsultarDesempenhoVendedoraUseCase } from './use-cases/consultar-desem
 import { ResolverVendedoraPorNomeUseCase } from './use-cases/resolver-vendedora-por-nome.use-case';
 import { ConsultarAuditoriaUseCase } from './use-cases/consultar-auditoria.use-case';
 import { ConsultarLinhaDoTempoUseCase } from './use-cases/consultar-linha-do-tempo.use-case';
-import type { PontoDaLinha } from '../domain/ports/repositories/atendimento-repository.port';
+import type {
+  ContagemPorEtapa,
+  PontoDaLinha,
+} from '../domain/ports/repositories/atendimento-repository.port';
 import { EncaminharLeadUseCase } from './use-cases/encaminhar-lead.use-case';
 import { fraseDoFunil, rotuloEtapa } from './etapas-em-palavras';
 import {
@@ -134,6 +137,32 @@ export interface ContextoGestao {
    * Padrao `false` pelo mesmo motivo do `verLoja`.
    */
   verQuantidade?: boolean;
+  /**
+   * AS VENDEDORAS QUE ESTA PESSOA ALCANCA — 29/09/2026, requisitos RF-06 e
+   * RF-08.
+   *
+   * ==========================================================================
+   * `null` E "SEM RECORTE", E NAO "NENHUMA". A distincao e a mesma do
+   * `VendaRepository.vendedorasDaEquipeDoUsuario`, e pelo mesmo motivo:
+   *
+   *   null       -> sem equipe; alcanca todas (o comportamento historico)
+   *   []         -> equipe cadastrada e vazia; nao alcanca ninguem
+   *   [a, b, c]  -> so essas
+   *
+   * VEM DO MESMO `EscopoVendasService` QUE O PAINEL USA. Duas implementacoes
+   * da mesma regra responderiam igual hoje e divergiriam na primeira correcao
+   * feita de um lado so — e o sintoma seria o pior possivel: a MESMA pergunta
+   * com resposta diferente conforme a porta, sem nada indicando que sao
+   * caminhos distintos.
+   *
+   * O PADRAO E `null` — sem recorte —, e aqui o padrao permissivo e o certo,
+   * ao contrario do `verLoja`. Equipe e cadastro, nao permissao: enquanto
+   * ninguem estiver vinculado, recortar por engano deixaria TODA a gestao sem
+   * resposta nenhuma, que e uma falha muito mais visivel e muito mais cara do
+   * que a que se tentava evitar.
+   * ==========================================================================
+   */
+  equipe?: string[] | null;
 }
 
 /**
@@ -184,13 +213,22 @@ export class FerramentasGestaoService {
    *   GERENTE_VENDAS gerencia as vendedoras e nao ve o faturamento da loja.
    */
   montar(ctx: ContextoGestao = {}): FerramentasGestao {
-    const { solicitante, verLoja = false, verQuantidade = false } = ctx;
+    const {
+      solicitante,
+      verLoja = false,
+      verQuantidade = false,
+      equipe = null,
+    } = ctx;
+
+    /** Esta vendedora esta no alcance de quem pergunta? */
+    const alcanca = (vendedoraId: string): boolean =>
+      equipe === null || equipe.includes(vendedoraId);
 
     return {
       gestaoItensExigeVendedora: !verLoja,
 
       gestaoAgenda: async ({ vendedora, periodo }) =>
-        this.comVendedora(vendedora, async (id) => {
+        this.comVendedora(equipe, vendedora, async (id) => {
           const compromissos = await this.agenda.execute(id, periodo);
           return compromissos.map(
             (c) =>
@@ -200,7 +238,7 @@ export class FerramentasGestaoService {
         }),
 
       gestaoVendas: async ({ vendedora, periodo }) =>
-        this.comVendedora(vendedora, async (id) => {
+        this.comVendedora(equipe, vendedora, async (id) => {
           const v = await this.desempenho.vendas(id, periodo);
           if (v.quantidade === 0) return [];
           return [
@@ -210,7 +248,7 @@ export class FerramentasGestaoService {
         }),
 
       gestaoMetas: async ({ vendedora }) =>
-        this.comVendedora(vendedora, async (id) => {
+        this.comVendedora(equipe, vendedora, async (id) => {
           const metas = await this.desempenho.metas(id);
           return metas.map((m) =>
             m.batida
@@ -223,7 +261,7 @@ export class FerramentasGestaoService {
         // A carteira e por CODIGO DO ERP, e nao por id. Vendedora sem codigo
         // simplesmente nao tem carteira — o use case devolve vazio.
         let total = 0;
-        const r = await this.comVendedora(vendedora, async (_id, codigoErp) => {
+        const r = await this.comVendedora(equipe, vendedora, async (_id, codigoErp) => {
           const pagina = await this.carteira.semComprar(codigoErp, meses ?? 6);
           total = pagina.total;
           return pagina.clientes.map((c) =>
@@ -237,7 +275,7 @@ export class FerramentasGestaoService {
 
       gestaoMelhores: async ({ vendedora, categoria, ultimosMeses }) => {
         let total = 0;
-        const r = await this.comVendedora(vendedora, async (_id, codigoErp) => {
+        const r = await this.comVendedora(equipe, vendedora, async (_id, codigoErp) => {
           const pagina = await this.carteira.maioresCompradores(codigoErp, {
             categoria,
             ultimosMeses,
@@ -322,6 +360,12 @@ export class FerramentasGestaoService {
           if (r.status === 'NAO_ENCONTRADA') {
             return { status: 'NAO_ENCONTRADA', linhas: r.sugestoes };
           }
+          // Fora da equipe responde como "nao achei" — igual ao
+          // `comVendedora`, e pelo mesmo motivo: dizer "voce nao pode ver a
+          // Fulana" confirmaria que a Fulana existe.
+          if (!alcanca(r.id)) {
+            return { status: 'NAO_ENCONTRADA', linhas: [] };
+          }
           vendedoraId = r.id;
         }
 
@@ -348,6 +392,12 @@ export class FerramentasGestaoService {
         const linhas: { texto: string; receita: number }[] = [];
         for (const v of ativas) {
           if (!v.id) continue;
+          // O RECORTE DE EQUIPE. Esta ferramenta nao passa pelo
+          // `comVendedora` — ela nao resolve nome, percorre a lista —, entao
+          // a checagem tem de ser explicita aqui. E ela e a mais importante
+          // das duas: sem isso, "quem vendeu mais esse mes" devolveria o
+          // ranking da LOJA para a gerente de um time so.
+          if (!alcanca(v.id)) continue;
           const r = await this.desempenho.vendas(v.id, periodo);
           // Quem nao vendeu entra tambem: "quem esta atras" e uma pergunta
           // legitima, e omitir o zero esconderia exatamente a resposta.
@@ -397,7 +447,7 @@ export class FerramentasGestaoService {
 
       gestaoFeedbacks: async ({ vendedora, cliente, dias }) => {
         let total = 0;
-        const r = await this.comVendedora(vendedora, async (id) => {
+        const r = await this.comVendedora(equipe, vendedora, async (id) => {
           const desde = new Date();
           desde.setDate(desde.getDate() - (dias ?? DIAS_PADRAO_FEEDBACK) + 1);
           desde.setHours(0, 0, 0, 0);
@@ -485,7 +535,22 @@ export class FerramentasGestaoService {
       // DISPONIVEL PRIMEIRO, mas ninguem fica de fora: esconder quem esta de
       // ferias faria a usuaria procurar um nome que ela sabe que existe.
       gestaoVendedoras: async () => {
-        const ativas = await this.vendedoras.listar({ ativo: true });
+        const todas = await this.vendedoras.listar({ ativo: true });
+        // SO AS DA EQUIPE. Esta ferramenta responde "para qual vendedora
+        // encaminho?" — oferecer um nome de outro time faria a gerente
+        // encaminhar para fora do alcance dela, e o erro so apareceria
+        // depois, quando a ferramenta de encaminhar recusasse o mesmo nome.
+        //
+        // SEM RECORTE, A LISTA PASSA INTEIRA — inclusive registro sem `id`.
+        // Escrever `v.id && alcanca(v.id)` parecia equivalente e nao era:
+        // derrubava quem nao tem id mesmo quando nao ha equipe nenhuma, o que
+        // muda o comportamento historico de todo mundo por causa de uma regra
+        // que nao se aplica a ninguem ainda.
+        //
+        // COM recorte, quem nao tem id fica de fora: nao da para conferir se
+        // ela pertence, e o lado seguro do "nao sei" aqui e excluir.
+        const ativas =
+          equipe === null ? todas : todas.filter((v) => !!v.id && alcanca(v.id));
         const ordenadas = [
           ...ativas.filter((v) => v.statusDisponibilidade === 'DISPONIVEL'),
           ...ativas.filter((v) => v.statusDisponibilidade !== 'DISPONIVEL'),
@@ -554,7 +619,7 @@ export class FerramentasGestaoService {
        * ====================================================================
        */
       gestaoDiaDaVendedora: async ({ vendedora, dia }) =>
-        this.comVendedora(vendedora, async (id) => {
+        this.comVendedora(equipe, vendedora, async (id) => {
           const pontos = await this.linha.doDia(id, dia);
           if (pontos.length === 0) return [];
           return resumoDoDia(pontos);
@@ -593,7 +658,7 @@ export class FerramentasGestaoService {
        */
       gestaoPanoramaLeads: async ({ vendedora }) => {
         if (vendedora && vendedora.trim()) {
-          return this.comVendedora(vendedora, async (_id, codigoErp) => {
+          return this.comVendedora(equipe, vendedora, async (_id, codigoErp) => {
             if (!codigoErp) return [];
             // ============================================================
             // A GESTAO VE TUDO — INCLUSIVE O QUE ELA JA RESOLVEU.
@@ -666,7 +731,7 @@ export class FerramentasGestaoService {
 
       gestaoFunil: async ({ vendedora }) => {
         if (vendedora && vendedora.trim()) {
-          return this.comVendedora(vendedora, async (id) => {
+          return this.comVendedora(equipe, vendedora, async (id) => {
             const r = await this.auditoria.resumo({
               apenasAbertos: true,
               vendedoraId: id,
@@ -685,13 +750,35 @@ export class FerramentasGestaoService {
           });
         }
 
-        // A LOJA. Uma linha do todo, e depois uma por vendedora — e a leitura
-        // que a gestao faz: primeiro o tamanho, depois de quem e.
+        // A LOJA — OU A EQUIPE. Uma linha do todo, e depois uma por vendedora:
+        // e a leitura que a gestao faz, primeiro o tamanho, depois de quem e.
         const r = await this.auditoria.resumo({ apenasAbertos: true });
-        if (r.total === 0) return { status: 'OK', linhas: [] };
 
-        const linhas = [`A loja tem ${fraseDoFunil(r.total, r.porEtapa)}.`];
-        const esperando = r.vendedoras.reduce(
+        // ================================================================
+        // O RECORTE E APLICADO DEPOIS DA CONSULTA, e aqui isso e correto —
+        // ao contrario do `itens_mais_vendidos`, onde recusar depois de
+        // consultar deixaria o dado carregado a um `return` de distancia.
+        //
+        // A diferenca e o que a consulta traz: ali era o FATURAMENTO da
+        // loja; aqui e a contagem de atendimentos abertos por vendedora, ja
+        // quebrada por pessoa. Filtrar a lista e a operacao natural, e nao
+        // ha um agregado da loja para vazar — o total e recomputado abaixo,
+        // a partir das linhas que sobraram.
+        // ================================================================
+        const daEquipe = r.vendedoras.filter((v) => alcanca(v.vendedoraId));
+        const total =
+          equipe === null
+            ? r.total
+            : daEquipe.reduce((soma, v) => soma + v.total, 0);
+
+        if (total === 0) return { status: 'OK', linhas: [] };
+
+        const sujeito = equipe === null ? 'A loja' : 'A equipe';
+        const porEtapa =
+          equipe === null ? r.porEtapa : somarEtapas(daEquipe.map((v) => v.porEtapa));
+
+        const linhas = [`${sujeito} tem ${fraseDoFunil(total, porEtapa)}.`];
+        const esperando = daEquipe.reduce(
           (soma, v) => soma + v.aguardandoRelato,
           0,
         );
@@ -702,7 +789,7 @@ export class FerramentasGestaoService {
               : `${esperando} deles estao esperando o relato da vendedora`,
           );
         }
-        for (const v of [...r.vendedoras].sort((a, b) => b.total - a.total)) {
+        for (const v of [...daEquipe].sort((a, b) => b.total - a.total)) {
           linhas.push(
             `${v.nome}: ${fraseDoFunil(v.total, v.porEtapa)}` +
               (v.aguardandoRelato > 0
@@ -717,14 +804,35 @@ export class FerramentasGestaoService {
   }
 
   /**
-   * Resolve o nome e so entao consulta.
+   * Resolve o nome, confere o alcance e so entao consulta.
    *
-   * Um lugar so faz a resolucao para as tres leituras, entao as tres se
+   * Um lugar so faz isso para as NOVE leituras por vendedora, entao as nove se
    * comportam igual — inclusive na ambiguidade, que e onde um palpite sairia
    * caro: dar o numero da vendedora errada e um erro que ninguem percebe na
    * hora.
+   *
+   * ==========================================================================
+   * O RECORTE DE EQUIPE ENTRA AQUI, E POR ISSO VALE NAS NOVE DE UMA VEZ —
+   * 29/09/2026.
+   *
+   * Cada handler poderia conferir por conta propria. Seriam nove checagens
+   * identicas, e a decima ferramenta — a que alguem acrescentar no ano que vem
+   * — nasceria sem nenhuma. Aqui ela nasce protegida sem o autor saber que
+   * existe uma regra de equipe.
+   *
+   * FORA DA EQUIPE RESPONDE `NAO_ENCONTRADA`, e nao um erro de permissao. A
+   * gerente de um time nao precisa saber quem esta no outro: "nao achei essa
+   * vendedora" e verdade do ponto de vista dela, e "voce nao pode ver a
+   * Fulana" confirmaria que a Fulana existe. Mesma escolha do silencio para
+   * numero desconhecido no roteador.
+   *
+   * AS SUGESTOES TAMBEM SAO RECORTADAS pelo mesmo motivo — devolver "voce quis
+   * dizer Beatriz?" com uma vendedora de outro time entregaria pela lista o
+   * que a recusa acabou de esconder.
+   * ==========================================================================
    */
   private async comVendedora(
+    equipe: string[] | null,
     nome: string,
     consulta: (
       vendedoraId: string,
@@ -736,6 +844,9 @@ export class FerramentasGestaoService {
       return { status: 'AMBIGUA', linhas: [], nomes: r.nomes };
     if (r.status === 'NAO_ENCONTRADA') {
       return { status: 'NAO_ENCONTRADA', linhas: [], nomes: r.sugestoes };
+    }
+    if (equipe !== null && !equipe.includes(r.id)) {
+      return { status: 'NAO_ENCONTRADA', linhas: [], nomes: [] };
     }
     return {
       status: 'OK',
@@ -846,6 +957,34 @@ export function moeda(v: number): string {
  * numero, convida a insistir, e a insistencia nao leva a lugar nenhum porque
  * o dado nao chega ate aqui.
  */
+/**
+ * Soma as contagens por etapa de varias vendedoras numa so.
+ *
+ * Existe porque o `resumo` da auditoria ja devolve o agregado DA LOJA, e com
+ * recorte de equipe ele nao serve: "a equipe tem X em negociacao" precisa somar
+ * apenas as linhas que sobraram do filtro. Reaproveitar o total da loja ali
+ * diria da equipe um numero que e do todo — e ele seria PLAUSIVEL, que e o
+ * pior tipo de numero errado.
+ */
+function somarEtapas(porEtapa: ContagemPorEtapa[]): ContagemPorEtapa {
+  return porEtapa.reduce<ContagemPorEtapa>(
+    (soma, atual) => {
+      for (const chave of Object.keys(soma) as (keyof ContagemPorEtapa)[]) {
+        soma[chave] += atual[chave];
+      }
+      return soma;
+    },
+    {
+      PRIMEIRO_CONTATO: 0,
+      EM_NEGOCIACAO: 0,
+      REMARCADO: 0,
+      SEM_CONTATO: 0,
+      CONCLUIDO: 0,
+      NAO_AVANCOU: 0,
+    },
+  );
+}
+
 function saldoEmPalavras(estoque: number, verQuantidade: boolean): string {
   if (estoque <= 0) return 'sem estoque';
   return verQuantidade ? `${estoque} em estoque` : 'disponível';

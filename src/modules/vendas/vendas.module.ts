@@ -44,6 +44,9 @@ import { VendasController } from './infrastructure/http/controllers/vendas.contr
       useClass: VendasDeMovimentacaoRepository,
     },
   ],
-  exports: [VENDA_REPOSITORY, ResumoVendasUseCase],
+  // O ESCOPO SAI DAQUI desde 29/09/2026: as ferramentas da Anastasia precisam
+  // do mesmo recorte de equipe que o painel usa. Duas implementacoes da mesma
+  // regra divergiriam na primeira correcao feita de um lado so.
+  exports: [VENDA_REPOSITORY, ResumoVendasUseCase, EscopoVendasService],
 })
 export class VendasModule {}

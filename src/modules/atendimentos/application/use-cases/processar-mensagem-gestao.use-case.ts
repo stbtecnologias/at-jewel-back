@@ -5,6 +5,7 @@ import { ANASTASIA_GESTAO_SYSTEM } from '../../../agentes/application/personas';
 import { LLM_CLIENT } from '../../../agentes/domain/ports/injection-tokens';
 import type { ILlmClient } from '../../../agentes/domain/ports/llm-client.port';
 import { PermissionsService } from '../../../auth/application/permissions.service';
+import { EscopoVendasService } from '../../../vendas/application/escopo-vendas.service';
 import { FerramentasGestaoService } from '../ferramentas-gestao.service';
 import { MemoriaConversaService } from '../memoria-conversa.service';
 
@@ -67,6 +68,7 @@ export class ProcessarMensagemGestaoUseCase {
     private readonly ferramentas: FerramentasGestaoService,
     private readonly memoria: MemoriaConversaService,
     private readonly permissoes: PermissionsService,
+    private readonly escopo: EscopoVendasService,
     @Inject(LLM_CLIENT)
     private readonly llm: ILlmClient,
     private readonly config: ConfigService,
@@ -110,6 +112,12 @@ export class ProcessarMensagemGestaoUseCase {
             msg.role,
             'estoque:quantidade',
           ),
+          // AS VENDEDORAS QUE ELA ALCANCA — 29/09/2026. Vem do MESMO
+          // `EscopoVendasService` que a tela de Vendas usa: uma regra, duas
+          // portas. Sem isso, a gerente de um time veria o desempenho das
+          // vendedoras dos outros pelo WhatsApp e nao pelo painel — a mesma
+          // pergunta com resposta diferente conforme a porta.
+          equipe: await this.escopo.equipeDoUsuario(msg.usuarioId),
         }),
       });
 

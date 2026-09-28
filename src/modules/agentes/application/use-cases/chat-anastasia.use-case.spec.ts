@@ -35,6 +35,7 @@ describe('ChatAnastasiaUseCase (tool registrar_demanda)', () => {
   let avisarVendedora: jest.Mocked<AvisarVendedoraUseCase>;
   let ferramentasGestao: { montar: jest.Mock };
   let permissoes: { possui: jest.Mock };
+  let escopoVendas: { equipeDoUsuario: jest.Mock };
   let useCase: ChatAnastasiaUseCase;
 
   beforeEach(() => {
@@ -48,6 +49,8 @@ describe('ChatAnastasiaUseCase (tool registrar_demanda)', () => {
     // ferramentas de gestao nao entram, e o comportamento antigo fica igual.
     ferramentasGestao = { montar: jest.fn(() => ({})) };
     permissoes = { possui: jest.fn(async () => false) };
+    // Sem equipe: o comportamento historico, e o de todo mundo hoje.
+    escopoVendas = { equipeDoUsuario: jest.fn(async () => null) };
 
     useCase = new ChatAnastasiaUseCase(
       llm,
@@ -57,6 +60,7 @@ describe('ChatAnastasiaUseCase (tool registrar_demanda)', () => {
       avisarVendedora,
       ferramentasGestao as never,
       permissoes as never,
+      escopoVendas as never,
     );
   });
 
