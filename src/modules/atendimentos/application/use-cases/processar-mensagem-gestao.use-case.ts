@@ -104,6 +104,12 @@ export class ProcessarMensagemGestaoUseCase {
         ...this.ferramentas.montar({
           solicitante: msg.nome,
           verLoja: await this.permissoes.possui(msg.role, 'analytics:read'),
+          // A quantidade por peca e outra pergunta, com outra chave — a MESMA
+          // que a API de produtos usa. Ver `ContextoGestao.verQuantidade`.
+          verQuantidade: await this.permissoes.possui(
+            msg.role,
+            'estoque:quantidade',
+          ),
         }),
       });
 

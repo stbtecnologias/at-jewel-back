@@ -105,6 +105,13 @@ Agora sao ${agoraLocal()} (fuso da loja). Use isto para interpretar "hoje", "ama
       ? await this.permissoes.possui(solicitante.role, 'analytics:read')
       : false;
 
+    // E A QUANTIDADE POR PECA? — 29/09/2026, requisito P-04. Outra pergunta e
+    // outra chave: a gerente ve o faturamento da equipe dela e NAO ve o saldo
+    // da peca, entao as duas nao podem sair da mesma permissao.
+    const verQuantidade = solicitante?.role
+      ? await this.permissoes.possui(solicitante.role, 'estoque:quantidade')
+      : false;
+
     return this.llm.chatComFerramentas({
       model,
       system,
@@ -118,6 +125,7 @@ Agora sao ${agoraLocal()} (fuso da loja). Use isto para interpretar "hoje", "ama
         ? this.ferramentasGestao.montar({
             solicitante: solicitante?.nomeFallback,
             verLoja,
+            verQuantidade,
           })
         : {}),
       // So habilita a tool registrar_demanda quando conhecemos quem conversa.

@@ -120,6 +120,20 @@ export interface ContextoGestao {
    * ESTREITO — um esquecimento tira uma resposta, e nao abre o faturamento.
    */
   verLoja?: boolean;
+  /**
+   * Pode ver a QUANTIDADE por peca? — 29/09/2026, requisito P-04.
+   *
+   * `false` faz o `consultar_produtos` responder "disponivel" / "sem estoque"
+   * em vez do numero, que e o que a gerente precisa: saber se a peca atende e
+   * quanto custa para o cliente.
+   *
+   * SEPARADO DO `verLoja` porque sao perguntas diferentes: uma e sobre o
+   * faturamento da loja, a outra sobre o saldo da peca, e a matriz do
+   * documento de requisitos responde `SIM` e `NAO` para a mesma pessoa.
+   *
+   * Padrao `false` pelo mesmo motivo do `verLoja`.
+   */
+  verQuantidade?: boolean;
 }
 
 /**
@@ -170,7 +184,7 @@ export class FerramentasGestaoService {
    *   GERENTE_VENDAS gerencia as vendedoras e nao ve o faturamento da loja.
    */
   montar(ctx: ContextoGestao = {}): FerramentasGestao {
-    const { solicitante, verLoja = false } = ctx;
+    const { solicitante, verLoja = false, verQuantidade = false } = ctx;
 
     return {
       gestaoItensExigeVendedora: !verLoja,
@@ -240,9 +254,21 @@ export class FerramentasGestaoService {
 
       // A PECA NO CATALOGO, COM A QUANTIDADE — 25/09/2026.
       //
-      // O espelho da `consultarProdutos` da vendedora, que no mesmo dia passou
-      // a ver so disponivel/indisponivel. A gestao pode ver o numero: foi a
-      // decisao do Lucas ao separar quem ve o que.
+      // O espelho da `consultarProdutos` da vendedora.
+      //
+      // ==================================================================
+      // A QUANTIDADE DEIXOU DE SER DA GESTAO INTEIRA — 29/09/2026.
+      //
+      // Em 25/09 a decisao foi "a gestao pode ver o numero", e valia para
+      // todo mundo que entrasse no canal. O documento de requisitos de 28/09
+      // desfez isso na pendencia P-04, e o Lucas confirmou: a gerente
+      // "tem que entender se a peca que ela quer esta disponivel no estoque e
+      // quanto e o preco de venda. Ela nao precisa saber de quantidade".
+      //
+      // Entao o numero passou a depender de `estoque:quantidade`, a MESMA
+      // chave que a API de produtos usa. Uma chave, duas portas: mexer na
+      // permissao de um papel muda o painel e o WhatsApp juntos.
+      // ==================================================================
       //
       // O SALDO VEM DA TABELA `estoque` — o `estoqueAtual` do
       // `ListarProdutosUseCase` ja e o somatorio de la desde 17/09, e nao a
@@ -259,7 +285,7 @@ export class FerramentasGestaoService {
               `${p.descricaoEtiqueta ?? `${p.categoria} ${p.familia}`}` +
               `${p.codigoErp ? ` — código ${p.codigoErp}` : ''}: ` +
               `${moeda(p.valorVenda)}, ` +
-              `${p.estoqueAtual > 0 ? `${p.estoqueAtual} em estoque` : 'sem estoque'}`,
+              `${saldoEmPalavras(p.estoqueAtual, verQuantidade)}`,
           })),
         };
       },
@@ -809,6 +835,20 @@ export function moeda(v: number): string {
     currency: 'BRL',
     maximumFractionDigits: 0,
   });
+}
+
+/**
+ * O saldo da peca em palavras, no nivel que quem pergunta pode ver.
+ *
+ * SEM PERMISSAO A FRASE NAO DIZ QUE HA UMA — ela responde a pergunta que
+ * importa ("consigo atender com essa peca?") e para ali. Escrever "disponível
+ * (quantidade restrita)" seria pior que o silencio: anuncia que existe um
+ * numero, convida a insistir, e a insistencia nao leva a lugar nenhum porque
+ * o dado nao chega ate aqui.
+ */
+function saldoEmPalavras(estoque: number, verQuantidade: boolean): string {
+  if (estoque <= 0) return 'sem estoque';
+  return verQuantidade ? `${estoque} em estoque` : 'disponível';
 }
 
 /** "Maria Eduarda Lima" -> "Maria". Nome inteiro na frase soa a formulario. */

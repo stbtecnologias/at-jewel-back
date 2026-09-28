@@ -1,4 +1,5 @@
-import { Controller, Get, Header, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Header, Query, Request, UseGuards } from '@nestjs/common';
+import { PermissionsService } from '../../../../auth/application/permissions.service';
 import { Permissions } from '../../../../auth/infrastructure/http/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../../../auth/infrastructure/http/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../../../auth/infrastructure/http/guards/permissions.guard';
@@ -74,6 +75,7 @@ export class AnalyticsController {
     private readonly comportamentoDatas: ComportamentoDatasUseCase,
     private readonly exportarVendasCsv: ExportarVendasCsvUseCase,
     private readonly resumoPeriodo: ResumoPeriodoUseCase,
+    private readonly permissoes: PermissionsService,
   ) {}
 
   // Resumo (receita/vendas/ticket) do recorte temporal selecionado (RF-ANL-01).
@@ -174,9 +176,32 @@ export class AnalyticsController {
     );
   }
 
+  /**
+   * O inventario: quantas pecas, quanto valem, e a quebra por categoria.
+   *
+   * ========================================================================
+   * O `valorTotal` SAI PARA QUEM NAO TEM `estoque:valor` — 29/09/2026.
+   *
+   * A matriz do documento de requisitos separa duas linhas que vinham juntas
+   * neste objeto desde sempre: "quantidade TOTAL em estoque" a gerente PODE
+   * ver, e "VALOR financeiro do estoque (R$)" ela NAO pode (RF-09).
+   *
+   * Por isso o recorte e no campo, e nao na rota: negar o `/inventario`
+   * inteiro tiraria dela o total e a quebra por categoria, que sao dela por
+   * direito. E o `valorTotal` some do objeto em vez de vir zero — zero e um
+   * numero, e um numero errado e pior que campo nenhum.
+   * ========================================================================
+   */
   @Get('inventario')
-  async inventario() {
-    return this.estatisticasInventario.execute();
+  async inventario(@Request() req: { user: { role: string } }) {
+    const inventario = await this.estatisticasInventario.execute();
+
+    if (await this.permissoes.possui(req.user.role, 'estoque:valor')) {
+      return inventario;
+    }
+
+    const { valorTotal: _, ...semValor } = inventario;
+    return semValor;
   }
 
   @Get('origem')
