@@ -339,10 +339,29 @@ export class VendaRepository implements IVendaRepository {
     const equipeId = equipe[0]?.equipe_id ?? null;
     if (!equipeId) return null;
 
-    // SO AS ATIVAS: quem saiu da equipe nao vende mais, e somar o historico
-    // dela ao numero da gerente diria que o time faturou o que nao faturou.
+    // ====================================================================
+    // AS INATIVAS ENTRAM, E ISSO CORRIGE UM ERRO MEU DE 28/09/2026.
+    //
+    // Escrevi `AND ativo` aqui com o argumento de que "quem saiu nao vende
+    // mais". O Lucas apontou o furo, e ele e obvio depois de dito: VENDA E
+    // HISTORICO. Se a pessoa saiu em setembro e a gerente olha janeiro, as
+    // vendas de janeiro sao dela e sao da equipe — no mes em que aconteceram,
+    // ela estava la.
+    //
+    // Com `AND ativo`, o total do periodo encolheria toda vez que alguem
+    // fosse desligado, e encolheria PARA TRAS: o janeiro de hoje passaria a
+    // ser menor que o janeiro de ontem, sem nada ter mudado em janeiro. Numero
+    // que muda sozinho e pior que numero ausente, porque parece correto.
+    //
+    // (Medido na base em 28/09: 4 vendedoras hoje inativas responderam por
+    // 29,7% do faturamento de agosto. O filtro apagava quase um terco do mes.)
+    //
+    // O PRECO, e ele e aceitavel: quem sai da equipe segue contando nela para
+    // sempre. Se um dia for preciso "a equipe como ela esta HOJE", isso e
+    // outra pergunta — e ela nao e sobre venda.
+    // ====================================================================
     const vendedoras = await this.dataSource.query<{ id: string }[]>(
-      `SELECT id FROM vendedoras WHERE equipe_id = $1 AND ativo`,
+      `SELECT id FROM vendedoras WHERE equipe_id = $1`,
       [equipeId],
     );
     return vendedoras.map((v) => v.id);
