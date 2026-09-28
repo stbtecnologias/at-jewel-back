@@ -52,7 +52,29 @@ export interface PerfilDoCanal {
  * chega de verdade e "oi, tudo bem?".
  */
 const RE_SAUDACAO =
-  /^(oi+|ola|opa|eae|e ai|hey|hi|hello|alo|bom dia|boa tarde|boa noite|menu|ajuda|opcoes|comecar|inicio|start)( (tudo bem|tudo bom|td bem|beleza|blz))?$/;
+  /^(oi+|ola|opa|eae|e ai|hey|hi|hello|alo|bom dia|boa tarde|boa noite|comecar|inicio|start)( (tudo bem|tudo bom|td bem|beleza|blz))?$/;
+
+/**
+ * "O QUE VOCE FAZ?" — a pergunta que MERECE a lista.
+ *
+ * ==========================================================================
+ * SEPARADO DA SAUDACAO EM 29/09/2026, E A SEPARACAO E O PEDIDO.
+ *
+ * O Lucas: "Bom dia, Lucas! Em que posso ajudar hoje? ou algo assim. Aí se a
+ * pessoa perguntar o que você pode fazer, aí você passaria — mas não queria
+ * logo de cara".
+ *
+ * Ate aqui "oi" e "ajuda" caiam no mesmo balde e recebiam a mesma resposta
+ * comprida. Sao perguntas diferentes: quem diz "oi" esta abrindo conversa,
+ * quem diz "ajuda" esta perguntando o que existe. So a segunda pede a lista.
+ *
+ * `menu`, `ajuda` e `opcoes` VIERAM DA RE_SAUDACAO — estavam la desde 15/09,
+ * e e por isso que esta mudanca nao perde nada: a porta ja existia, so
+ * respondia a coisa errada para a outra metade.
+ * ==========================================================================
+ */
+const RE_PEDIDO_DE_AJUDA =
+  /^(menu|ajuda|opcoes|socorro|o que (voce|vc|tu) (faz|pode fazer|sabe fazer|consegue fazer)|o que (da|tem) (pra|para) (pedir|perguntar)|como (voce |vc )?funciona|em que (voce|vc) (pode )?ajuda)r?$/;
 
 /**
  * Tira acento, pontuacao e emoji para comparar — o mesmo tratamento do canal
@@ -116,9 +138,20 @@ function resumoDe(perfil: PerfilDoCanal): string | null {
 export class RecepcionarUseCase {
   constructor(private readonly recepcao: RecepcaoService) {}
 
-  /** A mensagem e so um cumprimento (ou um pedido de ajuda)? */
+  /**
+   * A mensagem e so um cumprimento OU um pedido de ajuda?
+   *
+   * As duas coisas param aqui e nao chegam ao agente — a diferenca e a
+   * RESPOSTA, e quem escolhe entre `saudar` e `oQuePossoFazer` e o roteador.
+   */
   ehSaudacao(texto: string): boolean {
-    return RE_SAUDACAO.test(normalizar(texto));
+    const limpo = normalizar(texto);
+    return RE_SAUDACAO.test(limpo) || RE_PEDIDO_DE_AJUDA.test(limpo);
+  }
+
+  /** "O que você faz?" — a pergunta que merece a lista de capacidades. */
+  ehPedidoDeAjuda(texto: string): boolean {
+    return RE_PEDIDO_DE_AJUDA.test(normalizar(texto));
   }
 
   /**
@@ -130,19 +163,53 @@ export class RecepcionarUseCase {
    * Lucas em 15/09/2026.
    */
   saudar(
-    de: string,
+    _de: string,
+    _perfil: PerfilDoCanal,
+    nomeCompleto: string,
+    agora = new Date(),
+  ): { resposta: string; motivo: string } {
+    // ======================================================================
+    // NADA DE LISTA LOGO DE CARA — 29/09/2026.
+    //
+    // Pedido do Lucas: "Bom dia, Lucas! Em que posso ajudar hoje? ou algo
+    // assim. Aí se a pessoa perguntar o que você pode fazer, aí você
+    // passaria — mas não queria logo de cara".
+    //
+    // Quem abre conversa nao esta pedindo um catalogo de funcoes: esta
+    // dizendo bom dia. Responder com o que se sabe fazer, sem ninguem ter
+    // perguntado, e o reflexo de robo de atendimento — e obriga a pessoa a
+    // ler uma lista para so entao escrever o que ela ja sabia que queria.
+    //
+    // O PERFIL DEIXOU DE IMPORTAR AQUI, e por isso vai com `_`: a frase e a
+    // mesma para todo mundo. Ele volta a contar em `oQuePossoFazer`, que e
+    // onde a diferenca entre gestao, vendedora e catalogo aparece.
+    // ======================================================================
+    return {
+      resposta: `${this.abertura(nomeCompleto, agora)} Em que posso ajudar hoje?`,
+      motivo: 'recepcao_saudacao',
+    };
+  }
+
+  /**
+   * "O que voce faz?" — aqui sim, a lista.
+   *
+   * A MESMA FRASE DO FORA-DO-ESCOPO, e nao por economia: as duas perguntas
+   * terminam no mesmo lugar ("o que existe por aqui"), e responder diferente
+   * faria parecer que ha dois conjuntos de capacidades.
+   */
+  oQuePossoFazer(
     perfil: PerfilDoCanal,
     nomeCompleto: string,
     agora = new Date(),
   ): { resposta: string; motivo: string } {
-    return this.comMenu(
-      de,
-      perfil,
-      this.abertura(nomeCompleto, agora),
-      `${this.abertura(nomeCompleto, agora)} Como posso ajudar?`,
-      'recepcao_menu',
-      'recepcao_sem_opcoes',
-    );
+    const resumo = resumoDe(perfil);
+    if (!resumo) {
+      return {
+        resposta: `${this.abertura(nomeCompleto, agora)} Como posso ajudar?`,
+        motivo: 'recepcao_sem_opcoes',
+      };
+    }
+    return { resposta: resumo, motivo: 'recepcao_menu' };
   }
 
   /**

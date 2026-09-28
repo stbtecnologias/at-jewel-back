@@ -434,15 +434,19 @@ export class RotearMensagemInternaUseCase {
         admin &&
         (await this.identificarAdmin.execute(telefone, PERMISSAO_CATALOGO));
 
-      return this.recepcionar.saudar(
-        msg.de,
-        {
-          vendedora: !!vendedora,
-          gestao: !!admin,
-          catalogo: !!doCatalogo || !!gestaoComCatalogo,
-        },
-        vendedora?.nome ?? admin?.nome ?? doCatalogo?.nome ?? '',
-      );
+      const perfilDoCanal = {
+        vendedora: !!vendedora,
+        gestao: !!admin,
+        catalogo: !!doCatalogo || !!gestaoComCatalogo,
+      };
+      const nome = vendedora?.nome ?? admin?.nome ?? doCatalogo?.nome ?? '';
+
+      // DUAS PERGUNTAS, DUAS RESPOSTAS — 29/09/2026. "Oi" abre conversa e
+      // recebe so o cumprimento; "ajuda" ou "o que você faz" pergunta o que
+      // existe, e e a unica que recebe a lista. Ver `RE_PEDIDO_DE_AJUDA`.
+      return this.recepcionar.ehPedidoDeAjuda(texto)
+        ? this.recepcionar.oQuePossoFazer(perfilDoCanal, nome)
+        : this.recepcionar.saudar(msg.de, perfilDoCanal, nome);
     }
 
     // O CHAO DO CANAL DO CATALOGO. Tudo que era assunto dele ja foi tentado

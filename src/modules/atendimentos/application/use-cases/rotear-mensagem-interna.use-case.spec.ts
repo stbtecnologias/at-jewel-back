@@ -749,10 +749,10 @@ describe('RotearMensagemInternaUseCase', () => {
           Promise.resolve(permissao === 'catalogo:write' ? ESTOQUISTA : null),
       );
 
-    it('"Olá" do estoque responde numa frase, e não com a lista de catálogos', async () => {
+    it('"Olá" do estoque recebe só o cumprimento — não a lista de catálogos', async () => {
       // O print do Lucas de 15/09: "Olá" respondia com os catálogos abertos e
-      // o modo de usar. Continua não respondendo isso — mas desde 29/09 a
-      // resposta é uma frase, e não um menu numerado.
+      // o modo de usar. Continua não respondendo isso — e desde 29/09 também
+      // não responde com o que ele PODE fazer: só cumprimenta.
       soCatalogo();
 
       const r = await useCase.execute({
@@ -760,9 +760,35 @@ describe('RotearMensagemInternaUseCase', () => {
         texto: 'Olá',
       });
 
+      expect(r.motivo).toBe('recepcao_saudacao');
+      expect(r.resposta).toContain('Em que posso ajudar hoje?');
+      expect(r.resposta).not.toContain('foto com o código');
+      expect(canalCatalogo.conversa).not.toHaveBeenCalled();
+    });
+
+    it('"ajuda" do estoque aí sim traz o que ele pode fazer', async () => {
+      soCatalogo();
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'ajuda',
+      });
+
       expect(r.motivo).toBe('recepcao_menu');
       expect(r.resposta).toContain('foto com o código');
-      expect(canalCatalogo.conversa).not.toHaveBeenCalled();
+    });
+
+    it('"o que você faz?" da gestão traz a lista dela', async () => {
+      identificarAdmin.execute.mockResolvedValue(ADMIN);
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'o que você faz?',
+      });
+
+      expect(r.motivo).toBe('recepcao_menu');
+      expect(r.resposta).toContain('vendas, metas, agenda e o funil');
+      expect(canalGestao.execute).not.toHaveBeenCalled();
     });
 
     it('a saudação da vendedora NÃO chega na Elena — nem paga uma chamada', async () => {
@@ -770,7 +796,7 @@ describe('RotearMensagemInternaUseCase', () => {
 
       const r = await useCase.execute({ de: '558586467241@c.us', texto: 'oi' });
 
-      expect(r.motivo).toBe('recepcao_menu');
+      expect(r.motivo).toBe('recepcao_saudacao');
       expect(canalVendedora.execute).not.toHaveBeenCalled();
     });
 
@@ -782,7 +808,7 @@ describe('RotearMensagemInternaUseCase', () => {
         texto: 'bom dia',
       });
 
-      expect(r.motivo).toBe('recepcao_menu');
+      expect(r.motivo).toBe('recepcao_saudacao');
       expect(canalGestao.execute).not.toHaveBeenCalled();
     });
 
@@ -1330,13 +1356,15 @@ describe('RotearMensagemInternaUseCase — a consulta do Lucas, de ponta a ponta
     expect(catalogos.listarAbertos).not.toHaveBeenCalled();
   });
 
-  it('com o menu na tela, dizer o que precisa funciona como o numero', async () => {
+  it('depois do cumprimento, dizer o que precisa continua funcionando', async () => {
+    // Era "com o menu na tela, dizer o que precisa funciona como o numero".
+    // O menu saiu em 29/09, e o que este teste protege agora e o que sobrou —
+    // e e o que sempre importou: NAO precisar de menu para pedir o que quer.
     const { falar, catalogos } = montar();
 
-    const menu = await falar('oi');
-    expect(menu.motivo).toBe('recepcao_menu');
-    // A frase convida sem listar opcao numerada (29/09/2026).
-    expect(menu.resposta).toContain('foto com o código');
+    const saudacao = await falar('oi');
+    expect(saudacao.motivo).toBe('recepcao_saudacao');
+    expect(saudacao.resposta).toContain('Em que posso ajudar hoje?');
 
     const r = await falar('quero consultar uma peça');
     expect(r.motivo).toBe('catalogo_consulta_pedida');

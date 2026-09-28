@@ -63,24 +63,61 @@ describe('RecepcionarUseCase', () => {
     });
   });
 
-  describe('a frase de cada perfil', () => {
+  /**
+   * A SAUDACAO NAO OFERECE NADA — 29/09/2026.
+   *
+   * ======================================================================
+   * Pedido do Lucas: "Bom dia, Lucas! Em que posso ajudar hoje? ou algo
+   * assim. Aí se a pessoa perguntar o que você pode fazer, aí você
+   * passaria — mas não queria logo de cara".
+   *
+   * Quem diz "oi" esta abrindo conversa, nao pedindo um catalogo de
+   * funcoes. Estes testes existem porque o reflexo contrario e forte: a
+   * proxima pessoa a mexer aqui vai querer "ajudar" acrescentando o que
+   * da para pedir, e e justamente isso que nao se quer.
+   * ======================================================================
+   */
+  describe('a saudacao, que nao lista nada', () => {
+    const perfis = [
+      ['vendedora', { vendedora: true, gestao: false, catalogo: false }],
+      ['gestao', { vendedora: false, gestao: true, catalogo: false }],
+      ['catalogo', { vendedora: false, gestao: false, catalogo: true }],
+    ] as const;
+
+    it.each(perfis)('para %s, so o cumprimento e a pergunta', (_n, perfil) => {
+      const r = useCase.saudar(DE, perfil, 'Marina Souza', MANHA);
+
+      expect(r.resposta).toBe('Bom dia, Marina! Em que posso ajudar hoje?');
+      expect(r.motivo).toBe('recepcao_saudacao');
+    });
+
+    it('e a frase e a MESMA para todo mundo — o perfil nao vaza na saudacao', () => {
+      const respostas = perfis.map(
+        ([, perfil]) => useCase.saudar(DE, perfil, 'Marina', MANHA).resposta,
+      );
+
+      expect(new Set(respostas).size).toBe(1);
+    });
+  });
+
+  describe('a frase de cada perfil — so quando PERGUNTAM o que eu faco', () => {
     it('a vendedora ouve o que e dela, e nada de catalogo', () => {
-      const r = useCase.saudar(
-        DE,
+      const r = useCase.oQuePossoFazer(
         { vendedora: true, gestao: false, catalogo: false },
         'Marina Souza',
         MANHA,
       );
 
       expect(r.motivo).toBe('recepcao_menu');
-      expect(r.resposta).toContain('Bom dia, Marina!');
+      // Sem cumprimento: quem pergunta "o que você faz" no meio da conversa
+      // já foi cumprimentado, e um "bom dia" repetido soa a script.
+      expect(r.resposta).not.toContain('Bom dia');
       expect(r.resposta).toContain('suas vendas');
       expect(r.resposta).not.toContain('catálogo');
     });
 
     it('o estoque ouve o convite da foto', () => {
-      const r = useCase.saudar(
-        DE,
+      const r = useCase.oQuePossoFazer(
         { vendedora: false, gestao: false, catalogo: true },
         'Yerlon Alves',
         MANHA,
@@ -90,8 +127,7 @@ describe('RecepcionarUseCase', () => {
     });
 
     it('a gestao SEM catalogo nao ouve a linha de foto', () => {
-      const r = useCase.saudar(
-        DE,
+      const r = useCase.oQuePossoFazer(
         { vendedora: false, gestao: true, catalogo: false },
         'Lucas',
         MANHA,
@@ -104,8 +140,7 @@ describe('RecepcionarUseCase', () => {
     it('quem acumula gestao e catalogo ouve as duas coisas', () => {
       // O caso do Yerlon: ADM que tambem fotografa. Sem isto ele nao saberia
       // que pode mandar a foto por aqui.
-      const r = useCase.saudar(
-        DE,
+      const r = useCase.oQuePossoFazer(
         { vendedora: false, gestao: true, catalogo: true },
         'Yerlon',
         MANHA,
