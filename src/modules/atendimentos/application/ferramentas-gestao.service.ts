@@ -59,6 +59,7 @@ import {
 import {
   MetricasDeAtendimentoUseCase,
   comAmostra,
+  fraseDaConversao,
 } from './use-cases/metricas-de-atendimento.use-case';
 
 const MAXIMO_CLIENTES_HOMONIMOS = 5;
@@ -891,6 +892,7 @@ export class FerramentasGestaoService {
         });
 
         const linhas: string[] = [
+          fraseDaConversao(r.conversao),
           comAmostra(r.primeiraResposta, 'Tempo médio até a primeira resposta'),
           comAmostra(r.duracaoDoAtendimento, 'Duração média do atendimento'),
           comAmostra(r.ateFecharVenda, 'Tempo médio até fechar a venda'),

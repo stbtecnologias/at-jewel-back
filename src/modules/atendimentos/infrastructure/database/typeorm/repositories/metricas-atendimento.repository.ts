@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import type {
+  Conversao,
   IMetricasAtendimentoRepository,
   InteracoesDaVendedora,
   JanelaDeMetrica,
@@ -141,6 +142,49 @@ export class MetricasAtendimentoRepository
     );
 
     return paraMedia(linha);
+  }
+
+  /**
+   * ANA-13 — a conversao, contada sobre quem JA TEVE DESFECHO.
+   *
+   * O recorte de equipe passa pelo CODIGO da vendedora, e nao pelo id: o lead
+   * guarda `vendedora_aprovada_codigo` (codigo do ERP), herdado da epoca da
+   * triagem. O subselect traduz os ids da equipe em codigos.
+   */
+  async conversao(j: JanelaDeMetrica): Promise<Conversao> {
+    const [linha]: Array<{
+      ganhos: string;
+      perdidos: string;
+      em_aberto: string;
+    }> = await this.ds.query(
+      `SELECT count(*) FILTER (WHERE estado = 'GANHO')   AS ganhos,
+              count(*) FILTER (WHERE estado = 'PERDIDO') AS perdidos,
+              count(*) FILTER (
+                WHERE estado IN ('NOVO', 'EM_ATENDIMENTO', 'PARADO')
+              )                                          AS em_aberto
+         FROM leads
+        WHERE criado_em >= $1 AND criado_em <= $2
+          AND (
+            $3::uuid[] IS NULL
+            OR COALESCE(vendedora_aprovada_codigo, vendedora_sugerida_codigo) IN (
+                 SELECT codigo_erp FROM vendedoras WHERE id = ANY($3::uuid[])
+               )
+          )`,
+      [j.de, j.ate, j.vendedoraIds ?? null],
+    );
+
+    const ganhos = Number(linha?.ganhos ?? 0);
+    const perdidos = Number(linha?.perdidos ?? 0);
+    const comDesfecho = ganhos + perdidos;
+
+    return {
+      ganhos,
+      perdidos,
+      emAberto: Number(linha?.em_aberto ?? 0),
+      // NADA FECHADO NAO E ZERO POR CENTO. Zero afirma que ninguem comprou;
+      // aqui ninguem terminou de decidir ainda.
+      taxa: comDesfecho === 0 ? null : Math.round((ganhos / comDesfecho) * 100),
+    };
   }
 
   async tempoDeAtendimento(j: JanelaDeMetrica): Promise<MediaDeTempo> {

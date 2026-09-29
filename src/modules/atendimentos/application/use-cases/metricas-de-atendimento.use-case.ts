@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
   METRICAS_ATENDIMENTO_REPOSITORY,
+  type Conversao,
   type IMetricasAtendimentoRepository,
   type InteracoesDaVendedora,
   type JanelaDeMetrica,
@@ -16,6 +17,7 @@ export interface PainelDeMetricas {
   primeiraResposta: MediaDeTempo;
   duracaoDoAtendimento: MediaDeTempo;
   ateFecharVenda: MediaDeTempo;
+  conversao: Conversao;
 }
 
 /**
@@ -47,12 +49,14 @@ export class MetricasDeAtendimentoUseCase {
       primeiraResposta,
       duracaoDoAtendimento,
       ateFecharVenda,
+      conversao,
     ] = await Promise.all([
       this.metricas.leadsPorVendedora(janela),
       this.metricas.interacoesPorVendedora(janela),
       this.metricas.tempoPrimeiraResposta(janela),
       this.metricas.tempoDeAtendimento(janela),
       this.metricas.tempoAteFecharVenda(janela),
+      this.metricas.conversao(janela),
     ]);
 
     return {
@@ -63,6 +67,7 @@ export class MetricasDeAtendimentoUseCase {
       primeiraResposta,
       duracaoDoAtendimento,
       ateFecharVenda,
+      conversao,
     };
   }
 }
@@ -114,4 +119,36 @@ export function comAmostra(m: MediaDeTempo, rotulo: string): string {
       : '';
 
   return `${rotulo}: ${emPortugues(m.minutos)}, sobre ${m.amostra} ${caso}${faixa}.`;
+}
+
+/**
+ * A conversao em uma frase — ANA-13.
+ *
+ * ==========================================================================
+ * A PORCENTAGEM NUNCA SAI SOZINHA.
+ *
+ * "40%" esconde se foram 2 de 5 ou 200 de 500, e esconde quantos ainda estao
+ * em aberto — que sao os que podem mudar o numero amanha. A frase leva os
+ * tres, sempre: o denominador impede que uma amostra minuscula passe por
+ * indicador, e o "em aberto" impede que a taxa seja lida como definitiva.
+ * ==========================================================================
+ */
+export function fraseDaConversao(c: Conversao): string {
+  const decididos = c.ganhos + c.perdidos;
+
+  if (decididos === 0) {
+    return c.emAberto > 0
+      ? `Conversão: nenhum lead teve desfecho ainda — ${c.emAberto} em aberto.`
+      : 'Conversão: nenhum lead no período.';
+  }
+
+  const aberto =
+    c.emAberto > 0
+      ? `, e ${c.emAberto} ainda em aberto`
+      : '';
+
+  return (
+    `Conversão: ${c.taxa}% — ${c.ganhos} de ${decididos} lead(s) com desfecho ` +
+    `(${c.perdidos} perdido(s))${aberto}.`
+  );
 }

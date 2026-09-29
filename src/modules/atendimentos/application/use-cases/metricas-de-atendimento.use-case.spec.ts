@@ -2,6 +2,7 @@ import {
   MetricasDeAtendimentoUseCase,
   comAmostra,
   emPortugues,
+  fraseDaConversao,
 } from './metricas-de-atendimento.use-case';
 
 /**
@@ -88,11 +89,12 @@ describe('as métricas de atendimento', () => {
         tempoPrimeiraResposta: jest.fn().mockResolvedValue(VAZIA),
         tempoDeAtendimento: jest.fn().mockResolvedValue(VAZIA),
         tempoAteFecharVenda: jest.fn().mockResolvedValue(VAZIA),
+        conversao: jest.fn().mockResolvedValue({ ganhos: 0, perdidos: 0, emAberto: 0, taxa: null }),
       };
       useCase = new MetricasDeAtendimentoUseCase(repo as never);
     });
 
-    it('a janela chega igual nas cinco', async () => {
+    it('a janela chega igual nas seis', async () => {
       const janela = { de: new Date(2026, 8, 1), ate: new Date(2026, 8, 30) };
       await useCase.execute(janela);
 
@@ -120,5 +122,77 @@ describe('as métricas de atendimento', () => {
       expect(r.ateFecharVenda.minutos).toBeNull();
       expect(r.primeiraResposta.minutos).not.toBe(0);
     });
+  });
+});
+
+/**
+ * A TAXA DE CONVERSAO — ANA-13, 29/09/2026.
+ *
+ * ==========================================================================
+ * ESTES TESTES GUARDAM O DENOMINADOR, QUE E ONDE A METRICA MENTE.
+ *
+ * Dividir ganhos pelo TOTAL faria a conversao despencar sozinha a cada lead
+ * novo — quem chegou ontem entraria no denominador como se tivesse recusado.
+ * No fim de uma semana movimentada o numero pioraria justamente porque a
+ * operacao foi bem, e ninguem desconfiaria de um percentual.
+ * ==========================================================================
+ */
+describe('a taxa de conversão', () => {
+  const c = (ganhos: number, perdidos: number, emAberto: number) => {
+    const decididos = ganhos + perdidos;
+    return {
+      ganhos,
+      perdidos,
+      emAberto,
+      taxa: decididos === 0 ? null : Math.round((ganhos / decididos) * 100),
+    };
+  };
+
+  it('a conta é sobre quem teve DESFECHO, não sobre o total', () => {
+    // 3 ganhos, 1 perdido, 96 em aberto. Sobre o total daria 3%.
+    expect(fraseDaConversao(c(3, 1, 96))).toContain('75%');
+  });
+
+  it('o lead em aberto não entra no denominador — mas aparece na frase', () => {
+    const frase = fraseDaConversao(c(3, 1, 96));
+    expect(frase).toContain('3 de 4');
+    expect(frase).toContain('96 ainda em aberto');
+  });
+
+  /*
+   * NADA FECHADO NAO E ZERO POR CENTO.
+   *
+   * Zero afirma "ninguem comprou". Aqui ninguem terminou de decidir — e a
+   * diferenca entre as duas frases muda o que a gestao faz na segunda-feira.
+   */
+  it('sem nenhum desfecho, NÃO diz 0%', () => {
+    const frase = fraseDaConversao(c(0, 0, 12));
+    expect(frase).not.toContain('0%');
+    expect(frase).toContain('nenhum lead teve desfecho');
+    expect(frase).toContain('12 em aberto');
+  });
+
+  it('sem lead nenhum, diz isso e não inventa taxa', () => {
+    const frase = fraseDaConversao(c(0, 0, 0));
+    expect(frase).toBe('Conversão: nenhum lead no período.');
+    expect(frase).not.toContain('%');
+  });
+
+  it('tudo perdido é 0% de verdade — e isso pode ser dito', () => {
+    expect(fraseDaConversao(c(0, 5, 0))).toContain('0%');
+  });
+
+  it('tudo ganho é 100%', () => {
+    expect(fraseDaConversao(c(4, 0, 0))).toContain('100%');
+  });
+
+  /* A porcentagem nunca sai sozinha: "40%" esconde se foram 2 de 5 ou 200 de
+   * 500, e uma amostra minuscula passaria por indicador. */
+  it.each([
+    [1, 1, 0],
+    [2, 3, 7],
+    [50, 50, 0],
+  ])('com %s/%s o denominador sempre aparece', (g, p, a) => {
+    expect(fraseDaConversao(c(g, p, a))).toMatch(new RegExp(`${g} de ${g + p}`));
   });
 });

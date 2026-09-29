@@ -70,6 +70,36 @@ export interface MediaDeTempo {
   maximo: number | null;
 }
 
+/**
+ * ANA-13 — a taxa de conversao.
+ *
+ * ==========================================================================
+ * A CONTA E SOBRE O QUE JA TEVE DESFECHO, E NAO SOBRE TUDO.
+ *
+ * Dividir ganhos pelo TOTAL faria a taxa despencar sozinha a cada lead novo:
+ * quem entrou ontem ainda nao teve chance de comprar, e entraria no
+ * denominador como se tivesse recusado. No fim de uma semana movimentada a
+ * conversao pareceria pior justamente porque a operacao foi bem.
+ *
+ * Entao: `ganhos / (ganhos + perdidos)`. Os em aberto vao na resposta a
+ * parte, porque "40% de conversao, com 30 ainda em aberto" e uma frase
+ * honesta e "40%" sozinho nao e.
+ * ==========================================================================
+ */
+export interface Conversao {
+  ganhos: number;
+  perdidos: number;
+  /** NOVO, EM_ATENDIMENTO e PARADO — ainda podem virar qualquer coisa. */
+  emAberto: number;
+  /**
+   * Percentual de 0 a 100, ou `null` quando nada teve desfecho ainda.
+   *
+   * `null` e nao zero: zero afirma "ninguem comprou", e nao e o que
+   * aconteceu quando simplesmente nada fechou.
+   */
+  taxa: number | null;
+}
+
 export interface IMetricasAtendimentoRepository {
   /** ANA-08 */
   leadsPorVendedora(janela: JanelaDeMetrica): Promise<LeadsDaVendedora[]>;
@@ -92,6 +122,16 @@ export interface IMetricasAtendimentoRepository {
    * alerta (ANA-04), nao media.
    */
   tempoPrimeiraResposta(janela: JanelaDeMetrica): Promise<MediaDeTempo>;
+
+  /**
+   * ANA-13 — quantos leads viraram venda, entre os que tiveram desfecho.
+   *
+   * A JANELA OLHA A CRIACAO DO LEAD, e nao a mudanca de estado: "a conversao
+   * dos leads de setembro" e sobre quem CHEGOU em setembro, mesmo que tenha
+   * fechado em outubro. Olhar o desfecho responderia outra pergunta e
+   * misturaria safras.
+   */
+  conversao(janela: JanelaDeMetrica): Promise<Conversao>;
 
   /** ANA-10 — de `aberto_em` a `fechado_em`, so os que fecharam. */
   tempoDeAtendimento(janela: JanelaDeMetrica): Promise<MediaDeTempo>;
