@@ -75,6 +75,16 @@ export interface VendedoraPorFamiliaNoAno extends VendedoraPorFamilia {
   ano: number;
 }
 
+/** Uma linha da comparação ano a ano. */
+export interface ComparacaoAnual {
+  ano: number;
+  /** Receita do recorte até o dia do corte (ou do recorte inteiro, sem corte). */
+  receita: number;
+  quantidade: number;
+  /** O recorte FECHADO. Igual a `receita` quando não houve corte. */
+  receitaFechada: number | null;
+}
+
 export interface IVendasMovimentacaoRepository {
   /**
    * O resumo do periodo. Com `vendedoraId`, so o dela — e e assim que a
@@ -154,6 +164,34 @@ export interface IVendasMovimentacaoRepository {
    * @param mes 1 a 12.
    * @param porAno quantas vendedoras por ano. 1 devolve so a campea de cada.
    */
+  /**
+   * O MESMO RECORTE, ANO A ANO — 29/09/2026.
+   *
+   * ========================================================================
+   * DOIS TOTAIS POR ANO, E NAO UM.
+   *
+   * `receita` e o recorte ATE O DIA do corte; `receitaFechada` e o recorte
+   * inteiro. Quando o mes ainda corre, os dois diferem nos anos passados e sao
+   * iguais no ano corrente — e e essa diferenca que permite a resposta dizer
+   * "ate o dia 29 estamos 12% abaixo" E "setembro passado fechou em R$ 2,1 mi"
+   * sem duas consultas.
+   *
+   * `dia` nulo significa "sem corte": os dois totais voltam iguais.
+   * ========================================================================
+   */
+  compararMesNosAnos(
+    mes: number,
+    dia: number | null,
+    vendedoraId: string | null,
+  ): Promise<ComparacaoAnual[]>;
+
+  /** O mesmo (mes, dia) inicial e final, em cada ano. */
+  compararPeriodoNosAnos(
+    inicio: { mes: number; dia: number },
+    fim: { mes: number; dia: number },
+    vendedoraId: string | null,
+  ): Promise<ComparacaoAnual[]>;
+
   rankingPorFamiliaNoMes(
     mes: number,
     familia: string,

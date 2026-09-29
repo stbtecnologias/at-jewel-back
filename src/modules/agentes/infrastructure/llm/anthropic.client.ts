@@ -796,6 +796,36 @@ const GESTAO_TOM_TOOL: Anthropic.Tool = {
   },
 };
 
+/**
+ * COMPARAR COM OUTROS ANOS — 29/09/2026.
+ *
+ * A DESCRICAO INSISTE NO CORTE PORQUE ELE E A PARTE QUE ENGANA. Quando o mes
+ * ainda corre, a resposta compara ate o MESMO DIA em todos os anos — e traz o
+ * mes fechado dos anos passados ao lado. Repassar so um dos dois numeros da
+ * uma leitura errada da operacao.
+ */
+const GESTAO_COMPARAR_ANOS_TOOL: Anthropic.Tool = {
+  name: 'comparar_com_outros_anos',
+  description:
+    'Compara o MESMO recorte atraves dos anos: "como esta setembro comparado aos outros anos", "esse mes foi melhor que ano passado", "como foi esse periodo em 2024". Devolve, por ano: receita, numero de vendas e ticket medio. A base tem de 2023 em diante. Quando o mes ainda esta correndo, a comparacao e CORTADA NO MESMO DIA em todos os anos — repasse isso, porque comparar mes parcial com mes inteiro faz o ano atual sempre parecer pior. Nesses casos vem tambem o MES FECHADO dos anos anteriores: diga os dois ("ate o dia 29 estamos X% abaixo; setembro passado fechou em Y"). Use `mes` para um mes inteiro, ou `de`/`ate` para um intervalo de dias que se repete em cada ano. Sem `vendedora`, e a loja.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      mes: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 12,
+        description: 'O mes, de 1 a 12. Use quando a pergunta for sobre um mes.',
+      },
+      ...DATAS_LIVRES,
+      vendedora: {
+        type: 'string',
+        description: 'Nome da vendedora, como falado. OMITA para a loja inteira.',
+      },
+    },
+  },
+};
+
 const GESTAO_FUNIL_TOOL: Anthropic.Tool = {
   name: 'funil_de_atendimentos',
   description:
@@ -1042,6 +1072,7 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoMetricas) tools.push(GESTAO_METRICAS_TOOL);
     if (params.gestaoRankings) tools.push(GESTAO_RANKINGS_TOOL);
     if (params.gestaoTom) tools.push(GESTAO_TOM_TOOL);
+    if (params.gestaoCompararAnos) tools.push(GESTAO_COMPARAR_ANOS_TOOL);
     if (params.gestaoDiaDaVendedora)
       tools.push(GESTAO_DIA_DA_VENDEDORA_TOOL);
     if (params.registrarRelato) tools.push(RELATO_TOOL);

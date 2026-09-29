@@ -664,6 +664,23 @@ export type GestaoTomHandler = (input: {
   cliente: string;
 }) => Promise<GestaoLeituraResultado>;
 
+/**
+ * A COMPARACAO ANO A ANO — 29/09/2026.
+ *
+ * Nasceu de uma pergunta que a Anastasia nao sabia responder: "como esta o
+ * nosso mes comparado aos outros anos?". O dado estava na base desde 2023; o
+ * que faltava era a pergunta.
+ */
+export type GestaoCompararAnosHandler = (input: {
+  /** 1 a 12. O mes inteiro, em cada ano que tiver dado. */
+  mes?: number;
+  /** Com `ate`: o mesmo intervalo de dias em cada ano. */
+  de?: string;
+  ate?: string;
+  /** Nome da vendedora. Ausente = a loja. */
+  vendedora?: string;
+}) => Promise<GestaoLeituraResultado>;
+
 export type GestaoFunilHandler = (input: {
   /** Nome (ou parte). Ausente = a loja inteira. */
   vendedora?: string;
@@ -758,6 +775,7 @@ export interface ChatParams {
   gestaoMetricas?: GestaoMetricasHandler;
   gestaoRankings?: GestaoRankingsHandler;
   gestaoTom?: GestaoTomHandler;
+  gestaoCompararAnos?: GestaoCompararAnosHandler;
   /**
    * Habilita `gerar_grafico`. Default true, que preserva o painel.
    *

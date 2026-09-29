@@ -81,6 +81,9 @@ describe('itens_mais_vendidos e o escopo de quem pergunta', () => {
       }) } as never,
       // Análise de tom (ANA-15, 29/09) — dublada.
       { execute: jest.fn().mockResolvedValue({ status: 'SEM_CONVERSA' }) } as never,
+      // Comparação ano a ano (29/09) — dublada.
+      { porMes: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }),
+        porPeriodo: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }) } as never,
       listarProdutos as never,
       { execute: jest.fn() } as never,
       { vendas: jest.fn(), metas: jest.fn() } as never,
@@ -210,6 +213,9 @@ describe('consultar_produtos da gestao e a quantidade', () => {
       }) } as never,
       // Análise de tom (ANA-15, 29/09) — dublada.
       { execute: jest.fn().mockResolvedValue({ status: 'SEM_CONVERSA' }) } as never,
+      // Comparação ano a ano (29/09) — dublada.
+      { porMes: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }),
+        porPeriodo: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }) } as never,
       { itens: jest.fn() } as never,
       listarProdutos as never,
       { execute: jest.fn() } as never,
@@ -352,6 +358,9 @@ describe('o recorte de equipe nas ferramentas de gestao', () => {
       }) } as never,
       // Análise de tom (ANA-15, 29/09) — dublada.
       { execute: jest.fn().mockResolvedValue({ status: 'SEM_CONVERSA' }) } as never,
+      // Comparação ano a ano (29/09) — dublada.
+      { porMes: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }),
+        porPeriodo: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }) } as never,
       { execute: jest.fn().mockResolvedValue([]) } as never,
       { execute: jest.fn().mockResolvedValue([]) } as never,
       desempenho as never,
@@ -523,6 +532,9 @@ describe('o periodo livre nas ferramentas de venda', () => {
       }) } as never,
       // Análise de tom (ANA-15, 29/09) — dublada.
       { execute: jest.fn().mockResolvedValue({ status: 'SEM_CONVERSA' }) } as never,
+      // Comparação ano a ano (29/09) — dublada.
+      { porMes: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }),
+        porPeriodo: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }) } as never,
       { execute: jest.fn().mockResolvedValue([]) } as never,
       { execute: jest.fn().mockResolvedValue([]) } as never,
       { vendas: jest.fn(), metas: jest.fn() } as never,
@@ -659,6 +671,9 @@ describe('o ranking por tipo de peça', () => {
       }) } as never,
       // Análise de tom (ANA-15, 29/09) — dublada.
       { execute: jest.fn().mockResolvedValue({ status: 'SEM_CONVERSA' }) } as never,
+      // Comparação ano a ano (29/09) — dublada.
+      { porMes: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }),
+        porPeriodo: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }) } as never,
       listarProdutos as never,
       { execute: jest.fn() } as never,
       { vendas: jest.fn(), metas: jest.fn() } as never,

@@ -181,6 +181,9 @@ describe('o funil pela gestao (Anastasia)', () => {
       }) } as never,
       // Análise de tom (ANA-15, 29/09) — dublada.
       { execute: jest.fn().mockResolvedValue({ status: 'SEM_CONVERSA' }) } as never,
+      // Comparação ano a ano (29/09) — dublada.
+      { porMes: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }),
+        porPeriodo: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }) } as never,
       // A consulta de venda, que desde 25/09 le a MOVIMENTACAO. Dublada aqui:
       // estes testes descrevem o roteamento das ferramentas, nao o SQL.
       { itens: jest.fn().mockResolvedValue({ linhas: [] }) } as never,

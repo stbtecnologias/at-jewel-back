@@ -83,6 +83,9 @@ describe('FerramentasGestaoService', () => {
       }) } as never,
       // Análise de tom (ANA-15, 29/09) — dublada.
       { execute: jest.fn().mockResolvedValue({ status: 'SEM_CONVERSA' }) } as never,
+      // Comparação ano a ano (29/09) — dublada.
+      { porMes: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }),
+        porPeriodo: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }) } as never,
       // A consulta de catalogo da GESTAO, com quantidade — dublada.
       { execute: jest.fn().mockResolvedValue([]) } as never,
       agenda as never,

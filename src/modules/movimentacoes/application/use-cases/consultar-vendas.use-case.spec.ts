@@ -63,6 +63,18 @@ describe('ConsultarVendasUseCase', () => {
       rankingPorFamiliaNoMes: jest.fn(
         async (_mes: number, _familia: string, _porAno: number) => [],
       ),
+      // A comparacao ano a ano (29/09/2026). Como o mes recorrente, ela NAO
+      // recebe janela: monta a propria pelo `extract`.
+      compararMesNosAnos: jest.fn(
+        async (_mes: number, _dia: number | null, _v: string | null) => [],
+      ),
+      compararPeriodoNosAnos: jest.fn(
+        async (
+          _i: { mes: number; dia: number },
+          _f: { mes: number; dia: number },
+          _v: string | null,
+        ) => [],
+      ),
     };
     useCase = new ConsultarVendasUseCase(repo);
   });

@@ -14,6 +14,7 @@ import type {
   GestaoFunilHandler,
   GestaoMetricasHandler,
   GestaoRankingsHandler,
+  GestaoCompararAnosHandler,
   GestaoTomHandler,
   GestaoPanoramaLeadsHandler,
   GestaoPorFamiliaHandler,
@@ -70,6 +71,10 @@ import {
   type PostoDeRanking,
 } from './use-cases/rankings-de-atendimento.use-case';
 import { AnalisarTomUseCase } from '../../atendimento/application/analisar-tom.use-case';
+import {
+  CompararAnosUseCase,
+  variacao,
+} from '../../movimentacoes/application/use-cases/comparar-anos.use-case';
 
 const MAXIMO_CLIENTES_HOMONIMOS = 5;
 /** Feedbacks por resposta. Acima disso a mensagem deixa de ser lida. */
@@ -167,6 +172,7 @@ export interface FerramentasGestao {
   gestaoMetricas: GestaoMetricasHandler;
   gestaoRankings: GestaoRankingsHandler;
   gestaoTom: GestaoTomHandler;
+  gestaoCompararAnos: GestaoCompararAnosHandler;
   gestaoPorFamilia: GestaoPorFamiliaHandler;
   /**
    * NAO E UM HANDLER — e um aviso que viaja junto para o cliente do LLM.
@@ -271,6 +277,7 @@ export class FerramentasGestaoService {
     private readonly metricas: MetricasDeAtendimentoUseCase,
     private readonly rankings: RankingsDeAtendimentoUseCase,
     private readonly tom: AnalisarTomUseCase,
+    private readonly compararAnos: CompararAnosUseCase,
     private readonly listarProdutos: ListarProdutosUseCase,
     private readonly agenda: ConsultarAgendaVendedoraUseCase,
     private readonly desempenho: ConsultarDesempenhoVendedoraUseCase,
@@ -1067,6 +1074,114 @@ export class FerramentasGestaoService {
               return ['Não consegui ler a conversa agora. Vale tentar de novo.'];
           }
         }),
+
+      /**
+       * COMPARAR COM OUTROS ANOS — 29/09/2026.
+       *
+       * ====================================================================
+       * OS DOIS NUMEROS VAO JUNTOS, E ESSA E A DECISAO.
+       *
+       * Com o mes correndo, a comparacao e cortada no mesmo dia em todos os
+       * anos — senao o ano atual parece pior SEMPRE, e mais no comeco do mes.
+       * Mas o mes FECHADO dos anos passados vai junto, porque "e quanto
+       * fechou setembro passado?" e a pergunta seguinte, sempre.
+       *
+       * Conferido em 29/09: setembro/2024 ate o dia 29 deu R$ 511 mil, e o
+       * mes fechou em R$ 847 mil — 66% de diferenca. Comparar mes parcial
+       * com mes inteiro teria dito que 2026 caiu muito mais do que caiu.
+       * ====================================================================
+       */
+      gestaoCompararAnos: async ({ mes, de, ate, vendedora }) => {
+        const recorte = datasDeRecorte(de, ate);
+
+        const comVendedora = async (
+          fn: (id: string | null) => Promise<GestaoLeituraResultado>,
+        ) => (vendedora && vendedora.trim()
+          ? this.comVendedora(equipe, vendedora, async (id) => {
+              const r = await fn(id);
+              return r.status === 'OK' ? r.linhas : [];
+            })
+          : fn(null));
+
+        return comVendedora(async (vendedoraId) => {
+          const r =
+            mes !== undefined && mes >= 1 && mes <= 12
+              ? await this.compararAnos.porMes(mes, vendedoraId)
+              : recorte
+                ? await this.compararAnos.porPeriodo(recorte.de, recorte.ate, vendedoraId)
+                : null;
+
+          if (r === null) {
+            // DATA DADA E NAO ENTENDIDA E DIFERENTE DE DATA NAO DADA.
+            //
+            // O `datasDeRecorte` devolve null em qualquer duvida — inclusive
+            // quando a final vem antes da inicial, que e o caso do intervalo
+            // que vira o ano. Sem esta distincao, quem pediu "15/12 a 15/01"
+            // ouviria "me diga um recorte" depois de ter dito um, e tentaria
+            // de novo do mesmo jeito.
+            const tentou = Boolean(de || ate || mes !== undefined);
+            return {
+              status: 'OK' as const,
+              linhas: [
+                tentou
+                  ? 'Não consegui usar esse recorte. Se for um intervalo que ' +
+                    'atravessa a virada do ano (ex.: 15/12 a 15/01), ele ' +
+                    'existiria em dois anos ao mesmo tempo e não dá para ' +
+                    'comparar — peça um intervalo dentro do mesmo ano. ' +
+                    'Para um mês, diga o mês.'
+                  : 'Preciso saber QUAL recorte comparar: um mês (ex.: setembro) ' +
+                    'ou um intervalo de datas. Pergunte.',
+              ],
+            };
+          }
+
+          if ('erro' in r) {
+            return {
+              status: 'OK' as const,
+              linhas: [
+                'Esse intervalo vira o ano (ex.: 15/12 a 15/01), e aí ele ' +
+                  'existiria em dois anos ao mesmo tempo — não dá para comparar. ' +
+                  'Peça um intervalo dentro do mesmo ano.',
+              ],
+            };
+          }
+
+          if (r.anos.length === 0) {
+            return {
+              status: 'OK' as const,
+              linhas: [`Não há venda registrada em ${r.rotulo} em nenhum ano.`],
+            };
+          }
+
+          const ordenados = [...r.anos].sort((a, b) => b.ano - a.ano);
+          const linhas: string[] = [];
+
+          if (r.cortadoNoDia !== null) {
+            linhas.push(
+              `Comparação de ${r.rotulo} até o dia ${r.cortadoNoDia} em todos os anos ` +
+                `— ${ordenados[0].ano} ainda não fechou.`,
+            );
+          }
+
+          ordenados.forEach((a, i) => {
+            const anterior = ordenados[i + 1];
+            const v = anterior ? variacao(a.receita, anterior.receita) : null;
+            const delta = v === null ? '' : ` (${v > 0 ? '+' : ''}${v}% vs ${anterior.ano})`;
+            const fechado =
+              a.receitaFechada !== null
+                ? `, mês fechado ${moeda(a.receitaFechada)}`
+                : '';
+
+            linhas.push(
+              `${a.ano}: ${moeda(a.receita)} em ${a.quantidade} ` +
+                `${a.quantidade === 1 ? 'venda' : 'vendas'}, ticket ${moeda(a.ticketMedio)}` +
+                `${delta}${fechado}`,
+            );
+          });
+
+          return { status: 'OK' as const, linhas };
+        });
+      },
 
       gestaoPanoramaLeads: async ({ vendedora }) => {
         if (vendedora && vendedora.trim()) {
