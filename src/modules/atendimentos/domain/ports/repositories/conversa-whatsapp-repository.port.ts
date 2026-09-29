@@ -109,8 +109,17 @@ export interface IConversaWhatsappRepository {
   registrarFalha(id: string, proximaTentativa: Date | null): Promise<void>;
 
   /**
-   * As conversas com mensagem a partir de `desde` — o agora, sem esperar o
-   * leitor. Mais recente primeiro.
+   * As conversas com mensagem na janela `[de, ate)` — sem esperar o leitor.
+   * Mais recente primeiro.
+   *
+   * ======================================================================
+   * UMA JANELA, E NAO "DAQUI PARA TRAS", PORQUE SAO DUAS PERGUNTAS.
+   *
+   * "Ela esta conversando AGORA?" pede os ultimos 30 minutos. "Ela falou com
+   * alguem HOJE?" pede da meia-noite ate a meia-noite seguinte — e no dia em
+   * que perguntarem por ontem, a janela nao termina no agora. As duas leem o
+   * mesmo ponteiro; o que muda e so o recorte.
+   * ======================================================================
    *
    * ======================================================================
    * A CONVERSA `IGNORADA` FICA DE FORA, E ISSO E PRIVACIDADE, NAO FILTRO.
@@ -127,8 +136,9 @@ export interface IConversaWhatsappRepository {
    * "ainda nao identificado" ao inves de virar contagem de cliente.
    * ======================================================================
    */
-  emAndamento(
-    desde: Date,
+  entre(
+    de: Date,
+    ate: Date,
     vendedoraId?: string | null,
   ): Promise<ConversaEmAndamento[]>;
 }

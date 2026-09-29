@@ -1,6 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
+import {
+  And,
+  In,
+  LessThan,
+  LessThanOrEqual,
+  MoreThanOrEqual,
+  Repository,
+} from 'typeorm';
 import {
   encryptedTransformer,
   hashField,
@@ -144,13 +151,16 @@ export class ConversaWhatsappRepository implements IConversaWhatsappRepository {
    * contato que o sistema NEM SABE se e cliente so serviria para ser repassado
    * adiante. Mesma regra do aviso de lead novo.
    */
-  async emAndamento(
-    desde: Date,
+  async entre(
+    de: Date,
+    ate: Date,
     vendedoraId?: string | null,
   ): Promise<ConversaEmAndamento[]> {
     const linhas = await this.repo.find({
       where: {
-        ultimaMensagemEm: MoreThanOrEqual(desde),
+        // `[de, ate)` — aberto no fim, para a mensagem do ultimo segundo do
+        // dia nao cair num vao entre dois recortes.
+        ultimaMensagemEm: And(MoreThanOrEqual(de), LessThan(ate)),
         estado: In(['AGUARDANDO', 'LIDA']),
         ...(vendedoraId ? { vendedoraId } : {}),
       },

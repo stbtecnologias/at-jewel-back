@@ -105,7 +105,7 @@ describe('itens_mais_vendidos e o escopo de quem pergunta', () => {
       { listarAguardandoGestao: jest.fn() } as never,
       // O ponteiro de conversas vivas (29/09) — dublado: estes testes
       // descrevem o roteamento das ferramentas, nao a consulta.
-      { emAndamento: jest.fn().mockResolvedValue([]) } as never,
+      { entre: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 
@@ -249,7 +249,7 @@ describe('consultar_produtos da gestao e a quantidade', () => {
       { listarAguardandoGestao: jest.fn() } as never,
       // O ponteiro de conversas vivas (29/09) — dublado: estes testes
       // descrevem o roteamento das ferramentas, nao a consulta.
-      { emAndamento: jest.fn().mockResolvedValue([]) } as never,
+      { entre: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 
@@ -404,7 +404,7 @@ describe('o recorte de equipe nas ferramentas de gestao', () => {
       { listarAguardandoGestao: jest.fn() } as never,
       // O ponteiro de conversas vivas (29/09) — dublado: estes testes
       // descrevem o roteamento das ferramentas, nao a consulta.
-      { emAndamento: jest.fn().mockResolvedValue([]) } as never,
+      { entre: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 
@@ -591,7 +591,7 @@ describe('o periodo livre nas ferramentas de venda', () => {
       { listarAguardandoGestao: jest.fn() } as never,
       // O ponteiro de conversas vivas (29/09) — dublado: estes testes
       // descrevem o roteamento das ferramentas, nao a consulta.
-      { emAndamento: jest.fn().mockResolvedValue([]) } as never,
+      { entre: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 
@@ -741,7 +741,7 @@ describe('o ranking por tipo de peça', () => {
       { listarAguardandoGestao: jest.fn() } as never,
       // O ponteiro de conversas vivas (29/09) — dublado: estes testes
       // descrevem o roteamento das ferramentas, nao a consulta.
-      { emAndamento: jest.fn().mockResolvedValue([]) } as never,
+      { entre: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 

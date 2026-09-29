@@ -24,7 +24,7 @@ describe('FerramentasGestaoService', () => {
   };
   let clientes: { buscarPorNomeParcial: jest.Mock; buscarPorId: jest.Mock };
   let leads: { listarAguardandoGestao: jest.Mock };
-  let conversas: { emAndamento: jest.Mock };
+  let conversas: { entre: jest.Mock };
   let servico: FerramentasGestaoService;
 
   const MARINA = {
@@ -66,7 +66,7 @@ describe('FerramentasGestaoService', () => {
       buscarPorId: jest.fn().mockResolvedValue(null),
     };
     leads = { listarAguardandoGestao: jest.fn().mockResolvedValue([]) };
-    conversas = { emAndamento: jest.fn().mockResolvedValue([]) };
+    conversas = { entre: jest.fn().mockResolvedValue([]) };
 
     servico = new FerramentasGestaoService(
       resolverVendedora as never,
@@ -139,7 +139,7 @@ describe('FerramentasGestaoService', () => {
       const antes = Date.now();
       await servico.montar().gestaoConversasAgora({});
 
-      const [desde, id] = conversas.emAndamento.mock.calls[0];
+      const [desde, , id] = conversas.entre.mock.calls[0];
       expect(id).toBeNull();
       const janela = (antes - (desde as Date).getTime()) / 60_000;
       expect(janela).toBeGreaterThanOrEqual(29.9);
@@ -150,7 +150,7 @@ describe('FerramentasGestaoService', () => {
       const antes = Date.now();
       await servico.montar().gestaoConversasAgora({ minutos: 120 });
 
-      const [desde] = conversas.emAndamento.mock.calls[0];
+      const [desde] = conversas.entre.mock.calls[0];
       const janela = (antes - (desde as Date).getTime()) / 60_000;
       expect(janela).toBeGreaterThanOrEqual(119.9);
       expect(janela).toBeLessThan(121);
@@ -160,7 +160,7 @@ describe('FerramentasGestaoService', () => {
       const antes = Date.now();
       await servico.montar().gestaoConversasAgora({ minutos: 99999 });
 
-      const [desde] = conversas.emAndamento.mock.calls[0];
+      const [desde] = conversas.entre.mock.calls[0];
       expect((antes - (desde as Date).getTime()) / 60_000).toBeLessThan(31);
     });
 
@@ -169,7 +169,7 @@ describe('FerramentasGestaoService', () => {
      * contar as linhas e chamar de clientes — passaria despercebida.
      */
     it('numero ainda nao identificado NAO e chamado de cliente', async () => {
-      conversas.emAndamento.mockResolvedValue([
+      conversas.entre.mockResolvedValue([
         { vendedoraId: 'vd-1', clienteId: null, ultimaMensagemEm: minutosAtras(9) },
       ]);
       vendedoras.listar.mockResolvedValue([
@@ -185,7 +185,7 @@ describe('FerramentasGestaoService', () => {
     });
 
     it('cliente conhecida aparece pelo nome, com ha quanto tempo', async () => {
-      conversas.emAndamento.mockResolvedValue([
+      conversas.entre.mockResolvedValue([
         { vendedoraId: 'vd-1', clienteId: 'cl-1', ultimaMensagemEm: minutosAtras(9) },
       ]);
       vendedoras.listar.mockResolvedValue([{ id: 'vd-1', nome: 'Marina' }]);
@@ -202,7 +202,7 @@ describe('FerramentasGestaoService', () => {
      * Repeti-lo em cada linha e ruido — e custava uma consulta a mais.
      */
     it('com o nome de uma vendedora, as linhas nao repetem o nome dela', async () => {
-      conversas.emAndamento.mockResolvedValue([
+      conversas.entre.mockResolvedValue([
         { vendedoraId: 'vd-1', clienteId: 'cl-1', ultimaMensagemEm: minutosAtras(2) },
       ]);
       clientes.buscarPorId.mockResolvedValue({ nome: 'Patrícia Lima' });
@@ -211,13 +211,13 @@ describe('FerramentasGestaoService', () => {
 
       expect(r.status).toBe('OK');
       expect(r.vendedora).toBe('Marina Albuquerque');
-      expect(conversas.emAndamento.mock.calls[0][1]).toBe('vd-1');
+      expect(conversas.entre.mock.calls[0][2]).toBe('vd-1');
       expect(r.linhas[1]).toBe('Patrícia Lima — última mensagem há 2 min');
       expect(vendedoras.listar).not.toHaveBeenCalled();
     });
 
     it('sem nome, a gerente so ve o celular da equipe dela', async () => {
-      conversas.emAndamento.mockResolvedValue([
+      conversas.entre.mockResolvedValue([
         { vendedoraId: 'vd-1', clienteId: null, ultimaMensagemEm: minutosAtras(1) },
         { vendedoraId: 'vd-9', clienteId: null, ultimaMensagemEm: minutosAtras(1) },
       ]);
@@ -238,6 +238,62 @@ describe('FerramentasGestaoService', () => {
       const r = await servico.montar().gestaoConversasAgora({});
 
       expect(r.status).toBe('OK');
+      expect(r.linhas).toEqual([]);
+    });
+  });
+
+  /**
+   * O DIA DA VENDEDORA LE DUAS FONTES — 29/09/2026.
+   *
+   * ======================================================================
+   * O DIA ESTAVA VAZIO NUM DIA EM QUE ELA CONVERSOU.
+   *
+   * A linha do tempo nasce de `atendimentos`, e atendimento exige
+   * `cliente_id`. A pessoa nova nao e cliente cadastrada — entao a conversa
+   * com ela nao gerava interacao, nao gerava atendimento, e o dia respondia
+   * "nao ha registro nenhum".
+   *
+   * Aconteceu de verdade em 29/09: a Aline conversou com a Patricia as
+   * 15:08, o lead nasceu, e o dia dela continuava vazio porque o lead nao
+   * fora ENCAMINHADO — nem precisava ser, ja era dela.
+   * ======================================================================
+   */
+  describe('o dia de uma vendedora', () => {
+    it('busca nas duas fontes, com a MESMA janela de dia', async () => {
+      await servico
+        .montar()
+        .gestaoDiaDaVendedora({ vendedora: 'Marina', dia: '2026-09-08' });
+
+      expect(linha.doDia).toHaveBeenCalledWith('vd-1', '2026-09-08');
+
+      const [de, ate, id] = conversas.entre.mock.calls[0];
+      expect(id).toBe('vd-1');
+      expect(de).toEqual(new Date(2026, 8, 8, 0, 0, 0, 0));
+      expect(ate).toEqual(new Date(2026, 8, 9, 0, 0, 0, 0));
+    });
+
+    /* O caso que provocou a mudanca: zero pontos, uma conversa. */
+    it('conversa com pessoa nova NAO deixa mais o dia vazio', async () => {
+      linha.doDia.mockResolvedValue([]);
+      conversas.entre.mockResolvedValue([
+        { vendedoraId: 'vd-1', clienteId: null, ultimaMensagemEm: new Date() },
+      ]);
+
+      const r = await servico
+        .montar()
+        .gestaoDiaDaVendedora({ vendedora: 'Marina' });
+
+      expect(r.status).toBe('OK');
+      expect(r.linhas[0]).toBe(
+        'Falou com 1 pessoa pelo WhatsApp: 1 número ainda NÃO identificado.',
+      );
+    });
+
+    it('dia sem ponto e sem conversa continua vazio', async () => {
+      const r = await servico
+        .montar()
+        .gestaoDiaDaVendedora({ vendedora: 'Marina' });
+
       expect(r.linhas).toEqual([]);
     });
   });

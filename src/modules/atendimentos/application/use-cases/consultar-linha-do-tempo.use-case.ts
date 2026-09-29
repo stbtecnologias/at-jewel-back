@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { VENDEDORA_REPOSITORY } from '../../../vendedoras/domain/ports/injection-tokens';
 import type { IVendedoraRepository } from '../../../vendedoras/domain/ports/repositories/vendedora-repository.port';
+import { janelaDoDia } from '../../../../shared/tempo/janela-do-dia';
 import { ATENDIMENTO_REPOSITORY } from '../../domain/ports/injection-tokens';
 import {
   ETAPAS_ATENDIMENTO,
@@ -86,8 +87,8 @@ export class ConsultarLinhaDoTempoUseCase {
    * ========================================================================
    */
   async execute(dia?: string): Promise<LinhaDoTempo> {
-    const alvo = dia ? diaDe(dia) : hoje();
-    const pontos = await this.repo.linhaDoTempo(alvo, somaUmDia(alvo));
+    const { de: alvo, ate } = janelaDoDia(dia);
+    const pontos = await this.repo.linhaDoTempo(alvo, ate);
 
     const ativas = await this.vendedoras.listar({ ativo: true });
 
@@ -149,8 +150,8 @@ export class ConsultarLinhaDoTempoUseCase {
    * possivel, porque parece certa e esta errada.
    */
   async doDia(vendedoraId: string, dia?: string): Promise<PontoDaLinha[]> {
-    const alvo = dia ? diaDe(dia) : hoje();
-    const pontos = await this.repo.linhaDoTempo(alvo, somaUmDia(alvo));
+    const { de: alvo, ate } = janelaDoDia(dia);
+    const pontos = await this.repo.linhaDoTempo(alvo, ate);
     return pontos.filter((p) => p.vendedoraId === vendedoraId);
   }
 }
@@ -210,31 +211,6 @@ function contarEtapas(pontos: PontoDaLinha[]): ContagemPorEtapa {
 
 function somar(c: ContagemPorEtapa): number {
   return Object.values(c).reduce((n, v) => n + v, 0);
-}
-
-/** Meia-noite de hoje, no fuso do servidor (America/Sao_Paulo). */
-function hoje(): Date {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-/**
- * `2026-09-08` -> meia-noite LOCAL desse dia.
- *
- * `new Date('2026-09-08')` daria meia-noite em UTC, que aqui e 21h do dia 7 —
- * a tela mostraria o dia anterior a partir das 21h. Por isso os pedacos sao
- * montados a mao.
- */
-function diaDe(iso: string): Date {
-  const [a, m, d] = iso.split('-').map(Number);
-  return new Date(a, m - 1, d, 0, 0, 0, 0);
-}
-
-function somaUmDia(d: Date): Date {
-  const fim = new Date(d);
-  fim.setDate(fim.getDate() + 1);
-  return fim;
 }
 
 function emIso(d: Date): string {

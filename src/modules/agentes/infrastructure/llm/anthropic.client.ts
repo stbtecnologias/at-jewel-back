@@ -699,7 +699,7 @@ export const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
 const GESTAO_DIA_DA_VENDEDORA_TOOL: Anthropic.Tool = {
   name: 'dia_da_vendedora',
   description:
-    'O DIA DE UMA VENDEDORA num resumo: com quantas clientes ela falou pelo WhatsApp, quantas escreveram e ainda nao foram respondidas, os contatos que ela marcou e para que horas, o que vendeu, o que fechou e o que venceu sem resposta. Use para "como esta o canal da Marina", "como foi o dia da Bianca", "a Renata falou com alguem hoje". ATENCAO: isto NAO le o texto das conversas dela — os numeros sao exatos, mas nao ha como dizer O QUE a cliente quer. Nao invente conteudo de conversa.',
+    'O DIA DE UMA VENDEDORA num resumo: com quantas PESSOAS ela falou pelo WhatsApp — clientes cadastradas E numeros que o sistema ainda nao identificou —, quantas escreveram e ainda nao foram respondidas, os contatos que ela marcou e para que horas, o que vendeu, o que fechou e o que venceu sem resposta. Use para "como esta o canal da Marina", "como foi o dia da Bianca", "a Renata falou com alguem hoje". DUAS ATENCOES: (1) isto NAO le o texto das conversas dela — os numeros sao exatos, mas nao ha como dizer O QUE a pessoa quer, entao nao invente conteudo de conversa; (2) numero "ainda NAO identificado" NAO pode ser chamado de cliente: repasse como esta. Para saber quem esta conversando NESTE MOMENTO, use conversas_agora.',
   input_schema: {
     type: 'object',
     properties: {
@@ -2415,7 +2415,10 @@ function textoDoDiaDaVendedora(r: GestaoLeituraResultado): string {
     `O dia de ${r.vendedora}:\n${r.linhas.map((l) => `- ${l}`).join("\n")}\n\n` +
     'Conte isso como quem esta contando o dia dela, em texto corrido. Repasse ' +
     'os numeros exatamente como estao. NAO diga o que as clientes queriam nem ' +
-    'o assunto das conversas — isto aqui nao le o texto delas.'
+    'o assunto das conversas — isto aqui nao le o texto delas. E quem aparece ' +
+    'como "numero ainda NAO identificado" NAO pode ser chamado de cliente nem ' +
+    'entrar numa contagem de clientes: o sistema so descobre de quem e o numero ' +
+    'quando le a conversa, uma hora depois da ultima mensagem.'
   );
 }
 
