@@ -7,6 +7,7 @@ import {
 import type { ILlmClient } from '../../domain/ports/llm-client.port';
 import type { IAgentesDataRepository } from '../../domain/ports/repositories/agentes-data-repository.port';
 import { ANASTASIA_SYSTEM } from '../personas';
+import { modeloDeIa } from '../../../../shared/config/modelo-de-ia';
 
 @Injectable()
 export class SugerirComprasFeiraUseCase {
@@ -25,7 +26,7 @@ export class SugerirComprasFeiraUseCase {
     ]);
 
     const model =
-      this.config.get<string>('ANTHROPIC_MODEL_ANASTASIA') ?? 'claude-opus-4-8';
+      modeloDeIa(this.config, 'ANTHROPIC_MODEL_ANASTASIA', 'claude-opus-4-8');
 
     const prompt = `Com base nos dados de estoque abaixo, sugira o que comprar na próxima feira de fornecedores:
 

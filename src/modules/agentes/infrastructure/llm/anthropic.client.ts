@@ -1970,7 +1970,34 @@ export class AnthropicClient implements ILlmClient {
     const bloco = resp.content.find(
       (b): b is Anthropic.TextBlock => b.type === 'text',
     );
-    return bloco?.text ?? '';
+    const texto = bloco?.text ?? '';
+
+    // ====================================================================
+    // RESPOSTA SEM TEXTO NAO PODE SAIR CALADA — 29/09/2026.
+    //
+    // Devolver '' e correto: quem chama tem de lidar com a ausencia. O que
+    // nao era correto e sair sem dizer NADA, porque "veio vazia" tem causas
+    // que exigem consertos opostos:
+    //
+    //   stop_reason 'max_tokens'  -> o teto e baixo demais
+    //   stop_reason 'refusal'     -> o modelo recusou o conteudo
+    //   so blocos nao-texto       -> a chamada pediu a coisa errada
+    //
+    // Custou uma manha em 29/09: o leitor de conversas recebia '' e relatava
+    // "0 lidas, 0 ignoradas, 0 falhas", como se nao houvesse o que ler.
+    //
+    // So METADADOS entram no log — nunca o texto, que aqui e conversa de
+    // cliente.
+    // ====================================================================
+    if (!texto) {
+      this.logger.warn(
+        `O modelo devolveu resposta sem texto: stop_reason=${resp.stop_reason} ` +
+          `blocos=[${resp.content.map((b) => b.type).join(',') || 'vazio'}] ` +
+          `tokens=${resp.usage.output_tokens}.`,
+      );
+    }
+
+    return texto;
   }
 }
 

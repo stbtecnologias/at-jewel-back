@@ -168,23 +168,29 @@ export function contatoDoEvento(body: unknown): {
   em: Date;
 } | null {
   const b = (body ?? {}) as WahaWebhookBody & {
-    payload?: { to?: string; timestamp?: number };
+    payload?: {
+      to?: string;
+      timestamp?: number;
+      _data?: { Info?: Record<string, unknown> };
+    };
   };
 
   if (!ehEventoDeMensagem(b.event)) return null;
 
   const payload = b.payload ?? {};
   const daVendedora = payload.fromMe === true;
-  const outroLado = daVendedora ? payload.to : payload.from;
-  if (typeof outroLado !== 'string' || !outroLado) return null;
+  const info = payload._data?.Info;
 
-  // Grupo nao e atendimento. E `@lid` tambem sai: o identificador escondido do
-  // WhatsApp nao contem telefone, e traduzi-lo exigiria consultar a sessao DA
-  // VENDEDORA — coisa que o gateway, preso ao numero da loja, nao sabe fazer.
-  if (!outroLado.endsWith('@c.us')) return null;
+  // Grupo nao e atendimento. `IsGroup` vem do proprio WAHA e e mais confiavel
+  // que farejar `@g.us` num identificador que nem sempre e string.
+  if (info?.IsGroup === true) return null;
 
-  const digitos = outroLado.replace(/@.*$/, '');
-  if (!/^\d{10,15}$/.test(digitos)) return null;
+  const digitos = telefoneDoIdentificador(
+    daVendedora ? payload.to : payload.from,
+    info,
+    daVendedora,
+  );
+  if (!digitos) return null;
 
   return {
     telefone: digitos,
@@ -196,6 +202,126 @@ export function contatoDoEvento(body: unknown): {
         ? new Date(payload.timestamp * 1000)
         : new Date(),
   };
+}
+
+/**
+ * O FORMATO do identificador, para o log de descarte — 29/09/2026.
+ *
+ * Existe para que "a mensagem sumiu" deixe de ser invisivel, sem que o numero
+ * ou o texto entrem no log por isso. Devolve so a familia do identificador.
+ */
+export function formatoDoRemetente(body: unknown): string {
+  const b = (body ?? {}) as {
+    payload?: { from?: unknown; to?: unknown; fromMe?: boolean };
+  };
+  const lado = b.payload?.fromMe === true ? b.payload?.to : b.payload?.from;
+
+  // "ausente" nao pode cobrir o campo que existe com outra forma: foi
+  // exatamente essa confusao que custou uma hora em 29/09, quando o `to` de
+  // saida chegou como OBJETO e o log disse que faltava.
+  if (lado === undefined || lado === null) return 'ausente';
+  if (typeof lado !== 'string') return `nao-string(${typeof lado})`;
+  if (!lado) return 'vazio';
+
+  const arroba = lado.lastIndexOf('@');
+  return arroba >= 0 ? lado.slice(arroba) : 'sem sufixo';
+}
+
+/**
+ * O telefone por tras do identificador — 29/09/2026.
+ *
+ * ==========================================================================
+ * O `@lid` NAO E UM CASO RARO: E O QUE CHEGA HOJE.
+ *
+ * Ate esta data o extrator aceitava so `@c.us` e descartava o resto EM
+ * SILENCIO. O comentario que justificava o descarte dizia que traduzir o
+ * `@lid` "exigiria consultar a sessao da vendedora" — e isso nao e verdade.
+ * O WAHA ja manda o telefone no mesmo evento, em `_data.Info.SenderAlt`.
+ *
+ * O custo do engano foi medido: com o numero corporativo conectado, TODA
+ * mensagem de cliente sumia. Sem log, sem linha na fila, sem lead. O painel
+ * dizia "Conectado · sincronizado agora" enquanto nada era registrado.
+ *
+ * Conferido no evento real de 29/09/2026 (WAHA sobre WhatsApp comercial):
+ *
+ *   payload.from              -> ...@lid              (sem telefone)
+ *   payload._data.Info.Sender -> ...@lid              (sem telefone)
+ *   payload._data.Info.SenderAlt -> 55...@s.whatsapp.net  <- o telefone
+ * ==========================================================================
+ *
+ * O SUFIXO DE APARELHO TEM DE SAIR. O JID vem como `5585...:15@s.whatsapp.net`
+ * — o `:15` e o dispositivo que enviou, e muda entre celular e WhatsApp Web da
+ * MESMA pessoa. Deixa-lo entrar no telefone criaria um contato novo a cada
+ * aparelho, e a cliente seria perguntada de novo em cada um.
+ *
+ * ==========================================================================
+ * O `to` NEM SEMPRE E STRING — conferido em 29/09/2026.
+ *
+ * No evento de SAIDA (`fromMe: true`) desta versao do WAHA, `payload.to` chega
+ * como OBJETO. O codigo antigo fazia `typeof outroLado !== 'string'` e desistia
+ * ali, entao a resposta da vendedora nunca era registrada — e o log dizia
+ * "remetente ausente", o que era enganoso: o campo existia, com outra forma.
+ *
+ * Por isso `identificador` e `unknown` e serve apenas como PRIMEIRO candidato.
+ * Quem manda e o `Info`, que traz o mesmo dado em formato estavel:
+ *
+ *   recebendo -> SenderAlt      (o telefone de quem escreveu)
+ *   enviando  -> RecipientAlt   (o telefone de quem recebeu)
+ *
+ * O SENTIDO NAO E DETALHE. Ler `SenderAlt` quando a VENDEDORA escreve devolve
+ * o telefone DELA no lugar do da cliente, e o atendimento abriria contra a
+ * pessoa errada — sem erro nenhum aparecer.
+ * ==========================================================================
+ *
+ * @param identificador o `from`/`to` do evento, em qualquer forma.
+ * @param info          `payload._data.Info`, onde mora o JID real.
+ * @param daVendedora   o sentido decide QUAL campo espelha o outro lado.
+ * @returns so digitos, ou `null` quando nao ha telefone recuperavel.
+ */
+export function telefoneDoIdentificador(
+  identificador: unknown,
+  info: Record<string, unknown> | undefined,
+  daVendedora: boolean,
+): string | null {
+  /**
+   * O SUFIXO E CONFERIDO ANTES DOS DIGITOS, E ISSO NAO E ZELO.
+   *
+   * Um `@lid` como `158205808246878@lid` tem QUINZE digitos — passaria por
+   * qualquer teste de "parece telefone" e viraria um cliente fantasma, com
+   * atendimento e tudo. So `@c.us` e `@s.whatsapp.net` carregam telefone; o
+   * resto e identificador interno do WhatsApp e nao serve para nada aqui.
+   */
+  const limpar = (valor: unknown): string | null => {
+    if (typeof valor !== 'string' || !valor) return null;
+
+    const arroba = valor.indexOf('@');
+    if (arroba >= 0) {
+      const sufixo = valor.slice(arroba);
+      if (sufixo !== '@c.us' && sufixo !== '@s.whatsapp.net') return null;
+    }
+
+    // `5585...:15@s.whatsapp.net` -> `5585...`
+    const digitos = valor.replace(/[@:].*$/, '');
+    return /^\d{10,15}$/.test(digitos) ? digitos : null;
+  };
+
+  // A ORDEM E A REGRA. O identificador direto vem primeiro porque, quando e
+  // um telefone de verdade, e o dado mais proximo do evento. O campo espelho
+  // vem depois, e resolve o `@lid` e o `to` que nao e string.
+  const candidatos: unknown[] = [
+    identificador,
+    daVendedora ? info?.RecipientAlt : info?.SenderAlt,
+    // Em 1:1 o `Chat` E o outro lado — ultima tentativa, e so quando os dois
+    // acima falham. Em grupo nao serve, mas grupo ja saiu antes daqui.
+    info?.Chat,
+  ];
+
+  for (const candidato of candidatos) {
+    const telefone = limpar(candidato);
+    if (telefone) return telefone;
+  }
+
+  return null;
 }
 
 /**

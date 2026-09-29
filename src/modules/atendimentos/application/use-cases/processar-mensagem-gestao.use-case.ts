@@ -9,6 +9,7 @@ import { PermissionsService } from '../../../auth/application/permissions.servic
 import { EscopoVendasService } from '../../../vendas/application/escopo-vendas.service';
 import { FerramentasGestaoService } from '../ferramentas-gestao.service';
 import { MemoriaConversaService } from '../memoria-conversa.service';
+import { modeloDeIa } from '../../../../shared/config/modelo-de-ia';
 
 export interface MensagemGestao {
   /** Id do usuario. E a CHAVE da memoria de conversa — nunca o telefone. */
@@ -99,7 +100,7 @@ export class ProcessarMensagemGestaoUseCase {
 
     try {
       const { texto } = await this.llm.chatComFerramentas({
-        model: this.config.get<string>('ANTHROPIC_MODEL_GESTAO') ?? 'claude-opus-4-8',
+        model: modeloDeIa(this.config, 'ANTHROPIC_MODEL_GESTAO', 'claude-opus-4-8'),
         system,
         maxTokens: 700,
         mensagens: [...historico, { role: 'user', content: pergunta }],

@@ -21,6 +21,7 @@ import { PERMISSAO_GESTAO } from '../../../auth/application/use-cases/buscar-adm
 import { AvisarVendedoraUseCase } from './avisar-vendedora.use-case';
 import type { IAgentePromptsRepository } from '../../domain/ports/repositories/agente-prompts-repository.port';
 import { ANASTASIA_SYSTEM } from '../personas';
+import { modeloDeIa } from '../../../../shared/config/modelo-de-ia';
 
 export interface ContextoAgente {
   aba?: string;
@@ -66,7 +67,7 @@ export class ChatAnastasiaUseCase {
     solicitante?: SolicitanteChat,
   ): Promise<ChatComFerramentasResultado> {
     const model =
-      this.config.get<string>('ANTHROPIC_MODEL_ANASTASIA') ?? 'claude-opus-4-8';
+      modeloDeIa(this.config, 'ANTHROPIC_MODEL_ANASTASIA', 'claude-opus-4-8');
 
     const base = (await this.prompts.buscar('anastasia')) ?? ANASTASIA_SYSTEM;
 

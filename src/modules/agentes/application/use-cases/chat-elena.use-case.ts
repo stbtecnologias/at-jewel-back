@@ -18,6 +18,7 @@ import type { IAgentePromptsRepository } from '../../domain/ports/repositories/a
 import { ELENA_SYSTEM } from '../personas';
 import type { ContextoAgente, SolicitanteChat } from './chat-anastasia.use-case';
 import { sanitizarMensagens } from './chat-anastasia.use-case';
+import { modeloDeIa } from '../../../../shared/config/modelo-de-ia';
 
 /**
  * A Elena do painel.
@@ -66,7 +67,7 @@ export class ChatElenaUseCase {
     solicitante?: SolicitanteChat,
   ): Promise<ChatComFerramentasResultado> {
     const model =
-      this.config.get<string>('ANTHROPIC_MODEL_ELENA') ?? 'claude-sonnet-4-6';
+      modeloDeIa(this.config, 'ANTHROPIC_MODEL_ELENA', 'claude-sonnet-4-6');
 
     const base = (await this.prompts.buscar('elena')) ?? ELENA_SYSTEM;
 

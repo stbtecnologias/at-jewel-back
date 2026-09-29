@@ -20,6 +20,7 @@ import { RegistrarEventoUseCase } from '../../../agente-eventos/application/use-
 import { assuntosRestritosEm } from '../assunto-restrito';
 import { FerramentasVendedoraService } from '../ferramentas-vendedora.service';
 import { MemoriaConversaService } from '../memoria-conversa.service';
+import { modeloDeIa } from '../../../../shared/config/modelo-de-ia';
 
 /**
  * Audio que acompanhou a mensagem. Descrito aqui, na camada de aplicacao, para
@@ -173,7 +174,7 @@ export class ProcessarMensagemInternaUseCase {
 
     try {
       const { texto } = await this.llm.chatComFerramentas({
-        model: this.config.get<string>('ANTHROPIC_MODEL_INTERNO') ?? 'claude-opus-4-8',
+        model: modeloDeIa(this.config, 'ANTHROPIC_MODEL_INTERNO', 'claude-opus-4-8'),
         system,
         maxTokens: 700,
         mensagens: [...historico, { role: 'user', content: pergunta }],

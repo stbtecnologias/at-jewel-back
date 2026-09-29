@@ -5,6 +5,7 @@ import type {
   VereditoFoto,
 } from '../../domain/ports/conferencia-foto.port';
 import type { ImagemDeEntrada } from '../../domain/ports/tratamento-imagem.port';
+import { modeloDeIa } from '../../../../shared/config/modelo-de-ia';
 
 const ENDPOINT = 'https://api.anthropic.com/v1/messages';
 const VERSAO_API = '2023-06-01';
@@ -106,9 +107,11 @@ export class AnthropicConferenciaFotoClient implements IConferenciaFoto {
           'anthropic-version': VERSAO_API,
         },
         body: JSON.stringify({
-          model:
-            this.config.get<string>('ANTHROPIC_MODEL_CONFERENCIA') ??
+          model: modeloDeIa(
+            this.config,
+            'ANTHROPIC_MODEL_CONFERENCIA',
             MODELO_PADRAO,
+          ),
           max_tokens: MAX_TOKENS,
           messages: [
             {

@@ -1,4 +1,9 @@
-import { extrairMensagemRecebida } from './waha-webhook';
+import {
+  contatoDoEvento,
+  extrairMensagemRecebida,
+  formatoDoRemetente,
+  telefoneDoIdentificador,
+} from './waha-webhook';
 
 /**
  * O parser do webhook do WAHA.
@@ -207,5 +212,275 @@ describe('o nome do evento, nas duas versões do WAHA', () => {
     };
 
     expect(extrairMensagemRecebida(daAgente)).toBeNull();
+  });
+});
+
+/**
+ * O `@lid` NO LUGAR DO TELEFONE — 29/09/2026.
+ *
+ * ==========================================================================
+ * O DEFEITO QUE NAO APARECIA EM LUGAR NENHUM.
+ *
+ * Com o numero corporativo da vendedora conectado, TODA mensagem de cliente
+ * sumia: o WhatsApp comercial passou a mandar o remetente como `@lid` — um
+ * identificador que nao contem telefone — e o extrator so aceitava `@c.us`.
+ * Descartava calado.
+ *
+ * O painel dizia "Conectado · sincronizado agora", o WAHA dizia `WORKING`, a
+ * mensagem saia com dois tiques, e nada era registrado. Levou uma manha de
+ * 29/09 para achar, com log temporario, porque nenhum sintoma apontava para ca.
+ *
+ * Estes testes existem para que a proxima pessoa nao gaste a mesma manha.
+ * ==========================================================================
+ */
+describe('o telefone por tras do identificador', () => {
+  // O evento real capturado em 29/09/2026 (numeros trocados).
+  const INFO_LID = {
+    Chat: '111111111111111@lid',
+    Sender: '222222222222222@lid',
+    SenderAlt: '558598490118:15@s.whatsapp.net',
+  };
+
+  describe('o caminho de sempre', () => {
+    it('`@c.us` continua saindo direto, sem olhar o Info', () => {
+      expect(telefoneDoIdentificador('5585999990001@c.us', undefined, false))
+        .toBe('5585999990001');
+    });
+
+    it('`@s.whatsapp.net` tambem serve — e o mesmo telefone', () => {
+      expect(telefoneDoIdentificador('5585999990001@s.whatsapp.net', undefined, false))
+        .toBe('5585999990001');
+    });
+  });
+
+  describe('o `@lid`, que nao tem telefone nenhum', () => {
+    it('recebendo, o telefone sai do SenderAlt', () => {
+      expect(telefoneDoIdentificador('222222222222222@lid', INFO_LID, false))
+        .toBe('558598490118');
+    });
+
+    it('enviando, sai do campo espelho do destinatario', () => {
+      const info = { RecipientAlt: '558598490118:3@s.whatsapp.net' };
+      expect(telefoneDoIdentificador('222222222222222@lid', info, true))
+        .toBe('558598490118');
+    });
+
+    /* O SENTIDO IMPORTA. Ler o SenderAlt quando a VENDEDORA escreve devolveria
+     * o telefone DELA no lugar do da cliente — e o atendimento seria aberto
+     * contra a pessoa errada, sem erro nenhum aparecer. */
+    it('enviando NAO cai no SenderAlt, que e a propria vendedora', () => {
+      expect(telefoneDoIdentificador('222222222222222@lid', INFO_LID, true))
+        .toBeNull();
+    });
+
+    it('`@lid` sem campo espelho devolve null — e ai o log entra', () => {
+      expect(telefoneDoIdentificador('222222222222222@lid', { Sender: 'x@lid' }, false))
+        .toBeNull();
+      expect(telefoneDoIdentificador('222222222222222@lid', undefined, false))
+        .toBeNull();
+    });
+  });
+
+  /*
+   * O `:15` E O APARELHO, E NAO PARTE DO NUMERO.
+   *
+   * O mesmo contato manda do celular (`:15`) e do WhatsApp Web (`:3`). Deixar
+   * o sufixo entrar criaria um cliente por aparelho, e a cliente seria
+   * perguntada de novo em cada um — sem nada parecer quebrado.
+   */
+  describe('o sufixo de aparelho', () => {
+    it.each([
+      ['558598490118:15@s.whatsapp.net', '558598490118'],
+      ['558598490118:3@s.whatsapp.net', '558598490118'],
+      ['558598490118@s.whatsapp.net', '558598490118'],
+    ])('%s -> %s', (jid, esperado) => {
+      expect(telefoneDoIdentificador(jid, undefined, false)).toBe(esperado);
+    });
+
+    it('dois aparelhos da mesma pessoa dao o MESMO telefone', () => {
+      const celular = telefoneDoIdentificador('9@lid', { SenderAlt: '558598490118:15@s.whatsapp.net' }, false);
+      const web = telefoneDoIdentificador('9@lid', { SenderAlt: '558598490118:3@s.whatsapp.net' }, false);
+      expect(celular).toBe(web);
+    });
+  });
+
+  describe('o que continua fora', () => {
+    it('grupo nao e atendimento', () => {
+      expect(contatoDoEvento({
+        event: 'message.any',
+        payload: { from: '123456789@g.us', fromMe: false },
+      })).toBeNull();
+    });
+
+    it.each(['', 'abc@c.us', '123@c.us', '1234567890123456@c.us'])(
+      'identificador que nao e telefone (%s) nao passa',
+      (id) => {
+        expect(telefoneDoIdentificador(id, undefined, false)).toBeNull();
+      },
+    );
+  });
+
+  describe('o evento inteiro, de ponta a ponta', () => {
+    it('o evento REAL de 29/09 agora vira contato', () => {
+      const contato = contatoDoEvento({
+        event: 'message.any',
+        session: 'vend-9ef62011-af97-4bde-83d8-a63142b45c73',
+        payload: {
+          from: '222222222222222@lid',
+          fromMe: false,
+          timestamp: 1790931534,
+          _data: { Info: INFO_LID },
+        },
+      });
+
+      expect(contato).toEqual({
+        telefone: '558598490118',
+        daVendedora: false,
+        em: new Date(1790931534 * 1000),
+      });
+    });
+  });
+});
+
+describe('o formato do remetente, para o log', () => {
+  it.each([
+    [{ payload: { from: 'x@lid', fromMe: false } }, '@lid'],
+    [{ payload: { from: 'x@c.us', fromMe: false } }, '@c.us'],
+    [{ payload: { to: 'x@s.whatsapp.net', fromMe: true } }, '@s.whatsapp.net'],
+    [{ payload: { fromMe: false } }, 'ausente'],
+    [{}, 'ausente'],
+  ])('%j -> %s', (body, esperado) => {
+    expect(formatoDoRemetente(body)).toBe(esperado);
+  });
+
+  /* O LOG NAO PODE VAZAR O NUMERO. Ele existe para dizer QUE formato chegou,
+   * e nao QUEM escreveu — e um log de webhook e lido por muita gente. */
+  it('nao devolve digito nenhum do telefone', () => {
+    const saida = formatoDoRemetente({
+      payload: { from: '558598490118@c.us', fromMe: false },
+    });
+    expect(saida).not.toMatch(/\d/);
+  });
+});
+
+/**
+ * O LADO DA VENDEDORA — 29/09/2026, mesma manha, defeito seguinte.
+ *
+ * ==========================================================================
+ * O `to` DE SAIDA NAO E STRING.
+ *
+ * Consertado o `@lid` de entrada, a mensagem da CLIENTE passou a registrar e a
+ * da VENDEDORA nao. O log dizia "remetente ausente" — e era mentira: o campo
+ * existia, so que como OBJETO. O extrator testava `typeof === 'string'` e
+ * desistia antes de olhar o `Info`.
+ *
+ * Sem este lado, o sistema enxerga a cliente escrevendo e NUNCA sendo
+ * respondida — e o tempo de primeira resposta (ANA-09) nasceria errado para
+ * todo mundo, sem nada parecer quebrado.
+ * ==========================================================================
+ */
+describe('os dois sentidos da conversa', () => {
+  const CLIENTE = '558599990001';
+  const VENDEDORA = '558598490118';
+
+  /** Como o WAHA manda quando a CLIENTE escreve (evento real de 29/09). */
+  const recebendo = {
+    event: 'message.any',
+    session: 'vend-9ef62011-af97-4bde-83d8-a63142b45c73',
+    payload: {
+      from: '222222222222222@lid',
+      fromMe: false,
+      timestamp: 1790931534,
+      _data: {
+        Info: {
+          Chat: '111111111111111@lid',
+          Sender: '222222222222222@lid',
+          SenderAlt: `${CLIENTE}:15@s.whatsapp.net`,
+          IsGroup: false,
+        },
+      },
+    },
+  };
+
+  /** Como o WAHA manda quando a VENDEDORA responde: `to` e OBJETO. */
+  const enviando = {
+    event: 'message.any',
+    session: 'vend-9ef62011-af97-4bde-83d8-a63142b45c73',
+    payload: {
+      to: { _serialized: '111111111111111@lid', server: 'lid' },
+      fromMe: true,
+      timestamp: 1790931600,
+      _data: {
+        Info: {
+          Chat: '111111111111111@lid',
+          Sender: `${VENDEDORA}@s.whatsapp.net`,
+          SenderAlt: `${VENDEDORA}:15@s.whatsapp.net`,
+          RecipientAlt: `${CLIENTE}:3@s.whatsapp.net`,
+          IsGroup: false,
+        },
+      },
+    },
+  };
+
+  it('a cliente escrevendo e reconhecida', () => {
+    expect(contatoDoEvento(recebendo)).toMatchObject({
+      telefone: CLIENTE,
+      daVendedora: false,
+    });
+  });
+
+  it('a vendedora respondendo TAMBEM e — mesmo com `to` objeto', () => {
+    expect(contatoDoEvento(enviando)).toMatchObject({
+      telefone: CLIENTE,
+      daVendedora: true,
+    });
+  });
+
+  /*
+   * ESTE E O TESTE QUE IMPORTA.
+   *
+   * Os dois sentidos tem de dar o telefone DA CLIENTE. Se o lado de saida
+   * pegasse o `SenderAlt` — que ali e a propria vendedora — a conversa viraria
+   * DUAS, e foi exatamente o que aconteceu no teste ao vivo de 29/09 antes
+   * deste conserto.
+   */
+  it('ida e volta caem na MESMA conversa', () => {
+    const ida = contatoDoEvento(recebendo);
+    const volta = contatoDoEvento(enviando);
+
+    expect(ida?.telefone).toBe(volta?.telefone);
+    expect(ida?.telefone).not.toBe(VENDEDORA);
+  });
+
+  /*
+   * A ARMADILHA DOS QUINZE DIGITOS.
+   *
+   * `158205808246878@lid` tem quinze digitos e passaria por qualquer teste de
+   * "parece telefone". Aceita-lo criaria um cliente fantasma, com atendimento
+   * e tudo, e ninguem descobriria olhando a tela.
+   */
+  it('um `@lid` de 15 digitos NAO vira telefone', () => {
+    expect(telefoneDoIdentificador('158205808246878@lid', undefined, false)).toBeNull();
+
+    const soComLid = contatoDoEvento({
+      event: 'message.any',
+      payload: {
+        from: '158205808246878@lid',
+        fromMe: false,
+        _data: { Info: { Chat: '111111111111111@lid', IsGroup: false } },
+      },
+    });
+    expect(soComLid).toBeNull();
+  });
+
+  it('grupo continua fora, pelo `IsGroup` do proprio WAHA', () => {
+    expect(contatoDoEvento({
+      event: 'message.any',
+      payload: {
+        from: '222222222222222@lid',
+        fromMe: false,
+        _data: { Info: { ...recebendo.payload._data.Info, IsGroup: true } },
+      },
+    })).toBeNull();
   });
 });

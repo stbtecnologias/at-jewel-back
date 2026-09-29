@@ -10,6 +10,7 @@ import type { IAgentePromptsRepository } from '../../../agentes/domain/ports/rep
 import { limparEHigienizar } from '../../../../shared/http/sanitize/sanitize-text.transform';
 import { WHATSAPP_GATEWAY } from '../../domain/ports/injection-tokens';
 import type { IWhatsappGateway } from '../../domain/ports/whatsapp-gateway.port';
+import { modeloDeIa } from '../../../../shared/config/modelo-de-ia';
 
 export interface MensagemRecebida {
   /** Chat de origem (formato WhatsApp, ex.: `5585...@c.us`). */
@@ -74,7 +75,7 @@ export class ProcessarMensagemWhatsappUseCase {
     if (!texto) return null;
 
     const model =
-      this.config.get<string>('ANTHROPIC_MODEL_ANASTASIA') ?? 'claude-opus-4-8';
+      modeloDeIa(this.config, 'ANTHROPIC_MODEL_ANASTASIA', 'claude-opus-4-8');
 
     const system =
       (await this.prompts.buscar('anastasia_triagem')) ?? ANASTASIA_TRIAGEM_SYSTEM;

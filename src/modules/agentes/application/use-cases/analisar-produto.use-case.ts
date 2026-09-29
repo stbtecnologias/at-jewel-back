@@ -7,6 +7,7 @@ import {
 import type { ILlmClient } from '../../domain/ports/llm-client.port';
 import type { IAgentesDataRepository } from '../../domain/ports/repositories/agentes-data-repository.port';
 import { ELENA_SYSTEM } from '../personas';
+import { modeloDeIa } from '../../../../shared/config/modelo-de-ia';
 
 @Injectable()
 export class AnalisarProdutoUseCase {
@@ -27,7 +28,7 @@ export class AnalisarProdutoUseCase {
       : null;
 
     const model =
-      this.config.get<string>('ANTHROPIC_MODEL_ELENA') ?? 'claude-sonnet-4-6';
+      modeloDeIa(this.config, 'ANTHROPIC_MODEL_ELENA', 'claude-sonnet-4-6');
 
     // O QUE ESTE PROMPT PEDIA ANTES, E POR QUE MUDOU.
     //
