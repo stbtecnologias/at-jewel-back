@@ -677,6 +677,25 @@ const GESTAO_CARTEIRA_CLIENTE_TOOL: Anthropic.Tool = {
   },
 };
 
+/**
+ * `AAAA-MM-DD` — a data que o modelo manda, conferida antes de virar consulta.
+ *
+ * ==========================================================================
+ * CONSTANTE COM NOME, E NAO LITERAL EMBUTIDO, PORQUE ELA JA ESTEVE ERRADA.
+ *
+ * Ate 29/09/2026 o teste era `/^d{4}-d{2}-d{2}$/` — as barras do `\d` tinham
+ * sumido. Aquilo casa com o texto literal "dddd-dd-dd" e com data nenhuma:
+ * TODA data pedida caia no `undefined` EM SILENCIO e virava hoje. Perguntar
+ * "como foi o dia da Aline no dia 25?" devolvia os numeros de HOJE, sem aviso
+ * de que a data tinha sido ignorada — a pior forma de errar, porque a resposta
+ * parece certa.
+ *
+ * Um literal enfiado no meio de uma chamada nao tem como ser testado; uma
+ * constante exportada tem, e o teste esta em `data-iso.spec.ts`.
+ * ==========================================================================
+ */
+export const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+
 const GESTAO_DIA_DA_VENDEDORA_TOOL: Anthropic.Tool = {
   name: 'dia_da_vendedora',
   description:
@@ -695,6 +714,35 @@ const GESTAO_DIA_DA_VENDEDORA_TOOL: Anthropic.Tool = {
       },
     },
     required: ['vendedora'],
+  },
+};
+
+/**
+ * A DESCRICAO PRECISA DISPUTAR COM O `dia_da_vendedora` — 29/09/2026.
+ *
+ * As duas respondem a frases parecidas ("a Aline esta com algum cliente?") e o
+ * modelo escolhe pela descricao. A diferenca que importa esta na primeira
+ * linha de cada uma: esta e AGORA, aquela e O DIA — e o dia leva uma hora para
+ * existir, porque so o leitor o escreve.
+ */
+const GESTAO_CONVERSAS_AGORA_TOOL: Anthropic.Tool = {
+  name: 'conversas_agora',
+  description:
+    'QUEM ESTA CONVERSANDO NESTE MOMENTO no WhatsApp corporativo, ao vivo. Use SEMPRE que a pergunta for sobre o presente: "a Aline esta com algum cliente", "quem esta atendendo agora", "tem alguem conversando", "a Marina esta ocupada". COM "vendedora", so o celular dela; SEM, a loja inteira. IMPORTANTE: esta e a UNICA ferramenta que enxerga a conversa enquanto ela acontece — todas as outras (dia_da_vendedora, funil_de_atendimentos, metricas_de_atendimento) so enxergam depois que o sistema le a conversa, o que acontece uma hora DEPOIS da ultima mensagem. Entao se aqui aparece conversa e la nao aparece nada, NAO ha defeito nenhum: a leitura ainda nao rodou, e e isso que voce deve explicar. LIMITES: nao diz o assunto da conversa (isto e ponteiro, nao texto) e nao afirma que um numero ainda nao identificado e cliente — repasse "nao identificado" como esta.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      vendedora: {
+        type: 'string',
+        description:
+          'Nome da vendedora, como falado. OMITA para a loja inteira — nao invente um nome quando a pergunta for geral.',
+      },
+      minutos: {
+        type: 'number',
+        description:
+          'Quanto tempo atras ainda conta como "agora". Omita para 30 minutos. Use apenas se pedirem outra janela ("na ultima hora" = 60).',
+      },
+    },
   },
 };
 
@@ -1105,6 +1153,7 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoCompararAnterior) tools.push(GESTAO_COMPARAR_ANTERIOR_TOOL);
     if (params.gestaoDiaDaVendedora)
       tools.push(GESTAO_DIA_DA_VENDEDORA_TOOL);
+    if (params.gestaoConversasAgora) tools.push(GESTAO_CONVERSAS_AGORA_TOOL);
     if (params.registrarRelato) tools.push(RELATO_TOOL);
     if (params.consultarVendas) tools.push(VENDAS_TOOL);
     if (params.consultarMetas) tools.push(METAS_TOOL);
@@ -1662,9 +1711,24 @@ export class AnthropicClient implements ILlmClient {
             const dia = String(e.dia ?? "");
             const r = await params.gestaoDiaDaVendedora!({
               vendedora: String(e.vendedora ?? "").slice(0, 80),
-              dia: /^d{4}-d{2}-d{2}$/.test(dia) ? dia : undefined,
+              dia: DATA_ISO.test(dia) ? dia : undefined,
             });
             return textoDoDiaDaVendedora(r);
+          }),
+        );
+      } else if (
+        toolUse.name === 'conversas_agora' &&
+        params.gestaoConversasAgora
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as { vendedora?: string; minutos?: number };
+            const nome = String(e.vendedora ?? '').slice(0, 80);
+            const r = await params.gestaoConversasAgora!({
+              vendedora: nome || undefined,
+              minutos: typeof e.minutos === 'number' ? e.minutos : undefined,
+            });
+            return textoDasConversasAgora(r, Boolean(nome));
           }),
         );
       } else if (toolUse.name === 'listar_leads' && params.gestaoLeads) {
@@ -2321,10 +2385,30 @@ function textoDoDiaDaVendedora(r: GestaoLeituraResultado): string {
       : 'Nao ha vendedora com esse nome. Diga isso em uma frase.';
   }
   if (r.linhas.length === 0) {
+    // ====================================================================
+    // O VAZIO TINHA UMA EXPLICACAO SO, E ELA ENVELHECEU — 29/09/2026.
+    //
+    // Ate hoje este texto oferecia como UNICA hipotese "o numero dela ainda
+    // nao esta pareado". Era verdade enquanto nenhum celular estava
+    // conectado. No dia em que o primeiro foi pareado, virou a hipotese
+    // ERRADA — e continuou sendo a unica que o modelo tinha: o Lucas trocou
+    // mensagem com a vendedora as 15:08 e as 15:17 ouviu que o celular dela
+    // talvez nao estivesse conectado, com o celular conectado.
+    //
+    // Agora vem a hipotese CERTA primeiro — o registro do dia nasce da
+    // leitura, que roda uma hora depois da ultima mensagem — e a antiga vira
+    // o que sempre deveria ter sido: algo a CONFERIR, com a ferramenta que
+    // sabe conferir, em vez de um palpite entregue como explicacao.
+    // ====================================================================
     return (
       `Nao ha nenhum registro de ${r.vendedora} nesse dia. Diga isso em uma ` +
-      'frase. NAO conclua que ela nao trabalhou: pode ser que o numero dela ' +
-      'ainda nao esteja pareado no painel.'
+      'frase. NAO conclua que ela nao trabalhou, e NAO afirme que o celular ' +
+      'dela esta desconectado — voce nao verificou isso. Se o dia perguntado ' +
+      'for HOJE, a explicacao mais provavel e outra: o registro do dia nasce ' +
+      'da leitura das conversas, que so roda UMA HORA depois da ultima ' +
+      'mensagem, entao conversa recente ainda nao aparece aqui. Para saber se ' +
+      'ela esta conversando NESTE MOMENTO, use conversas_agora. Para saber se ' +
+      'o celular dela esta mesmo conectado, use listar_vendedoras.'
     );
   }
   return (
@@ -2332,6 +2416,55 @@ function textoDoDiaDaVendedora(r: GestaoLeituraResultado): string {
     'Conte isso como quem esta contando o dia dela, em texto corrido. Repasse ' +
     'os numeros exatamente como estao. NAO diga o que as clientes queriam nem ' +
     'o assunto das conversas — isto aqui nao le o texto delas.'
+  );
+}
+
+/**
+ * O AGORA das conversas — 29/09/2026.
+ *
+ * ==========================================================================
+ * O VAZIO AQUI E INFORMACAO, E PRECISA DIZER O QUE NAO E.
+ *
+ * "Ninguem conversando" pode ser calmaria ou pode ser celular desconectado, e
+ * as duas exigem reacoes opostas. Esta funcao NAO escolhe entre elas — manda o
+ * modelo conferir com quem sabe (`listar_vendedoras`), que e exatamente o que
+ * faltava no `dia_da_vendedora` e produziu o palpite errado de 29/09.
+ * ==========================================================================
+ */
+function textoDasConversasAgora(
+  r: GestaoLeituraResultado,
+  pediuVendedora: boolean,
+): string {
+  if (r.status === 'AMBIGUA') {
+    return (
+      `Mais de uma vendedora com esse nome: ${(r.nomes ?? []).join(', ')}. ` +
+      'Pergunte de qual se trata. NAO escolha uma.'
+    );
+  }
+  if (r.status === 'NAO_ENCONTRADA') {
+    const equipe = (r.nomes ?? []).join(', ');
+    return equipe
+      ? `Nao ha vendedora com esse nome. A equipe ativa e: ${equipe}. Diga isso e pergunte qual delas.`
+      : 'Nao ha vendedora com esse nome. Diga isso em uma frase.';
+  }
+  if (r.linhas.length === 0) {
+    const quem = pediuVendedora ? r.vendedora : 'ninguem';
+    return (
+      `Nenhuma conversa em andamento ${pediuVendedora ? `de ${quem}` : 'na loja'} ` +
+      'nesta janela. Diga isso em uma frase, e NAO afirme o motivo: pode ser ' +
+      'calmaria ou pode ser celular desconectado, e voce nao sabe qual. Se ' +
+      'importar para quem perguntou, use listar_vendedoras para conferir as ' +
+      'conexoes antes de opinar.'
+    );
+  }
+  return (
+    `Conversas em andamento AGORA:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+    'Conte isso em texto corrido. REGRAS: (1) NAO diga sobre o que estao ' +
+    'conversando — isto nao le o texto das mensagens, so sabe que houve troca ' +
+    'e ha quanto tempo; (2) quem aparece como "numero ainda NAO identificado" ' +
+    'NAO pode ser chamado de cliente nem entrar numa contagem de clientes: o ' +
+    'sistema so descobre de quem e o numero depois que le a conversa, uma hora ' +
+    'depois da ultima mensagem. Repasse como "ainda nao identificado".'
   );
 }
 

@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThanOrEqual, Repository } from 'typeorm';
+import { In, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 import {
   encryptedTransformer,
   hashField,
 } from '../../../../../../shared/database/transformers/encrypted-column.transformer';
 import type {
+  ConversaEmAndamento,
   ConversaWhatsapp,
   DadosDaMensagem,
   FechamentoDaLeitura,
@@ -128,6 +129,41 @@ export class ConversaWhatsappRepository implements IConversaWhatsappRepository {
         WHERE id = $1`,
       [id, proximaTentativa],
     );
+  }
+
+  /**
+   * O ponteiro ao vivo. Ver o comentario da porta para o porque de `IGNORADA`
+   * ficar de fora.
+   *
+   * O INDICE JA EXISTE: `idx_conversas_whatsapp_vendedora` e
+   * `(vendedora_id, ultima_mensagem_em)`, que e exatamente esta consulta —
+   * nao houve migracao para isto.
+   *
+   * SEM O `chat_id`. Ele e o telefone, esta cifrado, e quem pergunta "ela
+   * esta conversando?" nao vai ligar para ninguem: trazer o numero de um
+   * contato que o sistema NEM SABE se e cliente so serviria para ser repassado
+   * adiante. Mesma regra do aviso de lead novo.
+   */
+  async emAndamento(
+    desde: Date,
+    vendedoraId?: string | null,
+  ): Promise<ConversaEmAndamento[]> {
+    const linhas = await this.repo.find({
+      where: {
+        ultimaMensagemEm: MoreThanOrEqual(desde),
+        estado: In(['AGUARDANDO', 'LIDA']),
+        ...(vendedoraId ? { vendedoraId } : {}),
+      },
+      order: { ultimaMensagemEm: 'DESC' },
+      // Teto de sanidade. Uma loja com mais de 200 conversas vivas na janela
+      // nao quer uma lista — quer um numero —, e quem resume ja tem o bastante.
+      take: 200,
+    });
+    return linhas.map((l) => ({
+      vendedoraId: l.vendedoraId,
+      clienteId: l.clienteId,
+      ultimaMensagemEm: l.ultimaMensagemEm,
+    }));
   }
 }
 

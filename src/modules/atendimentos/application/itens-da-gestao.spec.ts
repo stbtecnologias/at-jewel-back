@@ -103,6 +103,9 @@ describe('itens_mais_vendidos e o escopo de quem pergunta', () => {
       { listar: jest.fn(), buscarPorId: jest.fn() } as never,
       { buscarPorNomeParcial: jest.fn() } as never,
       { listarAguardandoGestao: jest.fn() } as never,
+      // O ponteiro de conversas vivas (29/09) — dublado: estes testes
+      // descrevem o roteamento das ferramentas, nao a consulta.
+      { emAndamento: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 
@@ -244,6 +247,9 @@ describe('consultar_produtos da gestao e a quantidade', () => {
       { listar: jest.fn(), buscarPorId: jest.fn() } as never,
       { buscarPorNomeParcial: jest.fn() } as never,
       { listarAguardandoGestao: jest.fn() } as never,
+      // O ponteiro de conversas vivas (29/09) — dublado: estes testes
+      // descrevem o roteamento das ferramentas, nao a consulta.
+      { emAndamento: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 
@@ -396,6 +402,9 @@ describe('o recorte de equipe nas ferramentas de gestao', () => {
       vendedoras as never,
       { buscarPorNomeParcial: jest.fn() } as never,
       { listarAguardandoGestao: jest.fn() } as never,
+      // O ponteiro de conversas vivas (29/09) — dublado: estes testes
+      // descrevem o roteamento das ferramentas, nao a consulta.
+      { emAndamento: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 
@@ -580,6 +589,9 @@ describe('o periodo livre nas ferramentas de venda', () => {
       { listar: jest.fn().mockResolvedValue([]), buscarPorId: jest.fn() } as never,
       { buscarPorNomeParcial: jest.fn() } as never,
       { listarAguardandoGestao: jest.fn() } as never,
+      // O ponteiro de conversas vivas (29/09) — dublado: estes testes
+      // descrevem o roteamento das ferramentas, nao a consulta.
+      { emAndamento: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 
@@ -727,6 +739,9 @@ describe('o ranking por tipo de peça', () => {
       { listar: jest.fn().mockResolvedValue([]), buscarPorId: jest.fn() } as never,
       { buscarPorNomeParcial: jest.fn() } as never,
       { listarAguardandoGestao: jest.fn() } as never,
+      // O ponteiro de conversas vivas (29/09) — dublado: estes testes
+      // descrevem o roteamento das ferramentas, nao a consulta.
+      { emAndamento: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 

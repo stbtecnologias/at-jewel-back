@@ -207,6 +207,9 @@ describe('o funil pela gestao (Anastasia)', () => {
       { listar: jest.fn(), buscarPorId: jest.fn() } as never,
       { buscarPorNomeParcial: jest.fn() } as never,
       { listarAguardandoGestao: jest.fn() } as never,
+      // O ponteiro de conversas vivas (29/09) — dublado: estes testes
+      // descrevem o roteamento das ferramentas, nao a consulta.
+      { emAndamento: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 

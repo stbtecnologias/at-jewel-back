@@ -40,6 +40,37 @@ export interface DadosDaMensagem {
   clienteId?: string | null;
 }
 
+/**
+ * Uma conversa VIVA no celular da vendedora — 29/09/2026.
+ *
+ * ==========================================================================
+ * O PONTEIRO RESPONDE "ESTA CONVERSANDO?" UMA HORA ANTES DA LEITURA.
+ *
+ * A linha do tempo — que e o que todas as outras ferramentas da gestao leem —
+ * so existe depois que o leitor roda, e o leitor espera uma hora DEPOIS DE A
+ * CONVERSA PARAR. Entao "a Aline esta com algum cliente agora?" vinha sendo
+ * respondido por um dado que e, por construcao, de uma hora atras. Em 29/09 o
+ * Lucas trocou mensagem com a vendedora as 15:08 e as 15:17 a Anastasia disse
+ * que nao havia registro nenhum — e nao havia mesmo, ate as 16:08.
+ *
+ * Esta leitura e outra coisa: e o PONTEIRO, que o webhook atualiza a cada
+ * mensagem nos DOIS sentidos. Ela sabe QUE ha conversa e ha quanto tempo; nao
+ * sabe, e nao pode fingir que sabe, sobre o que e.
+ * ==========================================================================
+ */
+export interface ConversaEmAndamento {
+  vendedoraId: string;
+  /**
+   * NULO NAO QUER DIZER "NAO E CLIENTE" — quer dizer "ainda nao se sabe".
+   *
+   * Enquanto o leitor nao passa, o numero desconhecido e indistinguivel entre
+   * a cliente nova e o entregador. Quem mostrar isto tem de dizer "numero
+   * ainda nao identificado", nunca "1 cliente".
+   */
+  clienteId: string | null;
+  ultimaMensagemEm: Date;
+}
+
 export interface FechamentoDaLeitura {
   /** A marca d'agua nova. So chega aqui quando a leitura deu certo. */
   lidaAte: Date;
@@ -76,4 +107,28 @@ export interface IConversaWhatsappRepository {
    * mensagem nova.
    */
   registrarFalha(id: string, proximaTentativa: Date | null): Promise<void>;
+
+  /**
+   * As conversas com mensagem a partir de `desde` — o agora, sem esperar o
+   * leitor. Mais recente primeiro.
+   *
+   * ======================================================================
+   * A CONVERSA `IGNORADA` FICA DE FORA, E ISSO E PRIVACIDADE, NAO FILTRO.
+   *
+   * O WAHA le a CONTA inteira: a irma, o grupo do predio, a operadora. A
+   * `IGNORADA` e justamente a que o leitor ja julgou como "nao e assunto da
+   * loja" — e devolve-la aqui faria a gestao ver, em tempo real, que a
+   * vendedora esta no celular com a familia. Ninguem pediu isso, e o pedido
+   * do Lucas em 29/09 era sobre CLIENTE.
+   *
+   * A `AGUARDANDO` entra porque ainda nao foi julgada, e e exatamente o caso
+   * da cliente nova — que e quem interessa. O preco e que ela pode ser a
+   * irma tambem, e por isso a ausencia de `clienteId` tem de aparecer como
+   * "ainda nao identificado" ao inves de virar contagem de cliente.
+   * ======================================================================
+   */
+  emAndamento(
+    desde: Date,
+    vendedoraId?: string | null,
+  ): Promise<ConversaEmAndamento[]>;
 }

@@ -22,8 +22,9 @@ describe('FerramentasGestaoService', () => {
     buscarPorCodigoErp: jest.Mock;
     buscarPorId: jest.Mock;
   };
-  let clientes: { buscarPorNomeParcial: jest.Mock };
+  let clientes: { buscarPorNomeParcial: jest.Mock; buscarPorId: jest.Mock };
   let leads: { listarAguardandoGestao: jest.Mock };
+  let conversas: { emAndamento: jest.Mock };
   let servico: FerramentasGestaoService;
 
   const MARINA = {
@@ -60,8 +61,12 @@ describe('FerramentasGestaoService', () => {
       buscarPorCodigoErp: jest.fn().mockResolvedValue(null),
       buscarPorId: jest.fn().mockResolvedValue(null),
     };
-    clientes = { buscarPorNomeParcial: jest.fn().mockResolvedValue([]) };
+    clientes = {
+      buscarPorNomeParcial: jest.fn().mockResolvedValue([]),
+      buscarPorId: jest.fn().mockResolvedValue(null),
+    };
     leads = { listarAguardandoGestao: jest.fn().mockResolvedValue([]) };
+    conversas = { emAndamento: jest.fn().mockResolvedValue([]) };
 
     servico = new FerramentasGestaoService(
       resolverVendedora as never,
@@ -109,7 +114,132 @@ describe('FerramentasGestaoService', () => {
       vendedoras as never,
       clientes as never,
       leads as never,
+      // O ponteiro de conversas vivas (29/09) — o `conversas_agora`.
+      conversas as never,
     );
+  });
+
+  /**
+   * O AGORA — `conversas_agora`, 29/09/2026.
+   *
+   * ======================================================================
+   * O QUE ESTES TESTES PROTEGEM E O QUE A FERRAMENTA **NAO** PODE AFIRMAR.
+   *
+   * Ela le o ponteiro, que sabe QUE ha conversa e ha quanto tempo. Nao sabe o
+   * assunto, e nao sabe se o numero desconhecido e cliente — o leitor e quem
+   * decide isso, uma hora depois. Chamar de cliente quem ainda nao foi
+   * identificado transformaria "tem alguem no WhatsApp dela" em "ela esta
+   * atendendo 3 clientes", que e numero inventado com cara de relatorio.
+   * ======================================================================
+   */
+  describe('quem esta conversando agora', () => {
+    const minutosAtras = (n: number) => new Date(Date.now() - n * 60_000);
+
+    it('a janela padrao e de 30 minutos', async () => {
+      const antes = Date.now();
+      await servico.montar().gestaoConversasAgora({});
+
+      const [desde, id] = conversas.emAndamento.mock.calls[0];
+      expect(id).toBeNull();
+      const janela = (antes - (desde as Date).getTime()) / 60_000;
+      expect(janela).toBeGreaterThanOrEqual(29.9);
+      expect(janela).toBeLessThan(31);
+    });
+
+    it('quem pede outra janela recebe a que pediu', async () => {
+      const antes = Date.now();
+      await servico.montar().gestaoConversasAgora({ minutos: 120 });
+
+      const [desde] = conversas.emAndamento.mock.calls[0];
+      const janela = (antes - (desde as Date).getTime()) / 60_000;
+      expect(janela).toBeGreaterThanOrEqual(119.9);
+      expect(janela).toBeLessThan(121);
+    });
+
+    it('janela absurda cai no padrao em vez de virar consulta', async () => {
+      const antes = Date.now();
+      await servico.montar().gestaoConversasAgora({ minutos: 99999 });
+
+      const [desde] = conversas.emAndamento.mock.calls[0];
+      expect((antes - (desde as Date).getTime()) / 60_000).toBeLessThan(31);
+    });
+
+    /*
+     * O TESTE CENTRAL. Sem ele, a forma mais natural de escrever o handler —
+     * contar as linhas e chamar de clientes — passaria despercebida.
+     */
+    it('numero ainda nao identificado NAO e chamado de cliente', async () => {
+      conversas.emAndamento.mockResolvedValue([
+        { vendedoraId: 'vd-1', clienteId: null, ultimaMensagemEm: minutosAtras(9) },
+      ]);
+      vendedoras.listar.mockResolvedValue([
+        { id: 'vd-1', nome: 'Marina Albuquerque' },
+      ]);
+
+      const r = await servico.montar().gestaoConversasAgora({});
+
+      const texto = r.linhas.join('\n');
+      expect(texto).toContain('NÃO identificado');
+      expect(texto).not.toMatch(/\bclientes?\b/i);
+      expect(clientes.buscarPorId).not.toHaveBeenCalled();
+    });
+
+    it('cliente conhecida aparece pelo nome, com ha quanto tempo', async () => {
+      conversas.emAndamento.mockResolvedValue([
+        { vendedoraId: 'vd-1', clienteId: 'cl-1', ultimaMensagemEm: minutosAtras(9) },
+      ]);
+      vendedoras.listar.mockResolvedValue([{ id: 'vd-1', nome: 'Marina' }]);
+      clientes.buscarPorId.mockResolvedValue({ nome: 'Patrícia Lima' });
+
+      const r = await servico.montar().gestaoConversasAgora({});
+
+      expect(r.linhas[0]).toContain('1 conversa');
+      expect(r.linhas[1]).toBe('Marina: Patrícia Lima — última mensagem há 9 min');
+    });
+
+    /*
+     * Com uma vendedora so, o nome dela ja volta no `vendedora` do resultado.
+     * Repeti-lo em cada linha e ruido — e custava uma consulta a mais.
+     */
+    it('com o nome de uma vendedora, as linhas nao repetem o nome dela', async () => {
+      conversas.emAndamento.mockResolvedValue([
+        { vendedoraId: 'vd-1', clienteId: 'cl-1', ultimaMensagemEm: minutosAtras(2) },
+      ]);
+      clientes.buscarPorId.mockResolvedValue({ nome: 'Patrícia Lima' });
+
+      const r = await servico.montar().gestaoConversasAgora({ vendedora: 'Marina' });
+
+      expect(r.status).toBe('OK');
+      expect(r.vendedora).toBe('Marina Albuquerque');
+      expect(conversas.emAndamento.mock.calls[0][1]).toBe('vd-1');
+      expect(r.linhas[1]).toBe('Patrícia Lima — última mensagem há 2 min');
+      expect(vendedoras.listar).not.toHaveBeenCalled();
+    });
+
+    it('sem nome, a gerente so ve o celular da equipe dela', async () => {
+      conversas.emAndamento.mockResolvedValue([
+        { vendedoraId: 'vd-1', clienteId: null, ultimaMensagemEm: minutosAtras(1) },
+        { vendedoraId: 'vd-9', clienteId: null, ultimaMensagemEm: minutosAtras(1) },
+      ]);
+      vendedoras.listar.mockResolvedValue([
+        { id: 'vd-1', nome: 'Marina' },
+        { id: 'vd-9', nome: 'Fora da equipe' },
+      ]);
+
+      const r = await servico
+        .montar({ equipe: ['vd-1'] })
+        .gestaoConversasAgora({});
+
+      expect(r.linhas[0]).toContain('1 conversa');
+      expect(r.linhas.join('\n')).not.toContain('Fora da equipe');
+    });
+
+    it('nenhuma conversa devolve lista vazia, e nao uma linha dizendo zero', async () => {
+      const r = await servico.montar().gestaoConversasAgora({});
+
+      expect(r.status).toBe('OK');
+      expect(r.linhas).toEqual([]);
+    });
   });
 
   describe('carteira de uma vendedora', () => {

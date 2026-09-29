@@ -10,6 +10,7 @@ import type {
   GestaoLeadsHandler,
   GestaoVendedorasHandler,
   GestaoDiaDaVendedoraHandler,
+  GestaoConversasAgoraHandler,
   GestaoFeedbacksHandler,
   GestaoFunilHandler,
   GestaoMetricasHandler,
@@ -27,6 +28,8 @@ import type {
   GestaoVendasHandler,
   GestaoAgendaHandler,
 } from '../../agentes/domain/ports/llm-client.port';
+import { CONVERSA_WHATSAPP_REPOSITORY } from '../domain/ports/injection-tokens';
+import type { IConversaWhatsappRepository } from '../domain/ports/repositories/conversa-whatsapp-repository.port';
 import { CLIENTE_REPOSITORY } from '../../clientes/domain/ports/injection-tokens';
 import { LEAD_REPOSITORY } from '../../leads/domain/ports/injection-tokens';
 import type { ILeadRepository } from '../../leads/domain/ports/repositories/lead-repository.port';
@@ -157,6 +160,20 @@ const MESES = [
 /** Janela padrao quando nao dizem "hoje" nem "esta semana". */
 const DIAS_PADRAO_FEEDBACK = 7;
 
+/**
+ * O que conta como "agora" numa conversa de WhatsApp — 29/09/2026.
+ *
+ * Trinta minutos, e o numero e do Lucas. Conversa de loja tem silencio no
+ * meio: a cliente pergunta o preco, some para pensar, volta. Cinco minutos
+ * diriam que ela foi embora; duas horas diriam que esta conversando quando o
+ * assunto morreu no almoco.
+ *
+ * Acima desta janela a resposta e outra — "falou hoje", que e o
+ * `dia_da_vendedora` — e por isso este numero nao vira teto de nada: quem
+ * pedir "nas ultimas duas horas" recebe duas horas.
+ */
+const MINUTOS_CONVERSA_AGORA = 30;
+
 /** O conjunto de handlers da gestao, pronto para entrar no `chatComFerramentas`. */
 export interface FerramentasGestao {
   gestaoAgenda: GestaoAgendaHandler;
@@ -174,6 +191,7 @@ export interface FerramentasGestao {
   gestaoMelhores: GestaoMelhoresHandler;
   gestaoFeedbacks: GestaoFeedbacksHandler;
   gestaoDiaDaVendedora: GestaoDiaDaVendedoraHandler;
+  gestaoConversasAgora: GestaoConversasAgoraHandler;
   gestaoFunil: GestaoFunilHandler;
   gestaoPanoramaLeads: GestaoPanoramaLeadsHandler;
   gestaoMetricas: GestaoMetricasHandler;
@@ -303,6 +321,8 @@ export class FerramentasGestaoService {
     private readonly clientes: IClienteRepository,
     @Inject(LEAD_REPOSITORY)
     private readonly leads: ILeadRepository,
+    @Inject(CONVERSA_WHATSAPP_REPOSITORY)
+    private readonly conversas: IConversaWhatsappRepository,
   ) {}
 
   /**
@@ -918,6 +938,98 @@ export class FerramentasGestaoService {
           if (pontos.length === 0) return [];
           return resumoDoDia(pontos);
         }),
+
+      /**
+       * QUEM ESTA CONVERSANDO AGORA — 29/09/2026, pedido do Lucas.
+       *
+       * ====================================================================
+       * A UNICA LEITURA DA GESTAO QUE NAO ESPERA O LEITOR.
+       *
+       * Todas as outras — inclusive o `dia_da_vendedora` logo acima — leem a
+       * linha do tempo, que so existe depois que o leitor roda, e o leitor
+       * roda uma hora depois de a conversa PARAR. "A Aline esta com algum
+       * cliente?" e uma pergunta sobre o presente sendo respondida por um
+       * dado que e, por construcao, de uma hora atras.
+       *
+       * Em 29/09 o Lucas trocou mensagem com a vendedora as 15:08 e as 15:17
+       * a Anastasia respondeu que nao havia registro nenhum. Estava correta e
+       * era inutil: o ponteiro sabia da conversa desde as 15:08.
+       * ====================================================================
+       *
+       * TRES COISAS QUE ELA NAO PODE DIZER, e as tres estao na forma da
+       * resposta:
+       *
+       *   - NAO DIZ O ASSUNTO. Isto e ponteiro, nao texto.
+       *   - NAO CHAMA DE CLIENTE quem o sistema ainda nao identificou. Sem o
+       *     leitor, o numero desconhecido e indistinguivel entre a cliente
+       *     nova e o entregador — e contar os dois juntos como "2 clientes"
+       *     seria inventar com cara de numero.
+       *   - NAO MOSTRA O TELEFONE. Quem pergunta isto nao vai ligar para
+       *     ninguem; um numero de contato que nem se sabe se e cliente so
+       *     serviria para ser repassado adiante. Mesma regra do aviso de lead.
+       *
+       * A conversa `IGNORADA` fica de fora no repositorio — ver o comentario
+       * da porta. E privacidade: o WAHA le a conta inteira, e a familia da
+       * vendedora nao e assunto da gestao.
+       */
+      gestaoConversasAgora: async ({ vendedora, minutos }) => {
+        const janela =
+          typeof minutos === 'number' && minutos >= 1 && minutos <= 1440
+            ? Math.floor(minutos)
+            : MINUTOS_CONVERSA_AGORA;
+        const agora = Date.now();
+        const desde = new Date(agora - janela * 60_000);
+
+        const responder = async (
+          vendedoraId: string | null,
+        ): Promise<string[]> => {
+          // COM NOME, o repositorio ja recorta. SEM nome, o recorte de equipe
+          // e aplicado aqui — a gerente nao ve o celular de outro time.
+          const vivas = (
+            await this.conversas.emAndamento(desde, vendedoraId)
+          ).filter((c) => vendedoraId !== null || alcanca(c.vendedoraId));
+
+          if (vivas.length === 0) return [];
+
+          // So no caso da loja inteira: com uma vendedora so, o nome dela ja
+          // vem do `comVendedora` e repeti-lo em cada linha seria ruido.
+          const nomes =
+            vendedoraId === null
+              ? new Map(
+                  (await this.vendedoras.listar({}))
+                    .filter((v): v is typeof v & { id: string } => !!v.id)
+                    .map((v) => [v.id, v.nome] as [string, string]),
+                )
+              : null;
+
+          const linhas = [
+            `${vivas.length} conversa(s) com mensagem nos últimos ${janela} min.`,
+          ];
+          for (const c of vivas) {
+            const cliente = c.clienteId
+              ? await this.clientes.buscarPorId(c.clienteId)
+              : null;
+            const quem =
+              cliente?.nome ??
+              (c.clienteId
+                ? 'cliente sem nome no cadastro'
+                : 'número ainda NÃO identificado');
+            const ha = Math.max(
+              0,
+              Math.round((agora - c.ultimaMensagemEm.getTime()) / 60_000),
+            );
+            const dona = nomes
+              ? `${nomes.get(c.vendedoraId) ?? 'vendedora fora do cadastro'}: `
+              : '';
+            linhas.push(`${dona}${quem} — última mensagem há ${ha} min`);
+          }
+          return linhas;
+        };
+
+        return vendedora && vendedora.trim()
+          ? this.comVendedora(equipe, vendedora, (id) => responder(id))
+          : { status: 'OK' as const, linhas: await responder(null) };
+      },
 
       /**
        * O FUNIL AGORA — 21/09/2026. O espelho da carteira da Elena.

@@ -590,6 +590,31 @@ export type GestaoDiaDaVendedoraHandler = (input: {
 }) => Promise<GestaoLeituraResultado>;
 
 /**
+ * QUEM ESTA CONVERSANDO AGORA — 29/09/2026, pedido do Lucas.
+ *
+ * ==========================================================================
+ * A UNICA FERRAMENTA DA GESTAO QUE NAO ESPERA O LEITOR.
+ *
+ * Todas as outras leem a linha do tempo, que nasce do leitor, que roda uma
+ * hora depois de a conversa PARAR. Esta le o ponteiro, que o webhook atualiza
+ * a cada mensagem — e por isso responde "esta conversando?" enquanto a
+ * conversa acontece, que e quando a pergunta e feita.
+ *
+ * O PRECO E O QUE ELA NAO SABE, e esta na forma da resposta: sem o leitor nao
+ * ha assunto, nao ha resumo, e o numero desconhecido e so um numero
+ * desconhecido. Ela conta conversas; nao diz do que tratam nem afirma que sao
+ * clientes.
+ * ==========================================================================
+ *
+ * Com `vendedora`, so o celular daquela pessoa. SEM ela, a loja inteira.
+ */
+export type GestaoConversasAgoraHandler = (input: {
+  vendedora?: string;
+  /** Quanto tempo atras ainda conta como "agora". Sem ele, 30 minutos. */
+  minutos?: number;
+}) => Promise<GestaoLeituraResultado>;
+
+/**
  * O FUNIL AGORA, pela gestao — o espelho de `consultar_minha_carteira`.
  *
  * Com `vendedora`, a carteira daquela pessoa. SEM ela, a loja inteira, e ai
@@ -785,6 +810,7 @@ export interface ChatParams {
   gestaoAgendar?: GestaoAgendarHandler;
   gestaoFeedbacks?: GestaoFeedbacksHandler;
   gestaoDiaDaVendedora?: GestaoDiaDaVendedoraHandler;
+  gestaoConversasAgora?: GestaoConversasAgoraHandler;
   gestaoFunil?: GestaoFunilHandler;
   gestaoPanoramaLeads?: GestaoPanoramaLeadsHandler;
   gestaoMetricas?: GestaoMetricasHandler;
