@@ -1335,6 +1335,122 @@ export class AnthropicClient implements ILlmClient {
             );
           }),
         );
+      } else if (
+        // ==================================================================
+        // OS CINCO DESPACHOS DE 29/09/2026.
+        //
+        // Declarar a ferramenta ao modelo e LIGAR A EXECUCAO sao duas coisas,
+        // e eu fiz so a primeira: as cinco apareciam na lista, o modelo as
+        // chamava, e nenhum ramo respondia. O `tool_result` ia vazio e a API
+        // recusava a conversa inteira com "user messages must have non-empty
+        // content" — um 400 que nao diz qual ferramenta falhou.
+        //
+        // O teste que eu fiz chamava os handlers DIRETO, e por isso passou nos
+        // cinco casos. O caminho que faltava era justamente este.
+        // ==================================================================
+        toolUse.name === 'metricas_de_atendimento' &&
+        params.gestaoMetricas
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as {
+              de?: string;
+              ate?: string;
+              periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
+            };
+            return textoDeLinhas(
+              await params.gestaoMetricas!({ de: e.de, ate: e.ate, periodo: e.periodo }),
+              'Repasse os numeros com o TAMANHO DA AMOSTRA junto: media de dois casos nao e indicador.',
+            );
+          }),
+        );
+      } else if (
+        toolUse.name === 'rankings_de_atendimento' &&
+        params.gestaoRankings
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as {
+              eixo?: 'RESPOSTA' | 'FECHAMENTO' | 'INTERACOES' | 'CONVERSAO' | 'LEADS';
+              de?: string;
+              ate?: string;
+              periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
+            };
+            return textoDeLinhas(
+              await params.gestaoRankings!({
+                eixo: e.eixo,
+                de: e.de,
+                ate: e.ate,
+                periodo: e.periodo,
+              }),
+              'O tempo vem no relogio da loja (08h-19h) com o corrido ao lado: ' +
+                'diga os dois quando diferirem, porque a diferenca significa que a ' +
+                'cliente escreveu fora do horario.',
+            );
+          }),
+        );
+      } else if (
+        toolUse.name === 'comparar_com_outros_anos' &&
+        params.gestaoCompararAnos
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as {
+              mes?: number;
+              de?: string;
+              ate?: string;
+              vendedora?: string;
+            };
+            return textoDeLinhas(
+              await params.gestaoCompararAnos!({
+                mes: e.mes,
+                de: e.de,
+                ate: e.ate,
+                vendedora: e.vendedora,
+              }),
+              'Quando a resposta disser que o mes atual ainda nao fechou, DIGA ISSO: ' +
+                'comparar mes parcial com mes inteiro faz o ano atual parecer pior sempre.',
+            );
+          }),
+        );
+      } else if (
+        toolUse.name === 'comparar_com_periodo_anterior' &&
+        params.gestaoCompararAnterior
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as {
+              periodo?: 'SEMANA' | 'MES' | 'ANO';
+              de?: string;
+              ate?: string;
+              vendedora?: string;
+            };
+            return textoDeLinhas(
+              await params.gestaoCompararAnterior!({
+                periodo: e.periodo,
+                de: e.de,
+                ate: e.ate,
+                vendedora: e.vendedora,
+              }),
+              'CLIENTES e VENDAS sao numeros diferentes: repasse o que perguntaram. ' +
+                'E se vier o periodo anterior FECHADO, diga os dois.',
+            );
+          }),
+        );
+      } else if (toolUse.name === 'tom_da_conversa' && params.gestaoTom) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as { vendedora?: string; cliente?: string };
+            return textoDeLinhas(
+              await params.gestaoTom!({
+                vendedora: String(e.vendedora ?? '').slice(0, 80),
+                cliente: String(e.cliente ?? '').slice(0, 80),
+              }),
+              'Se a resposta disser que o celular dela nao esta conectado ou que ' +
+                'a conversa e antiga demais, REPASSE — nao conclua que nao houve atendimento.',
+            );
+          }),
+        );
       } else if (toolUse.name === 'metas_de_vendedora' && params.gestaoMetas) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
@@ -1870,6 +1986,34 @@ export class AnthropicClient implements ILlmClient {
     }
 
     // Continuacao: devolve os tool_result e pede o comentario final.
+    // ========================================================================
+    // NENHUM `tool_result` PODE IR VAZIO — 29/09/2026.
+    //
+    // A API recusa a chamada inteira com
+    // `400 messages.N: user messages must have non-empty content`, e o erro
+    // nao diz QUAL ferramenta produziu o vazio. O agente responde "nao
+    // consegui consultar isso agora", e a causa fica escondida atras de uma
+    // frase generica — foi o que aconteceu com o Lucas as 14:25.
+    //
+    // Uma ferramenta devolver nada e legitimo (uma consulta sem resultado, um
+    // desfecho que o tradutor nao previu). O que nao pode e isso derrubar a
+    // conversa: o modelo precisa saber que a ferramenta rodou e nao trouxe
+    // texto, para dizer isso em vez de inventar.
+    //
+    // A guarda fica AQUI, e nao em cada tradutor, porque sao dezenas de
+    // ferramentas e basta uma esquecer. Este e o funil por onde todas passam.
+    // ========================================================================
+    const resultadosSeguros = toolResults.map((r) =>
+      typeof r.content === 'string' && r.content.trim() === ''
+        ? {
+            ...r,
+            content:
+              'A ferramenta rodou e nao devolveu texto. Diga que nao conseguiu ' +
+              'essa informacao agora e ofereca outro caminho. NAO invente o dado.',
+          }
+        : r,
+    );
+
     const cont = await this.client.messages.create({
       model: params.model,
       max_tokens: 1024,
@@ -1878,7 +2022,7 @@ export class AnthropicClient implements ILlmClient {
       messages: [
         ...apiMessages,
         { role: 'assistant', content: first.content },
-        { role: 'user', content: toolResults },
+        { role: 'user', content: resultadosSeguros },
       ],
     });
 
@@ -2400,4 +2544,47 @@ function textoDoEncaminhamento(r: {
         'Diga que o lead continua esperando e que da para tentar de novo.'
       );
   }
+}
+
+/**
+ * O texto de uma leitura que devolve LINHAS, e nao uma vendedora — 29/09/2026.
+ *
+ * ==========================================================================
+ * NUNCA DEVOLVE STRING VAZIA, E ESSE E O PONTO.
+ *
+ * Um `tool_result` vazio faz a API recusar a conversa inteira com
+ * `400 user messages must have non-empty content` — e o erro nao diz qual
+ * ferramenta produziu o vazio. O agente responde "nao consegui consultar isso
+ * agora" e a causa fica escondida atras de uma frase generica.
+ *
+ * Aconteceu em 29/09/2026, as 14:25, com o Lucas do outro lado.
+ * ==========================================================================
+ *
+ * @param orientacao o que o modelo precisa saber para NAO deturpar o dado.
+ *        Vive aqui, e nao no prompt, porque e especifica da ferramenta e
+ *        so importa quando ela foi usada.
+ */
+function textoDeLinhas(
+  r: { status?: string; linhas?: string[]; nomes?: string[] },
+  orientacao: string,
+): string {
+  if (r.status === 'AMBIGUA') {
+    return (
+      `Mais de uma vendedora com esse nome: ${(r.nomes ?? []).join(', ')}. ` +
+      'Pergunte de qual se trata. NAO escolha uma.'
+    );
+  }
+  if (r.status === 'NAO_ENCONTRADA') {
+    const equipe = (r.nomes ?? []).join(', ');
+    return equipe
+      ? `Nao ha vendedora com esse nome. A equipe ativa e: ${equipe}. Diga isso e pergunte qual delas.`
+      : 'Nao ha vendedora com esse nome, ou nao veio nome nenhum. Pergunte de quem se trata — ou, se a pergunta era sobre a loja inteira, use a ferramenta correspondente.';
+  }
+
+  const linhas = r.linhas ?? [];
+  if (linhas.length === 0) {
+    return 'A consulta rodou e nao devolveu nada nesse recorte. Diga isso em uma frase, sem inventar numero.';
+  }
+
+  return `${linhas.join('\n')}\n\n${orientacao}`;
 }
