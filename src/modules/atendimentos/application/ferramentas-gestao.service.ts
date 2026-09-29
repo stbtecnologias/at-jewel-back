@@ -14,6 +14,8 @@ import type {
   GestaoFunilHandler,
   GestaoMetricasHandler,
   GestaoRankingsHandler,
+  GestaoCompararAnosHandler,
+  GestaoCompararAnteriorHandler,
   GestaoTomHandler,
   GestaoPanoramaLeadsHandler,
   GestaoPorFamiliaHandler,
@@ -70,6 +72,16 @@ import {
   type PostoDeRanking,
 } from './use-cases/rankings-de-atendimento.use-case';
 import { AnalisarTomUseCase } from '../../atendimento/application/analisar-tom.use-case';
+import {
+  CompararAnosUseCase,
+  variacao,
+} from '../../movimentacoes/application/use-cases/comparar-anos.use-case';
+import {
+  CompararPeriodoAnteriorUseCase,
+  variacaoEntre,
+} from '../../movimentacoes/application/use-cases/comparar-periodo-anterior.use-case';
+import { ConexoesService } from '../../atendimento/application/conexoes.service';
+import { WahaAdminClient } from '../../atendimento/infrastructure/whatsapp/waha-admin.client';
 
 const MAXIMO_CLIENTES_HOMONIMOS = 5;
 /** Feedbacks por resposta. Acima disso a mensagem deixa de ser lida. */
@@ -167,6 +179,8 @@ export interface FerramentasGestao {
   gestaoMetricas: GestaoMetricasHandler;
   gestaoRankings: GestaoRankingsHandler;
   gestaoTom: GestaoTomHandler;
+  gestaoCompararAnos: GestaoCompararAnosHandler;
+  gestaoCompararAnterior: GestaoCompararAnteriorHandler;
   gestaoPorFamilia: GestaoPorFamiliaHandler;
   /**
    * NAO E UM HANDLER — e um aviso que viaja junto para o cliente do LLM.
@@ -271,6 +285,10 @@ export class FerramentasGestaoService {
     private readonly metricas: MetricasDeAtendimentoUseCase,
     private readonly rankings: RankingsDeAtendimentoUseCase,
     private readonly tom: AnalisarTomUseCase,
+    private readonly compararAnos: CompararAnosUseCase,
+    private readonly compararAnterior: CompararPeriodoAnteriorUseCase,
+    private readonly conexoes: ConexoesService,
+    private readonly waha: WahaAdminClient,
     private readonly listarProdutos: ListarProdutosUseCase,
     private readonly agenda: ConsultarAgendaVendedoraUseCase,
     private readonly desempenho: ConsultarDesempenhoVendedoraUseCase,
@@ -777,18 +795,72 @@ export class FerramentasGestaoService {
           ...ativas.filter((v) => v.statusDisponibilidade === 'DISPONIVEL'),
           ...ativas.filter((v) => v.statusDisponibilidade !== 'DISPONIVEL'),
         ];
-        return {
-          linhas: ordenadas.map((v) => {
-            const partes = [v.nome];
-            if (v.statusDisponibilidade !== 'DISPONIVEL') {
-              partes.push(DISPONIBILIDADE_LEGIVEL[v.statusDisponibilidade]);
-            }
-            if (v.especialidades.length > 0) {
-              partes.push(v.especialidades.join(', '));
-            }
-            return partes.join(' — ');
-          }),
-        };
+        // ================================================================
+        // QUEM ESTA COM O CELULAR CONECTADO — 29/09/2026, pedido do Lucas.
+        //
+        // "Quantas vendedoras ativas temos, e elas estao conversando com
+        // cliente?" era respondido pela metade: a lista dizia quem esta ativa
+        // no CADASTRO e calava sobre quem o sistema de fato enxerga.
+        //
+        // A diferenca e enorme e invisivel. Em 29/09 havia UMA conexao de
+        // vendedora em toda a operacao; sem esta linha, quem le conclui que o
+        // sistema acompanha seis pessoas quando acompanha uma — e toda
+        // metrica de atendimento parece quebrada em vez de vazia.
+        //
+        // UMA CHAMADA SO ao WAHA (`listarSessoes` devolve todas), e nao uma
+        // por vendedora. E se o WAHA nao responder, a LISTA SAI MESMO ASSIM,
+        // dizendo que nao deu para verificar: perder os nomes por causa do
+        // status seria trocar o principal pelo acessorio.
+        // ================================================================
+        const conectadas = await this.waha
+          .listarSessoes()
+          .then(
+            (sessoes) =>
+              new Set(
+                sessoes
+                  .filter((s) => s.status === 'WORKING')
+                  .map((s) => this.conexoes.vendedoraDaSessao(s.nome))
+                  .filter((id): id is string => id !== null),
+              ),
+          )
+          .catch(() => null);
+
+        const linhas = ordenadas.map((v) => {
+          const partes = [v.nome];
+          if (v.statusDisponibilidade !== 'DISPONIVEL') {
+            partes.push(DISPONIBILIDADE_LEGIVEL[v.statusDisponibilidade]);
+          }
+          if (conectadas !== null) {
+            partes.push(
+              v.id && conectadas.has(v.id)
+                ? 'celular conectado'
+                : 'celular NÃO conectado',
+            );
+          }
+          if (v.especialidades.length > 0) {
+            partes.push(v.especialidades.join(', '));
+          }
+          return partes.join(' — ');
+        });
+
+        // O RESUMO VEM ANTES DOS NOMES porque e ele que responde a pergunta.
+        // Quem pede "quantas temos conectadas" quer o numero; a lista e o
+        // detalhe para quem quiser conferir.
+        if (conectadas === null) {
+          linhas.unshift(
+            'Não consegui verificar quais celulares estão conectados agora.',
+          );
+        } else {
+          const n = ordenadas.filter((v) => v.id && conectadas.has(v.id)).length;
+          linhas.unshift(
+            n === 0
+              ? `${ordenadas.length} ativa(s) no cadastro, e NENHUMA com o celular ` +
+                  `conectado — o sistema não acompanha as conversas delas com cliente.`
+              : `${ordenadas.length} ativa(s) no cadastro, ${n} com o celular conectado.`,
+          );
+        }
+
+        return { linhas };
       },
 
       // A RESPOSTA AO AVISO DE LEAD NOVO. Nao passa por aqui nada que decida
@@ -1068,6 +1140,183 @@ export class FerramentasGestaoService {
           }
         }),
 
+      /**
+       * COMPARAR COM OUTROS ANOS — 29/09/2026.
+       *
+       * ====================================================================
+       * OS DOIS NUMEROS VAO JUNTOS, E ESSA E A DECISAO.
+       *
+       * Com o mes correndo, a comparacao e cortada no mesmo dia em todos os
+       * anos — senao o ano atual parece pior SEMPRE, e mais no comeco do mes.
+       * Mas o mes FECHADO dos anos passados vai junto, porque "e quanto
+       * fechou setembro passado?" e a pergunta seguinte, sempre.
+       *
+       * Conferido em 29/09: setembro/2024 ate o dia 29 deu R$ 511 mil, e o
+       * mes fechou em R$ 847 mil — 66% de diferenca. Comparar mes parcial
+       * com mes inteiro teria dito que 2026 caiu muito mais do que caiu.
+       * ====================================================================
+       */
+      gestaoCompararAnos: async ({ mes, de, ate, vendedora }) => {
+        const recorte = datasDeRecorte(de, ate);
+
+        const comVendedora = async (
+          fn: (id: string | null) => Promise<GestaoLeituraResultado>,
+        ) => (vendedora && vendedora.trim()
+          ? this.comVendedora(equipe, vendedora, async (id) => {
+              const r = await fn(id);
+              return r.status === 'OK' ? r.linhas : [];
+            })
+          : fn(null));
+
+        return comVendedora(async (vendedoraId) => {
+          const r =
+            mes !== undefined && mes >= 1 && mes <= 12
+              ? await this.compararAnos.porMes(mes, vendedoraId)
+              : recorte
+                ? await this.compararAnos.porPeriodo(recorte.de, recorte.ate, vendedoraId)
+                : null;
+
+          if (r === null) {
+            // DATA DADA E NAO ENTENDIDA E DIFERENTE DE DATA NAO DADA.
+            //
+            // O `datasDeRecorte` devolve null em qualquer duvida — inclusive
+            // quando a final vem antes da inicial, que e o caso do intervalo
+            // que vira o ano. Sem esta distincao, quem pediu "15/12 a 15/01"
+            // ouviria "me diga um recorte" depois de ter dito um, e tentaria
+            // de novo do mesmo jeito.
+            const tentou = Boolean(de || ate || mes !== undefined);
+            return {
+              status: 'OK' as const,
+              linhas: [
+                tentou
+                  ? 'Não consegui usar esse recorte. Se for um intervalo que ' +
+                    'atravessa a virada do ano (ex.: 15/12 a 15/01), ele ' +
+                    'existiria em dois anos ao mesmo tempo e não dá para ' +
+                    'comparar — peça um intervalo dentro do mesmo ano. ' +
+                    'Para um mês, diga o mês.'
+                  : 'Preciso saber QUAL recorte comparar: um mês (ex.: setembro) ' +
+                    'ou um intervalo de datas. Pergunte.',
+              ],
+            };
+          }
+
+          if ('erro' in r) {
+            return {
+              status: 'OK' as const,
+              linhas: [
+                'Esse intervalo vira o ano (ex.: 15/12 a 15/01), e aí ele ' +
+                  'existiria em dois anos ao mesmo tempo — não dá para comparar. ' +
+                  'Peça um intervalo dentro do mesmo ano.',
+              ],
+            };
+          }
+
+          if (r.anos.length === 0) {
+            return {
+              status: 'OK' as const,
+              linhas: [`Não há venda registrada em ${r.rotulo} em nenhum ano.`],
+            };
+          }
+
+          const ordenados = [...r.anos].sort((a, b) => b.ano - a.ano);
+          const linhas: string[] = [];
+
+          if (r.cortadoNoDia !== null) {
+            linhas.push(
+              `Comparação de ${r.rotulo} até o dia ${r.cortadoNoDia} em todos os anos ` +
+                `— ${ordenados[0].ano} ainda não fechou.`,
+            );
+          }
+
+          ordenados.forEach((a, i) => {
+            const anterior = ordenados[i + 1];
+            const v = anterior ? variacao(a.receita, anterior.receita) : null;
+            const delta = v === null ? '' : ` (${v > 0 ? '+' : ''}${v}% vs ${anterior.ano})`;
+            const fechado =
+              a.receitaFechada !== null
+                ? `, mês fechado ${moeda(a.receitaFechada)}`
+                : '';
+
+            linhas.push(
+              `${a.ano}: ${moeda(a.receita)} em ${a.quantidade} ` +
+                `${a.quantidade === 1 ? 'venda' : 'vendas'}, ticket ${moeda(a.ticketMedio)}` +
+                `${delta}${fechado}`,
+            );
+          });
+
+          return { status: 'OK' as const, linhas };
+        });
+      },
+
+      /**
+       * ESTE PERIODO CONTRA O ANTERIOR — 29/09/2026, pedido do Lucas.
+       *
+       * ====================================================================
+       * CLIENTES E VENDAS SAO NUMEROS DIFERENTES, E OS DOIS VAO NA RESPOSTA.
+       *
+       * A mesma cliente comprando tres vezes conta 1 cliente e 3 vendas. Ate
+       * hoje so existia o segundo numero, e a Anastasia respondia "nao tenho
+       * como contar quantos clientes diferentes compraram" — ela tinha, e
+       * ninguem perguntava ao banco.
+       *
+       * Conferido em 29/09: 21 clientes em 22 vendas neste mes.
+       * ====================================================================
+       */
+      gestaoCompararAnterior: async ({ periodo, de, ate, vendedora }) => {
+        const recorte = datasDeRecorte(de, ate);
+
+        const responder = async (vendedoraId: string | null) => {
+          const c = recorte
+            ? await this.compararAnterior.porDatas(recorte.de, recorte.ate, vendedoraId)
+            : await this.compararAnterior.porRecorte(periodo ?? 'MES', vendedoraId);
+
+          const linhas: string[] = [
+            `${cap(c.rotulo)}: ${c.atual.clientes} cliente(s), ${c.atual.vendas} ` +
+              `venda(s), ${moeda(c.atual.receita)} — ticket ${moeda(c.atual.ticketMedio)}`,
+            `Período anterior: ${c.anterior.clientes} cliente(s), ${c.anterior.vendas} ` +
+              `venda(s), ${moeda(c.anterior.receita)} — ticket ${moeda(c.anterior.ticketMedio)}`,
+          ];
+
+          const variacoes = [
+            ['clientes', variacaoEntre(c.atual.clientes, c.anterior.clientes)],
+            ['vendas', variacaoEntre(c.atual.vendas, c.anterior.vendas)],
+            ['receita', variacaoEntre(c.atual.receita, c.anterior.receita)],
+          ] as const;
+
+          const ditas = variacoes
+            .filter(([, v]) => v !== null)
+            .map(([nome, v]) => `${(v as number) > 0 ? '+' : ''}${v}% em ${nome}`);
+
+          linhas.push(
+            ditas.length > 0
+              ? ditas.join(' · ')
+              : 'Não houve venda no período anterior, então não dá para calcular variação.',
+          );
+
+          // ================================================================
+          // O FECHADO VAI JUNTO QUANDO HOUVE CORTE.
+          //
+          // Comparar mes parcial com mes inteiro faria o atual parecer pior
+          // SEMPRE — no dia 2, 93% de queda aparente. Mas "o mes passado
+          // inteiro deu quanto?" e a pergunta seguinte, e sem ela a
+          // comparacao justa parece esconder o numero que a gestao conhece.
+          // ================================================================
+          if (c.anteriorFechado) {
+            linhas.push(
+              `Para referência, o período anterior FECHADO: ` +
+                `${c.anteriorFechado.clientes} cliente(s), ${moeda(c.anteriorFechado.receita)}. ` +
+                `A comparação acima corta os dois no mesmo ponto.`,
+            );
+          }
+
+          return linhas;
+        };
+
+        return vendedora && vendedora.trim()
+          ? this.comVendedora(equipe, vendedora, responder)
+          : { status: 'OK' as const, linhas: await responder(null) };
+      },
+
       gestaoPanoramaLeads: async ({ vendedora }) => {
         if (vendedora && vendedora.trim()) {
           return this.comVendedora(equipe, vendedora, async (_id, codigoErp) => {
@@ -1251,6 +1500,25 @@ export class FerramentasGestaoService {
       codigoErp: string | null,
     ) => Promise<string[]>,
   ): Promise<GestaoLeituraResultado> {
+    // ======================================================================
+    // NOME AUSENTE NAO PODE VIRAR EXCECAO — 29/09/2026.
+    //
+    // O `vendedora` e `required` no schema, mas isso e um PEDIDO ao modelo e
+    // nao uma garantia. Em 29/09 o Lucas perguntou "quantos clientes tivemos
+    // em agosto?" — pergunta sobre a LOJA — e o modelo chamou a ferramenta da
+    // VENDEDORA sem nome. O `resolverVendedora` estourou no `normalize` de
+    // `undefined`, o `catch` de cima virou "Nao consegui consultar isso
+    // agora", e a resposta nao ajudou ninguem: nem quem perguntou, nem quem
+    // fosse investigar depois.
+    //
+    // `NAO_ENCONTRADA` com lista vazia faz o modelo perguntar de qual
+    // vendedora se trata — ou perceber que a pergunta era da loja e escolher
+    // outra ferramenta. Qualquer um dos dois e melhor que um erro.
+    // ======================================================================
+    if (typeof nome !== 'string' || nome.trim() === '') {
+      return { status: 'NAO_ENCONTRADA', linhas: [], nomes: [] };
+    }
+
     const r = await this.resolverVendedora.execute(nome);
     if (r.status === 'AMBIGUA')
       return { status: 'AMBIGUA', linhas: [], nomes: r.nomes };
@@ -1390,6 +1658,11 @@ function janelaDoPeriodo(
       break;
   }
   return { de, ate: agora };
+}
+
+/** Primeira maiúscula — os rótulos vêm em minúscula para caber no meio da frase. */
+function cap(t: string): string {
+  return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
 export function moeda(v: number): string {

@@ -41,6 +41,22 @@ export interface ResumoDeVendas {
   ticketMedio: number;
   devolucoes: number;
   valorDevolvido: number;
+  /**
+   * CLIENTES DISTINTOS que compraram — 29/09/2026.
+   *
+   * ========================================================================
+   * "QUANTOS CLIENTES TIVE" E "QUANTAS VENDAS FIZ" SAO PERGUNTAS DIFERENTES.
+   *
+   * A mesma cliente comprando tres vezes vale 3 em `quantidade` e 1 aqui. Ate
+   * hoje so existia o primeiro numero, e a Anastasia respondia "essa consulta
+   * e de vendas, nao de clientes distintos — nao tenho como contar quantos
+   * clientes diferentes compraram". Ela tinha como: ninguem perguntou ao
+   * banco.
+   *
+   * Conferido em 29/09: nos ultimos sete dias, 12 clientes em 13 vendas.
+   * ========================================================================
+   */
+  clientes: number;
 }
 
 export interface VendedoraNoRanking {
@@ -73,6 +89,16 @@ export interface VendedoraPorFamilia {
 /** A mesma linha, carimbada com o ano. Ver `rankingPorFamiliaNoMes`. */
 export interface VendedoraPorFamiliaNoAno extends VendedoraPorFamilia {
   ano: number;
+}
+
+/** Uma linha da comparação ano a ano. */
+export interface ComparacaoAnual {
+  ano: number;
+  /** Receita do recorte até o dia do corte (ou do recorte inteiro, sem corte). */
+  receita: number;
+  quantidade: number;
+  /** O recorte FECHADO. Igual a `receita` quando não houve corte. */
+  receitaFechada: number | null;
 }
 
 export interface IVendasMovimentacaoRepository {
@@ -154,6 +180,34 @@ export interface IVendasMovimentacaoRepository {
    * @param mes 1 a 12.
    * @param porAno quantas vendedoras por ano. 1 devolve so a campea de cada.
    */
+  /**
+   * O MESMO RECORTE, ANO A ANO — 29/09/2026.
+   *
+   * ========================================================================
+   * DOIS TOTAIS POR ANO, E NAO UM.
+   *
+   * `receita` e o recorte ATE O DIA do corte; `receitaFechada` e o recorte
+   * inteiro. Quando o mes ainda corre, os dois diferem nos anos passados e sao
+   * iguais no ano corrente — e e essa diferenca que permite a resposta dizer
+   * "ate o dia 29 estamos 12% abaixo" E "setembro passado fechou em R$ 2,1 mi"
+   * sem duas consultas.
+   *
+   * `dia` nulo significa "sem corte": os dois totais voltam iguais.
+   * ========================================================================
+   */
+  compararMesNosAnos(
+    mes: number,
+    dia: number | null,
+    vendedoraId: string | null,
+  ): Promise<ComparacaoAnual[]>;
+
+  /** O mesmo (mes, dia) inicial e final, em cada ano. */
+  compararPeriodoNosAnos(
+    inicio: { mes: number; dia: number },
+    fim: { mes: number; dia: number },
+    vendedoraId: string | null,
+  ): Promise<ComparacaoAnual[]>;
+
   rankingPorFamiliaNoMes(
     mes: number,
     familia: string,

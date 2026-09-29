@@ -81,6 +81,17 @@ describe('itens_mais_vendidos e o escopo de quem pergunta', () => {
       }) } as never,
       // Análise de tom (ANA-15, 29/09) — dublada.
       { execute: jest.fn().mockResolvedValue({ status: 'SEM_CONVERSA' }) } as never,
+      // Comparação ano a ano (29/09) — dublada.
+      { porMes: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }),
+        porPeriodo: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }) } as never,
+      // Comparação com o período anterior (29/09) — dublada.
+      { porRecorte: jest.fn().mockResolvedValue({ rotulo: "x", atual: { clientes: 0, vendas: 0, receita: 0, ticketMedio: 0, de: new Date(), ate: new Date() }, anterior: { clientes: 0, vendas: 0, receita: 0, ticketMedio: 0, de: new Date(), ate: new Date() }, anteriorFechado: null }),
+        porDatas: jest.fn().mockResolvedValue({ rotulo: "x", atual: { clientes: 0, vendas: 0, receita: 0, ticketMedio: 0, de: new Date(), ate: new Date() }, anterior: { clientes: 0, vendas: 0, receita: 0, ticketMedio: 0, de: new Date(), ate: new Date() }, anteriorFechado: null }) } as never,
+      // ConexoesService e WahaAdminClient (29/09) — dublados. O `catch`
+      // do handler faz a lista sair mesmo sem WAHA, e e isso que o
+      // `mockRejectedValue` exercita nos testes que nao ligam para conexao.
+      { vendedoraDaSessao: (s: string) => s.replace(/^vend-/, "") } as never,
+      { listarSessoes: jest.fn().mockResolvedValue([]) } as never,
       listarProdutos as never,
       { execute: jest.fn() } as never,
       { vendas: jest.fn(), metas: jest.fn() } as never,
@@ -210,6 +221,17 @@ describe('consultar_produtos da gestao e a quantidade', () => {
       }) } as never,
       // Análise de tom (ANA-15, 29/09) — dublada.
       { execute: jest.fn().mockResolvedValue({ status: 'SEM_CONVERSA' }) } as never,
+      // Comparação ano a ano (29/09) — dublada.
+      { porMes: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }),
+        porPeriodo: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }) } as never,
+      // Comparação com o período anterior (29/09) — dublada.
+      { porRecorte: jest.fn().mockResolvedValue({ rotulo: "x", atual: { clientes: 0, vendas: 0, receita: 0, ticketMedio: 0, de: new Date(), ate: new Date() }, anterior: { clientes: 0, vendas: 0, receita: 0, ticketMedio: 0, de: new Date(), ate: new Date() }, anteriorFechado: null }),
+        porDatas: jest.fn().mockResolvedValue({ rotulo: "x", atual: { clientes: 0, vendas: 0, receita: 0, ticketMedio: 0, de: new Date(), ate: new Date() }, anterior: { clientes: 0, vendas: 0, receita: 0, ticketMedio: 0, de: new Date(), ate: new Date() }, anteriorFechado: null }) } as never,
+      // ConexoesService e WahaAdminClient (29/09) — dublados. O `catch`
+      // do handler faz a lista sair mesmo sem WAHA, e e isso que o
+      // `mockRejectedValue` exercita nos testes que nao ligam para conexao.
+      { vendedoraDaSessao: (s: string) => s.replace(/^vend-/, "") } as never,
+      { listarSessoes: jest.fn().mockResolvedValue([]) } as never,
       { itens: jest.fn() } as never,
       listarProdutos as never,
       { execute: jest.fn() } as never,
@@ -352,6 +374,17 @@ describe('o recorte de equipe nas ferramentas de gestao', () => {
       }) } as never,
       // Análise de tom (ANA-15, 29/09) — dublada.
       { execute: jest.fn().mockResolvedValue({ status: 'SEM_CONVERSA' }) } as never,
+      // Comparação ano a ano (29/09) — dublada.
+      { porMes: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }),
+        porPeriodo: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }) } as never,
+      // Comparação com o período anterior (29/09) — dublada.
+      { porRecorte: jest.fn().mockResolvedValue({ rotulo: "x", atual: { clientes: 0, vendas: 0, receita: 0, ticketMedio: 0, de: new Date(), ate: new Date() }, anterior: { clientes: 0, vendas: 0, receita: 0, ticketMedio: 0, de: new Date(), ate: new Date() }, anteriorFechado: null }),
+        porDatas: jest.fn().mockResolvedValue({ rotulo: "x", atual: { clientes: 0, vendas: 0, receita: 0, ticketMedio: 0, de: new Date(), ate: new Date() }, anterior: { clientes: 0, vendas: 0, receita: 0, ticketMedio: 0, de: new Date(), ate: new Date() }, anteriorFechado: null }) } as never,
+      // ConexoesService e WahaAdminClient (29/09) — dublados. O `catch`
+      // do handler faz a lista sair mesmo sem WAHA, e e isso que o
+      // `mockRejectedValue` exercita nos testes que nao ligam para conexao.
+      { vendedoraDaSessao: (s: string) => s.replace(/^vend-/, "") } as never,
+      { listarSessoes: jest.fn().mockResolvedValue([]) } as never,
       { execute: jest.fn().mockResolvedValue([]) } as never,
       { execute: jest.fn().mockResolvedValue([]) } as never,
       desempenho as never,
@@ -445,7 +478,9 @@ describe('o recorte de equipe nas ferramentas de gestao', () => {
       // alcance, e o erro so apareceria depois.
       const r = await servico.montar(soMarina).gestaoVendedoras();
 
-      expect(r.linhas).toEqual(['Marina']);
+      // A primeira linha e o resumo de conexao (29/09); o recorte de equipe
+      // e o que vem depois, e e o que este teste guarda.
+      expect(r.linhas.slice(1)).toEqual(['Marina — celular NÃO conectado']);
     });
   });
 
@@ -523,6 +558,17 @@ describe('o periodo livre nas ferramentas de venda', () => {
       }) } as never,
       // Análise de tom (ANA-15, 29/09) — dublada.
       { execute: jest.fn().mockResolvedValue({ status: 'SEM_CONVERSA' }) } as never,
+      // Comparação ano a ano (29/09) — dublada.
+      { porMes: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }),
+        porPeriodo: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }) } as never,
+      // Comparação com o período anterior (29/09) — dublada.
+      { porRecorte: jest.fn().mockResolvedValue({ rotulo: "x", atual: { clientes: 0, vendas: 0, receita: 0, ticketMedio: 0, de: new Date(), ate: new Date() }, anterior: { clientes: 0, vendas: 0, receita: 0, ticketMedio: 0, de: new Date(), ate: new Date() }, anteriorFechado: null }),
+        porDatas: jest.fn().mockResolvedValue({ rotulo: "x", atual: { clientes: 0, vendas: 0, receita: 0, ticketMedio: 0, de: new Date(), ate: new Date() }, anterior: { clientes: 0, vendas: 0, receita: 0, ticketMedio: 0, de: new Date(), ate: new Date() }, anteriorFechado: null }) } as never,
+      // ConexoesService e WahaAdminClient (29/09) — dublados. O `catch`
+      // do handler faz a lista sair mesmo sem WAHA, e e isso que o
+      // `mockRejectedValue` exercita nos testes que nao ligam para conexao.
+      { vendedoraDaSessao: (s: string) => s.replace(/^vend-/, "") } as never,
+      { listarSessoes: jest.fn().mockResolvedValue([]) } as never,
       { execute: jest.fn().mockResolvedValue([]) } as never,
       { execute: jest.fn().mockResolvedValue([]) } as never,
       { vendas: jest.fn(), metas: jest.fn() } as never,
@@ -659,6 +705,17 @@ describe('o ranking por tipo de peça', () => {
       }) } as never,
       // Análise de tom (ANA-15, 29/09) — dublada.
       { execute: jest.fn().mockResolvedValue({ status: 'SEM_CONVERSA' }) } as never,
+      // Comparação ano a ano (29/09) — dublada.
+      { porMes: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }),
+        porPeriodo: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }) } as never,
+      // Comparação com o período anterior (29/09) — dublada.
+      { porRecorte: jest.fn().mockResolvedValue({ rotulo: "x", atual: { clientes: 0, vendas: 0, receita: 0, ticketMedio: 0, de: new Date(), ate: new Date() }, anterior: { clientes: 0, vendas: 0, receita: 0, ticketMedio: 0, de: new Date(), ate: new Date() }, anteriorFechado: null }),
+        porDatas: jest.fn().mockResolvedValue({ rotulo: "x", atual: { clientes: 0, vendas: 0, receita: 0, ticketMedio: 0, de: new Date(), ate: new Date() }, anterior: { clientes: 0, vendas: 0, receita: 0, ticketMedio: 0, de: new Date(), ate: new Date() }, anteriorFechado: null }) } as never,
+      // ConexoesService e WahaAdminClient (29/09) — dublados. O `catch`
+      // do handler faz a lista sair mesmo sem WAHA, e e isso que o
+      // `mockRejectedValue` exercita nos testes que nao ligam para conexao.
+      { vendedoraDaSessao: (s: string) => s.replace(/^vend-/, "") } as never,
+      { listarSessoes: jest.fn().mockResolvedValue([]) } as never,
       listarProdutos as never,
       { execute: jest.fn() } as never,
       { vendas: jest.fn(), metas: jest.fn() } as never,

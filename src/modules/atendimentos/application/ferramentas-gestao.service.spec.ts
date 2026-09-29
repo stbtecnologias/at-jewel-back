@@ -16,6 +16,7 @@ describe('FerramentasGestaoService', () => {
   let agendarGestao: { execute: jest.Mock };
   let auditoria: { listar: jest.Mock; detalhe: jest.Mock };
   let linha: { doDia: jest.Mock };
+  let waha: { listarSessoes: jest.Mock };
   let vendedoras: {
     listar: jest.Mock;
     buscarPorCodigoErp: jest.Mock;
@@ -53,6 +54,7 @@ describe('FerramentasGestaoService', () => {
       detalhe: jest.fn(),
     };
     linha = { doDia: jest.fn().mockResolvedValue([]) };
+    waha = { listarSessoes: jest.fn().mockResolvedValue([]) };
     vendedoras = {
       listar: jest.fn().mockResolvedValue([]),
       buscarPorCodigoErp: jest.fn().mockResolvedValue(null),
@@ -83,6 +85,17 @@ describe('FerramentasGestaoService', () => {
       }) } as never,
       // Análise de tom (ANA-15, 29/09) — dublada.
       { execute: jest.fn().mockResolvedValue({ status: 'SEM_CONVERSA' }) } as never,
+      // Comparação ano a ano (29/09) — dublada.
+      { porMes: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }),
+        porPeriodo: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }) } as never,
+      // Comparação com o período anterior (29/09) — dublada.
+      { porRecorte: jest.fn().mockResolvedValue({ rotulo: "x", atual: { clientes: 0, vendas: 0, receita: 0, ticketMedio: 0, de: new Date(), ate: new Date() }, anterior: { clientes: 0, vendas: 0, receita: 0, ticketMedio: 0, de: new Date(), ate: new Date() }, anteriorFechado: null }),
+        porDatas: jest.fn().mockResolvedValue({ rotulo: "x", atual: { clientes: 0, vendas: 0, receita: 0, ticketMedio: 0, de: new Date(), ate: new Date() }, anterior: { clientes: 0, vendas: 0, receita: 0, ticketMedio: 0, de: new Date(), ate: new Date() }, anteriorFechado: null }) } as never,
+      // ConexoesService e WahaAdminClient (29/09) — dublados. O `catch`
+      // do handler faz a lista sair mesmo sem WAHA, e e isso que o
+      // `mockRejectedValue` exercita nos testes que nao ligam para conexao.
+      { vendedoraDaSessao: (s: string) => s.replace(/^vend-/, "") } as never,
+      waha as never,
       // A consulta de catalogo da GESTAO, com quantidade — dublada.
       { execute: jest.fn().mockResolvedValue([]) } as never,
       agenda as never,
@@ -336,11 +349,65 @@ describe('FerramentasGestaoService', () => {
 
       const r = await servico.montar().gestaoVendedoras();
 
-      expect(r.linhas).toEqual([
-        'Marina',
-        'Beatriz — de férias',
-        'Camila — ocupada',
+      // A PRIMEIRA LINHA E O RESUMO (29/09/2026): "quantas ativas, quantas
+      // com o celular conectado". Ela veio na frente porque e ela que
+      // responde a pergunta; os nomes sao o detalhe de quem quiser conferir.
+      expect(r.linhas[0]).toContain('3 ativa(s) no cadastro');
+      expect(r.linhas.slice(1)).toEqual([
+        'Marina — celular NÃO conectado',
+        'Beatriz — de férias — celular NÃO conectado',
+        'Camila — ocupada — celular NÃO conectado',
       ]);
+    });
+
+    /*
+     * O CELULAR CONECTADO E O QUE SEPARA "CADASTRADA" DE "ACOMPANHADA".
+     *
+     * Em 29/09/2026 havia UMA conexao de vendedora em toda a operacao. Sem
+     * esta informacao, quem le a lista conclui que o sistema acompanha seis
+     * pessoas quando acompanha uma — e toda metrica de atendimento parece
+     * quebrada em vez de vazia.
+     */
+    it('diz quem está com o celular conectado', async () => {
+      vendedoras.listar.mockResolvedValue([
+        { ...VD('Marina', 'DISPONIVEL'), id: 'vd-1' },
+        { ...VD('Camila', 'DISPONIVEL'), id: 'vd-2' },
+      ]);
+      waha.listarSessoes.mockResolvedValue([
+        { nome: 'vend-vd-1', status: 'WORKING' },
+        { nome: 'vend-vd-2', status: 'FAILED' },
+      ]);
+
+      const r = await servico.montar().gestaoVendedoras();
+
+      expect(r.linhas[0]).toContain('2 ativa(s) no cadastro, 1 com o celular conectado');
+      expect(r.linhas[1]).toContain('Marina — celular conectado');
+      expect(r.linhas[2]).toContain('Camila — celular NÃO conectado');
+    });
+
+    /* NENHUMA conectada e uma resposta diferente de "1 de 6": e o estado em
+     * que o sistema nao ve conversa nenhuma, e quem pergunta precisa saber. */
+    it('nenhuma conectada diz que o sistema não acompanha as conversas', async () => {
+      vendedoras.listar.mockResolvedValue([{ ...VD('Marina', 'DISPONIVEL'), id: 'vd-1' }]);
+      waha.listarSessoes.mockResolvedValue([]);
+
+      const r = await servico.montar().gestaoVendedoras();
+
+      expect(r.linhas[0]).toContain('NENHUMA com o celular conectado');
+      expect(r.linhas[0]).toContain('não acompanha as conversas');
+    });
+
+    /* WAHA fora do ar NAO pode custar a lista: perder os nomes por causa do
+     * status seria trocar o principal pelo acessorio. */
+    it('WAHA fora do ar ainda devolve os nomes', async () => {
+      vendedoras.listar.mockResolvedValue([VD('Marina', 'DISPONIVEL')]);
+      waha.listarSessoes.mockRejectedValue(new Error('conexão recusada'));
+
+      const r = await servico.montar().gestaoVendedoras();
+
+      expect(r.linhas[0]).toContain('Não consegui verificar');
+      expect(r.linhas[1]).toBe('Marina');
+      expect(r.linhas[1]).not.toContain('conectado');
     });
 
     it('a especialidade entra: é o que ajuda a escolher', async () => {
@@ -350,7 +417,7 @@ describe('FerramentasGestaoService', () => {
 
       const r = await servico.montar().gestaoVendedoras();
 
-      expect(r.linhas[0]).toBe('Marina — noivado, alta joalheria');
+      expect(r.linhas[1]).toBe('Marina — celular NÃO conectado — noivado, alta joalheria');
     });
 
     it('só as ATIVAS: quem saiu da equipe não é opção', async () => {
@@ -422,6 +489,48 @@ describe('FerramentasGestaoService', () => {
       const r = await servico.montar().gestaoLeads();
 
       expect(r.linhas[0]).toBe('Bia — há 2 dias');
+    });
+  });
+  /**
+   * O NOME AUSENTE — 29/09/2026.
+   *
+   * ==========================================================================
+   * `required` NO SCHEMA E UM PEDIDO, E NAO UMA GARANTIA.
+   *
+   * Em 29/09 o Lucas perguntou "quantos clientes tivemos em agosto?" — pergunta
+   * sobre a LOJA — e o modelo chamou a ferramenta da VENDEDORA sem nome. O
+   * resolvedor estourou no `normalize` de `undefined`, o `catch` de cima virou
+   * "Nao consegui consultar isso agora", e a resposta nao ajudou ninguem.
+   *
+   * SEIS ferramentas tinham o mesmo buraco. Estes testes guardam as seis.
+   * ==========================================================================
+   */
+  describe('as ferramentas que exigem vendedora, chamadas SEM nome', () => {
+    const semNome = [undefined, null, '', '   '];
+
+    it.each(semNome)('gestaoVendas com nome %p não estoura', async (nome) => {
+      const r = await servico.montar().gestaoVendas({ vendedora: nome as never });
+      expect(r.status).toBe('NAO_ENCONTRADA');
+    });
+
+    it.each(semNome)('gestaoMetas com nome %p não estoura', async (nome) => {
+      const r = await servico.montar().gestaoMetas({ vendedora: nome as never });
+      expect(r.status).toBe('NAO_ENCONTRADA');
+    });
+
+    /* NAO_ENCONTRADA com lista VAZIA faz o modelo perguntar de qual vendedora
+     * se trata — ou perceber que a pergunta era da loja e trocar de ferramenta.
+     * Sugerir nomes aqui seria pior: ele escolheria um. */
+    it('não sugere nenhum nome quando não houve nome', async () => {
+      const r = await servico.montar().gestaoVendas({ vendedora: undefined as never });
+
+      expect(r.nomes).toEqual([]);
+      expect(resolverVendedora.execute).not.toHaveBeenCalled();
+    });
+
+    it('com nome de verdade, continua resolvendo normalmente', async () => {
+      await servico.montar().gestaoVendas({ vendedora: 'Marina' });
+      expect(resolverVendedora.execute).toHaveBeenCalledWith('Marina');
     });
   });
 });

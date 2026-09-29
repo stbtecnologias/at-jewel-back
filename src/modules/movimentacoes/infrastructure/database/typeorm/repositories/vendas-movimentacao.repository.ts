@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import type {
+  ComparacaoAnual,
   IVendasMovimentacaoRepository,
   ItemMaisVendido,
   VendedoraPorFamilia,
@@ -49,6 +50,7 @@ export class VendasMovimentacaoRepository
         valor_vendas: string;
         devolucoes: string;
         valor_devolvido: string;
+        clientes: string;
       }[]
     >(
       `
@@ -56,7 +58,10 @@ export class VendasMovimentacaoRepository
         count(*) FILTER (WHERE m.saida)                       AS quantidade,
         COALESCE(sum(m.valor) FILTER (WHERE m.saida), 0)      AS valor_vendas,
         count(*) FILTER (WHERE m.entrada)                     AS devolucoes,
-        COALESCE(sum(m.valor) FILTER (WHERE m.entrada), 0)    AS valor_devolvido
+        COALESCE(sum(m.valor) FILTER (WHERE m.entrada), 0)    AS valor_devolvido,
+        -- CLIENTES DISTINTOS, na mesma varredura: quem comprou tres vezes
+        -- conta 1 aqui e 3 na quantidade, e as duas perguntas existem.
+        count(DISTINCT m.cliente_id) FILTER (WHERE m.saida)   AS clientes
         FROM movimentacoes m
        WHERE m.ativo
          AND m.data_movimentacao >= $1
@@ -79,6 +84,7 @@ export class VendasMovimentacaoRepository
       ticketMedio: quantidade > 0 ? receita / quantidade : 0,
       devolucoes: Number(linha?.devolucoes ?? 0),
       valorDevolvido,
+      clientes: Number(linha?.clientes ?? 0),
     };
   }
 
@@ -246,6 +252,116 @@ export class VendasMovimentacaoRepository
       valor: Number(l.valor),
     }));
   }
+  /**
+   * O mesmo mes, ano a ano — 29/09/2026.
+   *
+   * ====================================================================
+   * DOIS TOTAIS NUMA VARREDURA SO.
+   *
+   * `FILTER` da os dois recortes — ate o dia e o mes inteiro — lendo a
+   * tabela uma vez. Duas consultas dariam o mesmo e leriam duas vezes o
+   * historico inteiro, que e o que esta consulta atravessa por definicao.
+   *
+   * A DEVOLUCAO ABATE: `saida` menos `entrada`, a mesma regra do `resumo`.
+   * Um mes com muita devolucao aparecendo inflado tornaria a comparacao
+   * entre anos pior que nao ter comparacao.
+   *
+   * `$2::int IS NULL` (sem corte) faz o FILTER passar tudo, e os dois
+   * totais voltam iguais — que e o comportamento certo para mes fechado.
+   * ====================================================================
+   */
+  async compararMesNosAnos(
+    mes: number,
+    dia: number | null,
+    vendedoraId: string | null,
+  ): Promise<ComparacaoAnual[]> {
+    const linhas = await this.ds.query<
+      {
+        ano: string;
+        receita: string;
+        quantidade: string;
+        receita_fechada: string;
+      }[]
+    >(
+      `
+      SELECT extract(year from m.data_movimentacao)::int AS ano,
+
+             COALESCE(sum(m.valor) FILTER (
+               WHERE m.saida
+                 AND ($2::int IS NULL OR extract(day from m.data_movimentacao) <= $2::int)
+             ), 0)
+             - COALESCE(sum(m.valor) FILTER (
+               WHERE m.entrada
+                 AND ($2::int IS NULL OR extract(day from m.data_movimentacao) <= $2::int)
+             ), 0) AS receita,
+
+             count(*) FILTER (
+               WHERE m.saida
+                 AND ($2::int IS NULL OR extract(day from m.data_movimentacao) <= $2::int)
+             ) AS quantidade,
+
+             COALESCE(sum(m.valor) FILTER (WHERE m.saida), 0)
+             - COALESCE(sum(m.valor) FILTER (WHERE m.entrada), 0) AS receita_fechada
+
+        FROM movimentacoes m
+       WHERE m.ativo
+         AND extract(month from m.data_movimentacao) = $1
+         AND ($3::uuid IS NULL OR m.vendedora_id = $3::uuid)
+       GROUP BY 1
+       ORDER BY 1 DESC
+      `,
+      [mes, dia, vendedoraId],
+    );
+
+    return linhas.map(paraComparacao);
+  }
+
+  /**
+   * O mesmo (mes, dia) inicial e final, em cada ano.
+   *
+   * A COMPARACAO DE TUPLA `(mes, dia) BETWEEN (m1,d1) AND (m2,d2)` e o que
+   * torna isto uma consulta so. Escrever a mao — "mes maior, ou mes igual e
+   * dia maior ou igual" — daria o mesmo plano e quatro linhas de condicao
+   * onde e facil trocar um `>` por `>=` sem ninguem notar.
+   *
+   * Intervalo que vira o ano ja foi recusado no caso de uso: aqui ele
+   * simplesmente nao casaria com nada, e devolver vazio esconderia o motivo.
+   */
+  async compararPeriodoNosAnos(
+    inicio: { mes: number; dia: number },
+    fim: { mes: number; dia: number },
+    vendedoraId: string | null,
+  ): Promise<ComparacaoAnual[]> {
+    const linhas = await this.ds.query<
+      {
+        ano: string;
+        receita: string;
+        quantidade: string;
+        receita_fechada: string;
+      }[]
+    >(
+      `
+      SELECT extract(year from m.data_movimentacao)::int AS ano,
+             COALESCE(sum(m.valor) FILTER (WHERE m.saida), 0)
+             - COALESCE(sum(m.valor) FILTER (WHERE m.entrada), 0) AS receita,
+             count(*) FILTER (WHERE m.saida) AS quantidade,
+             COALESCE(sum(m.valor) FILTER (WHERE m.saida), 0)
+             - COALESCE(sum(m.valor) FILTER (WHERE m.entrada), 0) AS receita_fechada
+        FROM movimentacoes m
+       WHERE m.ativo
+         AND (extract(month from m.data_movimentacao),
+              extract(day   from m.data_movimentacao))
+             BETWEEN ($1::int, $2::int) AND ($3::int, $4::int)
+         AND ($5::uuid IS NULL OR m.vendedora_id = $5::uuid)
+       GROUP BY 1
+       ORDER BY 1 DESC
+      `,
+      [inicio.mes, inicio.dia, fim.mes, fim.dia, vendedoraId],
+    );
+
+    return linhas.map(paraComparacao);
+  }
+
   async rankingPorFamiliaNoMes(
     mes: number,
     familia: string,
@@ -315,4 +431,26 @@ export class VendasMovimentacaoRepository
       valor: Number(l.valor),
     }));
   }
+}
+
+/**
+ * O agregado do Postgres chega como string.
+ *
+ * `receitaFechada` vira `null` quando e igual a `receita` — nao houve corte,
+ * e devolver o mesmo numero duas vezes faria quem le achar que ha dois dados.
+ */
+function paraComparacao(l: {
+  ano: string;
+  receita: string;
+  quantidade: string;
+  receita_fechada: string;
+}): ComparacaoAnual {
+  const receita = Math.round(Number(l.receita));
+  const fechada = Math.round(Number(l.receita_fechada));
+  return {
+    ano: Number(l.ano),
+    receita,
+    quantidade: Number(l.quantidade),
+    receitaFechada: fechada === receita ? null : fechada,
+  };
 }

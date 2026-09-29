@@ -25,6 +25,8 @@ import { MovimentacaoPagamentoOrmEntity } from './infrastructure/database/typeor
 import { MovimentacaoOrmEntity } from './infrastructure/database/typeorm/entities/movimentacao.orm-entity';
 import { MovimentacaoRepository } from './infrastructure/database/typeorm/repositories/movimentacao.repository';
 import { MovimentacoesController } from './infrastructure/http/controllers/movimentacoes.controller';
+import { CompararAnosUseCase } from './application/use-cases/comparar-anos.use-case';
+import { CompararPeriodoAnteriorUseCase } from './application/use-cases/comparar-periodo-anterior.use-case';
 
 /**
  * SETE modulos importados, e cada um por um motivo so: o `id_erp` de um
@@ -64,6 +66,8 @@ import { MovimentacoesController } from './infrastructure/http/controllers/movim
   providers: [
     ResolverReferenciasErpService,
     ConsultarVendasUseCase,
+    CompararAnosUseCase,
+    CompararPeriodoAnteriorUseCase,
     {
       provide: VENDAS_MOVIMENTACAO_REPOSITORY,
       useClass: VendasMovimentacaoRepository,
@@ -77,6 +81,11 @@ import { MovimentacoesController } from './infrastructure/http/controllers/movim
   ],
   // A VENDA LIDA DA MOVIMENTACAO — 25/09/2026. Quem consulta venda passa a
   // vir aqui, e nao a tabela `vendas`. Ver a porta para a decisao.
-  exports: [MOVIMENTACAO_REPOSITORY, ConsultarVendasUseCase],
+  exports: [
+    MOVIMENTACAO_REPOSITORY,
+    ConsultarVendasUseCase,
+    CompararAnosUseCase,
+    CompararPeriodoAnteriorUseCase,
+  ],
 })
 export class MovimentacoesModule {}

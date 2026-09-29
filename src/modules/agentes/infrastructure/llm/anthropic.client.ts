@@ -631,7 +631,7 @@ const GESTAO_LEADS_TOOL: Anthropic.Tool = {
 const GESTAO_VENDEDORAS_TOOL: Anthropic.Tool = {
   name: 'listar_vendedoras',
   description:
-    'Lista as vendedoras ATIVAS da equipe, com a disponibilidade e as especialidades de cada uma. Use para "quais sao as minhas vendedoras", "quem esta disponivel", "para quem eu posso encaminhar" — e sempre que a usuaria precisar escolher uma pessoa e nao souber os nomes. Nao traz venda, meta nem telefone.',
+    'Lista as vendedoras ATIVAS da equipe — a lista JA VEM FILTRADA, entao diga "vendedoras ativas" e nunca apresente o numero como se fosse o cadastro inteiro. Traz, de cada uma, a disponibilidade, as especialidades e SE O CELULAR DELA ESTA CONECTADO ao sistema. A primeira linha da resposta e o resumo (quantas ativas, quantas conectadas): repasse-o. ESTAR ATIVA NO CADASTRO E DIFERENTE DE TER O CELULAR CONECTADO — sem a conexao o sistema nao enxerga as conversas dela com cliente, e toda metrica de atendimento dela fica vazia. Quando a resposta disser que NENHUMA esta conectada, diga isso com todas as letras: e a explicacao de por que nao ha dado de atendimento. Use para "quais sao as minhas vendedoras", "quem esta disponivel", "para quem eu posso encaminhar" — e sempre que a usuaria precisar escolher uma pessoa e nao souber os nomes. Nao traz venda, meta nem telefone.',
   input_schema: {
     type: 'object' as const,
     properties: {},
@@ -793,6 +793,65 @@ const GESTAO_TOM_TOOL: Anthropic.Tool = {
       cliente: { type: 'string', description: 'Nome da cliente, como falado.' },
     },
     required: ['vendedora', 'cliente'],
+  },
+};
+
+/**
+ * COMPARAR COM OUTROS ANOS — 29/09/2026.
+ *
+ * A DESCRICAO INSISTE NO CORTE PORQUE ELE E A PARTE QUE ENGANA. Quando o mes
+ * ainda corre, a resposta compara ate o MESMO DIA em todos os anos — e traz o
+ * mes fechado dos anos passados ao lado. Repassar so um dos dois numeros da
+ * uma leitura errada da operacao.
+ */
+const GESTAO_COMPARAR_ANOS_TOOL: Anthropic.Tool = {
+  name: 'comparar_com_outros_anos',
+  description:
+    'Compara o MESMO recorte atraves dos anos: "como esta setembro comparado aos outros anos", "esse mes foi melhor que ano passado", "como foi esse periodo em 2024". Devolve, por ano: receita, numero de vendas e ticket medio. A base tem de 2023 em diante. Quando o mes ainda esta correndo, a comparacao e CORTADA NO MESMO DIA em todos os anos — repasse isso, porque comparar mes parcial com mes inteiro faz o ano atual sempre parecer pior. Nesses casos vem tambem o MES FECHADO dos anos anteriores: diga os dois ("ate o dia 29 estamos X% abaixo; setembro passado fechou em Y"). Use `mes` para um mes inteiro, ou `de`/`ate` para um intervalo de dias que se repete em cada ano. Sem `vendedora`, e a loja.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      mes: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 12,
+        description: 'O mes, de 1 a 12. Use quando a pergunta for sobre um mes.',
+      },
+      ...DATAS_LIVRES,
+      vendedora: {
+        type: 'string',
+        description: 'Nome da vendedora, como falado. OMITA para a loja inteira.',
+      },
+    },
+  },
+};
+
+/**
+ * COMPARAR COM O PERIODO ANTERIOR — 29/09/2026.
+ *
+ * A DESCRICAO PRECISA SEPARAR ESTA DE `comparar_com_outros_anos`, porque as
+ * duas respondem "comparado com o que?" e a escolha errada devolve um numero
+ * plausivel para outra pergunta.
+ */
+const GESTAO_COMPARAR_ANTERIOR_TOOL: Anthropic.Tool = {
+  name: 'comparar_com_periodo_anterior',
+  description:
+    'Compara o periodo ATUAL com o IMEDIATAMENTE ANTERIOR: esta semana contra a semana passada, este mes contra o mes passado, este ano contra o ano passado. Traz CLIENTES DISTINTOS, numero de vendas, receita e ticket dos dois lados. Use para "quantos clientes tive essa semana e em relacao a semana passada", "esse mes foi melhor que o passado", "estamos crescendo". NAO confunda com comparar_com_outros_anos, que compara o MESMO mes em ANOS diferentes (setembro/2026 contra setembro/2025) — aqui e sempre contra o periodo logo antes. CLIENTES e VENDAS sao numeros diferentes: a mesma cliente comprando tres vezes conta 1 cliente e 3 vendas; repasse o que perguntaram. Quando o periodo atual ainda esta correndo (mes ou ano), o anterior vem CORTADO NO MESMO PONTO e o total fechado dele vem junto: diga os dois, porque comparar periodo parcial com periodo inteiro faz o atual parecer pior sempre.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      periodo: {
+        type: 'string',
+        enum: ['SEMANA', 'MES', 'ANO'],
+        description:
+          'SEMANA sao sete dias contando hoje (os dois lados cheios, sem corte). MES e ANO sao do calendario, e o atual esta correndo.',
+      },
+      ...DATAS_LIVRES,
+      vendedora: {
+        type: 'string',
+        description: 'Nome da vendedora. OMITA para a loja inteira.',
+      },
+    },
   },
 };
 
@@ -1042,6 +1101,8 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoMetricas) tools.push(GESTAO_METRICAS_TOOL);
     if (params.gestaoRankings) tools.push(GESTAO_RANKINGS_TOOL);
     if (params.gestaoTom) tools.push(GESTAO_TOM_TOOL);
+    if (params.gestaoCompararAnos) tools.push(GESTAO_COMPARAR_ANOS_TOOL);
+    if (params.gestaoCompararAnterior) tools.push(GESTAO_COMPARAR_ANTERIOR_TOOL);
     if (params.gestaoDiaDaVendedora)
       tools.push(GESTAO_DIA_DA_VENDEDORA_TOOL);
     if (params.registrarRelato) tools.push(RELATO_TOOL);
@@ -1271,6 +1332,122 @@ export class AnthropicClient implements ILlmClient {
                 ate: e.ate,
               }),
               'venda',
+            );
+          }),
+        );
+      } else if (
+        // ==================================================================
+        // OS CINCO DESPACHOS DE 29/09/2026.
+        //
+        // Declarar a ferramenta ao modelo e LIGAR A EXECUCAO sao duas coisas,
+        // e eu fiz so a primeira: as cinco apareciam na lista, o modelo as
+        // chamava, e nenhum ramo respondia. O `tool_result` ia vazio e a API
+        // recusava a conversa inteira com "user messages must have non-empty
+        // content" — um 400 que nao diz qual ferramenta falhou.
+        //
+        // O teste que eu fiz chamava os handlers DIRETO, e por isso passou nos
+        // cinco casos. O caminho que faltava era justamente este.
+        // ==================================================================
+        toolUse.name === 'metricas_de_atendimento' &&
+        params.gestaoMetricas
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as {
+              de?: string;
+              ate?: string;
+              periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
+            };
+            return textoDeLinhas(
+              await params.gestaoMetricas!({ de: e.de, ate: e.ate, periodo: e.periodo }),
+              'Repasse os numeros com o TAMANHO DA AMOSTRA junto: media de dois casos nao e indicador.',
+            );
+          }),
+        );
+      } else if (
+        toolUse.name === 'rankings_de_atendimento' &&
+        params.gestaoRankings
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as {
+              eixo?: 'RESPOSTA' | 'FECHAMENTO' | 'INTERACOES' | 'CONVERSAO' | 'LEADS';
+              de?: string;
+              ate?: string;
+              periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
+            };
+            return textoDeLinhas(
+              await params.gestaoRankings!({
+                eixo: e.eixo,
+                de: e.de,
+                ate: e.ate,
+                periodo: e.periodo,
+              }),
+              'O tempo vem no relogio da loja (08h-19h) com o corrido ao lado: ' +
+                'diga os dois quando diferirem, porque a diferenca significa que a ' +
+                'cliente escreveu fora do horario.',
+            );
+          }),
+        );
+      } else if (
+        toolUse.name === 'comparar_com_outros_anos' &&
+        params.gestaoCompararAnos
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as {
+              mes?: number;
+              de?: string;
+              ate?: string;
+              vendedora?: string;
+            };
+            return textoDeLinhas(
+              await params.gestaoCompararAnos!({
+                mes: e.mes,
+                de: e.de,
+                ate: e.ate,
+                vendedora: e.vendedora,
+              }),
+              'Quando a resposta disser que o mes atual ainda nao fechou, DIGA ISSO: ' +
+                'comparar mes parcial com mes inteiro faz o ano atual parecer pior sempre.',
+            );
+          }),
+        );
+      } else if (
+        toolUse.name === 'comparar_com_periodo_anterior' &&
+        params.gestaoCompararAnterior
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as {
+              periodo?: 'SEMANA' | 'MES' | 'ANO';
+              de?: string;
+              ate?: string;
+              vendedora?: string;
+            };
+            return textoDeLinhas(
+              await params.gestaoCompararAnterior!({
+                periodo: e.periodo,
+                de: e.de,
+                ate: e.ate,
+                vendedora: e.vendedora,
+              }),
+              'CLIENTES e VENDAS sao numeros diferentes: repasse o que perguntaram. ' +
+                'E se vier o periodo anterior FECHADO, diga os dois.',
+            );
+          }),
+        );
+      } else if (toolUse.name === 'tom_da_conversa' && params.gestaoTom) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as { vendedora?: string; cliente?: string };
+            return textoDeLinhas(
+              await params.gestaoTom!({
+                vendedora: String(e.vendedora ?? '').slice(0, 80),
+                cliente: String(e.cliente ?? '').slice(0, 80),
+              }),
+              'Se a resposta disser que o celular dela nao esta conectado ou que ' +
+                'a conversa e antiga demais, REPASSE — nao conclua que nao houve atendimento.',
             );
           }),
         );
@@ -1809,6 +1986,34 @@ export class AnthropicClient implements ILlmClient {
     }
 
     // Continuacao: devolve os tool_result e pede o comentario final.
+    // ========================================================================
+    // NENHUM `tool_result` PODE IR VAZIO — 29/09/2026.
+    //
+    // A API recusa a chamada inteira com
+    // `400 messages.N: user messages must have non-empty content`, e o erro
+    // nao diz QUAL ferramenta produziu o vazio. O agente responde "nao
+    // consegui consultar isso agora", e a causa fica escondida atras de uma
+    // frase generica — foi o que aconteceu com o Lucas as 14:25.
+    //
+    // Uma ferramenta devolver nada e legitimo (uma consulta sem resultado, um
+    // desfecho que o tradutor nao previu). O que nao pode e isso derrubar a
+    // conversa: o modelo precisa saber que a ferramenta rodou e nao trouxe
+    // texto, para dizer isso em vez de inventar.
+    //
+    // A guarda fica AQUI, e nao em cada tradutor, porque sao dezenas de
+    // ferramentas e basta uma esquecer. Este e o funil por onde todas passam.
+    // ========================================================================
+    const resultadosSeguros = toolResults.map((r) =>
+      typeof r.content === 'string' && r.content.trim() === ''
+        ? {
+            ...r,
+            content:
+              'A ferramenta rodou e nao devolveu texto. Diga que nao conseguiu ' +
+              'essa informacao agora e ofereca outro caminho. NAO invente o dado.',
+          }
+        : r,
+    );
+
     const cont = await this.client.messages.create({
       model: params.model,
       max_tokens: 1024,
@@ -1817,7 +2022,7 @@ export class AnthropicClient implements ILlmClient {
       messages: [
         ...apiMessages,
         { role: 'assistant', content: first.content },
-        { role: 'user', content: toolResults },
+        { role: 'user', content: resultadosSeguros },
       ],
     });
 
@@ -2339,4 +2544,47 @@ function textoDoEncaminhamento(r: {
         'Diga que o lead continua esperando e que da para tentar de novo.'
       );
   }
+}
+
+/**
+ * O texto de uma leitura que devolve LINHAS, e nao uma vendedora — 29/09/2026.
+ *
+ * ==========================================================================
+ * NUNCA DEVOLVE STRING VAZIA, E ESSE E O PONTO.
+ *
+ * Um `tool_result` vazio faz a API recusar a conversa inteira com
+ * `400 user messages must have non-empty content` — e o erro nao diz qual
+ * ferramenta produziu o vazio. O agente responde "nao consegui consultar isso
+ * agora" e a causa fica escondida atras de uma frase generica.
+ *
+ * Aconteceu em 29/09/2026, as 14:25, com o Lucas do outro lado.
+ * ==========================================================================
+ *
+ * @param orientacao o que o modelo precisa saber para NAO deturpar o dado.
+ *        Vive aqui, e nao no prompt, porque e especifica da ferramenta e
+ *        so importa quando ela foi usada.
+ */
+function textoDeLinhas(
+  r: { status?: string; linhas?: string[]; nomes?: string[] },
+  orientacao: string,
+): string {
+  if (r.status === 'AMBIGUA') {
+    return (
+      `Mais de uma vendedora com esse nome: ${(r.nomes ?? []).join(', ')}. ` +
+      'Pergunte de qual se trata. NAO escolha uma.'
+    );
+  }
+  if (r.status === 'NAO_ENCONTRADA') {
+    const equipe = (r.nomes ?? []).join(', ');
+    return equipe
+      ? `Nao ha vendedora com esse nome. A equipe ativa e: ${equipe}. Diga isso e pergunte qual delas.`
+      : 'Nao ha vendedora com esse nome, ou nao veio nome nenhum. Pergunte de quem se trata — ou, se a pergunta era sobre a loja inteira, use a ferramenta correspondente.';
+  }
+
+  const linhas = r.linhas ?? [];
+  if (linhas.length === 0) {
+    return 'A consulta rodou e nao devolveu nada nesse recorte. Diga isso em uma frase, sem inventar numero.';
+  }
+
+  return `${linhas.join('\n')}\n\n${orientacao}`;
 }
