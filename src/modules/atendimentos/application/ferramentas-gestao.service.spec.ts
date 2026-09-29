@@ -75,6 +75,12 @@ describe('FerramentasGestaoService', () => {
         duracaoDoAtendimento: { minutos: null, amostra: 0, minimo: null, maximo: null },
         ateFecharVenda: { minutos: null, amostra: 0, minimo: null, maximo: null },
       }) } as never,
+      // Rankings (ANA-14, 29/09) — dublados.
+      { execute: jest.fn().mockResolvedValue({
+        de: new Date(), ate: new Date(),
+        respondeMaisRapido: [], fechaMaisRapido: [], maisInterage: [],
+        maisConverte: [], maisLeads: [], semAmostra: [],
+      }) } as never,
       // A consulta de catalogo da GESTAO, com quantidade — dublada.
       { execute: jest.fn().mockResolvedValue([]) } as never,
       agenda as never,

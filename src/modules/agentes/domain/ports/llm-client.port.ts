@@ -632,6 +632,25 @@ export type GestaoMetricasHandler = (input: {
   periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
 }) => Promise<GestaoLeituraResultado>;
 
+/**
+ * OS CINCO RANKINGS — ANA-14, 29/09/2026.
+ *
+ * O `eixo` existe para a resposta nao virar um relatorio: quem pergunta
+ * "quem responde mais rapido" quer UMA linha, e nao os cinco rankings da
+ * equipe. Sem eixo, vem um resumo dos cinco.
+ */
+export type GestaoRankingsHandler = (input: {
+  eixo?:
+    | 'RESPOSTA'
+    | 'FECHAMENTO'
+    | 'INTERACOES'
+    | 'CONVERSAO'
+    | 'LEADS';
+  de?: string;
+  ate?: string;
+  periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
+}) => Promise<GestaoLeituraResultado>;
+
 export type GestaoFunilHandler = (input: {
   /** Nome (ou parte). Ausente = a loja inteira. */
   vendedora?: string;
@@ -724,6 +743,7 @@ export interface ChatParams {
   gestaoFunil?: GestaoFunilHandler;
   gestaoPanoramaLeads?: GestaoPanoramaLeadsHandler;
   gestaoMetricas?: GestaoMetricasHandler;
+  gestaoRankings?: GestaoRankingsHandler;
   /**
    * Habilita `gerar_grafico`. Default true, que preserva o painel.
    *

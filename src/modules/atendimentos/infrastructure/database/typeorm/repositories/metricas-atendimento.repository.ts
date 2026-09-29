@@ -3,6 +3,8 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import type {
   Conversao,
+  DesfechoDaVendedora,
+  ParDeResposta,
   IMetricasAtendimentoRepository,
   InteracoesDaVendedora,
   JanelaDeMetrica,
@@ -185,6 +187,93 @@ export class MetricasAtendimentoRepository
       // aqui ninguem terminou de decidir ainda.
       taxa: comDesfecho === 0 ? null : Math.round((ganhos / comDesfecho) * 100),
     };
+  }
+
+  /**
+   * ANA-14 — os pares crus, para o relogio comercial ser aplicado fora daqui.
+   *
+   * Mesma estrutura do `tempoPrimeiraResposta`: `DISTINCT ON` pega o primeiro
+   * contato de cada atendimento e o LATERAL busca a primeira resposta DEPOIS
+   * dele. Aqui os instantes voltam inteiros em vez de virar media, porque o
+   * desconto do horario comercial precisa de cada par separado.
+   */
+  async paresDeResposta(j: JanelaDeMetrica): Promise<ParDeResposta[]> {
+    const linhas: Array<{
+      vendedora_id: string;
+      nome: string;
+      contato_em: Date;
+      resposta_em: Date;
+    }> = await this.ds.query(
+      `WITH primeiro_contato AS (
+         SELECT DISTINCT ON (i.atendimento_id)
+                i.atendimento_id, i.ocorrido_em, a.vendedora_id
+           FROM atendimento_interacoes i
+           JOIN atendimentos a ON a.id = i.atendimento_id
+          WHERE i.tipo = 'CONTATO_CLIENTE'
+            AND i.ocorrido_em >= $1 AND i.ocorrido_em <= $2
+            AND ($3::uuid[] IS NULL OR a.vendedora_id = ANY($3::uuid[]))
+          ORDER BY i.atendimento_id, i.ocorrido_em
+       )
+       SELECT c.vendedora_id,
+              v.nome,
+              c.ocorrido_em AS contato_em,
+              r.ocorrido_em AS resposta_em
+         FROM primeiro_contato c
+         JOIN vendedoras v ON v.id = c.vendedora_id
+         JOIN LATERAL (
+                SELECT i.ocorrido_em
+                  FROM atendimento_interacoes i
+                 WHERE i.atendimento_id = c.atendimento_id
+                   AND i.tipo = 'RESPOSTA_VENDEDORA'
+                   AND i.ocorrido_em >= c.ocorrido_em
+                 ORDER BY i.ocorrido_em
+                 LIMIT 1
+              ) r ON true`,
+      [j.de, j.ate, j.vendedoraIds ?? null],
+    );
+
+    return linhas.map((l) => ({
+      vendedoraId: l.vendedora_id,
+      nome: l.nome,
+      contatoEm: new Date(l.contato_em),
+      respostaEm: new Date(l.resposta_em),
+    }));
+  }
+
+  async desfechoPorVendedora(
+    j: JanelaDeMetrica,
+  ): Promise<DesfechoDaVendedora[]> {
+    // O lead aponta para a vendedora por CODIGO do ERP, herdado da triagem.
+    const linhas: Array<{
+      codigo: string;
+      nome: string;
+      ganhos: string;
+      perdidos: string;
+    }> = await this.ds.query(
+      `SELECT l.codigo,
+              v.nome,
+              count(*) FILTER (WHERE l.estado = 'GANHO')   AS ganhos,
+              count(*) FILTER (WHERE l.estado = 'PERDIDO') AS perdidos
+         FROM (
+                SELECT COALESCE(vendedora_aprovada_codigo,
+                                vendedora_sugerida_codigo) AS codigo,
+                       estado
+                  FROM leads
+                 WHERE criado_em >= $1 AND criado_em <= $2
+              ) l
+         JOIN vendedoras v ON v.codigo_erp = l.codigo
+        WHERE ($3::uuid[] IS NULL OR v.id = ANY($3::uuid[]))
+        GROUP BY 1, 2
+       HAVING count(*) FILTER (WHERE l.estado IN ('GANHO', 'PERDIDO')) > 0`,
+      [j.de, j.ate, j.vendedoraIds ?? null],
+    );
+
+    return linhas.map((l) => ({
+      codigo: l.codigo,
+      nome: l.nome,
+      ganhos: Number(l.ganhos),
+      perdidos: Number(l.perdidos),
+    }));
   }
 
   async tempoDeAtendimento(j: JanelaDeMetrica): Promise<MediaDeTempo> {

@@ -55,6 +55,7 @@ import { ConversaWhatsappRepository } from './infrastructure/database/typeorm/re
 import { METRICAS_ATENDIMENTO_REPOSITORY } from './domain/ports/repositories/metricas-atendimento-repository.port';
 import { MetricasAtendimentoRepository } from './infrastructure/database/typeorm/repositories/metricas-atendimento.repository';
 import { MetricasDeAtendimentoUseCase } from './application/use-cases/metricas-de-atendimento.use-case';
+import { RankingsDeAtendimentoUseCase } from './application/use-cases/rankings-de-atendimento.use-case';
 
 /**
  * Episodios de atendimento (migracao 35) e a linha do tempo de cada um.
@@ -124,6 +125,7 @@ import { MetricasDeAtendimentoUseCase } from './application/use-cases/metricas-d
       useClass: MetricasAtendimentoRepository,
     },
     MetricasDeAtendimentoUseCase,
+    RankingsDeAtendimentoUseCase,
     DispararPendenciasUseCase,
     ConsultarAgendaVendedoraUseCase,
     ConsultarDesempenhoVendedoraUseCase,
@@ -172,6 +174,7 @@ import { MetricasDeAtendimentoUseCase } from './application/use-cases/metricas-d
     CONVERSA_WHATSAPP_REPOSITORY,
     METRICAS_ATENDIMENTO_REPOSITORY,
     MetricasDeAtendimentoUseCase,
+    RankingsDeAtendimentoUseCase,
     ProcessarMensagemInternaUseCase,
     RotearMensagemInternaUseCase,
     // O webhook do modulo `atendimento` (singular) registra por aqui o que

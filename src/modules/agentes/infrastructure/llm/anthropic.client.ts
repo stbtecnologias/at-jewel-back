@@ -744,6 +744,36 @@ const GESTAO_METRICAS_TOOL: Anthropic.Tool = {
   },
 };
 
+/**
+ * OS CINCO RANKINGS — ANA-14, 29/09/2026.
+ *
+ * O `eixo` e o que separa "quem responde mais rapido" (uma linha) de "como
+ * esta a equipe" (cinco). Sem ele o modelo devolveria os cinco rankings para
+ * uma pergunta que queria um nome.
+ */
+const GESTAO_RANKINGS_TOOL: Anthropic.Tool = {
+  name: 'rankings_de_atendimento',
+  description:
+    'Quem e a melhor da equipe em CADA aspecto do atendimento: quem responde mais rapido, quem fecha venda em menos tempo, quem mais interage com cliente, quem mais converte lead em venda e quem recebe mais leads. Use para "quem responde mais rapido", "qual vendedora converte melhor", "quem recebe mais lead", "quem atende melhor", "ranking da equipe". NAO responde quem vendeu mais em dinheiro nem quem vendeu mais pecas — isso e venda, e sai nas ferramentas de venda. O tempo de resposta vem no RELOGIO DA LOJA (08h-19h) com o tempo corrido ao lado: repasse os dois quando houver diferenca, porque a diferenca significa que a cliente escreveu fora do horario. Toda posicao vem com o numero de casos: repasse sempre, e quando a resposta disser que alguem ficou de fora por ter poucos casos, diga isso tambem — nao e que ela nao atendeu.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      eixo: {
+        type: 'string',
+        enum: ['RESPOSTA', 'FECHAMENTO', 'INTERACOES', 'CONVERSAO', 'LEADS'],
+        description:
+          'Qual ranking. OMITA so quando a pergunta for geral ("como esta a equipe") — para uma pergunta especifica, escolha o eixo e devolva uma linha.',
+      },
+      ...DATAS_LIVRES,
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
+        description: 'O atalho, quando nao houver datas. Padrao MES.',
+      },
+    },
+  },
+};
+
 const GESTAO_FUNIL_TOOL: Anthropic.Tool = {
   name: 'funil_de_atendimentos',
   description:
@@ -988,6 +1018,7 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoFunil) tools.push(GESTAO_FUNIL_TOOL);
     if (params.gestaoPanoramaLeads) tools.push(GESTAO_PANORAMA_LEADS_TOOL);
     if (params.gestaoMetricas) tools.push(GESTAO_METRICAS_TOOL);
+    if (params.gestaoRankings) tools.push(GESTAO_RANKINGS_TOOL);
     if (params.gestaoDiaDaVendedora)
       tools.push(GESTAO_DIA_DA_VENDEDORA_TOOL);
     if (params.registrarRelato) tools.push(RELATO_TOOL);

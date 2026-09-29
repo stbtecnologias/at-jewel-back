@@ -100,6 +100,36 @@ export interface Conversao {
   taxa: number | null;
 }
 
+/**
+ * Um par "cliente escreveu / vendedora respondeu" — ANA-14.
+ *
+ * ==========================================================================
+ * OS PARES VOLTAM CRUS, E A CONTA DO RELOGIO E FEITA EM TYPESCRIPT.
+ *
+ * O horario comercial nao cabe bem em SQL: seria um CASE por borda, e as
+ * bordas sao exatamente onde o calculo erra. Em TypeScript ele e uma funcao
+ * testada (`minutosDeExpediente`), com dezenove casos guardados.
+ *
+ * O volume permite: e um par por atendimento, e atendimento aberto e coisa
+ * rara. Se um dia nao permitir, o conserto e agregar por vendedora no banco e
+ * trazer so os extremos — nao e voltar o relogio para o SQL.
+ * ==========================================================================
+ */
+export interface ParDeResposta {
+  vendedoraId: string;
+  nome: string;
+  contatoEm: Date;
+  respostaEm: Date;
+}
+
+/** Ganhos e perdidos de cada vendedora, para a conversao do ranking. */
+export interface DesfechoDaVendedora {
+  codigo: string;
+  nome: string;
+  ganhos: number;
+  perdidos: number;
+}
+
 export interface IMetricasAtendimentoRepository {
   /** ANA-08 */
   leadsPorVendedora(janela: JanelaDeMetrica): Promise<LeadsDaVendedora[]>;
@@ -135,6 +165,18 @@ export interface IMetricasAtendimentoRepository {
 
   /** ANA-10 — de `aberto_em` a `fechado_em`, so os que fecharam. */
   tempoDeAtendimento(janela: JanelaDeMetrica): Promise<MediaDeTempo>;
+
+  /**
+   * ANA-14 — os pares de primeira resposta, um por atendimento.
+   *
+   * So o PRIMEIRO par de cada atendimento, pela mesma razao do ANA-09: e o
+   * primeiro "oi" que faz a cliente desistir, e trinta trocas rapidas depois
+   * nao consertam uma espera de dois dias no comeco.
+   */
+  paresDeResposta(janela: JanelaDeMetrica): Promise<ParDeResposta[]>;
+
+  /** ANA-14 — ganhos e perdidos por vendedora, para ranquear conversao. */
+  desfechoPorVendedora(janela: JanelaDeMetrica): Promise<DesfechoDaVendedora[]>;
 
   /** ANA-11 — o mesmo, restrito aos que fecharam em VENDA. */
   tempoAteFecharVenda(janela: JanelaDeMetrica): Promise<MediaDeTempo>;

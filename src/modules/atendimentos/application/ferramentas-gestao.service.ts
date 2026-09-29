@@ -13,6 +13,7 @@ import type {
   GestaoFeedbacksHandler,
   GestaoFunilHandler,
   GestaoMetricasHandler,
+  GestaoRankingsHandler,
   GestaoPanoramaLeadsHandler,
   GestaoPorFamiliaHandler,
   GestaoLeituraResultado,
@@ -59,8 +60,14 @@ import {
 import {
   MetricasDeAtendimentoUseCase,
   comAmostra,
+  emPortugues,
   fraseDaConversao,
 } from './use-cases/metricas-de-atendimento.use-case';
+import {
+  MINIMO_PARA_RANQUEAR,
+  RankingsDeAtendimentoUseCase,
+  type PostoDeRanking,
+} from './use-cases/rankings-de-atendimento.use-case';
 
 const MAXIMO_CLIENTES_HOMONIMOS = 5;
 /** Feedbacks por resposta. Acima disso a mensagem deixa de ser lida. */
@@ -156,6 +163,7 @@ export interface FerramentasGestao {
   gestaoFunil: GestaoFunilHandler;
   gestaoPanoramaLeads: GestaoPanoramaLeadsHandler;
   gestaoMetricas: GestaoMetricasHandler;
+  gestaoRankings: GestaoRankingsHandler;
   gestaoPorFamilia: GestaoPorFamiliaHandler;
   /**
    * NAO E UM HANDLER — e um aviso que viaja junto para o cliente do LLM.
@@ -258,6 +266,7 @@ export class FerramentasGestaoService {
     private readonly resolverVendedora: ResolverVendedoraPorNomeUseCase,
     private readonly consultarVendas: ConsultarVendasUseCase,
     private readonly metricas: MetricasDeAtendimentoUseCase,
+    private readonly rankings: RankingsDeAtendimentoUseCase,
     private readonly listarProdutos: ListarProdutosUseCase,
     private readonly agenda: ConsultarAgendaVendedoraUseCase,
     private readonly desempenho: ConsultarDesempenhoVendedoraUseCase,
@@ -923,6 +932,96 @@ export class FerramentasGestaoService {
           );
         } else {
           linhas.push('Nenhuma interação registrada no período.');
+        }
+
+        return { status: 'OK' as const, de: janela.de, ate: janela.ate, linhas };
+      },
+
+      /**
+       * OS CINCO RANKINGS — ANA-14, 29/09/2026.
+       *
+       * ====================================================================
+       * O TEMPO DE RESPOSTA SAI NO RELOGIO DA LOJA, COM O CORRIDO AO LADO.
+       *
+       * Cliente escreve 23h40 e a vendedora responde 8h10: corrido sao 8h30 e
+       * ela e a pior da equipe; no relogio da loja sao 10 minutos e ela e a
+       * melhor. Como o telefone corporativo recebe a qualquer hora, inclusive
+       * no fim de semana, ranquear pelo corrido ordenaria por QUANDO a
+       * cliente escreveu — nao por como a vendedora atendeu.
+       *
+       * O corrido vai junto porque e ele que mostra quem responde fora do
+       * expediente: esforco que o relogio da loja apaga.
+       * ====================================================================
+       */
+      gestaoRankings: async ({ eixo, de, ate, periodo }) => {
+        const recorte = datasDeRecorte(de, ate);
+        const janela = recorte ?? janelaDoPeriodo(periodo);
+
+        const r = await this.rankings.execute({
+          de: janela.de,
+          ate: janela.ate,
+          vendedoraIds: equipe ?? null,
+        });
+
+        const tempo = (p: PostoDeRanking) =>
+          `${p.nome} ${emPortugues(p.valor)}` +
+          (p.corrido !== undefined && p.corrido !== p.valor
+            ? ` (${emPortugues(p.corrido)} corridos)`
+            : '') +
+          ` — ${p.amostra} caso(s)`;
+
+        const contagem = (p: PostoDeRanking, unidade: string) =>
+          `${p.nome} ${p.valor} ${unidade}`;
+
+        const eixos: Record<string, () => string> = {
+          RESPOSTA: () =>
+            r.respondeMaisRapido.length
+              ? 'Responde mais rápido: ' +
+                r.respondeMaisRapido.map(tempo).join('; ') + '.'
+              : 'Ainda não há vendedora com casos suficientes para ranquear tempo de resposta.',
+          FECHAMENTO: () =>
+            r.fechaMaisRapido.length
+              ? 'Fecha venda em menos tempo: ' +
+                r.fechaMaisRapido.map(tempo).join('; ') + '.'
+              : 'Nenhum atendimento fechado em venda no período — não dá para ranquear.',
+          INTERACOES: () =>
+            r.maisInterage.length
+              ? 'Mais interage: ' +
+                r.maisInterage
+                  .map((p) => `${p.nome} ${p.valor} interação(ões) em ${p.amostra} atendimento(s)`)
+                  .join('; ') + '.'
+              : 'Nenhuma interação registrada no período.',
+          CONVERSAO: () =>
+            r.maisConverte.length
+              ? 'Mais converte: ' +
+                r.maisConverte
+                  .map((p) => `${p.nome} ${p.valor}% em ${p.amostra} lead(s) decidido(s)`)
+                  .join('; ') + '.'
+              : 'Nenhuma vendedora tem leads com desfecho suficientes para ranquear conversão.',
+          LEADS: () =>
+            r.maisLeads.length
+              ? 'Recebe mais leads: ' +
+                r.maisLeads.map((p) => contagem(p, 'lead(s)')).join('; ') + '.'
+              : 'Nenhum lead atribuído no período.',
+        };
+
+        const linhas = eixo
+          ? [eixos[eixo]()]
+          : Object.values(eixos).map((f) => f());
+
+        // ==================================================================
+        // QUEM FICOU DE FORA APARECE, E ISSO NAO E DETALHE.
+        //
+        // Sem esta linha, a vendedora com um unico atendimento simplesmente
+        // NAO EXISTE no ranking — e quem le conclui que ela nao trabalhou,
+        // quando a verdade e que ela nao tem casos suficientes para uma media
+        // significar alguma coisa.
+        // ==================================================================
+        if (r.semAmostra.length > 0) {
+          linhas.push(
+            `Fora dos rankings de média por terem menos de ${MINIMO_PARA_RANQUEAR} casos: ` +
+              `${r.semAmostra.join(', ')}. Isso não quer dizer que não atenderam.`,
+          );
         }
 
         return { status: 'OK' as const, de: janela.de, ate: janela.ate, linhas };
