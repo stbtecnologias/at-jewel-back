@@ -1074,6 +1074,40 @@ interface DemandaToolInput {
 // Limite defensivo para a descricao vinda do modelo (espelha o MaxLength do DTO).
 const DEMANDA_DESCRICAO_MAX = 4000;
 
+/**
+ * Quantas voltas de ferramenta um turno pode dar.
+ *
+ * ==========================================================================
+ * CINCO PORQUE O CUSTO E LINEAR E O SILENCIO ERA TOTAL.
+ *
+ * Cada volta e uma chamada ao modelo, entao teto alto transforma pergunta mal
+ * formulada em conta cara. Mas teto baixo corta pergunta legitima: "e das
+ * outras vendedoras?" precisa de duas voltas — uma para saber quem sao, outra
+ * para as agendas delas.
+ *
+ * Cinco cobre com folga o que apareceu na pratica (nenhuma pergunta real
+ * passou de tres) e para antes de a conta doer. E o numero nao e o que
+ * importa: e que estourar o teto NAO descarta pedido calado, como acontecia
+ * — obriga o modelo a responder com o que ja tem.
+ * ==========================================================================
+ */
+const MAX_VOLTAS = 5;
+
+/**
+ * As travas de ESCRITA, que valem para o TURNO e nao para a volta.
+ *
+ * Elas existem contra criacao em massa — inclusive por injecao no texto que um
+ * cliente escreveu. Se nascessem a cada volta, um turno de cinco voltas daria
+ * cinco demandas, cinco avisos e cinco agendamentos, e a trava viraria enfeite.
+ * Por isso viajam por fora do despacho, e nao dentro dele.
+ */
+interface TetosPorTurno {
+  demandaRegistrada: boolean;
+  avisoEnviado: boolean;
+  contatoAgendado: boolean;
+  relatoGravado: boolean;
+}
+
 @Injectable()
 export class AnthropicClient implements ILlmClient {
   private readonly logger = new Logger(AnthropicClient.name);
@@ -1175,27 +1209,114 @@ export class AnthropicClient implements ILlmClient {
 
     let tokens = first.usage.output_tokens;
 
-    const toolUses = first.content.filter(
-      (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
-    );
+    // ======================================================================
+    // O LACO DAVA UMA VOLTA SO, E ISSO SUMIA COM PERGUNTA ENCADEADA.
+    //
+    // Era: pede ferramentas -> roda -> pergunta de novo -> devolve o texto.
+    // Se a SEGUNDA resposta tambem pedisse ferramentas, os pedidos eram
+    // descartados em silencio, porque `extrairTexto` le so o bloco de texto.
+    //
+    // O Lucas viu em 29/09: "como esta a agenda da Aline hoje?" respondeu, e
+    // "e das outras vendedoras?" devolveu "Vou olhar a agenda de hoje das
+    // outras sete." e mais nada. O modelo tinha pedido as outras seis agendas
+    // na segunda volta, e ninguem rodou.
+    //
+    // O sintoma engana: pergunta simples sempre funciona, entao parece
+    // instabilidade em vez de desenho. E vale para toda pergunta que precisa
+    // olhar duas vezes — "e da outra?", "compara com...", "e quanto ela
+    // vendeu disso?".
+    // ======================================================================
+    const tetos: TetosPorTurno = {
+      demandaRegistrada: false,
+      avisoEnviado: false,
+      contatoAgendado: false,
+      relatoGravado: false,
+    };
 
-    if (toolUses.length === 0) {
-      return { texto: this.extrairTexto(first), tokens };
+    let grafico: GraficoDinamico | undefined;
+    const conversa: Anthropic.MessageParam[] = [...apiMessages];
+    let resp = first;
+
+    for (let volta = 1; ; volta += 1) {
+      const pedidos = resp.content.filter(
+        (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
+      );
+      if (pedidos.length === 0) {
+        return { texto: this.extrairTexto(resp), tokens, grafico };
+      }
+
+      const rodada = await this.despachar(pedidos, params, tetos);
+      // O grafico e um so por turno: o ultimo pedido vence, e nao ha
+      // acumulo — a tela mostra um.
+      grafico = rodada.grafico ?? grafico;
+
+      // ====================================================================
+      // O TETO NAO DESCARTA PEDIDO EM SILENCIO — foi esse o defeito.
+      //
+      // Na ultima volta as ferramentas continuam declaradas (a conversa ja
+      // tem `tool_result` dentro, e some-las confundiria a API), mas o
+      // `tool_choice: none` obriga o modelo a RESPONDER com o que ja tem.
+      // Assim o turno sempre termina em texto, mesmo quando ele pediria mais.
+      // ====================================================================
+      const ultima = volta >= MAX_VOLTAS;
+      const conteudo: Anthropic.ContentBlockParam[] = [...rodada.toolResults];
+      if (ultima) {
+        this.logger.warn(
+          `O modelo pediu ferramentas por ${MAX_VOLTAS} voltas seguidas — ` +
+            'fechando o turno com o que ja foi consultado.',
+        );
+        conteudo.push({
+          type: 'text',
+          text:
+            'Pare de consultar e responda AGORA com o que ja tem em maos. Se ' +
+            'faltou alguma coisa, diga o que faltou e ofereca buscar em ' +
+            'seguida — NAO invente o que nao consultou.',
+        });
+      }
+
+      conversa.push(
+        { role: 'assistant', content: resp.content },
+        { role: 'user', content: conteudo },
+      );
+
+      resp = await this.client.messages.create({
+        model: params.model,
+        // Era 1024 fixo, ignorando o teto de quem chamou. Quem pede 2048 para
+        // a resposta tinha a continuacao — que e a resposta de verdade —
+        // cortada pela metade.
+        max_tokens: Math.max(params.maxTokens, 1024),
+        system: params.system,
+        tools,
+        ...(ultima ? { tool_choice: { type: 'none' as const } } : {}),
+        messages: conversa,
+      });
+      tokens += resp.usage.output_tokens;
     }
+  }
 
+  /**
+   * Roda as ferramentas de UMA volta e devolve os `tool_result`.
+   *
+   * Vivia solto dentro do `chatComFerramentas` ate 29/09/2026, e por isso o
+   * laco so podia dar uma volta. Virou metodo para poder ser chamado de novo.
+   *
+   * As travas de ESCRITA chegam por `tetos` e valem para o TURNO, nao para a
+   * volta: se elas nascessem aqui, o modelo teria uma demanda, um aviso e um
+   * agendamento novos a cada volta do laco — que e exatamente o que elas
+   * existem para impedir.
+   */
+  private async despachar(
+    toolUses: Anthropic.ToolUseBlock[],
+    params: ChatParams,
+    tetos: TetosPorTurno,
+  ): Promise<{
+    toolResults: Anthropic.ToolResultBlockParam[];
+    grafico?: GraficoDinamico;
+  }> {
     // Processa cada tool_use, acumulando o resultado (grafico) e os
-    // tool_result que voltam ao modelo na continuacao.
+    // tool_result que voltam ao modelo na volta seguinte.
     let grafico: GraficoDinamico | undefined;
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
-    // Teto: 1 demanda por turno de chat, mesmo que o modelo emita varios
-    // blocos registrar_demanda (mitiga criacao em massa via prompt injection).
-    let demandaRegistrada = false;
-    // Mesmo teto para o aviso: um WhatsApp disparado por turno, no maximo.
-    let avisoEnviado = false;
-    // E para o agendamento: uma escrita por mensagem, como no aviso.
-    let contatoAgendado = false;
-    // E para o relato: uma gravacao por mensagem dela.
-    let relatoGravado = false;
 
     for (const toolUse of toolUses) {
       if (toolUse.name === 'gerar_grafico') {
@@ -1221,7 +1342,7 @@ export class AnthropicClient implements ILlmClient {
         toolUse.name === 'registrar_demanda' &&
         params.registrarDemanda
       ) {
-        if (demandaRegistrada) {
+        if (tetos.demandaRegistrada) {
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolUse.id,
@@ -1231,7 +1352,7 @@ export class AnthropicClient implements ILlmClient {
           });
           continue;
         }
-        demandaRegistrada = true;
+        tetos.demandaRegistrada = true;
         toolResults.push(
           await this.executarRegistrarDemanda(toolUse, params.registrarDemanda),
         );
@@ -1239,7 +1360,7 @@ export class AnthropicClient implements ILlmClient {
         toolUse.name === 'registrar_relato' &&
         params.registrarRelato
       ) {
-        if (relatoGravado) {
+        if (tetos.relatoGravado) {
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolUse.id,
@@ -1248,7 +1369,7 @@ export class AnthropicClient implements ILlmClient {
           });
           continue;
         }
-        relatoGravado = true;
+        tetos.relatoGravado = true;
         toolResults.push(
           await this.executarRegistrarRelato(toolUse, params.registrarRelato),
         );
@@ -1955,7 +2076,7 @@ export class AnthropicClient implements ILlmClient {
           }),
         );
       } else if (toolUse.name === 'agendar_contato' && params.agendarContato) {
-        if (contatoAgendado) {
+        if (tetos.contatoAgendado) {
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolUse.id,
@@ -1965,7 +2086,7 @@ export class AnthropicClient implements ILlmClient {
           });
           continue;
         }
-        contatoAgendado = true;
+        tetos.contatoAgendado = true;
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
             const entrada = toolUse.input as {
@@ -2032,7 +2153,7 @@ export class AnthropicClient implements ILlmClient {
         toolUse.name === 'avisar_vendedora' &&
         params.avisarVendedora
       ) {
-        if (avisoEnviado) {
+        if (tetos.avisoEnviado) {
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolUse.id,
@@ -2042,14 +2163,13 @@ export class AnthropicClient implements ILlmClient {
           });
           continue;
         }
-        avisoEnviado = true;
+        tetos.avisoEnviado = true;
         toolResults.push(
           await this.executarAvisarVendedora(toolUse, params.avisarVendedora),
         );
       }
     }
 
-    // Continuacao: devolve os tool_result e pede o comentario final.
     // ========================================================================
     // NENHUM `tool_result` PODE IR VAZIO — 29/09/2026.
     //
@@ -2078,21 +2198,9 @@ export class AnthropicClient implements ILlmClient {
         : r,
     );
 
-    const cont = await this.client.messages.create({
-      model: params.model,
-      max_tokens: 1024,
-      system: params.system,
-      tools,
-      messages: [
-        ...apiMessages,
-        { role: 'assistant', content: first.content },
-        { role: 'user', content: resultadosSeguros },
-      ],
-    });
-
-    tokens += cont.usage.output_tokens;
-    return { texto: this.extrairTexto(cont), tokens, grafico };
+    return { toolResults: resultadosSeguros, grafico };
   }
+
 
   /**
    * Envelope comum das ferramentas de LEITURA do canal interno.
