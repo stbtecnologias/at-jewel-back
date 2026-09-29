@@ -37,7 +37,7 @@ function lead(nome: string, parcial: Partial<Lead> = {}): Lead {
     produtosDesejados: 'anel de noivado classico',
     resumoTriagem: 'resumo longo que NAO entra na lista',
     vendedoraSugeridaCodigo: null,
-    estado: 'IN_HUMAN_SERVICE',
+    estado: 'EM_ATENDIMENTO',
     estadoAtualizadoEm: new Date(),
     clienteId: null,
     vinculadoEm: null,
@@ -427,6 +427,22 @@ describe('o panorama de leads da gestao (Anastasia)', () => {
     };
     servico = new FerramentasGestaoService(
       resolverVendedora as never,
+      // Metricas de atendimento (ANA-08 a 12, 29/09) — dubladas.
+      { execute: jest.fn().mockResolvedValue({
+        de: new Date(), ate: new Date(),
+        leadsPorVendedora: [], interacoesPorVendedora: [],
+        primeiraResposta: { minutos: null, amostra: 0, minimo: null, maximo: null },
+        duracaoDoAtendimento: { minutos: null, amostra: 0, minimo: null, maximo: null },
+        ateFecharVenda: { minutos: null, amostra: 0, minimo: null, maximo: null },
+      }) } as never,
+      // Rankings (ANA-14, 29/09) — dublados.
+      { execute: jest.fn().mockResolvedValue({
+        de: new Date(), ate: new Date(),
+        respondeMaisRapido: [], fechaMaisRapido: [], maisInterage: [],
+        maisConverte: [], maisLeads: [], semAmostra: [],
+      }) } as never,
+      // Análise de tom (ANA-15, 29/09) — dublada.
+      { execute: jest.fn().mockResolvedValue({ status: 'SEM_CONVERSA' }) } as never,
       // A consulta de venda, que desde 25/09 le a MOVIMENTACAO. Dublada aqui:
       // estes testes descrevem o roteamento das ferramentas, nao o SQL.
       { itens: jest.fn().mockResolvedValue({ linhas: [] }) } as never,
@@ -445,27 +461,30 @@ describe('o panorama de leads da gestao (Anastasia)', () => {
     );
   });
 
-  const montar = () => servico.montar(null);
+  const montar = () => servico.montar();
 
   it('sem nome: conta os estados, mostra a fila e soma por vendedora', async () => {
     leads.panoramaDeLeads.mockResolvedValue({
       porEstado: [
-        { estado: 'READY_FOR_ROUTING', quantos: 1 },
-        { estado: 'IN_HUMAN_SERVICE', quantos: 3 },
+        { estado: 'NOVO', quantos: 1 },
+        { estado: 'EM_ATENDIMENTO', quantos: 3 },
       ],
       porVendedora: [{ codigo: 'SEED-VD01', quantos: 3 }],
       total: 4,
     });
     leads.listarAguardandoGestao.mockResolvedValue([
-      lead('Aslan', { estado: 'READY_FOR_ROUTING', vendedoraAprovadaCodigo: null }),
+      lead('Aslan', { estado: 'NOVO', vendedoraAprovadaCodigo: null }),
     ]);
 
     const r = await montar().gestaoPanoramaLeads({});
 
     expect(r.status).toBe('OK');
     expect(r.linhas[0]).toContain('4 leads no total');
-    expect(r.linhas[0]).toContain('1 esperando encaminhamento');
-    expect(r.linhas[0]).toContain('3 ja encaminhado');
+    // Os rotulos do funil novo (ANA-03, 29/09/2026): `NOVO` e o lead que
+    // ninguem respondeu, e nao mais "esperando encaminhamento" — a triagem que
+    // encaminhava foi desligada em 24/09.
+    expect(r.linhas[0]).toContain('1 novo, sem resposta');
+    expect(r.linhas[0]).toContain('3 em atendimento');
     // A fila vem com nome E telefone: e sobre ela que o ADM decide agora.
     expect(r.linhas[1]).toContain('Esperando encaminhamento: Aslan');
     expect(r.linhas[1]).toContain('(85)');

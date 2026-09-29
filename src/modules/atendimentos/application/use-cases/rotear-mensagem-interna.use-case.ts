@@ -434,15 +434,19 @@ export class RotearMensagemInternaUseCase {
         admin &&
         (await this.identificarAdmin.execute(telefone, PERMISSAO_CATALOGO));
 
-      return this.recepcionar.saudar(
-        msg.de,
-        {
-          vendedora: !!vendedora,
-          gestao: !!admin,
-          catalogo: !!doCatalogo || !!gestaoComCatalogo,
-        },
-        vendedora?.nome ?? admin?.nome ?? doCatalogo?.nome ?? '',
-      );
+      const perfilDoCanal = {
+        vendedora: !!vendedora,
+        gestao: !!admin,
+        catalogo: !!doCatalogo || !!gestaoComCatalogo,
+      };
+      const nome = vendedora?.nome ?? admin?.nome ?? doCatalogo?.nome ?? '';
+
+      // DUAS PERGUNTAS, DUAS RESPOSTAS — 28/09/2026. "Oi" abre conversa e
+      // recebe so o cumprimento; "ajuda" ou "o que você faz" pergunta o que
+      // existe, e e a unica que recebe a lista. Ver `RE_PEDIDO_DE_AJUDA`.
+      return this.recepcionar.ehPedidoDeAjuda(texto)
+        ? this.recepcionar.oQuePossoFazer(perfilDoCanal, nome)
+        : this.recepcionar.saudar(msg.de, perfilDoCanal, nome);
     }
 
     // O CHAO DO CANAL DO CATALOGO. Tudo que era assunto dele ja foi tentado
@@ -522,9 +526,15 @@ export class RotearMensagemInternaUseCase {
 
     // O ID vai junto: e a chave da memoria de conversa dele. Telefone nao
     // serve — numero muda de dono, e a conversa nao pode ir junto.
+    //
+    // O PAPEL TAMBEM, desde 28/09/2026: passar pela porta deixou de significar
+    // ver tudo igual. Quem gerencia as vendedoras (GERENTE_VENDAS) recebe as
+    // mesmas 17 ferramentas, mas nenhuma delas fala da loja em dinheiro — ver
+    // `MensagemGestao.role`.
     return this.canalGestao.execute({
       usuarioId: admin!.id,
       nome: admin!.nome,
+      role: admin!.role,
       texto,
     });
   }

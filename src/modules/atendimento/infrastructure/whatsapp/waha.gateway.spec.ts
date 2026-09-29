@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { LimiteDeEnvioService } from '../../application/limite-de-envio.service';
 import { SessoesDaCasaService } from '../../application/sessoes-da-casa.service';
 import { WahaGateway } from './waha.gateway';
 
@@ -26,7 +27,11 @@ describe('WahaGateway.resolverRemetente', () => {
     } as unknown as ConfigService;
     // O servico de sessoes vai INTEIRO, e nao dublado: e ele quem traduz
     // agente em sessao, e o teste perderia o sentido com a traducao falsa.
-    gateway = new WahaGateway(config, new SessoesDaCasaService(config));
+    gateway = new WahaGateway(
+      config,
+      new SessoesDaCasaService(config),
+      new LimiteDeEnvioService(config),
+    );
 
     fetchMock = jest.fn();
     global.fetch = fetchMock as unknown as typeof fetch;
@@ -87,7 +92,11 @@ describe('WahaGateway.resolverRemetente', () => {
     it('sem configuracao do WAHA', async () => {
       const semConfig = { get: jest.fn(() => undefined) } as unknown as ConfigService;
 
-      const semNada = new WahaGateway(semConfig, new SessoesDaCasaService(semConfig));
+      const semNada = new WahaGateway(
+        semConfig,
+        new SessoesDaCasaService(semConfig),
+        new LimiteDeEnvioService(semConfig),
+      );
 
       expect(await semNada.resolverRemetente('278266435@lid')).toBe(
         '278266435@lid',

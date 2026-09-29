@@ -16,7 +16,7 @@ function leadFake(over: Partial<Lead> = {}): Lead {
     resumoTriagem:
       'Marina procura aliança de noivado em ouro branco. Casamento marcado para março.',
     vendedoraSugeridaCodigo: null,
-    estado: 'READY_FOR_ROUTING',
+    estado: 'NOVO',
     estadoAtualizadoEm: new Date(),
     clienteId: null,
     vinculadoEm: null,

@@ -15,9 +15,13 @@ import type {
 } from '../../domain/ports/llm-client.port';
 import { FerramentasGestaoService } from '../../../atendimentos/application/ferramentas-gestao.service';
 import { PermissionsService } from '../../../auth/application/permissions.service';
+import { CombinadosService } from '../combinados.service';
+import { EscopoVendasService } from '../../../vendas/application/escopo-vendas.service';
+import { PERMISSAO_GESTAO } from '../../../auth/application/use-cases/buscar-admin-por-telefone.use-case';
 import { AvisarVendedoraUseCase } from './avisar-vendedora.use-case';
 import type { IAgentePromptsRepository } from '../../domain/ports/repositories/agente-prompts-repository.port';
 import { ANASTASIA_SYSTEM } from '../personas';
+import { modeloDeIa } from '../../../../shared/config/modelo-de-ia';
 
 export interface ContextoAgente {
   aba?: string;
@@ -31,9 +35,12 @@ export interface SolicitanteChat {
   // Rotulo de fallback (email do token) quando o staff nao tem nome cadastrado.
   nomeFallback: string;
   /**
-   * Papel do token. Decide se as ferramentas de GESTAO entram — pelo mesmo
-   * criterio do WhatsApp (`vendas:read_all`), para nao existir uma segunda
-   * lista de regras que alguem esqueceria de atualizar.
+   * Papel do token. Decide DUAS coisas, e sao independentes:
+   *
+   *   `agentes:anastasia` -> as ferramentas de gestao entram (mesmo criterio
+   *                          do WhatsApp, ver `PERMISSAO_GESTAO`)
+   *   `analytics:read`    -> elas podem falar da LOJA, e nao so de cada
+   *                          vendedora (ver `verLoja` no montar)
    */
   role?: string;
 }
@@ -50,6 +57,8 @@ export class ChatAnastasiaUseCase {
     private readonly avisarVendedora: AvisarVendedoraUseCase,
     private readonly ferramentasGestao: FerramentasGestaoService,
     private readonly permissoes: PermissionsService,
+    private readonly escopoVendas: EscopoVendasService,
+    private readonly combinados: CombinadosService,
   ) {}
 
   async execute(
@@ -58,7 +67,7 @@ export class ChatAnastasiaUseCase {
     solicitante?: SolicitanteChat,
   ): Promise<ChatComFerramentasResultado> {
     const model =
-      this.config.get<string>('ANTHROPIC_MODEL_ANASTASIA') ?? 'claude-opus-4-8';
+      modeloDeIa(this.config, 'ANTHROPIC_MODEL_ANASTASIA', 'claude-opus-4-8');
 
     const base = (await this.prompts.buscar('anastasia')) ?? ANASTASIA_SYSTEM;
 
@@ -69,9 +78,16 @@ export class ChatAnastasiaUseCase {
 
 Agora sao ${agoraLocal()} (fuso da loja). Use isto para interpretar "hoje", "amanhã", "sexta" e horários relativos.`;
 
+    // OS COMBINADOS — ANA-16 e ANA-23. A MESMA lista do WhatsApp: o que foi
+    // combinado por la vale aqui, e vice-versa. E o requisito ANA-23 inteiro
+    // ("a mesma memoria e os mesmos dados nos dois canais") resolvido por vir
+    // do banco, e nao por sincronizar nada.
+    const combinados = await this.combinados.paraPrompt('anastasia');
+    const comCombinados = combinados ? `${comData}\n\n${combinados}` : comData;
+
     const system = contexto
-      ? `${comData}\n\nContexto da aba aberta: ${contexto.aba ?? 'não informada'}.\nDados disponíveis no momento: ${JSON.stringify(contexto.dados ?? {})}`
-      : comData;
+      ? `${comCombinados}\n\nContexto da aba aberta: ${contexto.aba ?? 'não informada'}.\nDados disponíveis no momento: ${JSON.stringify(contexto.dados ?? {})}`
+      : comCombinados;
 
     // AS MESMAS FERRAMENTAS DO WHATSAPP, quando o papel permite.
     //
@@ -81,11 +97,39 @@ Agora sao ${agoraLocal()} (fuso da loja). Use isto para interpretar "hoje", "ama
     // dos acontecimentos — as ferramentas nasceram para resolver o problema de
     // quem esta na rua.
     //
-    // O criterio e o MESMO dos dois lados: `vendas:read_all`. Mexer nas
+    // O criterio e o MESMO dos dois lados: `PERMISSAO_GESTAO`. Mexer nas
     // permissoes de um papel muda painel e WhatsApp juntos.
     const podeGerir = solicitante?.role
-      ? await this.permissoes.possui(solicitante.role, 'vendas:read_all')
+      ? await this.permissoes.possui(solicitante.role, PERMISSAO_GESTAO)
       : false;
+
+    // E A LOJA, ELA PODE VER? — 28/09/2026, junto com o papel GERENTE_VENDAS.
+    //
+    // Das ferramentas de gestao, UMA fala da loja inteira e em dinheiro:
+    // `itens_mais_vendidos` sem vendedora. Quem gerencia as vendedoras ve o
+    // desempenho de cada uma e nao o faturamento geral, entao para ela essa
+    // ferramenta passa a EXIGIR uma vendedora — ver `montar({ verLoja })`.
+    //
+    // O criterio e `analytics:read`, que ja guarda o modulo de Analytics
+    // inteiro no painel ("dashboards e KPIs gerenciais"). Mesma chave, mesma
+    // resposta nas duas portas.
+    const verLoja = solicitante?.role
+      ? await this.permissoes.possui(solicitante.role, 'analytics:read')
+      : false;
+
+    // E A QUANTIDADE POR PECA? — 28/09/2026, requisito P-04. Outra pergunta e
+    // outra chave: a gerente ve o faturamento da equipe dela e NAO ve o saldo
+    // da peca, entao as duas nao podem sair da mesma permissao.
+    const verQuantidade = solicitante?.role
+      ? await this.permissoes.possui(solicitante.role, 'estoque:quantidade')
+      : false;
+
+    // E DE QUEM ELA PODE FALAR — o recorte de equipe, o mesmo da tela de
+    // Vendas e do canal de WhatsApp. `null` = sem equipe = todas, que e o
+    // comportamento de sempre.
+    const equipe = solicitante
+      ? await this.escopoVendas.equipeDoUsuario(solicitante.userId)
+      : null;
 
     return this.llm.chatComFerramentas({
       model,
@@ -96,7 +140,19 @@ Agora sao ${agoraLocal()} (fuso da loja). Use isto para interpretar "hoje", "ama
       // portas — a tela renderiza, a conversa de WhatsApp nao.
       // O nome vai junto porque o agendamento agora AVISA a vendedora, e ela
       // precisa saber de quem veio o compromisso. Nao muda escopo nenhum.
-      ...(podeGerir ? this.ferramentasGestao.montar(solicitante?.nomeFallback) : {}),
+      ...(podeGerir
+        ? this.ferramentasGestao.montar({
+            solicitante: solicitante?.nomeFallback,
+            verLoja,
+            verQuantidade,
+            equipe,
+          })
+        : {}),
+      // Os combinados valem para quem entrou no canal, e nao so no WhatsApp:
+      // e o ANA-23 ("a mesma memoria nos dois canais").
+      ...(podeGerir
+        ? this.combinados.handlers('anastasia', solicitante?.userId ?? null)
+        : {}),
       // So habilita a tool registrar_demanda quando conhecemos quem conversa.
       registrarDemanda: solicitante
         ? this.montarHandlerDemanda(solicitante)

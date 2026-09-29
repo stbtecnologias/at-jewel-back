@@ -27,6 +27,7 @@ import {
 import { AgentesDataRepository } from './infrastructure/database/typeorm/repositories/agentes-data.repository';
 import { ConversaOrmEntity } from './infrastructure/database/typeorm/entities/conversa.orm-entity';
 import { AgentePromptOrmEntity } from './infrastructure/database/typeorm/entities/agente-prompt.orm-entity';
+import { CombinadosModule } from './combinados.module';
 import { ConversaRepository } from './infrastructure/database/typeorm/repositories/conversa.repository';
 import { AgentePromptRepository } from './infrastructure/database/typeorm/repositories/agente-prompt.repository';
 import { AgentesController } from './infrastructure/http/controllers/agentes.controller';
@@ -34,6 +35,9 @@ import { AgentesController } from './infrastructure/http/controllers/agentes.con
 @Module({
   imports: [
     TypeOrmModule.forFeature([ConversaOrmEntity, AgentePromptOrmEntity]),
+    // Os combinados (ANA-16), num modulo proprio para o canal de WhatsApp
+    // poder importa-los sem fechar ciclo — ver CombinadosModule.
+    CombinadosModule,
     AuthModule,
     // VendasModule e folha (TypeORM + Auth): entra sem risco de ciclo, e traz
     // o repositorio que resolve login -> vendedora.

@@ -31,7 +31,7 @@ function lead(parcial: Partial<Lead> = {}): Lead {
     produtosDesejados: 'anel de noivado',
     resumoTriagem: null,
     vendedoraSugeridaCodigo: null,
-    estado: 'IN_HUMAN_SERVICE',
+    estado: 'EM_ATENDIMENTO',
     estadoAtualizadoEm: new Date(),
     clienteId: null,
     vinculadoEm: null,

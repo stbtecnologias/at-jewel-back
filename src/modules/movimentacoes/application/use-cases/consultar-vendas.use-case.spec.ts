@@ -50,6 +50,19 @@ describe('ConsultarVendasUseCase', () => {
           return [] as ItemMaisVendido[];
         },
       ),
+      // O ranking por tipo de peca (28/09/2026). Entra na lista de janelas
+      // como os outros: e a JANELA que estes testes conferem, nao o conteudo.
+      rankingPorFamilia: jest.fn(
+        async (j: JanelaDeVendas, _familia: string, _limite: number) => {
+          janelas.push(j);
+          return [];
+        },
+      ),
+      // O mes recorrente NAO recebe janela — ele monta a propria pelo
+      // `extract(month)`. Por isso nao entra na lista de janelas conferidas.
+      rankingPorFamiliaNoMes: jest.fn(
+        async (_mes: number, _familia: string, _porAno: number) => [],
+      ),
     };
     useCase = new ConsultarVendasUseCase(repo);
   });

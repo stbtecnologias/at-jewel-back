@@ -10,7 +10,7 @@ import {
   type PanoramaDeLeads,
   type StatusLeadVendedora,
 } from '../../../../domain/ports/repositories/lead-repository.port';
-import type { EstadoConversaAgente } from '../../../../../clientes/domain/entities/enums';
+import type { EstadoLead } from '../../../../domain/entities/estado-lead';
 import { LeadOrmEntity } from '../entities/lead.orm-entity';
 
 @Injectable()
@@ -52,7 +52,7 @@ export class LeadRepository implements ILeadRepository {
       produtosDesejados: input.produtosDesejados ?? null,
       resumoTriagem: input.resumoTriagem ?? null,
       vendedoraSugeridaCodigo: input.vendedoraSugeridaCodigo ?? null,
-      estado: 'TRIAGE_IN_PROGRESS',
+      estado: 'NOVO',
       estadoAtualizadoEm: agora,
       // `chk_lead_vinculo` exige os dois juntos ou nenhum dos dois.
       clienteId: input.clienteId ?? null,
@@ -109,7 +109,7 @@ export class LeadRepository implements ILeadRepository {
     const agora = new Date();
     row.vendedoraAprovadaCodigo = vendedoraCodigo;
     row.direcionadoVendedoraEm = agora;
-    row.estado = 'IN_HUMAN_SERVICE';
+    row.estado = 'EM_ATENDIMENTO';
     row.estadoAtualizadoEm = agora;
     // Encaminhar encerra a triagem: o numero fica livre para um proximo
     // atendimento, e este vira historico.
@@ -118,9 +118,36 @@ export class LeadRepository implements ILeadRepository {
     return paraDominio(await this.repo.save(row));
   }
 
+  /**
+   * A varredura de PARADO — ANA-03, 29/09/2026.
+   *
+   * SQL cru, e nao `repo.update`, por causa do `estado IN (...)`: o
+   * `FindOptionsWhere` do TypeORM exige `In([...])` importado e devolve o
+   * mesmo SQL, com uma camada a mais entre o que se le aqui e o que o indice
+   * parcial `idx_leads_em_aberto` precisa casar.
+   *
+   * `estado_atualizado_em = now()` NAO E ENFEITE: sem ele o lead continuaria
+   * elegivel e a rodada seguinte o reprocessaria para sempre. Com ele, o
+   * carimbo passa a marcar QUANDO virou parado — que e o que a gestao vai
+   * querer saber.
+   */
+  async marcarParados(limite: Date): Promise<number> {
+    const r: unknown = await this.repo.query(
+      `UPDATE leads
+          SET estado = 'PARADO',
+              estado_atualizado_em = now(),
+              atualizado_em = now()
+        WHERE estado IN ('NOVO', 'EM_ATENDIMENTO')
+          AND estado_atualizado_em <= $1`,
+      [limite],
+    );
+    // O driver devolve [linhas, contagem] no UPDATE sem RETURNING.
+    return Array.isArray(r) && typeof r[1] === 'number' ? r[1] : 0;
+  }
+
   async listarAguardandoGestao(limite: number): Promise<Lead[]> {
     const rows = await this.repo.find({
-      where: { estado: 'READY_FOR_ROUTING', fechadoEm: IsNull() },
+      where: { estado: 'NOVO', fechadoEm: IsNull() },
       order: { criadoEm: 'ASC' },
       take: limite,
     });
@@ -179,7 +206,7 @@ export class LeadRepository implements ILeadRepository {
 
   async panoramaDeLeads(): Promise<PanoramaDeLeads> {
     // SO CONTAGEM ATRAVESSA AQUI. Nenhuma coluna cifrada entra no SQL cru.
-    const porEstado: { estado: EstadoConversaAgente; quantos: string }[] =
+    const porEstado: { estado: EstadoLead; quantos: string }[] =
       await this.repo.manager.query(
         `SELECT estado, count(*)::int AS quantos
            FROM leads

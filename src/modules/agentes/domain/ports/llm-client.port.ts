@@ -104,8 +104,17 @@ export type RegistrarRelatoHandler = () => Promise<RegistrarRelatoLlmResultado>;
 // outras: sem "de quem" no input. O periodo e a unica escolha do modelo.
 export type PeriodoVendasLlm = 'HOJE' | 'SEMANA' | 'MES';
 
-export interface ConsultarVendasLlmInput {
-  periodo: PeriodoVendasLlm;
+/**
+ * O que ela pergunta sobre as PROPRIAS vendas.
+ *
+ * Ganhou `de`/`ate` em 28/09/2026, pelo mesmo motivo do lado da gestao: ela
+ * perguntou "e no ano?" e ouviu "nao consigo puxar por ano, so tenho hoje,
+ * ultimos sete dias e ultimos trinta dias". O `ConsultarVendasUseCase` sabe
+ * responder por ANO e por datas soltas desde 25/09 — a ferramenta e que nao
+ * deixava pedir.
+ */
+export interface ConsultarVendasLlmInput extends Pick<RecorteDeTempo, 'de' | 'ate'> {
+  periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
 }
 
 export interface ConsultarVendasLlmResultado {
@@ -343,14 +352,101 @@ export type GestaoAgendaHandler = (input: {
   periodo: PeriodoAgendaLlm;
 }) => Promise<GestaoLeituraResultado>;
 
-export type GestaoVendasHandler = (input: {
-  vendedora: string;
-  periodo: PeriodoVendasLlm;
-}) => Promise<GestaoLeituraResultado>;
+/**
+ * O RECORTE DE TEMPO DE UMA PERGUNTA DE VENDA — 28/09/2026.
+ *
+ * ==========================================================================
+ * O ATALHO **OU** AS DATAS, E FOI O SEGUNDO QUE FALTAVA.
+ *
+ * Ate hoje as ferramentas de venda so aceitavam o enum. O Lucas perguntou "o
+ * que a Camila mais vendeu nos ultimos 6 meses" e recebeu:
+ *
+ *   "Nao da para escolher exatamente seis meses — as opcoes sao hoje,
+ *    ontem, semana, mes ou ano."
+ *
+ * Uma recusa por limitacao NOSSA, numa pergunta que o banco responde sem
+ * esforco: o `ConsultarVendasUseCase` ja tinha `resumoEntre`, `itensEntre` e
+ * `rankingEntre` desde 25/09, prontos e sem ninguem chamando.
+ *
+ * QUEM CALCULA AS DATAS E O MODELO, e isso ja e pratica aqui: o system prompt
+ * diz que horas sao agora, e e assim que ele converte "amanha as 17h" para
+ * agendar. "Ultimos 6 meses" e a mesma conta.
+ *
+ * O ATALHO NAO SAIU, e nao e redundancia: `MES` e `ANO` sao o mes e o ano do
+ * CALENDARIO, que e o que se compara com a meta. O modelo calculando "o mes"
+ * chutaria trinta dias para tras e daria um numero que nao bate com nada que
+ * a gestao acompanha.
+ * ==========================================================================
+ */
+export interface RecorteDeTempo {
+  /**
+   * O atalho. Ignorado quando `de` e `ate` vem preenchidos.
+   *
+   * ONTEM e ANO entraram em 28/09/2026: o `ConsultarVendasUseCase` sempre
+   * respondeu os cinco, e eram os TIPOS que andavam mais estreitos que ele.
+   */
+  periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
+  /** Inicio, `AAAA-MM-DD`. So vale junto com `ate`. */
+  de?: string;
+  /** Fim, `AAAA-MM-DD`, INCLUSIVE — o dia inteiro conta. */
+  ate?: string;
+}
+
+export type GestaoVendasHandler = (
+  input: { vendedora: string } & RecorteDeTempo,
+) => Promise<GestaoLeituraResultado>;
 
 export type GestaoMetasHandler = (input: {
   vendedora: string;
 }) => Promise<GestaoLeituraResultado>;
+
+/**
+ * OS COMBINADOS — ANA-16 e ANA-18, 28/09/2026.
+ *
+ * Tres verbos porque sao tres coisas que a equipe faz com eles: combinar,
+ * conferir o que ja combinou e desfazer. O documento pede os tres ("ver e
+ * corrigir as instrucoes que a Anastasia guardou").
+ */
+/**
+ * QUEM MAIS VENDE UM TIPO DE PECA — 28/09/2026.
+ *
+ * A pergunta do Lucas: "qual a vendedora que mais vende brinco?". Nenhuma das
+ * ferramentas respondia — o ranking somava tudo sem separar tipo, e os itens
+ * separavam tipo sem agrupar por quem vendeu.
+ */
+export type GestaoPorFamiliaHandler = (
+  input: {
+    familia: string;
+    limite?: number;
+    /**
+     * 1 a 12 — "esse mes, em TODOS os anos".
+     *
+     * Quando vem, manda em tudo: nao e uma janela `de`/`ate`, e sim um corte
+     * que atravessa os anos, e a resposta vem quebrada por ano. Ver
+     * `rankingPorFamiliaNoMes`.
+     */
+    mes?: number;
+  } & RecorteDeTempo,
+) => Promise<{
+  status: 'OK' | 'FAMILIA_DESCONHECIDA';
+  linhas: string[];
+  /** As familias que existem, quando o nome nao casou. */
+  familias?: string[];
+}>;
+
+export type GuardarCombinadoHandler = (input: {
+  texto: string;
+}) => Promise<{ status: 'OK' | 'VAZIO' | 'LONGO' | 'CHEIO'; teto?: number }>;
+
+export type ListarCombinadosHandler = () => Promise<{
+  /** Uma linha por combinado, ja numerada — e o numero serve ao esquecer. */
+  linhas: string[];
+}>;
+
+export type EsquecerCombinadoHandler = (input: {
+  /** A posicao na lista que `listar_combinados` mostrou, comecando em 1. */
+  numero: number;
+}) => Promise<{ status: 'OK' | 'NAO_ACHEI'; texto?: string }>;
 
 /** Comparativo da equipe inteira — nao resolve nome, entao nao tem status. */
 /**
@@ -373,9 +469,9 @@ export type GestaoMelhoresHandler = (input: {
   ultimosMeses?: number;
 }) => Promise<GestaoLeituraResultado & { total?: number }>;
 
-export type GestaoPanoramaHandler = (input: {
-  periodo: PeriodoVendasLlm;
-}) => Promise<{ linhas: string[] }>;
+export type GestaoPanoramaHandler = (
+  input: RecorteDeTempo,
+) => Promise<{ linhas: string[] }>;
 
 /**
  * As pecas que mais faturaram. `vendedora` recorta so as dela.
@@ -395,11 +491,25 @@ export type GestaoProdutosHandler = (input: {
   busca: string;
 }) => Promise<{ produtos: { linha: string }[] }>;
 
-export type GestaoItensHandler = (input: {
-  periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
-  limite?: number;
-  vendedora?: string;
-}) => Promise<{ status: 'OK' | 'AMBIGUA' | 'NAO_ENCONTRADA'; linhas: string[] }>;
+/**
+ * O que mais saiu, por valor.
+ *
+ * `EXIGE_VENDEDORA` e o unico status que nao fala de dado: quem pergunta nao
+ * pode ver a loja inteira (falta `analytics:read`) e nao disse de qual
+ * vendedora quer. Nao e erro nem vazio — e um pedido de complemento, e a
+ * resposta ao modelo tem que dizer isso, senao ele anuncia "nao encontrei" para
+ * uma pergunta que so faltou um nome.
+ */
+export type GestaoItensHandler = (
+  input: {
+    periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+    limite?: number;
+    vendedora?: string;
+  } & Pick<RecorteDeTempo, 'de' | 'ate'>,
+) => Promise<{
+  status: 'OK' | 'AMBIGUA' | 'NAO_ENCONTRADA' | 'EXIGE_VENDEDORA';
+  linhas: string[];
+}>;
 
 /**
  * De quem e este cliente. EXCLUSIVA DA GESTAO — e literalmente a pergunta que
@@ -502,6 +612,58 @@ export type GestaoPanoramaLeadsHandler = (input: {
   vendedora?: string;
 }) => Promise<GestaoLeituraResultado & { total?: number }>;
 
+/**
+ * AS METRICAS DE ATENDIMENTO — ANA-08 a ANA-12, 29/09/2026.
+ *
+ * As cinco numa ferramenta so, porque sao sempre perguntadas juntas ("como foi
+ * o mes?") e saem das mesmas duas tabelas. Separadas, o modelo encadearia
+ * cinco chamadas — cinco idas ao banco e cinco turnos pagos — para montar
+ * cinco linhas.
+ *
+ * Aceita as DUAS formas de recorte, como o resto das consultas de numero: o
+ * atalho em palavra (`periodo`) ou as datas soltas, que ganham quando vem.
+ */
+export type GestaoMetricasHandler = (input: {
+  /** Data inicial `AAAA-MM-DD`. Com `ate`, manda no `periodo`. */
+  de?: string;
+  /** Data final `AAAA-MM-DD`. */
+  ate?: string;
+  /** O atalho. Default MES — em HOJE a media quase sempre sai de zero casos. */
+  periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
+}) => Promise<GestaoLeituraResultado>;
+
+/**
+ * OS CINCO RANKINGS — ANA-14, 29/09/2026.
+ *
+ * O `eixo` existe para a resposta nao virar um relatorio: quem pergunta
+ * "quem responde mais rapido" quer UMA linha, e nao os cinco rankings da
+ * equipe. Sem eixo, vem um resumo dos cinco.
+ */
+export type GestaoRankingsHandler = (input: {
+  eixo?:
+    | 'RESPOSTA'
+    | 'FECHAMENTO'
+    | 'INTERACOES'
+    | 'CONVERSAO'
+    | 'LEADS';
+  de?: string;
+  ate?: string;
+  periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
+}) => Promise<GestaoLeituraResultado>;
+
+/**
+ * A ANALISE DE TOM — ANA-15, 29/09/2026.
+ *
+ * As DUAS entradas sao obrigatorias, e isso e desenho: "como a Cida tem
+ * tratado os clientes" nao e respondivel sem arbitrar de quais conversas, e
+ * arbitrar aqui produziria um veredito sobre a pessoa a partir de uma amostra
+ * que ninguem escolheu.
+ */
+export type GestaoTomHandler = (input: {
+  vendedora: string;
+  cliente: string;
+}) => Promise<GestaoLeituraResultado>;
+
 export type GestaoFunilHandler = (input: {
   /** Nome (ou parte). Ausente = a loja inteira. */
   vendedora?: string;
@@ -565,8 +727,22 @@ export interface ChatParams {
   gestaoAgenda?: GestaoAgendaHandler;
   gestaoVendas?: GestaoVendasHandler;
   gestaoMetas?: GestaoMetasHandler;
+  gestaoPorFamilia?: GestaoPorFamiliaHandler;
+  guardarCombinado?: GuardarCombinadoHandler;
+  listarCombinados?: ListarCombinadosHandler;
+  esquecerCombinado?: EsquecerCombinadoHandler;
   gestaoPanorama?: GestaoPanoramaHandler;
   gestaoItens?: GestaoItensHandler;
+  /**
+   * Declara a versao ESTREITA do `itens_mais_vendidos`, em que `vendedora` e
+   * obrigatoria — para quem gerencia as vendedoras e nao ve o faturamento da
+   * loja (sem `analytics:read`).
+   *
+   * Vem junto com os handlers, do `FerramentasGestaoService.montar`, e nao de
+   * um parametro proprio de quem chama: assim nenhuma porta pode montar as
+   * ferramentas e esquecer de dizer qual escopo e.
+   */
+  gestaoItensExigeVendedora?: boolean;
   gestaoProdutos?: GestaoProdutosHandler;
   gestaoCarteiraDoCliente?: GestaoCarteiraDoClienteHandler;
   gestaoEncaminharLead?: GestaoEncaminharLeadHandler;
@@ -579,6 +755,9 @@ export interface ChatParams {
   gestaoDiaDaVendedora?: GestaoDiaDaVendedoraHandler;
   gestaoFunil?: GestaoFunilHandler;
   gestaoPanoramaLeads?: GestaoPanoramaLeadsHandler;
+  gestaoMetricas?: GestaoMetricasHandler;
+  gestaoRankings?: GestaoRankingsHandler;
+  gestaoTom?: GestaoTomHandler;
   /**
    * Habilita `gerar_grafico`. Default true, que preserva o painel.
    *

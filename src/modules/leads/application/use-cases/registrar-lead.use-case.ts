@@ -175,20 +175,32 @@ export class RegistrarLeadUseCase {
    *   nao tem dona        -> como sempre foi: a gestao escolhe
    * ========================================================================
    *
-   * O ESTADO VIRA `READY_FOR_ROUTING` NOS TRES, e antes de qualquer envio: e
-   * ele que tira o lead de `TRIAGE_IN_PROGRESS` e impede esta funcao de rodar
-   * duas vezes para o mesmo lead. No caminho da carteira o `encaminhar` logo
-   * em seguida o fecha e o tira da fila.
+   * ==========================================================================
+   * O QUE IMPEDE ESTA FUNCAO DE RODAR DUAS VEZES E O CARIMBO, E NAO O ESTADO.
+   *
+   * Ate 29/09/2026 a guarda era o estado: `TRIAGE_IN_PROGRESS` virava
+   * `READY_FOR_ROUTING`, e a diferenca entre os dois travava a repeticao — o
+   * `atwpp` reenvia o sinal a cada mensagem.
+   *
+   * No funil novo (ANA-03) NAO EXISTE estado para "a gestao foi avisada", e
+   * isso e proposital: avisar a gestao nao e a vendedora ter respondido. Se o
+   * lead virasse `EM_ATENDIMENTO` aqui, o tempo de primeira resposta (ANA-09)
+   * contaria como atendimento um aviso interno que a cliente nunca viu — a
+   * metrica mais pedida pela gestao nasceria inflada, e ninguem auditaria um
+   * numero que parece bom.
+   *
+   * O lead segue `NOVO` ate alguem responder de fato. Quem trava a repeticao
+   * passa a ser `direcionadoGestaoEm`, que ja existia e ja era carimbado.
+   * ==========================================================================
    */
   private async subirParaGestaoSePronto(
     lead: Lead,
     entrada: RegistrarLeadInput,
   ): Promise<Lead> {
     if (!entrada.prontoParaEncaminhar) return lead;
-    if (lead.estado !== 'TRIAGE_IN_PROGRESS') return lead;
+    if (lead.direcionadoGestaoEm) return lead;
 
     const promovido = await this.leads.atualizar(lead.id, {
-      estado: 'READY_FOR_ROUTING',
       direcionadoGestaoEm: new Date(),
     });
 

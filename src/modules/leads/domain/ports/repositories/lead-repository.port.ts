@@ -1,4 +1,4 @@
-import type { EstadoConversaAgente } from '../../../../clientes/domain/entities/enums';
+import type { EstadoLead } from '../../entities/estado-lead';
 
 /** Origem do contato — mesmo enum de `clientes_perfil.origem_contato`. */
 export type OrigemContato =
@@ -71,7 +71,7 @@ export interface Lead {
   produtosDesejados: string | null;
   resumoTriagem: string | null;
   vendedoraSugeridaCodigo: string | null;
-  estado: EstadoConversaAgente;
+  estado: EstadoLead;
   estadoAtualizadoEm: Date;
   clienteId: string | null;
   vinculadoEm: Date | null;
@@ -122,7 +122,7 @@ export interface AtualizarLeadInput {
   produtosDesejados?: string | null;
   resumoTriagem?: string | null;
   vendedoraSugeridaCodigo?: string | null;
-  estado?: EstadoConversaAgente;
+  estado?: EstadoLead;
   direcionadoGestaoEm?: Date | null;
 }
 
@@ -158,6 +158,27 @@ export interface ILeadRepository {
 
   /** Os leads que subiram para a gestao e ainda ninguem encaminhou. */
   listarAguardandoGestao(limite: number): Promise<Lead[]>;
+
+  /**
+   * Marca como `PARADO` o que ficou sem novidade — ANA-03/ANA-19, 29/09/2026.
+   *
+   * ========================================================================
+   * UMA CONSULTA SO, E NAO UM LACO DE ATUALIZACOES.
+   *
+   * A varredura roda sobre uma tabela que so cresce. Ler os candidatos e
+   * atualizar um a um faria N+1 idas ao banco por rodada, e a janela entre
+   * ler e escrever deixaria escapar justamente o lead que recebeu mensagem no
+   * meio — que e o que NAO pode virar parado.
+   *
+   * So `NOVO` e `EM_ATENDIMENTO` entram: `GANHO` e `PERDIDO` acabaram, e
+   * `PARADO` ja esta parado. E o `estado_atualizado_em` avanca junto, senao a
+   * proxima rodada reprocessaria os mesmos.
+   * ========================================================================
+   *
+   * @param limite o instante antes do qual a falta de novidade conta.
+   * @returns quantos leads mudaram — para o log dizer se houve trabalho.
+   */
+  marcarParados(limite: Date): Promise<number>;
 
   /**
    * Os leads ENCAMINHADOS para uma vendedora, do mais novo para o mais velho.
@@ -221,7 +242,7 @@ export interface ILeadRepository {
 /** O retrato da fila de leads. */
 export interface PanoramaDeLeads {
   /** Quantos em cada estado, incluindo os zerados de proposito. */
-  porEstado: { estado: EstadoConversaAgente; quantos: number }[];
+  porEstado: { estado: EstadoLead; quantos: number }[];
   /** Quantos foram encaminhados para cada vendedora, da maior para a menor. */
   porVendedora: { codigo: string; quantos: number }[];
   total: number;

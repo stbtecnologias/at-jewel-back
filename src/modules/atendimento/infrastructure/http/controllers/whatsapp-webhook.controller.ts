@@ -11,7 +11,12 @@ import { ConfigService } from '@nestjs/config';
 import { RotearMensagemInternaUseCase } from '../../../../atendimentos/application/use-cases/rotear-mensagem-interna.use-case';
 import { WHATSAPP_GATEWAY } from '../../../domain/ports/injection-tokens';
 import type { IWhatsappGateway } from '../../../domain/ports/whatsapp-gateway.port';
-import { contatoDoEvento, extrairMensagemRecebida, sessaoDoEvento } from '../waha-webhook';
+import {
+  contatoDoEvento,
+  extrairMensagemRecebida,
+  formatoDoRemetente,
+  sessaoDoEvento,
+} from '../waha-webhook';
 import { WahaAuthGuard } from '../guards/waha-auth.guard';
 import { TriagemClient } from '../../whatsapp/triagem.client';
 import { ConexoesService } from '../../../application/conexoes.service';
@@ -173,9 +178,19 @@ export class WhatsappWebhookController {
       // existir; se existir, o silencio continua sendo a resposta certa.
       return { ok: true, ignorado: true, motivo: 'sessao_desconhecida' };
     }
-
     const contato = contatoDoEvento(body);
     if (!contato) {
+      // ESTE `warn` E O CONSERTO DE UM CUSTO REAL. Ate 29/09/2026 o descarte
+      // aqui era mudo, e quando o `@lid` passou a chegar no lugar do telefone
+      // TODA mensagem de cliente sumiu — sem linha na fila, sem log, e com o
+      // painel dizendo "Conectado · sincronizado agora". Levou uma manha.
+      //
+      // So o FORMATO do identificador entra na linha: nunca o numero, nunca o
+      // texto. O bastante para a proxima mudanca do WhatsApp aparecer no mesmo
+      // dia, em vez de ser deduzida.
+      this.logger.warn(
+        `Evento da sessao ${sessao} sem telefone recuperavel (remetente ${formatoDoRemetente(body)}) — nao entrou na fila de leitura.`,
+      );
       return { ok: true, ignorado: true, motivo: 'evento_sem_contato' };
     }
 

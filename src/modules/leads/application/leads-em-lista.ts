@@ -110,11 +110,11 @@ export function chegadaLegivel(lead: Lead, agora = new Date()): string {
 /** O estado do lead em portugues de gente. */
 export function estadoLegivel(estado: string): string {
   const mapa: Record<string, string> = {
-    TRIAGE_IN_PROGRESS: 'em triagem',
-    READY_FOR_ROUTING: 'esperando encaminhamento',
-    WAITING_OWNER_APPROVAL: 'esperando aprovacao',
-    IN_HUMAN_SERVICE: 'ja encaminhado',
-    NEEDS_HUMAN: 'precisa de gente',
+    NOVO: 'novo, sem resposta',
+    EM_ATENDIMENTO: 'em atendimento',
+    GANHO: 'ganho',
+    PERDIDO: 'perdido',
+    PARADO: 'parado',
   };
   return mapa[estado] ?? estado.toLowerCase();
 }

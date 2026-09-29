@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { IInterpretadorDeAjuste } from '../../domain/ports/interpretador-ajuste.port';
+import { modeloDeIa } from '../../../../shared/config/modelo-de-ia';
 
 const ENDPOINT = 'https://api.anthropic.com/v1/messages';
 const VERSAO_API = '2023-06-01';
@@ -90,7 +91,7 @@ export class AnthropicInterpretadorDeAjusteClient implements IInterpretadorDeAju
         },
         body: JSON.stringify({
           model:
-            this.config.get<string>('ANTHROPIC_MODEL_AJUSTE') ?? MODELO_PADRAO,
+            modeloDeIa(this.config, 'ANTHROPIC_MODEL_AJUSTE', MODELO_PADRAO),
           max_tokens: MAX_TOKENS,
           system: INSTRUCOES,
           messages: [

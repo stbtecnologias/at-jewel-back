@@ -52,7 +52,29 @@ export interface PerfilDoCanal {
  * chega de verdade e "oi, tudo bem?".
  */
 const RE_SAUDACAO =
-  /^(oi+|ola|opa|eae|e ai|hey|hi|hello|alo|bom dia|boa tarde|boa noite|menu|ajuda|opcoes|comecar|inicio|start)( (tudo bem|tudo bom|td bem|beleza|blz))?$/;
+  /^(oi+|ola|opa|eae|e ai|hey|hi|hello|alo|bom dia|boa tarde|boa noite|comecar|inicio|start)( (tudo bem|tudo bom|td bem|beleza|blz))?$/;
+
+/**
+ * "O QUE VOCE FAZ?" — a pergunta que MERECE a lista.
+ *
+ * ==========================================================================
+ * SEPARADO DA SAUDACAO EM 28/09/2026, E A SEPARACAO E O PEDIDO.
+ *
+ * O Lucas: "Bom dia, Lucas! Em que posso ajudar hoje? ou algo assim. Aí se a
+ * pessoa perguntar o que você pode fazer, aí você passaria — mas não queria
+ * logo de cara".
+ *
+ * Ate aqui "oi" e "ajuda" caiam no mesmo balde e recebiam a mesma resposta
+ * comprida. Sao perguntas diferentes: quem diz "oi" esta abrindo conversa,
+ * quem diz "ajuda" esta perguntando o que existe. So a segunda pede a lista.
+ *
+ * `menu`, `ajuda` e `opcoes` VIERAM DA RE_SAUDACAO — estavam la desde 15/09,
+ * e e por isso que esta mudanca nao perde nada: a porta ja existia, so
+ * respondia a coisa errada para a outra metade.
+ * ==========================================================================
+ */
+const RE_PEDIDO_DE_AJUDA =
+  /^(menu|ajuda|opcoes|socorro|o que (voce|vc|tu) (faz|pode fazer|sabe fazer|consegue fazer)|o que (da|tem) (pra|para) (pedir|perguntar)|como (voce |vc )?funciona|em que (voce|vc) (pode )?ajuda)r?$/;
 
 /**
  * Tira acento, pontuacao e emoji para comparar — o mesmo tratamento do canal
@@ -68,13 +90,68 @@ function normalizar(texto: string): string {
     .trim();
 }
 
+/**
+ * O QUE EU FACO, NUMA FRASE — 28/09/2026.
+ *
+ * ==========================================================================
+ * SUBSTITUIU O MENU NUMERADO, E A DIFERENCA E DE TOM, NAO DE CONTEUDO.
+ *
+ * Pedido do Lucas: "vamos ser mais natural, sem essa pegada de chatbot, e ser
+ * breve, sem muito textão". Seis linhas numeradas com "responde o número" sao
+ * a cara de robo de atendimento — e quem fala aqui trabalha na loja, nao e
+ * cliente perdido num SAC.
+ *
+ * ESCRITO A MAO, e nao montado a partir dos rotulos de `opcoesDe`. Colar
+ * "Panorama do dia, Vendas por vendedora, Funil de atendimentos" numa frase
+ * daria justamente o texto de menu que se queria tirar, so que sem as quebras
+ * de linha. Rotulo de lista e frase de conversa sao registros diferentes.
+ *
+ * O PRECO E A SINCRONIA: acrescentar uma capacidade nova exige lembrar deste
+ * arquivo. E aceitavel porque a frase e um CONVITE, e nao um contrato — ela
+ * nao precisa listar tudo, precisa dar o primeiro empurrao. Quem perguntar
+ * qualquer outra coisa continua sendo atendido pelas ferramentas.
+ * ==========================================================================
+ */
+function resumoDe(perfil: PerfilDoCanal): string | null {
+  if (perfil.vendedora) {
+    return 'Posso ver suas vendas, suas metas, sua carteira e sua agenda, e consultar peça e preço. O que você precisa?';
+  }
+
+  if (perfil.gestao) {
+    // A frase muda quando a pessoa tambem cuida de catalogo — e o caso do ADM
+    // que fotografa. Sem isso, ela nao saberia que pode mandar a foto por aqui.
+    return perfil.catalogo
+      ? 'Posso ver vendas, metas, agenda e o funil da equipe — e você também pode mandar foto para o catálogo. O que você precisa?'
+      : 'Posso ver vendas, metas, agenda e o funil da equipe. O que você precisa?';
+  }
+
+  if (perfil.catalogo) {
+    return 'É só mandar a foto com o código que eu coloco no catálogo. Também consulto peça e preço.';
+  }
+
+  // Ninguem chega aqui: o roteador so recepciona quem foi reconhecido. `null`
+  // mantem a frase seca do caso sem opcoes, que e melhor que um convite vazio.
+  return null;
+}
+
 @Injectable()
 export class RecepcionarUseCase {
   constructor(private readonly recepcao: RecepcaoService) {}
 
-  /** A mensagem e so um cumprimento (ou um pedido de ajuda)? */
+  /**
+   * A mensagem e so um cumprimento OU um pedido de ajuda?
+   *
+   * As duas coisas param aqui e nao chegam ao agente — a diferenca e a
+   * RESPOSTA, e quem escolhe entre `saudar` e `oQuePossoFazer` e o roteador.
+   */
   ehSaudacao(texto: string): boolean {
-    return RE_SAUDACAO.test(normalizar(texto));
+    const limpo = normalizar(texto);
+    return RE_SAUDACAO.test(limpo) || RE_PEDIDO_DE_AJUDA.test(limpo);
+  }
+
+  /** "O que você faz?" — a pergunta que merece a lista de capacidades. */
+  ehPedidoDeAjuda(texto: string): boolean {
+    return RE_PEDIDO_DE_AJUDA.test(normalizar(texto));
   }
 
   /**
@@ -86,19 +163,53 @@ export class RecepcionarUseCase {
    * Lucas em 15/09/2026.
    */
   saudar(
-    de: string,
+    _de: string,
+    _perfil: PerfilDoCanal,
+    nomeCompleto: string,
+    agora = new Date(),
+  ): { resposta: string; motivo: string } {
+    // ======================================================================
+    // NADA DE LISTA LOGO DE CARA — 28/09/2026.
+    //
+    // Pedido do Lucas: "Bom dia, Lucas! Em que posso ajudar hoje? ou algo
+    // assim. Aí se a pessoa perguntar o que você pode fazer, aí você
+    // passaria — mas não queria logo de cara".
+    //
+    // Quem abre conversa nao esta pedindo um catalogo de funcoes: esta
+    // dizendo bom dia. Responder com o que se sabe fazer, sem ninguem ter
+    // perguntado, e o reflexo de robo de atendimento — e obriga a pessoa a
+    // ler uma lista para so entao escrever o que ela ja sabia que queria.
+    //
+    // O PERFIL DEIXOU DE IMPORTAR AQUI, e por isso vai com `_`: a frase e a
+    // mesma para todo mundo. Ele volta a contar em `oQuePossoFazer`, que e
+    // onde a diferenca entre gestao, vendedora e catalogo aparece.
+    // ======================================================================
+    return {
+      resposta: `${this.abertura(nomeCompleto, agora)} Em que posso ajudar hoje?`,
+      motivo: 'recepcao_saudacao',
+    };
+  }
+
+  /**
+   * "O que voce faz?" — aqui sim, a lista.
+   *
+   * A MESMA FRASE DO FORA-DO-ESCOPO, e nao por economia: as duas perguntas
+   * terminam no mesmo lugar ("o que existe por aqui"), e responder diferente
+   * faria parecer que ha dois conjuntos de capacidades.
+   */
+  oQuePossoFazer(
     perfil: PerfilDoCanal,
     nomeCompleto: string,
     agora = new Date(),
   ): { resposta: string; motivo: string } {
-    return this.comMenu(
-      de,
-      perfil,
-      `${this.abertura(nomeCompleto, agora)} Aqui eu te ajudo com:`,
-      `${this.abertura(nomeCompleto, agora)} Como posso ajudar?`,
-      'recepcao_menu',
-      'recepcao_sem_opcoes',
-    );
+    const resumo = resumoDe(perfil);
+    if (!resumo) {
+      return {
+        resposta: `${this.abertura(nomeCompleto, agora)} Como posso ajudar?`,
+        motivo: 'recepcao_sem_opcoes',
+      };
+    }
+    return { resposta: resumo, motivo: 'recepcao_menu' };
   }
 
   /**
@@ -129,7 +240,7 @@ export class RecepcionarUseCase {
     return this.comMenu(
       de,
       perfil,
-      `${abre}sso eu não faço por aqui. O que dá para me pedir:`,
+      `${abre}sso eu não faço por aqui.`,
       `${abre}sso eu não faço por aqui.`,
       'fora_do_escopo_menu',
       'fora_do_escopo_sem_opcoes',
@@ -151,20 +262,31 @@ export class RecepcionarUseCase {
     motivoComMenu: string,
     motivoSemOpcoes: string,
   ): { resposta: string; motivo: string } {
-    const opcoes = this.opcoesDe(perfil);
-    if (opcoes.length === 0) {
+    const resumo = resumoDe(perfil);
+    if (!resumo) {
       return { resposta: semOpcoes, motivo: motivoSemOpcoes };
     }
 
-    this.recepcao.oferecer(de, opcoes);
-
-    const linhas = opcoes.map((o, i) => `${i + 1} — ${o.rotulo}`);
+    // ======================================================================
+    // SEM `oferecer`: O MENU NUMERADO SAIU EM 28/09/2026.
+    //
+    // Pedido do Lucas: "vamos ser mais natural, sem essa pegada de chatbot, e
+    // ser breve, sem muito textão". Seis linhas numeradas e um "responde o
+    // número" sao a marca registrada de robo de atendimento — e a conversa
+    // aqui e entre a casa e gente que trabalha nela.
+    //
+    // O QUE SE PERDE, e fica dito: o atalho de digitar "2". A capacidade
+    // continua inteira — as ferramentas respondem a quem PERGUNTAR, como
+    // sempre —, o que saiu foi a lista.
+    //
+    // POR ISSO `RecepcaoService`, `opcoesDe` e `escolhida` CONTINUAM DE PE e
+    // nao foram apagados: um desenho futuro (botoes do WhatsApp, por exemplo)
+    // reaproveita a mesma estrutura. O que nao pode acontecer e ARMAR a
+    // escolha sem mostrar a lista — aí alguem que escrevesse "2" pensando em
+    // outra coisa dispararia uma acao que ninguem ofereceu.
+    // ======================================================================
     return {
-      resposta: [
-        cabecalho,
-        linhas.join('\n'),
-        'Responde o número ou me diz o que precisa.',
-      ].join('\n\n'),
+      resposta: `${cabecalho} ${resumo}`,
       motivo: motivoComMenu,
     };
   }
@@ -196,6 +318,24 @@ export class RecepcionarUseCase {
    * inteiro para a Anastasia, e o caminho do catalogo so existia se ele
    * soubesse dizer a frase certa.
    */
+  // ========================================================================
+  // PARADO DESDE 28/09/2026 — NINGUEM CHAMA ESTE METODO HOJE.
+  //
+  // Ele montava o menu numerado, que saiu a pedido do Lucas ("mais natural,
+  // sem pegada de chatbot"). Nao foi apagado de proposito, e o motivo e o
+  // mesmo da triagem em 24/09: o desenho que vier pode reaproveitar isto —
+  // botoes do WhatsApp, por exemplo, sao exatamente uma lista de rotulo mais
+  // acao, que e a forma deste metodo.
+  //
+  // O QUE VALE PARA QUEM RELIGAR: religar isto sozinho nao basta e e
+  // PERIGOSO. A escolha por numero so pode ser armada (`recepcao.oferecer`)
+  // quando a lista for realmente MOSTRADA — armar sem mostrar faz um "2"
+  // digitado por outro motivo virar uma acao que ninguem ofereceu.
+  //
+  // O texto de cada linha tambem segue vivo aqui de proposito: ele registra a
+  // ORDEM DE USO de cada perfil, decidida em 15/09, que nenhum outro lugar
+  // guarda.
+  // ========================================================================
   private opcoesDe(perfil: PerfilDoCanal): OpcaoMenu[] {
     if (perfil.vendedora) {
       return [

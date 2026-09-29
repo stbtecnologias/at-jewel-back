@@ -1,4 +1,6 @@
 import { AtendimentoPersistenciaModule } from './atendimento-persistencia.module';
+import { AgenteEventosModule } from '../agente-eventos/agente-eventos.module';
+import { CombinadosModule } from '../agentes/combinados.module';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WhatsappGatewayModule } from '../atendimento/whatsapp-gateway.module';
@@ -50,6 +52,12 @@ import { ClientePerfilOrmEntity } from '../clientes/infrastructure/database/type
 import { AtendimentoRepository } from './infrastructure/database/typeorm/repositories/atendimento.repository';
 import { ConversaWhatsappOrmEntity } from './infrastructure/database/typeorm/entities/conversa-whatsapp.orm-entity';
 import { ConversaWhatsappRepository } from './infrastructure/database/typeorm/repositories/conversa-whatsapp.repository';
+import { METRICAS_ATENDIMENTO_REPOSITORY } from './domain/ports/repositories/metricas-atendimento-repository.port';
+import { MetricasAtendimentoRepository } from './infrastructure/database/typeorm/repositories/metricas-atendimento.repository';
+import { MetricasDeAtendimentoUseCase } from './application/use-cases/metricas-de-atendimento.use-case';
+import { RankingsDeAtendimentoUseCase } from './application/use-cases/rankings-de-atendimento.use-case';
+import { WahaAdminModule } from '../atendimento/waha-admin.module';
+import { AnalisarTomUseCase } from '../atendimento/application/analisar-tom.use-case';
 
 /**
  * Episodios de atendimento (migracao 35) e a linha do tempo de cada um.
@@ -59,6 +67,7 @@ import { ConversaWhatsappRepository } from './infrastructure/database/typeorm/re
  */
 @Module({
   imports: [
+    WahaAdminModule,
     // ClientePerfilOrmEntity entra so para a Linha do Tempo decifrar o
     // WhatsApp da cliente e levar o ponto ate a conversa. Registrar a
     // entidade AQUI e o que da o repositorio ao `AtendimentoRepository` —
@@ -102,12 +111,25 @@ import { ConversaWhatsappRepository } from './infrastructure/database/typeorm/re
     TranscricaoModule,
     // Reconhecimento do ADM pelo telefone (BuscarAdminPorTelefoneUseCase).
     AuthModule,
+    // O registro da consulta restrita da vendedora (RN-01g, 28/09/2026).
+    // Modulo folha — so TypeORM e Auth —, entao nao ha ciclo.
+    AgenteEventosModule,
+    // Os combinados da Anastasia (ANA-16). Modulo folha: so TypeORM. Importar
+    // o AgentesModule inteiro fecharia ciclo — ele importa ESTE.
+    CombinadosModule,
   ],
   providers: [
     {
       provide: CONVERSA_WHATSAPP_REPOSITORY,
       useClass: ConversaWhatsappRepository,
     },
+    {
+      provide: METRICAS_ATENDIMENTO_REPOSITORY,
+      useClass: MetricasAtendimentoRepository,
+    },
+    MetricasDeAtendimentoUseCase,
+    RankingsDeAtendimentoUseCase,
+    AnalisarTomUseCase,
     DispararPendenciasUseCase,
     ConsultarAgendaVendedoraUseCase,
     ConsultarDesempenhoVendedoraUseCase,
@@ -154,6 +176,9 @@ import { ConversaWhatsappRepository } from './infrastructure/database/typeorm/re
     // A fila de conversas a ler: o webhook do modulo `atendimento`
     // (singular) enfileira, e o leitor de la consome.
     CONVERSA_WHATSAPP_REPOSITORY,
+    METRICAS_ATENDIMENTO_REPOSITORY,
+    MetricasDeAtendimentoUseCase,
+    RankingsDeAtendimentoUseCase,
     ProcessarMensagemInternaUseCase,
     RotearMensagemInternaUseCase,
     // O webhook do modulo `atendimento` (singular) registra por aqui o que

@@ -15,6 +15,7 @@ import { RemoverProdutoUseCase } from './application/use-cases/remover-produto.u
 import { PRODUTO_REPOSITORY } from '../erp/domain/ports/injection-tokens';
 import { ProdutoOrmEntity } from '../erp/infrastructure/database/typeorm/entities/produto.orm-entity';
 import { ProdutoRepository } from '../erp/infrastructure/database/typeorm/repositories/produto.repository';
+import { EscopoProdutosService } from './application/escopo-produtos.service';
 import { FotoProdutoUseCase } from './application/use-cases/foto-produto.use-case';
 import { FotoErpService } from './infrastructure/foto-erp/foto-erp.service';
 import { FotoErpController } from './infrastructure/http/controllers/foto-erp.controller';
@@ -44,6 +45,9 @@ import { ProdutosController } from './infrastructure/http/controllers/produtos.c
     SaldoDoProdutoUseCase,
     FotoProdutoUseCase,
     FotoErpService,
+    // Decide QUE CAMPOS da peca saem pela API, por permissao — o irmao de
+    // `EscopoVendasService` e `EscopoClientesService`. Ver `Produto.toPublic`.
+    EscopoProdutosService,
     { provide: PRODUTO_REPOSITORY, useClass: ProdutoRepository },
   ],
   // O canal interno de WhatsApp consulta catalogo pela vendedora.

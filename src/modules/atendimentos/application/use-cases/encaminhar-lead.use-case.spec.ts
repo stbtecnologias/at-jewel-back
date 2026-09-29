@@ -28,7 +28,7 @@ describe('EncaminharLeadUseCase', () => {
     produtosDesejados: 'aneis de noivado',
     resumoTriagem: 'Nick procura anéis de noivado, aberto a sugestões.',
     vendedoraSugeridaCodigo: null,
-    estado: 'READY_FOR_ROUTING',
+    estado: 'NOVO',
     estadoAtualizadoEm: new Date(),
     clienteId: null,
     vinculadoEm: null,

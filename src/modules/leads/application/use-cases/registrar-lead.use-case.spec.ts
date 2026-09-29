@@ -20,7 +20,7 @@ function leadFake(over: Partial<Lead> = {}): Lead {
     produtosDesejados: null,
     resumoTriagem: null,
     vendedoraSugeridaCodigo: null,
-    estado: 'TRIAGE_IN_PROGRESS',
+    estado: 'NOVO',
     estadoAtualizadoEm: new Date(),
     clienteId: null,
     vinculadoEm: null,
@@ -214,21 +214,36 @@ describe('RegistrarLeadUseCase', () => {
 
       expect(leads.atualizar).toHaveBeenCalledWith(
         'lead-1',
-        expect.objectContaining({
-          estado: 'READY_FOR_ROUTING',
-          direcionadoGestaoEm: expect.any(Date),
-        }),
+        expect.objectContaining({ direcionadoGestaoEm: expect.any(Date) }),
       );
       expect(avisarGestao.execute).toHaveBeenCalledTimes(1);
     });
 
+    /*
+     * AVISAR A GESTAO NAO MEXE NO FUNIL — ANA-03, 29/09/2026.
+     *
+     * O lead continua `NOVO` porque ninguem respondeu a cliente. Se subisse
+     * para `EM_ATENDIMENTO` aqui, o tempo de primeira resposta (ANA-09)
+     * contaria um aviso INTERNO como atendimento, e a metrica mais pedida pela
+     * gestao nasceria inflada — sem nada parecer errado na tela.
+     */
+    it('avisar a gestao NAO tira o lead de NOVO', async () => {
+      leads.buscarAbertoPorHash.mockResolvedValue(leadFake({ estado: 'NOVO' }));
+
+      await useCase.execute({
+        whatsapp: '85999990001',
+        prontoParaEncaminhar: true,
+      });
+
+      expect(leads.atualizar.mock.calls[0][1]).not.toHaveProperty('estado');
+    });
+
+    /* Quem trava a repeticao passa a ser o CARIMBO, e nao o estado: no funil
+     * novo nao existe estado para "a gestao ja foi avisada". */
     it('NAO avisa de novo se o lead ja subiu — o atwpp repete o sinal a cada mensagem', async () => {
-      leads.buscarAbertoPorHash.mockResolvedValue(
-        leadFake({ estado: 'READY_FOR_ROUTING' }),
-      );
-      leads.atualizar.mockResolvedValue(
-        leadFake({ estado: 'READY_FOR_ROUTING' }),
-      );
+      const jaSubiu = { estado: 'NOVO' as const, direcionadoGestaoEm: new Date('2026-09-28T10:00:00Z') };
+      leads.buscarAbertoPorHash.mockResolvedValue(leadFake(jaSubiu));
+      leads.atualizar.mockResolvedValue(leadFake(jaSubiu));
 
       await useCase.execute({
         whatsapp: '85999990001',

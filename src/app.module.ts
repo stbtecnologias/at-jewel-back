@@ -59,6 +59,7 @@ import { GlobalExceptionFilter } from './shared/http/filters/global-exception.fi
 import { ProxyAwareThrottlerGuard } from './shared/http/guards/proxy-aware-throttler.guard';
 import { buildLoggerOptions } from './shared/logger/logger.module-options';
 import { HealthController } from './health.controller';
+import { AlertasModule } from './modules/alertas/alertas.module';
 
 @Module({
   imports: [
@@ -129,6 +130,7 @@ import { HealthController } from './health.controller';
     ProdutosModule,
     ClientesModule,
     LeadsModule,
+    AlertasModule,
     VendedorasModule,
     VendasModule,
     AgenteEventosModule,

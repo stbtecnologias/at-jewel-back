@@ -27,6 +27,7 @@ describe('LerConversaWhatsappUseCase', () => {
   let llm: { chat: jest.Mock };
   let waha: { mensagens: jest.Mock };
   let buscarCliente: { execute: jest.Mock };
+  let leads: { atualizar: jest.Mock };
   let registrarLead: { execute: jest.Mock };
   let uc: LerConversaWhatsappUseCase;
 
@@ -68,8 +69,12 @@ describe('LerConversaWhatsappUseCase', () => {
     };
     buscarCliente = { execute: jest.fn().mockResolvedValue(null) };
     registrarLead = {
-      execute: jest.fn().mockResolvedValue({ lead: { id: 'ld-1', clienteId: null } }),
+      execute: jest.fn().mockResolvedValue({
+        lead: { id: 'ld-1', clienteId: null, estado: 'NOVO' },
+      }),
     };
+    // O funil (ANA-03): o leitor fecha o lead quando ve o desfecho.
+    leads = { atualizar: jest.fn().mockResolvedValue(undefined) };
 
     uc = new LerConversaWhatsappUseCase(
       conversas as never,
@@ -79,6 +84,7 @@ describe('LerConversaWhatsappUseCase', () => {
       waha as never,
       buscarCliente as never,
       registrarLead as never,
+      leads as never,
       {
         buscarPorId: jest.fn().mockResolvedValue({ codigoErp: 'VD-0001' }),
       } as never,

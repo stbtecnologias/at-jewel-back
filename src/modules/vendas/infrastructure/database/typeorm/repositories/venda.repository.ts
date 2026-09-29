@@ -324,6 +324,49 @@ export class VendaRepository implements IVendaRepository {
     return rows[0]?.id ?? null;
   }
 
+  async vendedorasDaEquipeDoUsuario(
+    adminUserId: string,
+  ): Promise<string[] | null> {
+    // DUAS CONSULTAS, e nao um JOIN, porque as respostas sao diferentes: sem
+    // equipe e `null` (sem recorte), equipe vazia e `[]` (recorte legitimo que
+    // nao devolve nada). Um JOIN devolveria zero linhas nos dois casos e
+    // apagaria a distincao — ver o comentario da porta.
+    const equipe = await this.dataSource.query<{ equipe_id: string | null }[]>(
+      `SELECT equipe_id FROM admin_users WHERE id = $1 LIMIT 1`,
+      [adminUserId],
+    );
+
+    const equipeId = equipe[0]?.equipe_id ?? null;
+    if (!equipeId) return null;
+
+    // ====================================================================
+    // AS INATIVAS ENTRAM, E ISSO CORRIGE UM ERRO MEU DE 28/09/2026.
+    //
+    // Escrevi `AND ativo` aqui com o argumento de que "quem saiu nao vende
+    // mais". O Lucas apontou o furo, e ele e obvio depois de dito: VENDA E
+    // HISTORICO. Se a pessoa saiu em setembro e a gerente olha janeiro, as
+    // vendas de janeiro sao dela e sao da equipe — no mes em que aconteceram,
+    // ela estava la.
+    //
+    // Com `AND ativo`, o total do periodo encolheria toda vez que alguem
+    // fosse desligado, e encolheria PARA TRAS: o janeiro de hoje passaria a
+    // ser menor que o janeiro de ontem, sem nada ter mudado em janeiro. Numero
+    // que muda sozinho e pior que numero ausente, porque parece correto.
+    //
+    // (Medido na base em 28/09: 4 vendedoras hoje inativas responderam por
+    // 29,7% do faturamento de agosto. O filtro apagava quase um terco do mes.)
+    //
+    // O PRECO, e ele e aceitavel: quem sai da equipe segue contando nela para
+    // sempre. Se um dia for preciso "a equipe como ela esta HOJE", isso e
+    // outra pergunta — e ela nao e sobre venda.
+    // ====================================================================
+    const vendedoras = await this.dataSource.query<{ id: string }[]>(
+      `SELECT id FROM vendedoras WHERE equipe_id = $1`,
+      [equipeId],
+    );
+    return vendedoras.map((v) => v.id);
+  }
+
   async comparativoPorVendedora(
     filtros: RecorteVenda,
   ): Promise<ComparativoVendedora[]> {

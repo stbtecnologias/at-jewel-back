@@ -3,7 +3,19 @@ import { ListarMetasUseCase } from '../../../metas/application/use-cases/listar-
 import { ProgressoMetaUseCase } from '../../../metas/application/use-cases/progresso-meta.use-case';
 import { ConsultarVendasUseCase } from '../../../movimentacoes/application/use-cases/consultar-vendas.use-case';
 
-export type PeriodoVendas = 'HOJE' | 'SEMANA' | 'MES';
+/**
+ * Os atalhos que as duas agentes oferecem.
+ *
+ * `ONTEM` e `ANO` entraram em 28/09/2026: a vendedora perguntou "e no ano?" e
+ * ouviu que so havia hoje, semana e mes. O `ConsultarVendasUseCase` sempre
+ * soube responder os cinco — este tipo e que era mais estreito que ele.
+ *
+ * MES e ANO sao os do CALENDARIO (dia 1, janeiro 1), e nao janelas moveis. A
+ * descricao da ferramenta dizia "ultimos trinta dias" e estava ERRADA; foi
+ * corrigida no mesmo dia, porque a agente repetia isso na resposta e o numero
+ * era de outro periodo.
+ */
+export type PeriodoVendas = 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
 
 export interface VendasDoPeriodo {
   quantidade: number;
@@ -75,6 +87,29 @@ export class ConsultarDesempenhoVendedoraUseCase {
       vendedoraId,
       agora,
     );
+
+    return {
+      quantidade: resumo.quantidade,
+      receita: resumo.receita,
+      ticketMedio: resumo.ticketMedio,
+    };
+  }
+
+  /**
+   * As vendas dela entre duas datas — o recorte livre, 28/09/2026.
+   *
+   * Mora aqui e nao no serviço de ferramentas pelo mesmo motivo do `vendas`
+   * acima: o ESCOPO. O `vendedoraId` entra no filtro da consulta, e nenhum
+   * caminho daqui aceita "de outra pessoa" — se a agente chamasse o
+   * `ConsultarVendasUseCase` direto, o recorte dependeria de ela lembrar de
+   * passar o id, e esquecer devolveria a loja inteira.
+   */
+  async vendasEntre(
+    vendedoraId: string,
+    de: Date,
+    ate: Date,
+  ): Promise<VendasDoPeriodo> {
+    const resumo = await this.consultarVendas.resumoEntre(de, ate, vendedoraId);
 
     return {
       quantidade: resumo.quantidade,

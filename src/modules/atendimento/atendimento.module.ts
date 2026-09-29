@@ -6,14 +6,13 @@ import { VendedorasModule } from '../vendedoras/vendedoras.module';
 import { WhatsappWebhookController } from './infrastructure/http/controllers/whatsapp-webhook.controller';
 import { WhatsappAdminController } from './infrastructure/http/controllers/whatsapp-admin.controller';
 import { WahaAuthGuard } from './infrastructure/http/guards/waha-auth.guard';
-import { WahaAdminClient } from './infrastructure/whatsapp/waha-admin.client';
 import { TriagemClient } from './infrastructure/whatsapp/triagem.client';
-import { ConexoesService } from './application/conexoes.service';
 import { WhatsappGatewayModule } from './whatsapp-gateway.module';
 import { ClientesModule } from '../clientes/clientes.module';
 import { LeadsModule } from '../leads/leads.module';
 import { LerConversaWhatsappUseCase } from './application/ler-conversa-whatsapp.use-case';
 import { LeituraConversasScheduler } from './infrastructure/schedule/leitura-conversas.scheduler';
+import { WahaAdminModule } from './waha-admin.module';
 
 /**
  * Modulo de atendimento por WhatsApp (Anastasia). Orquestracao no backend
@@ -31,6 +30,7 @@ import { LeituraConversasScheduler } from './infrastructure/schedule/leitura-con
     AgentesModule,
     AuthModule,
     WhatsappGatewayModule,
+    WahaAdminModule,
     AtendimentosModule,
     VendedorasModule,
     // O leitor de conversas (MEL-15): resolve a cliente pelo numero e abre
@@ -41,8 +41,6 @@ import { LeituraConversasScheduler } from './infrastructure/schedule/leitura-con
   controllers: [WhatsappWebhookController, WhatsappAdminController],
   providers: [
     WahaAuthGuard,
-    WahaAdminClient,
-    ConexoesService,
     // O repasse para a triagem: quem o canal interno nao reconhece e cliente,
     // e cliente e do `atwpp`. Ver o comentario da classe.
     TriagemClient,

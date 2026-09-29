@@ -105,21 +105,63 @@ const AGENDA_TOOL: Anthropic.Tool = {
   },
 };
 
+/**
+ * O PERIODO LIVRE, nas tres ferramentas de venda — 28/09/2026.
+ *
+ * ==========================================================================
+ * NASCEU DE UMA RECUSA QUE NAO DEVIA EXISTIR.
+ *
+ * O Lucas perguntou "o que a Camila mais vendeu nos ultimos 6 meses" e a
+ * Anastasia respondeu que "nao da para escolher exatamente seis meses — as
+ * opcoes sao hoje, ontem, semana, mes ou ano".
+ *
+ * Era limitacao NOSSA, numa pergunta que o banco responde sem esforco: os
+ * metodos `resumoEntre`, `itensEntre` e `rankingEntre` existiam desde 25/09 e
+ * ninguem os chamava. A ferramenta so sabia falar o enum.
+ *
+ * O ENUM FICA, e nao e redundancia: `MES` e `ANO` sao os do CALENDARIO, que e
+ * o que se compara com a meta. O modelo calculando "o mes" chutaria trinta
+ * dias para tras e daria um numero que nao bate com nada que a gestao segue.
+ *
+ * DUPLICADO NAS TRES de proposito — a descricao de `periodo` e diferente em
+ * cada uma (enums diferentes, padroes diferentes), entao so este par e comum.
+ * ==========================================================================
+ */
+const DATAS_LIVRES = {
+  de: {
+    type: 'string' as const,
+    description:
+      'Inicio do periodo, AAAA-MM-DD. Use com `ate` quando o recorte pedido nao couber no `periodo`: "ultimos 6 meses", "de janeiro a marco", "agosto", "do dia 10 ate hoje". VOCE calcula as datas a partir da data de hoje, que esta no inicio desta conversa.',
+  },
+  ate: {
+    type: 'string' as const,
+    description:
+      'Fim do periodo, AAAA-MM-DD, e ele CONTA INTEIRO. So vale junto com `de` — mandando um so, ele e ignorado. Com os dois preenchidos, o `periodo` nao e usado.',
+  },
+};
+
 const VENDAS_TOOL: Anthropic.Tool = {
   name: 'consultar_vendas',
   description:
-    'Consulta quantas vendas ELA fez e quanto faturou num periodo. Use quando ela perguntar sobre o proprio desempenho — "quantas vendas eu fiz hoje", "como foi minha semana", "quanto vendi no mes". Sao sempre as vendas DELA: voce nao escolhe de quem, o sistema resolve pelo telefone de quem esta falando.',
+    'Consulta quantas vendas ELA fez e quanto faturou num periodo. Use quando ela perguntar sobre o proprio desempenho — "quantas vendas eu fiz hoje", "como foi minha semana", "quanto vendi no mes", "e no ano?". Sao sempre as vendas DELA: voce nao escolhe de quem, o sistema resolve pelo telefone de quem esta falando.',
   input_schema: {
     type: 'object',
     properties: {
       periodo: {
         type: 'string',
-        enum: ['HOJE', 'SEMANA', 'MES'],
+        // ONTEM e ANO entraram em 28/09/2026 — o use case sempre respondeu os
+        // cinco, e so a ferramenta era estreita.
+        enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
         description:
-          'HOJE = desde a meia-noite; SEMANA = os ultimos sete dias; MES = os ultimos trinta dias.',
+          // A DESCRICAO ANTIGA MENTIA: dizia "MES = os ultimos trinta dias", e
+          // a janela sempre foi do dia 1. A agente repetia isso na resposta
+          // ("nos ultimos trinta dias voce nao fechou nenhuma venda") enquanto
+          // o numero era do mes do calendario.
+          'HOJE = desde a meia-noite; ONTEM = o dia anterior inteiro; SEMANA = os ultimos sete dias; MES = do dia 1 ate agora; ANO = de 1o de janeiro ate agora. MES e ANO sao os do CALENDARIO, nao janelas moveis.',
       },
+      ...DATAS_LIVRES,
     },
-    required: ['periodo'],
+    required: [],
   },
 };
 
@@ -296,6 +338,7 @@ const GESTAO_VENDAS_TOOL: Anthropic.Tool = {
         description:
           'HOJE = desde a meia-noite; SEMANA = os ultimos sete dias; MES = os ultimos trinta dias. Omita se nao souber — assume SEMANA, e voce diz na resposta qual recorte usou.',
       },
+      ...DATAS_LIVRES,
     },
     required: ['vendedora'],
   },
@@ -320,7 +363,7 @@ const GESTAO_METAS_TOOL: Anthropic.Tool = {
 const GESTAO_PANORAMA_TOOL: Anthropic.Tool = {
   name: 'panorama_da_equipe',
   description:
-    'Compara as vendas de TODAS as vendedoras ativas num periodo, da maior para a menor. Use quando a pergunta for sobre a equipe e nao sobre uma pessoa — "como foi a semana da equipe", "quem vendeu mais esse mes", "quem esta atras".',
+    'Compara as vendas da equipe num periodo, da maior para a menor. Use quando a pergunta for sobre a equipe e nao sobre uma pessoa — "como foi a semana da equipe", "quem vendeu mais esse mes", "quem esta atras". Quem vendeu no periodo aparece, mesmo tendo saido depois; quem continua na equipe e nao vendeu aparece no fim.',
   input_schema: {
     type: 'object',
     properties: {
@@ -330,8 +373,9 @@ const GESTAO_PANORAMA_TOOL: Anthropic.Tool = {
         description:
           'HOJE, SEMANA (sete dias) ou MES — o mes do CALENDARIO, do dia 1 ate agora, que e o que se compara com a meta.',
       },
+      ...DATAS_LIVRES,
     },
-    required: ['periodo'],
+    required: [],
   },
 };
 
@@ -368,8 +412,163 @@ const GESTAO_ITENS_TOOL: Anthropic.Tool = {
         description:
           'Nome de uma vendedora, como veio na conversa, para recortar so as pecas dela. Omita para a loja inteira.',
       },
+      ...DATAS_LIVRES,
     },
     required: [],
+  },
+};
+
+/**
+ * A MESMA FERRAMENTA, PARA QUEM NAO VE A LOJA — 28/09/2026.
+ *
+ * Quem gerencia as vendedoras (papel GERENTE_VENDAS, sem `analytics:read`)
+ * pergunta "o que a Camila mais vendeu" e nunca "o que a loja mais vendeu": o
+ * `itens_mais_vendidos` sem vendedora e a unica das 17 ferramentas de gestao
+ * que responde sobre a loja inteira, em dinheiro.
+ *
+ * ==========================================================================
+ * E UMA SEGUNDA TOOL, E NAO UM AVISO NO SYSTEM PROMPT.
+ *
+ * Instruir o modelo a "nao perguntar pela loja" seria regra de prompt, e prompt
+ * nao e permissao: basta a conversa tomar outro rumo para ele tentar. Aqui a
+ * pergunta nao chega a existir — o `required` faz a propria API recusar a
+ * chamada sem vendedora.
+ *
+ * E o mesmo principio do canal da vendedora, onde o escopo e AUSENCIA DE
+ * CAMINHO e nao regra escrita: la nenhuma ferramenta aceita "de quem".
+ * ==========================================================================
+ *
+ * A descricao tambem muda, e nao so o `required`. Ela e o que o modelo le para
+ * decidir se a ferramenta serve: deixar "omita para a loja inteira" ali faria
+ * ele oferecer a quem nao pode, e depois se desculpar.
+ */
+const GESTAO_ITENS_DA_VENDEDORA_TOOL: Anthropic.Tool = {
+  name: 'itens_mais_vendidos',
+  description:
+    'As pecas que uma VENDEDORA mais faturou num periodo, da maior para a menor, com quantidade e valor. Use para "o que a Camila mais vendeu esse mes", "quais pecas sairam com a Marina". Devolve 10 por padrao; se ela pedir outro numero ("me da o top 5"), passe em `limite`. SEMPRE exige a vendedora — esta consulta nao responde pela loja inteira. Se ela perguntar "o que mais vendeu" sem dizer de quem, pergunte de qual vendedora.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
+        description:
+          'HOJE (o padrao), ONTEM, SEMANA (sete dias), MES ou ANO — mes e ano sao os do CALENDARIO, nao janelas moveis.',
+      },
+      limite: {
+        type: 'number',
+        description: 'Quantas pecas listar. Padrao 10, teto 30.',
+      },
+      vendedora: {
+        type: 'string',
+        description: 'Nome da vendedora, como veio na conversa.',
+      },
+      ...DATAS_LIVRES,
+    },
+    required: ['vendedora'],
+  },
+};
+
+/**
+ * QUEM MAIS VENDE UM TIPO DE PECA — 28/09/2026.
+ *
+ * ==========================================================================
+ * A PERGUNTA QUE NENHUMA DAS OUTRAS RESPONDIA.
+ *
+ * "Qual a vendedora que mais vende brinco?" caia num vao: o
+ * `panorama_da_equipe` soma TUDO que cada uma vendeu, sem separar tipo, e o
+ * `itens_mais_vendidos` separa tipo mas agrupa por PECA. A agente respondia
+ * "nao da para cruzar", e estava certa.
+ *
+ * ORDENADO POR QUANTIDADE, ao contrario das outras: "quem mais vende brinco"
+ * espera "a Aline, 23 brincos". O valor vai na mesma linha.
+ * ==========================================================================
+ */
+const GESTAO_POR_FAMILIA_TOOL: Anthropic.Tool = {
+  name: 'quem_mais_vende',
+  description:
+    'O ranking das vendedoras para UM tipo de peca, da que mais vendeu para a que menos vendeu, com quantidade e valor. Use para "quem vende mais brinco", "qual vendedora mais vendeu anel esse ano", "quem e a melhor em colar". Conta PECAS, nao faturamento — e a devolucao ja esta abatida. Para o ranking geral, sem separar tipo, use panorama_da_equipe.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      familia: {
+        type: 'string',
+        description:
+          'O tipo de peca, como a pessoa falou: "brinco", "anel", "colar", "pulseira". Se o nome nao existir no catalogo, a resposta traz a lista dos que existem — repasse e pergunte qual.',
+      },
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
+        description:
+          'MES (o padrao) e ANO sao os do CALENDARIO. Para um mes especifico de um ano passado — "outubro de 2025" — use `de` e `ate`.',
+      },
+      mes: {
+        type: 'number',
+        description:
+          'De 1 a 12 — use quando ela disser um mes SEM ano: "em outubro", "nos meses de dezembro", "no natal". Traz TODOS os anos, quebrado por ano ("outubro/2025 — Fulana: 4 brincos"). Com `mes`, o `periodo` e as datas sao ignorados. Para UM outubro especifico — "outubro de 2025" — use `de` e `ate` em vez deste campo.',
+      },
+      limite: {
+        type: 'number',
+        description:
+          'Quantas vendedoras listar. Padrao 10. Com `mes`, e quantas POR ANO, e o padrao e 1 — so a campea de cada ano.',
+      },
+      ...DATAS_LIVRES,
+    },
+    required: ['familia'],
+  },
+};
+
+/**
+ * OS COMBINADOS — ANA-16 e ANA-18, 28/09/2026.
+ *
+ * ==========================================================================
+ * "GUARDAR" E O VERBO, E ELE E DELIBERADO.
+ *
+ * Nao e "criar alerta" nem "configurar aviso": a agente guarda e LEMBRA, e nao
+ * dispara sozinha. Chamar a ferramenta de alerta faria o modelo prometer o que
+ * ela nao faz — e quem combinasse "me avise as 8h" esperaria o telefone tocar.
+ *
+ * A descricao diz isso com todas as letras porque e a unica coisa que o modelo
+ * le antes de decidir usar.
+ * ==========================================================================
+ */
+const GUARDAR_COMBINADO_TOOL: Anthropic.Tool = {
+  name: 'guardar_combinado',
+  description:
+    'Guarda uma instrucao que a equipe combinou com voce, para nao esquecer entre conversas nem depois de o sistema reiniciar. Use quando disserem "de agora em diante...", "sempre que...", "lembre que...", "combinado: ...". VOCE GUARDA E LEMBRA — nao passa a avisar ninguem sozinha, porque voce so age quando alguem escreve. Se o combinado for um aviso automatico, guarde e diga isso.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      texto: {
+        type: 'string',
+        description:
+          'O combinado, na forma mais curta que preserve o sentido. Ate 300 caracteres. Escreva do jeito que a pessoa reconheceria depois — e o texto que ela vai ver quando pedir a lista.',
+      },
+    },
+    required: ['texto'],
+  },
+};
+
+const LISTAR_COMBINADOS_TOOL: Anthropic.Tool = {
+  name: 'listar_combinados',
+  description:
+    'Lista o que ja foi combinado com voce, numerado. Use quando perguntarem "o que voce lembra?", "quais combinados a gente tem?", "o que eu ja te pedi?" — e SEMPRE antes de esquecer algum, porque o numero para esquecer vem desta lista.',
+  input_schema: { type: 'object', properties: {} },
+};
+
+const ESQUECER_COMBINADO_TOOL: Anthropic.Tool = {
+  name: 'esquecer_combinado',
+  description:
+    'Desfaz um combinado, pelo numero que apareceu em `listar_combinados`. Use quando pedirem "esquece aquilo", "pode tirar o segundo", "nao precisa mais me avisar disso". CHAME `listar_combinados` ANTES se voce nao acabou de mostrar a lista — o numero e a posicao nela, e chutar apaga o combinado errado.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      numero: {
+        type: 'number',
+        description: 'A posicao na lista, comecando em 1.',
+      },
+    },
+    required: ['numero'],
   },
 };
 
@@ -512,6 +711,88 @@ const GESTAO_PANORAMA_LEADS_TOOL: Anthropic.Tool = {
           'Nome da vendedora, como falado. OMITA para a fila inteira — nao invente um nome quando a pergunta for geral.',
       },
     },
+  },
+};
+
+/**
+ * AS METRICAS DE ATENDIMENTO — ANA-08 a ANA-12, 29/09/2026.
+ *
+ * ==========================================================================
+ * A DESCRICAO DIZ O QUE ELA *NAO* RESPONDE, E ISSO E METADE DO TRABALHO.
+ *
+ * "Tempo", "media" e "quantos" sao palavras que aparecem em perguntas de
+ * VENDA tambem. Sem a fronteira escrita, o modelo chamaria esta ferramenta
+ * para "qual o ticket medio" e responderia com numero de atendimento — que e
+ * plausivel, errado, e ninguem confere.
+ * ==========================================================================
+ */
+const GESTAO_METRICAS_TOOL: Anthropic.Tool = {
+  name: 'metricas_de_atendimento',
+  description:
+    'Como a equipe ATENDE: tempo medio ate a primeira resposta, duracao media do atendimento, tempo medio ate fechar a venda, quantos leads cada vendedora recebeu e quantas interacoes cada uma registrou. Use para "quanto tempo demoramos para responder", "a equipe esta respondendo rapido", "quanto tempo leva um atendimento", "quantos leads a Marina recebeu", "quem mais interage com cliente", "como foi o atendimento este mes". NAO responde faturamento, ticket medio, quantas pecas foram vendidas nem quem vendeu mais — isso e venda, e sai nas ferramentas de venda. TODA media vem com o TAMANHO DA AMOSTRA junto: repasse esse numero sempre, porque a base ainda e pequena e uma media de dois casos nao e um indicador. Quando vier "sem nenhum caso no periodo", diga exatamente isso — nao invente que foi rapido nem que foi zero.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      ...DATAS_LIVRES,
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
+        description:
+          'O atalho, quando nao houver datas. Padrao MES — em HOJE a media quase sempre sai de zero casos e nao diz nada.',
+      },
+    },
+  },
+};
+
+/**
+ * OS CINCO RANKINGS — ANA-14, 29/09/2026.
+ *
+ * O `eixo` e o que separa "quem responde mais rapido" (uma linha) de "como
+ * esta a equipe" (cinco). Sem ele o modelo devolveria os cinco rankings para
+ * uma pergunta que queria um nome.
+ */
+const GESTAO_RANKINGS_TOOL: Anthropic.Tool = {
+  name: 'rankings_de_atendimento',
+  description:
+    'Quem e a melhor da equipe em CADA aspecto do atendimento: quem responde mais rapido, quem fecha venda em menos tempo, quem mais interage com cliente, quem mais converte lead em venda e quem recebe mais leads. Use para "quem responde mais rapido", "qual vendedora converte melhor", "quem recebe mais lead", "quem atende melhor", "ranking da equipe". NAO responde quem vendeu mais em dinheiro nem quem vendeu mais pecas — isso e venda, e sai nas ferramentas de venda. O tempo de resposta vem no RELOGIO DA LOJA (08h-19h) com o tempo corrido ao lado: repasse os dois quando houver diferenca, porque a diferenca significa que a cliente escreveu fora do horario. Toda posicao vem com o numero de casos: repasse sempre, e quando a resposta disser que alguem ficou de fora por ter poucos casos, diga isso tambem — nao e que ela nao atendeu.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      eixo: {
+        type: 'string',
+        enum: ['RESPOSTA', 'FECHAMENTO', 'INTERACOES', 'CONVERSAO', 'LEADS'],
+        description:
+          'Qual ranking. OMITA so quando a pergunta for geral ("como esta a equipe") — para uma pergunta especifica, escolha o eixo e devolva uma linha.',
+      },
+      ...DATAS_LIVRES,
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
+        description: 'O atalho, quando nao houver datas. Padrao MES.',
+      },
+    },
+  },
+};
+
+/**
+ * A ANALISE DE TOM — ANA-15, 29/09/2026.
+ *
+ * A DESCRICAO AVISA DO LIMITE PORQUE ELE E INVISIVEL. A ferramenta le do
+ * celular da vendedora na hora, e conversa antiga sai do aparelho: "esta
+ * semana" responde, "marco" nao. Sem esse aviso o modelo trataria um
+ * "nao encontrei" como "nao houve conversa".
+ */
+const GESTAO_TOM_TOOL: Anthropic.Tool = {
+  name: 'tom_da_conversa',
+  description:
+    'Como foi o TOM de uma vendedora com uma cliente especifica: atenciosa, seca, apressada, se respondeu o que perguntaram. Use para "como a Marina falou com a dona Cida", "o atendimento dela foi bom", "ela tratou bem essa cliente". EXIGE as duas: o nome da vendedora E o nome da cliente — sem a cliente nao da para responder, e voce deve PERGUNTAR qual em vez de escolher uma. Le a conversa no celular da vendedora NA HORA: so funciona se o numero dela estiver conectado, e so alcanca conversa recente, porque mensagem antiga sai do aparelho e nao fica guardada aqui. Quando a resposta disser isso, repasse — nao conclua que nao houve atendimento. NAO serve para comparar vendedoras nem para ranquear: para isso use rankings_de_atendimento.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      vendedora: { type: 'string', description: 'Nome da vendedora, como falado.' },
+      cliente: { type: 'string', description: 'Nome da cliente, como falado.' },
+    },
+    required: ['vendedora', 'cliente'],
   },
 };
 
@@ -729,8 +1010,20 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoAgenda) tools.push(GESTAO_AGENDA_TOOL);
     if (params.gestaoVendas) tools.push(GESTAO_VENDAS_TOOL);
     if (params.gestaoMetas) tools.push(GESTAO_METAS_TOOL);
+    if (params.gestaoPorFamilia) tools.push(GESTAO_POR_FAMILIA_TOOL);
+    if (params.guardarCombinado) tools.push(GUARDAR_COMBINADO_TOOL);
+    if (params.listarCombinados) tools.push(LISTAR_COMBINADOS_TOOL);
+    if (params.esquecerCombinado) tools.push(ESQUECER_COMBINADO_TOOL);
     if (params.gestaoPanorama) tools.push(GESTAO_PANORAMA_TOOL);
-    if (params.gestaoItens) tools.push(GESTAO_ITENS_TOOL);
+    // Uma OU outra, nunca as duas: elas tem o mesmo `name`, e declarar as duas
+    // deixaria o modelo com dois contratos para a mesma ferramenta.
+    if (params.gestaoItens) {
+      tools.push(
+        params.gestaoItensExigeVendedora
+          ? GESTAO_ITENS_DA_VENDEDORA_TOOL
+          : GESTAO_ITENS_TOOL,
+      );
+    }
     // So quando o canal NAO e o da vendedora — os dois usam o mesmo nome.
     if (params.gestaoProdutos && !params.consultarProdutos) {
       tools.push(GESTAO_PRODUTOS_TOOL);
@@ -746,6 +1039,9 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoFeedbacks) tools.push(GESTAO_FEEDBACKS_TOOL);
     if (params.gestaoFunil) tools.push(GESTAO_FUNIL_TOOL);
     if (params.gestaoPanoramaLeads) tools.push(GESTAO_PANORAMA_LEADS_TOOL);
+    if (params.gestaoMetricas) tools.push(GESTAO_METRICAS_TOOL);
+    if (params.gestaoRankings) tools.push(GESTAO_RANKINGS_TOOL);
+    if (params.gestaoTom) tools.push(GESTAO_TOM_TOOL);
     if (params.gestaoDiaDaVendedora)
       tools.push(GESTAO_DIA_DA_VENDEDORA_TOOL);
     if (params.registrarRelato) tools.push(RELATO_TOOL);
@@ -960,11 +1256,19 @@ export class AnthropicClient implements ILlmClient {
             const e = toolUse.input as {
               vendedora?: string;
               periodo?: PeriodoVendasLlm;
+              de?: string;
+              ate?: string;
             };
             return textoDaLeituraDeGestao(
               await params.gestaoVendas!({
                 vendedora: String(e.vendedora ?? '').slice(0, 80),
-                periodo: e.periodo ?? 'SEMANA',
+                // O ATALHO SO VALE SEM AS DATAS. Mandando `de` e `ate`, o
+                // enum e ignorado la dentro — e por isso o padrao nao entra
+                // aqui: fixar um valor faria o handler achar que houve
+                // escolha de periodo quando nao houve.
+                periodo: e.periodo,
+                de: e.de,
+                ate: e.ate,
               }),
               'venda',
             );
@@ -982,6 +1286,115 @@ export class AnthropicClient implements ILlmClient {
             );
           }),
         );
+      } else if (
+        toolUse.name === 'quem_mais_vende' &&
+        params.gestaoPorFamilia
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as {
+              familia?: string;
+              limite?: number;
+              mes?: number;
+              periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
+              de?: string;
+              ate?: string;
+            };
+            const r = await params.gestaoPorFamilia!({
+              familia: String(e.familia ?? '').slice(0, 40),
+              limite: e.limite,
+              mes: e.mes,
+              periodo: e.periodo,
+              de: e.de,
+              ate: e.ate,
+            });
+
+            // A FAMILIA QUE NAO EXISTE VIRA PERGUNTA, e nao 'ninguem vendeu':
+            // zero linhas seria indistinguivel de um periodo sem venda, e a
+            // pessoa concluiria que ninguem vendeu brinco naquele mes.
+            if (r.status === 'FAMILIA_DESCONHECIDA') {
+              return (
+                'Esse tipo de peca nao existe no catalogo. Os que existem: ' +
+                (r.familias ?? []).join(', ') +
+                '. Diga isso e pergunte qual deles ela quer.'
+              );
+            }
+            if (r.linhas.length === 0) {
+              return 'Ninguem vendeu esse tipo de peca no periodo. Diga isso em uma frase.';
+            }
+            return (
+              `Ranking no periodo:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+              'A primeira linha e a resposta. Repasse os numeros exatamente como estao.'
+            );
+          }),
+        );
+      } else if (
+        toolUse.name === 'guardar_combinado' &&
+        params.guardarCombinado
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const { texto } = toolUse.input as { texto?: string };
+            const r = await params.guardarCombinado!({
+              texto: String(texto ?? '').slice(0, 400),
+            });
+
+            // CADA RECUSA DIZ O QUE FAZER, e nao so o que houve. "Nao deu" faz
+            // a agente pedir desculpa e parar; dizendo o teto, ela devolve a
+            // conversa para quem pode resolver.
+            if (r.status === 'VAZIO') {
+              return 'Nao veio combinado nenhum. Pergunte o que ela quer que voce lembre.';
+            }
+            if (r.status === 'LONGO') {
+              return `Longo demais (teto de ${r.teto} caracteres). Peca para resumir, ou proponha voce uma versao curta e confirme antes de guardar.`;
+            }
+            if (r.status === 'CHEIO') {
+              return `Ja ha ${r.teto} combinados guardados, que e o maximo. Mostre a lista com listar_combinados e pergunte qual sai para este entrar.`;
+            }
+            return (
+              'Guardado. Confirme em uma frase, com as SUAS palavras, e diga que ' +
+              'vale daqui em diante. Se o combinado for um aviso automatico, diga ' +
+              'tambem que voce nao dispara sozinha — que precisa que perguntem.'
+            );
+          }),
+        );
+      } else if (
+        toolUse.name === 'listar_combinados' &&
+        params.listarCombinados
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const { linhas } = await params.listarCombinados!();
+            if (linhas.length === 0) {
+              return 'Nao ha combinado guardado. Diga isso em uma frase.';
+            }
+            return (
+              `Combinados guardados:\n${linhas.join('\n')}\n\n` +
+              'Repasse a lista com os numeros — eles sao o que ela usa para pedir ' +
+              'para esquecer algum.'
+            );
+          }),
+        );
+      } else if (
+        toolUse.name === 'esquecer_combinado' &&
+        params.esquecerCombinado
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const { numero } = toolUse.input as { numero?: number };
+            const r = await params.esquecerCombinado!({
+              numero: Number(numero ?? 0),
+            });
+
+            if (r.status === 'NAO_ACHEI') {
+              // O numero errado NAO apaga nada, e a agente tem de dizer isso —
+              // "pronto, esqueci" sobre um combinado que continua valendo e o
+              // pior desfecho possivel aqui.
+              return 'Nao ha combinado nessa posicao. Mostre a lista de novo e pergunte qual e.';
+            }
+            return `Esquecido: "${r.texto}". Confirme em uma frase, dizendo qual era.`;
+          }),
+        );
       } else if (toolUse.name === 'itens_mais_vendidos' && params.gestaoItens) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
@@ -989,9 +1402,17 @@ export class AnthropicClient implements ILlmClient {
               periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
               limite?: number;
               vendedora?: string;
+              de?: string;
+              ate?: string;
             };
             const r = await params.gestaoItens!(e);
 
+            // Faltou dizer DE QUEM, e quem pergunta nao ve a loja inteira.
+            // Nao e "nao encontrei": e uma pergunta incompleta, e dizer o
+            // contrario faria a resposta soar como dado ausente.
+            if (r.status === 'EXIGE_VENDEDORA') {
+              return 'Esta consulta e sempre por vendedora. Pergunte de qual vendedora ela quer as pecas, sem mencionar permissao nem limitacao de acesso.';
+            }
             if (r.status === 'NAO_ENCONTRADA') {
               return 'Nao achei essa vendedora na equipe. Diga isso e pergunte o nome de novo.';
             }
@@ -1016,9 +1437,15 @@ export class AnthropicClient implements ILlmClient {
       ) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as { periodo?: PeriodoVendasLlm };
+            const e = toolUse.input as {
+              periodo?: PeriodoVendasLlm;
+              de?: string;
+              ate?: string;
+            };
             const { linhas } = await params.gestaoPanorama!({
-              periodo: e.periodo ?? 'SEMANA',
+              periodo: e.periodo,
+              de: e.de,
+              ate: e.ate,
             });
             if (linhas.length === 0) {
               return 'Nenhuma vendedora ativa com venda nesse periodo. Diga isso em uma frase.';
@@ -1139,10 +1566,18 @@ export class AnthropicClient implements ILlmClient {
       ) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as {
+              periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
+              de?: string;
+              ate?: string;
+            };
+            // Sem padrao fixo aqui: com `de` e `ate` preenchidos o atalho e
+            // ignorado la dentro, e cravar 'HOJE' faria o handler achar que
+            // houve escolha de periodo quando nao houve.
             const { resumo } = await params.consultarVendas!({
-              periodo:
-                (toolUse.input as { periodo?: PeriodoVendasLlm }).periodo ??
-                'HOJE',
+              periodo: e.periodo,
+              de: e.de,
+              ate: e.ate,
             });
             return (
               `Vendas dela no periodo: ${resumo}. Repasse estes numeros exatamente ` +
@@ -1620,7 +2055,34 @@ export class AnthropicClient implements ILlmClient {
     const bloco = resp.content.find(
       (b): b is Anthropic.TextBlock => b.type === 'text',
     );
-    return bloco?.text ?? '';
+    const texto = bloco?.text ?? '';
+
+    // ====================================================================
+    // RESPOSTA SEM TEXTO NAO PODE SAIR CALADA — 29/09/2026.
+    //
+    // Devolver '' e correto: quem chama tem de lidar com a ausencia. O que
+    // nao era correto e sair sem dizer NADA, porque "veio vazia" tem causas
+    // que exigem consertos opostos:
+    //
+    //   stop_reason 'max_tokens'  -> o teto e baixo demais
+    //   stop_reason 'refusal'     -> o modelo recusou o conteudo
+    //   so blocos nao-texto       -> a chamada pediu a coisa errada
+    //
+    // Custou uma manha em 29/09: o leitor de conversas recebia '' e relatava
+    // "0 lidas, 0 ignoradas, 0 falhas", como se nao houvesse o que ler.
+    //
+    // So METADADOS entram no log — nunca o texto, que aqui e conversa de
+    // cliente.
+    // ====================================================================
+    if (!texto) {
+      this.logger.warn(
+        `O modelo devolveu resposta sem texto: stop_reason=${resp.stop_reason} ` +
+          `blocos=[${resp.content.map((b) => b.type).join(',') || 'vazio'}] ` +
+          `tokens=${resp.usage.output_tokens}.`,
+      );
+    }
+
+    return texto;
   }
 }
 

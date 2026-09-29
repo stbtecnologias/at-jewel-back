@@ -66,6 +66,23 @@ describe('FerramentasGestaoService', () => {
       // A consulta de venda, que desde 25/09 le a MOVIMENTACAO. Dublada aqui:
       // estes testes descrevem o roteamento das ferramentas, nao o SQL.
       { itens: jest.fn().mockResolvedValue({ linhas: [] }) } as never,
+      // As metricas de atendimento (ANA-08 a 12, 29/09) — dubladas: estes
+      // testes descrevem o roteamento das ferramentas, nao o SQL.
+      { execute: jest.fn().mockResolvedValue({
+        de: new Date(), ate: new Date(),
+        leadsPorVendedora: [], interacoesPorVendedora: [],
+        primeiraResposta: { minutos: null, amostra: 0, minimo: null, maximo: null },
+        duracaoDoAtendimento: { minutos: null, amostra: 0, minimo: null, maximo: null },
+        ateFecharVenda: { minutos: null, amostra: 0, minimo: null, maximo: null },
+      }) } as never,
+      // Rankings (ANA-14, 29/09) — dublados.
+      { execute: jest.fn().mockResolvedValue({
+        de: new Date(), ate: new Date(),
+        respondeMaisRapido: [], fechaMaisRapido: [], maisInterage: [],
+        maisConverte: [], maisLeads: [], semAmostra: [],
+      }) } as never,
+      // Análise de tom (ANA-15, 29/09) — dublada.
+      { execute: jest.fn().mockResolvedValue({ status: 'SEM_CONVERSA' }) } as never,
       // A consulta de catalogo da GESTAO, com quantidade — dublada.
       { execute: jest.fn().mockResolvedValue([]) } as never,
       agenda as never,

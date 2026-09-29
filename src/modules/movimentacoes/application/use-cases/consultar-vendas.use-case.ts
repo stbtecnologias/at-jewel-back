@@ -123,6 +123,57 @@ export class ConsultarVendasUseCase {
   ): Promise<VendedoraNoRanking[]> {
     return this.vendas.rankingDeVendedoras(fimDoDia({ de, ate }), limitar(limite));
   }
+
+  /**
+   * Quem mais vendeu um TIPO de peca — 28/09/2026.
+   *
+   * As duas formas, como as demais consultas: pelo atalho ou por datas soltas.
+   * A pergunta que motivou isto — "quem mais vende brinco em outubro" — precisa
+   * das duas: o outubro de um ano especifico so sai por data.
+   */
+  async porFamilia(
+    familia: string,
+    recorte: RecorteDeVendas = 'MES',
+    limite = LIMITE_PADRAO,
+    agora: Date = new Date(),
+  ) {
+    const janela = janelaDe(recorte, agora);
+    const linhas = await this.vendas.rankingPorFamilia(
+      janela,
+      familia,
+      limitar(limite),
+    );
+    return { linhas, ...janela };
+  }
+
+  async porFamiliaEntre(
+    familia: string,
+    de: Date,
+    ate: Date,
+    limite = LIMITE_PADRAO,
+  ) {
+    return this.vendas.rankingPorFamilia(
+      fimDoDia({ de, ate }),
+      familia,
+      limitar(limite),
+    );
+  }
+
+  /**
+   * O mesmo mes, em todos os anos — "quem mais vende brinco em outubro".
+   *
+   * `porAno` NAO passa pelo `limitar`: aquele teto (30) e para uma lista que
+   * alguem le no WhatsApp, e aqui o numero multiplica pelos anos que houver.
+   * Tres por ano em quatro anos ja sao doze linhas. O padrao e 1 — a campea
+   * de cada outubro, que e a pergunta.
+   */
+  async porFamiliaNoMes(familia: string, mes: number, porAno = 1) {
+    return this.vendas.rankingPorFamiliaNoMes(
+      mes,
+      familia,
+      Math.min(Math.max(Math.trunc(porAno) || 1, 1), 5),
+    );
+  }
 }
 
 /**

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { WHATSAPP_GATEWAY } from './domain/ports/injection-tokens';
+import { LimiteDeEnvioService } from './application/limite-de-envio.service';
 import { SessoesDaCasaService } from './application/sessoes-da-casa.service';
 import { WahaGateway } from './infrastructure/whatsapp/waha.gateway';
 
@@ -20,8 +21,13 @@ import { WahaGateway } from './infrastructure/whatsapp/waha.gateway';
 @Module({
   providers: [
     SessoesDaCasaService,
+    // O teto de envio (RF-12). Mora aqui pelo mesmo motivo dos outros dois: so
+    // depende do ConfigService, e quem envia ja importa este modulo. A
+    // contagem e em memoria, entao PRECISA ser instancia unica — provendo em
+    // outro modulo existiriam dois contadores e nenhum dos dois valeria.
+    LimiteDeEnvioService,
     { provide: WHATSAPP_GATEWAY, useClass: WahaGateway },
   ],
-  exports: [SessoesDaCasaService, WHATSAPP_GATEWAY],
+  exports: [SessoesDaCasaService, WHATSAPP_GATEWAY, LimiteDeEnvioService],
 })
 export class WhatsappGatewayModule {}

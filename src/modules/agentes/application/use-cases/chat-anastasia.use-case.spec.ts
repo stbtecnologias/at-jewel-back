@@ -35,6 +35,8 @@ describe('ChatAnastasiaUseCase (tool registrar_demanda)', () => {
   let avisarVendedora: jest.Mocked<AvisarVendedoraUseCase>;
   let ferramentasGestao: { montar: jest.Mock };
   let permissoes: { possui: jest.Mock };
+  let escopoVendas: { equipeDoUsuario: jest.Mock };
+  let combinados: { paraPrompt: jest.Mock; handlers: jest.Mock };
   let useCase: ChatAnastasiaUseCase;
 
   beforeEach(() => {
@@ -48,6 +50,14 @@ describe('ChatAnastasiaUseCase (tool registrar_demanda)', () => {
     // ferramentas de gestao nao entram, e o comportamento antigo fica igual.
     ferramentasGestao = { montar: jest.fn(() => ({})) };
     permissoes = { possui: jest.fn(async () => false) };
+    // Sem equipe: o comportamento historico, e o de todo mundo hoje.
+    escopoVendas = { equipeDoUsuario: jest.fn(async () => null) };
+    // Sem combinado guardado: o prompt fica como era, e as ferramentas dos
+    // combinados nao entram.
+    combinados = {
+      paraPrompt: jest.fn(async () => ''),
+      handlers: jest.fn(() => ({})),
+    };
 
     useCase = new ChatAnastasiaUseCase(
       llm,
@@ -57,6 +67,8 @@ describe('ChatAnastasiaUseCase (tool registrar_demanda)', () => {
       avisarVendedora,
       ferramentasGestao as never,
       permissoes as never,
+      escopoVendas as never,
+      combinados as never,
     );
   });
 
@@ -116,7 +128,7 @@ describe('ChatAnastasiaUseCase (tool registrar_demanda)', () => {
       expect(ferramentasGestao.montar).not.toHaveBeenCalled();
     });
 
-    it('papel SEM vendas:read_all nao recebe as ferramentas', async () => {
+    it('papel SEM agentes:anastasia nao recebe as ferramentas', async () => {
       permissoes.possui.mockResolvedValue(false);
 
       await useCase.execute([{ role: 'user', content: 'oi' }], undefined, {
@@ -125,11 +137,14 @@ describe('ChatAnastasiaUseCase (tool registrar_demanda)', () => {
         role: 'VENDEDORA',
       });
 
-      expect(permissoes.possui).toHaveBeenCalledWith('VENDEDORA', 'vendas:read_all');
+      expect(permissoes.possui).toHaveBeenCalledWith(
+        'VENDEDORA',
+        'agentes:anastasia',
+      );
       expect(ferramentasGestao.montar).not.toHaveBeenCalled();
     });
 
-    it('papel COM vendas:read_all recebe — a mesma chave do WhatsApp', async () => {
+    it('papel COM agentes:anastasia recebe — a mesma chave do WhatsApp', async () => {
       permissoes.possui.mockResolvedValue(true);
       ferramentasGestao.montar.mockReturnValue({ gestaoAgenda: jest.fn() });
 
@@ -139,10 +154,53 @@ describe('ChatAnastasiaUseCase (tool registrar_demanda)', () => {
         role: 'ADMIN',
       });
 
-      expect(permissoes.possui).toHaveBeenCalledWith('ADMIN', 'vendas:read_all');
+      expect(permissoes.possui).toHaveBeenCalledWith('ADMIN', 'agentes:anastasia');
       expect(ferramentasGestao.montar).toHaveBeenCalled();
       const params = (llm.chatComFerramentas as jest.Mock).mock.calls[0][0];
       expect(params.gestaoAgenda).toBeDefined();
+    });
+
+    /**
+     * O SEGUNDO CRITERIO, E ELE E INDEPENDENTE DO PRIMEIRO — 28/09/2026.
+     *
+     * Entrar no canal e ver a loja sao duas perguntas. O papel GERENTE_VENDAS
+     * responde SIM para a primeira e NAO para a segunda, e e o unico teste que
+     * prova que as duas nao voltaram a ser a mesma chave.
+     */
+    it('sem analytics:read, as ferramentas sao montadas com verLoja falso', async () => {
+      permissoes.possui.mockImplementation((_role: string, chave: string) =>
+        Promise.resolve(chave === 'agentes:anastasia'),
+      );
+      ferramentasGestao.montar.mockReturnValue({ gestaoAgenda: jest.fn() });
+
+      await useCase.execute([{ role: 'user', content: 'o que mais vendeu?' }], undefined, {
+        userId: 'user-1',
+        nomeFallback: 'gerente@atjewel.com',
+        role: 'GERENTE_VENDAS',
+      });
+
+      expect(permissoes.possui).toHaveBeenCalledWith(
+        'GERENTE_VENDAS',
+        'analytics:read',
+      );
+      expect(ferramentasGestao.montar).toHaveBeenCalledWith(
+        expect.objectContaining({ verLoja: false }),
+      );
+    });
+
+    it('com analytics:read, as ferramentas veem a loja', async () => {
+      permissoes.possui.mockResolvedValue(true);
+      ferramentasGestao.montar.mockReturnValue({ gestaoAgenda: jest.fn() });
+
+      await useCase.execute([{ role: 'user', content: 'o que mais vendeu?' }], undefined, {
+        userId: 'user-1',
+        nomeFallback: 'ana@atjewel.com',
+        role: 'ADMIN',
+      });
+
+      expect(ferramentasGestao.montar).toHaveBeenCalledWith(
+        expect.objectContaining({ verLoja: true }),
+      );
     });
 
     it('o grafico CONTINUA ligado no painel — a diferenca que deve existir', async () => {
