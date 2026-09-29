@@ -102,3 +102,60 @@ describe('a validação da leitura', () => {
     if (r.ok) expect(r.leitura.resumo.length).toBe(500);
   });
 });
+
+/**
+ * A ORIGEM — ANA-02, 29/09/2026.
+ *
+ * ==========================================================================
+ * O CAMPO EXTRA NAO PODE DERRUBAR O ESSENCIAL.
+ *
+ * Os outros campos recusam a leitura inteira quando vem errados, porque sem
+ * eles ela nao serve. A origem e diferente: perder uma conversa porque o
+ * modelo escreveu "tiktok" seria trocar o essencial pelo acessorio.
+ *
+ * E `null` e uma resposta legitima, nao uma falha. O primeiro lead lido em
+ * 29/09 nasceu como `whatsapp` porque ninguem perguntava — a pessoa tinha
+ * dito "vi um anel de voces no instagram" na primeira linha.
+ * ==========================================================================
+ */
+describe('a origem do lead', () => {
+  const com = (origem: unknown) =>
+    validar(JSON.stringify({
+      sobre_joias: true,
+      resultado: 'EM_ANDAMENTO',
+      resumo: 'Perguntou por um anel.',
+      origem,
+    }));
+
+  it.each(['instagram', 'site', 'indicacao', 'loja_fisica', 'outro', 'whatsapp'])(
+    '`%s` é aceita',
+    (origem) => {
+      const r = com(origem);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.leitura.origem).toBe(origem);
+    },
+  );
+
+  it.each([
+    ['inventada', 'tiktok'],
+    ['maiúscula', 'INSTAGRAM'],
+    ['número', 7],
+    ['objeto', { rede: 'instagram' }],
+    ['ausente', undefined],
+    ['nula', null],
+  ])('origem %s vira null e a leitura PASSA', (_rotulo, origem) => {
+    const r = com(origem);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.leitura.origem).toBeNull();
+  });
+
+  /* Sem origem dita, o lead nasce pelo canal por onde entrou — que e verdade,
+   * e nao um chute. Quem le o relatorio precisa poder confiar no campo. */
+  it('a leitura sem origem não fica com campo preenchido por engano', () => {
+    const r = validar(JSON.stringify({
+      sobre_joias: true, resultado: 'VENDA', resumo: 'Fechou.',
+    }));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.leitura.origem).toBeNull();
+  });
+});

@@ -6,7 +6,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import type { EstadoConversaAgente } from '../../../../../clientes/domain/entities/enums';
+import type { EstadoLead } from '../../../../domain/entities/estado-lead';
 import { encryptedTransformer } from '../../../../../../shared/database/transformers/encrypted-column.transformer';
 import type {
   OcasiaoLead,
@@ -83,15 +83,15 @@ export class LeadOrmEntity {
   @Column({
     type: 'enum',
     enum: [
-      'TRIAGE_IN_PROGRESS',
-      'READY_FOR_ROUTING',
-      'WAITING_OWNER_APPROVAL',
-      'IN_HUMAN_SERVICE',
-      'NEEDS_HUMAN',
+      'NOVO',
+      'EM_ATENDIMENTO',
+      'GANHO',
+      'PERDIDO',
+      'PARADO',
     ],
-    default: 'TRIAGE_IN_PROGRESS',
+    default: 'NOVO',
   })
-  estado: EstadoConversaAgente;
+  estado: EstadoLead;
 
   @Column({ name: 'estado_atualizado_em', type: 'timestamptz' })
   estadoAtualizadoEm: Date;

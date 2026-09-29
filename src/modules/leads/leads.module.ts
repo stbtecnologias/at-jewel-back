@@ -13,6 +13,7 @@ import { LEAD_REPOSITORY } from './domain/ports/injection-tokens';
 import { LeadOrmEntity } from './infrastructure/database/typeorm/entities/lead.orm-entity';
 import { LeadRepository } from './infrastructure/database/typeorm/repositories/lead.repository';
 import { LeadsController } from './infrastructure/http/controllers/leads.controller';
+import { LeadsParadosScheduler } from './infrastructure/schedule/leads-parados.scheduler';
 
 /**
  * Leads: a triagem da Anastasia antes de existir cadastro.
@@ -37,6 +38,7 @@ import { LeadsController } from './infrastructure/http/controllers/leads.control
   controllers: [LeadsController],
   providers: [
     RegistrarLeadUseCase,
+    LeadsParadosScheduler,
     AvisarGestaoDeLeadUseCase,
     EncaminharPelaCarteiraUseCase,
     AtualizarStatusLeadUseCase,
