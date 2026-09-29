@@ -491,4 +491,46 @@ describe('FerramentasGestaoService', () => {
       expect(r.linhas[0]).toBe('Bia — há 2 dias');
     });
   });
+  /**
+   * O NOME AUSENTE — 29/09/2026.
+   *
+   * ==========================================================================
+   * `required` NO SCHEMA E UM PEDIDO, E NAO UMA GARANTIA.
+   *
+   * Em 29/09 o Lucas perguntou "quantos clientes tivemos em agosto?" — pergunta
+   * sobre a LOJA — e o modelo chamou a ferramenta da VENDEDORA sem nome. O
+   * resolvedor estourou no `normalize` de `undefined`, o `catch` de cima virou
+   * "Nao consegui consultar isso agora", e a resposta nao ajudou ninguem.
+   *
+   * SEIS ferramentas tinham o mesmo buraco. Estes testes guardam as seis.
+   * ==========================================================================
+   */
+  describe('as ferramentas que exigem vendedora, chamadas SEM nome', () => {
+    const semNome = [undefined, null, '', '   '];
+
+    it.each(semNome)('gestaoVendas com nome %p não estoura', async (nome) => {
+      const r = await servico.montar().gestaoVendas({ vendedora: nome as never });
+      expect(r.status).toBe('NAO_ENCONTRADA');
+    });
+
+    it.each(semNome)('gestaoMetas com nome %p não estoura', async (nome) => {
+      const r = await servico.montar().gestaoMetas({ vendedora: nome as never });
+      expect(r.status).toBe('NAO_ENCONTRADA');
+    });
+
+    /* NAO_ENCONTRADA com lista VAZIA faz o modelo perguntar de qual vendedora
+     * se trata — ou perceber que a pergunta era da loja e trocar de ferramenta.
+     * Sugerir nomes aqui seria pior: ele escolheria um. */
+    it('não sugere nenhum nome quando não houve nome', async () => {
+      const r = await servico.montar().gestaoVendas({ vendedora: undefined as never });
+
+      expect(r.nomes).toEqual([]);
+      expect(resolverVendedora.execute).not.toHaveBeenCalled();
+    });
+
+    it('com nome de verdade, continua resolvendo normalmente', async () => {
+      await servico.montar().gestaoVendas({ vendedora: 'Marina' });
+      expect(resolverVendedora.execute).toHaveBeenCalledWith('Marina');
+    });
+  });
 });

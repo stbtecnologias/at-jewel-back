@@ -1500,6 +1500,25 @@ export class FerramentasGestaoService {
       codigoErp: string | null,
     ) => Promise<string[]>,
   ): Promise<GestaoLeituraResultado> {
+    // ======================================================================
+    // NOME AUSENTE NAO PODE VIRAR EXCECAO — 29/09/2026.
+    //
+    // O `vendedora` e `required` no schema, mas isso e um PEDIDO ao modelo e
+    // nao uma garantia. Em 29/09 o Lucas perguntou "quantos clientes tivemos
+    // em agosto?" — pergunta sobre a LOJA — e o modelo chamou a ferramenta da
+    // VENDEDORA sem nome. O `resolverVendedora` estourou no `normalize` de
+    // `undefined`, o `catch` de cima virou "Nao consegui consultar isso
+    // agora", e a resposta nao ajudou ninguem: nem quem perguntou, nem quem
+    // fosse investigar depois.
+    //
+    // `NAO_ENCONTRADA` com lista vazia faz o modelo perguntar de qual
+    // vendedora se trata — ou perceber que a pergunta era da loja e escolher
+    // outra ferramenta. Qualquer um dos dois e melhor que um erro.
+    // ======================================================================
+    if (typeof nome !== 'string' || nome.trim() === '') {
+      return { status: 'NAO_ENCONTRADA', linhas: [], nomes: [] };
+    }
+
     const r = await this.resolverVendedora.execute(nome);
     if (r.status === 'AMBIGUA')
       return { status: 'AMBIGUA', linhas: [], nomes: r.nomes };
