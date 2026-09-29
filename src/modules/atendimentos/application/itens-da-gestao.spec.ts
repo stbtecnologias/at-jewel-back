@@ -79,6 +79,8 @@ describe('itens_mais_vendidos e o escopo de quem pergunta', () => {
         respondeMaisRapido: [], fechaMaisRapido: [], maisInterage: [],
         maisConverte: [], maisLeads: [], semAmostra: [],
       }) } as never,
+      // Análise de tom (ANA-15, 29/09) — dublada.
+      { execute: jest.fn().mockResolvedValue({ status: 'SEM_CONVERSA' }) } as never,
       listarProdutos as never,
       { execute: jest.fn() } as never,
       { vendas: jest.fn(), metas: jest.fn() } as never,
@@ -206,6 +208,8 @@ describe('consultar_produtos da gestao e a quantidade', () => {
         respondeMaisRapido: [], fechaMaisRapido: [], maisInterage: [],
         maisConverte: [], maisLeads: [], semAmostra: [],
       }) } as never,
+      // Análise de tom (ANA-15, 29/09) — dublada.
+      { execute: jest.fn().mockResolvedValue({ status: 'SEM_CONVERSA' }) } as never,
       { itens: jest.fn() } as never,
       listarProdutos as never,
       { execute: jest.fn() } as never,
@@ -346,6 +350,8 @@ describe('o recorte de equipe nas ferramentas de gestao', () => {
         respondeMaisRapido: [], fechaMaisRapido: [], maisInterage: [],
         maisConverte: [], maisLeads: [], semAmostra: [],
       }) } as never,
+      // Análise de tom (ANA-15, 29/09) — dublada.
+      { execute: jest.fn().mockResolvedValue({ status: 'SEM_CONVERSA' }) } as never,
       { execute: jest.fn().mockResolvedValue([]) } as never,
       { execute: jest.fn().mockResolvedValue([]) } as never,
       desempenho as never,
@@ -515,6 +521,8 @@ describe('o periodo livre nas ferramentas de venda', () => {
         respondeMaisRapido: [], fechaMaisRapido: [], maisInterage: [],
         maisConverte: [], maisLeads: [], semAmostra: [],
       }) } as never,
+      // Análise de tom (ANA-15, 29/09) — dublada.
+      { execute: jest.fn().mockResolvedValue({ status: 'SEM_CONVERSA' }) } as never,
       { execute: jest.fn().mockResolvedValue([]) } as never,
       { execute: jest.fn().mockResolvedValue([]) } as never,
       { vendas: jest.fn(), metas: jest.fn() } as never,
@@ -649,6 +657,8 @@ describe('o ranking por tipo de peça', () => {
         respondeMaisRapido: [], fechaMaisRapido: [], maisInterage: [],
         maisConverte: [], maisLeads: [], semAmostra: [],
       }) } as never,
+      // Análise de tom (ANA-15, 29/09) — dublada.
+      { execute: jest.fn().mockResolvedValue({ status: 'SEM_CONVERSA' }) } as never,
       listarProdutos as never,
       { execute: jest.fn() } as never,
       { vendas: jest.fn(), metas: jest.fn() } as never,

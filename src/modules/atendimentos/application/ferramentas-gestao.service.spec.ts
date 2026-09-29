@@ -81,6 +81,8 @@ describe('FerramentasGestaoService', () => {
         respondeMaisRapido: [], fechaMaisRapido: [], maisInterage: [],
         maisConverte: [], maisLeads: [], semAmostra: [],
       }) } as never,
+      // Análise de tom (ANA-15, 29/09) — dublada.
+      { execute: jest.fn().mockResolvedValue({ status: 'SEM_CONVERSA' }) } as never,
       // A consulta de catalogo da GESTAO, com quantidade — dublada.
       { execute: jest.fn().mockResolvedValue([]) } as never,
       agenda as never,

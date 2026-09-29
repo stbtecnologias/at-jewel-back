@@ -14,6 +14,7 @@ import type {
   GestaoFunilHandler,
   GestaoMetricasHandler,
   GestaoRankingsHandler,
+  GestaoTomHandler,
   GestaoPanoramaLeadsHandler,
   GestaoPorFamiliaHandler,
   GestaoLeituraResultado,
@@ -68,6 +69,7 @@ import {
   RankingsDeAtendimentoUseCase,
   type PostoDeRanking,
 } from './use-cases/rankings-de-atendimento.use-case';
+import { AnalisarTomUseCase } from '../../atendimento/application/analisar-tom.use-case';
 
 const MAXIMO_CLIENTES_HOMONIMOS = 5;
 /** Feedbacks por resposta. Acima disso a mensagem deixa de ser lida. */
@@ -164,6 +166,7 @@ export interface FerramentasGestao {
   gestaoPanoramaLeads: GestaoPanoramaLeadsHandler;
   gestaoMetricas: GestaoMetricasHandler;
   gestaoRankings: GestaoRankingsHandler;
+  gestaoTom: GestaoTomHandler;
   gestaoPorFamilia: GestaoPorFamiliaHandler;
   /**
    * NAO E UM HANDLER — e um aviso que viaja junto para o cliente do LLM.
@@ -267,6 +270,7 @@ export class FerramentasGestaoService {
     private readonly consultarVendas: ConsultarVendasUseCase,
     private readonly metricas: MetricasDeAtendimentoUseCase,
     private readonly rankings: RankingsDeAtendimentoUseCase,
+    private readonly tom: AnalisarTomUseCase,
     private readonly listarProdutos: ListarProdutosUseCase,
     private readonly agenda: ConsultarAgendaVendedoraUseCase,
     private readonly desempenho: ConsultarDesempenhoVendedoraUseCase,
@@ -1026,6 +1030,43 @@ export class FerramentasGestaoService {
 
         return { status: 'OK' as const, de: janela.de, ate: janela.ate, linhas };
       },
+
+      /**
+       * A ANÁLISE DE TOM — ANA-15, 29/09/2026.
+       *
+       * ====================================================================
+       * CADA RECUSA DIZ O MOTIVO, E ISSO NÃO É POLIDEZ.
+       *
+       * "Não encontrei" cobre quatro situações com consertos diferentes: a
+       * vendedora não existe, o celular dela não está conectado, a cliente
+       * não está cadastrada, ou não há conversa entre as duas. Quem pergunta
+       * age diferente em cada uma — e com uma única frase genérica conclui,
+       * quase sempre, que não houve atendimento.
+       * ====================================================================
+       */
+      gestaoTom: async ({ vendedora, cliente }) =>
+        this.comVendedora(equipe, vendedora, async (id) => {
+          const r = await this.tom.execute(id, cliente);
+
+          switch (r.status) {
+            case 'OK':
+              return r.linhas;
+            case 'VENDEDORA_SEM_CELULAR':
+              return [
+                'O número dela não está conectado, então não dá para ler a conversa. ' +
+                  'Diga isso — não conclua que não houve atendimento.',
+              ];
+            case 'CLIENTE_NAO_ENCONTRADO':
+              return [`Não achei nenhuma cliente com esse nome (${cliente}).`];
+            case 'SEM_CONVERSA':
+              return [
+                'Não há conversa entre as duas no celular dela. Pode ser que ' +
+                  'nunca tenha havido, ou que seja antiga demais e já tenha saído do aparelho.',
+              ];
+            default:
+              return ['Não consegui ler a conversa agora. Vale tentar de novo.'];
+          }
+        }),
 
       gestaoPanoramaLeads: async ({ vendedora }) => {
         if (vendedora && vendedora.trim()) {

@@ -774,6 +774,28 @@ const GESTAO_RANKINGS_TOOL: Anthropic.Tool = {
   },
 };
 
+/**
+ * A ANALISE DE TOM — ANA-15, 29/09/2026.
+ *
+ * A DESCRICAO AVISA DO LIMITE PORQUE ELE E INVISIVEL. A ferramenta le do
+ * celular da vendedora na hora, e conversa antiga sai do aparelho: "esta
+ * semana" responde, "marco" nao. Sem esse aviso o modelo trataria um
+ * "nao encontrei" como "nao houve conversa".
+ */
+const GESTAO_TOM_TOOL: Anthropic.Tool = {
+  name: 'tom_da_conversa',
+  description:
+    'Como foi o TOM de uma vendedora com uma cliente especifica: atenciosa, seca, apressada, se respondeu o que perguntaram. Use para "como a Marina falou com a dona Cida", "o atendimento dela foi bom", "ela tratou bem essa cliente". EXIGE as duas: o nome da vendedora E o nome da cliente — sem a cliente nao da para responder, e voce deve PERGUNTAR qual em vez de escolher uma. Le a conversa no celular da vendedora NA HORA: so funciona se o numero dela estiver conectado, e so alcanca conversa recente, porque mensagem antiga sai do aparelho e nao fica guardada aqui. Quando a resposta disser isso, repasse — nao conclua que nao houve atendimento. NAO serve para comparar vendedoras nem para ranquear: para isso use rankings_de_atendimento.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      vendedora: { type: 'string', description: 'Nome da vendedora, como falado.' },
+      cliente: { type: 'string', description: 'Nome da cliente, como falado.' },
+    },
+    required: ['vendedora', 'cliente'],
+  },
+};
+
 const GESTAO_FUNIL_TOOL: Anthropic.Tool = {
   name: 'funil_de_atendimentos',
   description:
@@ -1019,6 +1041,7 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoPanoramaLeads) tools.push(GESTAO_PANORAMA_LEADS_TOOL);
     if (params.gestaoMetricas) tools.push(GESTAO_METRICAS_TOOL);
     if (params.gestaoRankings) tools.push(GESTAO_RANKINGS_TOOL);
+    if (params.gestaoTom) tools.push(GESTAO_TOM_TOOL);
     if (params.gestaoDiaDaVendedora)
       tools.push(GESTAO_DIA_DA_VENDEDORA_TOOL);
     if (params.registrarRelato) tools.push(RELATO_TOOL);

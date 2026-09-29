@@ -651,6 +651,19 @@ export type GestaoRankingsHandler = (input: {
   periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
 }) => Promise<GestaoLeituraResultado>;
 
+/**
+ * A ANALISE DE TOM — ANA-15, 29/09/2026.
+ *
+ * As DUAS entradas sao obrigatorias, e isso e desenho: "como a Cida tem
+ * tratado os clientes" nao e respondivel sem arbitrar de quais conversas, e
+ * arbitrar aqui produziria um veredito sobre a pessoa a partir de uma amostra
+ * que ninguem escolheu.
+ */
+export type GestaoTomHandler = (input: {
+  vendedora: string;
+  cliente: string;
+}) => Promise<GestaoLeituraResultado>;
+
 export type GestaoFunilHandler = (input: {
   /** Nome (ou parte). Ausente = a loja inteira. */
   vendedora?: string;
@@ -744,6 +757,7 @@ export interface ChatParams {
   gestaoPanoramaLeads?: GestaoPanoramaLeadsHandler;
   gestaoMetricas?: GestaoMetricasHandler;
   gestaoRankings?: GestaoRankingsHandler;
+  gestaoTom?: GestaoTomHandler;
   /**
    * Habilita `gerar_grafico`. Default true, que preserva o painel.
    *
