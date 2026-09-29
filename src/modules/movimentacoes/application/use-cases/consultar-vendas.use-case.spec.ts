@@ -27,6 +27,9 @@ describe('ConsultarVendasUseCase', () => {
     ticketMedio: 0,
     devolucoes: 0,
     valorDevolvido: 0,
+    // Clientes DISTINTOS (29/09/2026): "quantos clientes tive" e "quantas
+    // vendas fiz" sao perguntas diferentes, e ate hoje so havia a segunda.
+    clientes: 0,
   };
 
   let janelas: JanelaDeVendas[];

@@ -15,6 +15,7 @@ import type {
   GestaoMetricasHandler,
   GestaoRankingsHandler,
   GestaoCompararAnosHandler,
+  GestaoCompararAnteriorHandler,
   GestaoTomHandler,
   GestaoPanoramaLeadsHandler,
   GestaoPorFamiliaHandler,
@@ -75,6 +76,10 @@ import {
   CompararAnosUseCase,
   variacao,
 } from '../../movimentacoes/application/use-cases/comparar-anos.use-case';
+import {
+  CompararPeriodoAnteriorUseCase,
+  variacaoEntre,
+} from '../../movimentacoes/application/use-cases/comparar-periodo-anterior.use-case';
 import { ConexoesService } from '../../atendimento/application/conexoes.service';
 import { WahaAdminClient } from '../../atendimento/infrastructure/whatsapp/waha-admin.client';
 
@@ -175,6 +180,7 @@ export interface FerramentasGestao {
   gestaoRankings: GestaoRankingsHandler;
   gestaoTom: GestaoTomHandler;
   gestaoCompararAnos: GestaoCompararAnosHandler;
+  gestaoCompararAnterior: GestaoCompararAnteriorHandler;
   gestaoPorFamilia: GestaoPorFamiliaHandler;
   /**
    * NAO E UM HANDLER — e um aviso que viaja junto para o cliente do LLM.
@@ -280,6 +286,7 @@ export class FerramentasGestaoService {
     private readonly rankings: RankingsDeAtendimentoUseCase,
     private readonly tom: AnalisarTomUseCase,
     private readonly compararAnos: CompararAnosUseCase,
+    private readonly compararAnterior: CompararPeriodoAnteriorUseCase,
     private readonly conexoes: ConexoesService,
     private readonly waha: WahaAdminClient,
     private readonly listarProdutos: ListarProdutosUseCase,
@@ -1241,6 +1248,75 @@ export class FerramentasGestaoService {
         });
       },
 
+      /**
+       * ESTE PERIODO CONTRA O ANTERIOR — 29/09/2026, pedido do Lucas.
+       *
+       * ====================================================================
+       * CLIENTES E VENDAS SAO NUMEROS DIFERENTES, E OS DOIS VAO NA RESPOSTA.
+       *
+       * A mesma cliente comprando tres vezes conta 1 cliente e 3 vendas. Ate
+       * hoje so existia o segundo numero, e a Anastasia respondia "nao tenho
+       * como contar quantos clientes diferentes compraram" — ela tinha, e
+       * ninguem perguntava ao banco.
+       *
+       * Conferido em 29/09: 21 clientes em 22 vendas neste mes.
+       * ====================================================================
+       */
+      gestaoCompararAnterior: async ({ periodo, de, ate, vendedora }) => {
+        const recorte = datasDeRecorte(de, ate);
+
+        const responder = async (vendedoraId: string | null) => {
+          const c = recorte
+            ? await this.compararAnterior.porDatas(recorte.de, recorte.ate, vendedoraId)
+            : await this.compararAnterior.porRecorte(periodo ?? 'MES', vendedoraId);
+
+          const linhas: string[] = [
+            `${cap(c.rotulo)}: ${c.atual.clientes} cliente(s), ${c.atual.vendas} ` +
+              `venda(s), ${moeda(c.atual.receita)} — ticket ${moeda(c.atual.ticketMedio)}`,
+            `Período anterior: ${c.anterior.clientes} cliente(s), ${c.anterior.vendas} ` +
+              `venda(s), ${moeda(c.anterior.receita)} — ticket ${moeda(c.anterior.ticketMedio)}`,
+          ];
+
+          const variacoes = [
+            ['clientes', variacaoEntre(c.atual.clientes, c.anterior.clientes)],
+            ['vendas', variacaoEntre(c.atual.vendas, c.anterior.vendas)],
+            ['receita', variacaoEntre(c.atual.receita, c.anterior.receita)],
+          ] as const;
+
+          const ditas = variacoes
+            .filter(([, v]) => v !== null)
+            .map(([nome, v]) => `${(v as number) > 0 ? '+' : ''}${v}% em ${nome}`);
+
+          linhas.push(
+            ditas.length > 0
+              ? ditas.join(' · ')
+              : 'Não houve venda no período anterior, então não dá para calcular variação.',
+          );
+
+          // ================================================================
+          // O FECHADO VAI JUNTO QUANDO HOUVE CORTE.
+          //
+          // Comparar mes parcial com mes inteiro faria o atual parecer pior
+          // SEMPRE — no dia 2, 93% de queda aparente. Mas "o mes passado
+          // inteiro deu quanto?" e a pergunta seguinte, e sem ela a
+          // comparacao justa parece esconder o numero que a gestao conhece.
+          // ================================================================
+          if (c.anteriorFechado) {
+            linhas.push(
+              `Para referência, o período anterior FECHADO: ` +
+                `${c.anteriorFechado.clientes} cliente(s), ${moeda(c.anteriorFechado.receita)}. ` +
+                `A comparação acima corta os dois no mesmo ponto.`,
+            );
+          }
+
+          return linhas;
+        };
+
+        return vendedora && vendedora.trim()
+          ? this.comVendedora(equipe, vendedora, responder)
+          : { status: 'OK' as const, linhas: await responder(null) };
+      },
+
       gestaoPanoramaLeads: async ({ vendedora }) => {
         if (vendedora && vendedora.trim()) {
           return this.comVendedora(equipe, vendedora, async (_id, codigoErp) => {
@@ -1563,6 +1639,11 @@ function janelaDoPeriodo(
       break;
   }
   return { de, ate: agora };
+}
+
+/** Primeira maiúscula — os rótulos vêm em minúscula para caber no meio da frase. */
+function cap(t: string): string {
+  return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
 export function moeda(v: number): string {

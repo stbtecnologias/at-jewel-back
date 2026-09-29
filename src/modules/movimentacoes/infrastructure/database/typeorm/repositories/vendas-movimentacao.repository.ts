@@ -50,6 +50,7 @@ export class VendasMovimentacaoRepository
         valor_vendas: string;
         devolucoes: string;
         valor_devolvido: string;
+        clientes: string;
       }[]
     >(
       `
@@ -57,7 +58,10 @@ export class VendasMovimentacaoRepository
         count(*) FILTER (WHERE m.saida)                       AS quantidade,
         COALESCE(sum(m.valor) FILTER (WHERE m.saida), 0)      AS valor_vendas,
         count(*) FILTER (WHERE m.entrada)                     AS devolucoes,
-        COALESCE(sum(m.valor) FILTER (WHERE m.entrada), 0)    AS valor_devolvido
+        COALESCE(sum(m.valor) FILTER (WHERE m.entrada), 0)    AS valor_devolvido,
+        -- CLIENTES DISTINTOS, na mesma varredura: quem comprou tres vezes
+        -- conta 1 aqui e 3 na quantidade, e as duas perguntas existem.
+        count(DISTINCT m.cliente_id) FILTER (WHERE m.saida)   AS clientes
         FROM movimentacoes m
        WHERE m.ativo
          AND m.data_movimentacao >= $1
@@ -80,6 +84,7 @@ export class VendasMovimentacaoRepository
       ticketMedio: quantidade > 0 ? receita / quantidade : 0,
       devolucoes: Number(linha?.devolucoes ?? 0),
       valorDevolvido,
+      clientes: Number(linha?.clientes ?? 0),
     };
   }
 

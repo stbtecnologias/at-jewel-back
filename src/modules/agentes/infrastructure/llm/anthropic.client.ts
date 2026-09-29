@@ -826,6 +826,35 @@ const GESTAO_COMPARAR_ANOS_TOOL: Anthropic.Tool = {
   },
 };
 
+/**
+ * COMPARAR COM O PERIODO ANTERIOR — 29/09/2026.
+ *
+ * A DESCRICAO PRECISA SEPARAR ESTA DE `comparar_com_outros_anos`, porque as
+ * duas respondem "comparado com o que?" e a escolha errada devolve um numero
+ * plausivel para outra pergunta.
+ */
+const GESTAO_COMPARAR_ANTERIOR_TOOL: Anthropic.Tool = {
+  name: 'comparar_com_periodo_anterior',
+  description:
+    'Compara o periodo ATUAL com o IMEDIATAMENTE ANTERIOR: esta semana contra a semana passada, este mes contra o mes passado, este ano contra o ano passado. Traz CLIENTES DISTINTOS, numero de vendas, receita e ticket dos dois lados. Use para "quantos clientes tive essa semana e em relacao a semana passada", "esse mes foi melhor que o passado", "estamos crescendo". NAO confunda com comparar_com_outros_anos, que compara o MESMO mes em ANOS diferentes (setembro/2026 contra setembro/2025) — aqui e sempre contra o periodo logo antes. CLIENTES e VENDAS sao numeros diferentes: a mesma cliente comprando tres vezes conta 1 cliente e 3 vendas; repasse o que perguntaram. Quando o periodo atual ainda esta correndo (mes ou ano), o anterior vem CORTADO NO MESMO PONTO e o total fechado dele vem junto: diga os dois, porque comparar periodo parcial com periodo inteiro faz o atual parecer pior sempre.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      periodo: {
+        type: 'string',
+        enum: ['SEMANA', 'MES', 'ANO'],
+        description:
+          'SEMANA sao sete dias contando hoje (os dois lados cheios, sem corte). MES e ANO sao do calendario, e o atual esta correndo.',
+      },
+      ...DATAS_LIVRES,
+      vendedora: {
+        type: 'string',
+        description: 'Nome da vendedora. OMITA para a loja inteira.',
+      },
+    },
+  },
+};
+
 const GESTAO_FUNIL_TOOL: Anthropic.Tool = {
   name: 'funil_de_atendimentos',
   description:
@@ -1073,6 +1102,7 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoRankings) tools.push(GESTAO_RANKINGS_TOOL);
     if (params.gestaoTom) tools.push(GESTAO_TOM_TOOL);
     if (params.gestaoCompararAnos) tools.push(GESTAO_COMPARAR_ANOS_TOOL);
+    if (params.gestaoCompararAnterior) tools.push(GESTAO_COMPARAR_ANTERIOR_TOOL);
     if (params.gestaoDiaDaVendedora)
       tools.push(GESTAO_DIA_DA_VENDEDORA_TOOL);
     if (params.registrarRelato) tools.push(RELATO_TOOL);

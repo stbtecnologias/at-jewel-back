@@ -26,6 +26,7 @@ import { MovimentacaoOrmEntity } from './infrastructure/database/typeorm/entitie
 import { MovimentacaoRepository } from './infrastructure/database/typeorm/repositories/movimentacao.repository';
 import { MovimentacoesController } from './infrastructure/http/controllers/movimentacoes.controller';
 import { CompararAnosUseCase } from './application/use-cases/comparar-anos.use-case';
+import { CompararPeriodoAnteriorUseCase } from './application/use-cases/comparar-periodo-anterior.use-case';
 
 /**
  * SETE modulos importados, e cada um por um motivo so: o `id_erp` de um
@@ -66,6 +67,7 @@ import { CompararAnosUseCase } from './application/use-cases/comparar-anos.use-c
     ResolverReferenciasErpService,
     ConsultarVendasUseCase,
     CompararAnosUseCase,
+    CompararPeriodoAnteriorUseCase,
     {
       provide: VENDAS_MOVIMENTACAO_REPOSITORY,
       useClass: VendasMovimentacaoRepository,
@@ -79,6 +81,11 @@ import { CompararAnosUseCase } from './application/use-cases/comparar-anos.use-c
   ],
   // A VENDA LIDA DA MOVIMENTACAO — 25/09/2026. Quem consulta venda passa a
   // vir aqui, e nao a tabela `vendas`. Ver a porta para a decisao.
-  exports: [MOVIMENTACAO_REPOSITORY, ConsultarVendasUseCase, CompararAnosUseCase],
+  exports: [
+    MOVIMENTACAO_REPOSITORY,
+    ConsultarVendasUseCase,
+    CompararAnosUseCase,
+    CompararPeriodoAnteriorUseCase,
+  ],
 })
 export class MovimentacoesModule {}

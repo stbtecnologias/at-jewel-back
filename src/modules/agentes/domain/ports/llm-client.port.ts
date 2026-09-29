@@ -681,6 +681,21 @@ export type GestaoCompararAnosHandler = (input: {
   vendedora?: string;
 }) => Promise<GestaoLeituraResultado>;
 
+/**
+ * ESTE PERIODO CONTRA O ANTERIOR — 29/09/2026.
+ *
+ * NAO CONFUNDIR com `GestaoCompararAnosHandler`, que compara o MESMO recorte
+ * em anos diferentes. Aqui e "esta semana contra a semana passada". As duas
+ * perguntas se parecem e sao diferentes; a descricao de cada ferramenta e o
+ * que impede o modelo de trocar uma pela outra.
+ */
+export type GestaoCompararAnteriorHandler = (input: {
+  periodo?: 'SEMANA' | 'MES' | 'ANO';
+  de?: string;
+  ate?: string;
+  vendedora?: string;
+}) => Promise<GestaoLeituraResultado>;
+
 export type GestaoFunilHandler = (input: {
   /** Nome (ou parte). Ausente = a loja inteira. */
   vendedora?: string;
@@ -776,6 +791,7 @@ export interface ChatParams {
   gestaoRankings?: GestaoRankingsHandler;
   gestaoTom?: GestaoTomHandler;
   gestaoCompararAnos?: GestaoCompararAnosHandler;
+  gestaoCompararAnterior?: GestaoCompararAnteriorHandler;
   /**
    * Habilita `gerar_grafico`. Default true, que preserva o painel.
    *

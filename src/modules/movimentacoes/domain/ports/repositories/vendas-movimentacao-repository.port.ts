@@ -41,6 +41,22 @@ export interface ResumoDeVendas {
   ticketMedio: number;
   devolucoes: number;
   valorDevolvido: number;
+  /**
+   * CLIENTES DISTINTOS que compraram — 29/09/2026.
+   *
+   * ========================================================================
+   * "QUANTOS CLIENTES TIVE" E "QUANTAS VENDAS FIZ" SAO PERGUNTAS DIFERENTES.
+   *
+   * A mesma cliente comprando tres vezes vale 3 em `quantidade` e 1 aqui. Ate
+   * hoje so existia o primeiro numero, e a Anastasia respondia "essa consulta
+   * e de vendas, nao de clientes distintos — nao tenho como contar quantos
+   * clientes diferentes compraram". Ela tinha como: ninguem perguntou ao
+   * banco.
+   *
+   * Conferido em 29/09: nos ultimos sete dias, 12 clientes em 13 vendas.
+   * ========================================================================
+   */
+  clientes: number;
 }
 
 export interface VendedoraNoRanking {
