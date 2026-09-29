@@ -16,6 +16,7 @@ describe('FerramentasGestaoService', () => {
   let agendarGestao: { execute: jest.Mock };
   let auditoria: { listar: jest.Mock; detalhe: jest.Mock };
   let linha: { doDia: jest.Mock };
+  let waha: { listarSessoes: jest.Mock };
   let vendedoras: {
     listar: jest.Mock;
     buscarPorCodigoErp: jest.Mock;
@@ -53,6 +54,7 @@ describe('FerramentasGestaoService', () => {
       detalhe: jest.fn(),
     };
     linha = { doDia: jest.fn().mockResolvedValue([]) };
+    waha = { listarSessoes: jest.fn().mockResolvedValue([]) };
     vendedoras = {
       listar: jest.fn().mockResolvedValue([]),
       buscarPorCodigoErp: jest.fn().mockResolvedValue(null),
@@ -86,6 +88,11 @@ describe('FerramentasGestaoService', () => {
       // Comparação ano a ano (29/09) — dublada.
       { porMes: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }),
         porPeriodo: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }) } as never,
+      // ConexoesService e WahaAdminClient (29/09) — dublados. O `catch`
+      // do handler faz a lista sair mesmo sem WAHA, e e isso que o
+      // `mockRejectedValue` exercita nos testes que nao ligam para conexao.
+      { vendedoraDaSessao: (s: string) => s.replace(/^vend-/, "") } as never,
+      waha as never,
       // A consulta de catalogo da GESTAO, com quantidade — dublada.
       { execute: jest.fn().mockResolvedValue([]) } as never,
       agenda as never,
@@ -339,11 +346,65 @@ describe('FerramentasGestaoService', () => {
 
       const r = await servico.montar().gestaoVendedoras();
 
-      expect(r.linhas).toEqual([
-        'Marina',
-        'Beatriz — de férias',
-        'Camila — ocupada',
+      // A PRIMEIRA LINHA E O RESUMO (29/09/2026): "quantas ativas, quantas
+      // com o celular conectado". Ela veio na frente porque e ela que
+      // responde a pergunta; os nomes sao o detalhe de quem quiser conferir.
+      expect(r.linhas[0]).toContain('3 ativa(s) no cadastro');
+      expect(r.linhas.slice(1)).toEqual([
+        'Marina — celular NÃO conectado',
+        'Beatriz — de férias — celular NÃO conectado',
+        'Camila — ocupada — celular NÃO conectado',
       ]);
+    });
+
+    /*
+     * O CELULAR CONECTADO E O QUE SEPARA "CADASTRADA" DE "ACOMPANHADA".
+     *
+     * Em 29/09/2026 havia UMA conexao de vendedora em toda a operacao. Sem
+     * esta informacao, quem le a lista conclui que o sistema acompanha seis
+     * pessoas quando acompanha uma — e toda metrica de atendimento parece
+     * quebrada em vez de vazia.
+     */
+    it('diz quem está com o celular conectado', async () => {
+      vendedoras.listar.mockResolvedValue([
+        { ...VD('Marina', 'DISPONIVEL'), id: 'vd-1' },
+        { ...VD('Camila', 'DISPONIVEL'), id: 'vd-2' },
+      ]);
+      waha.listarSessoes.mockResolvedValue([
+        { nome: 'vend-vd-1', status: 'WORKING' },
+        { nome: 'vend-vd-2', status: 'FAILED' },
+      ]);
+
+      const r = await servico.montar().gestaoVendedoras();
+
+      expect(r.linhas[0]).toContain('2 ativa(s) no cadastro, 1 com o celular conectado');
+      expect(r.linhas[1]).toContain('Marina — celular conectado');
+      expect(r.linhas[2]).toContain('Camila — celular NÃO conectado');
+    });
+
+    /* NENHUMA conectada e uma resposta diferente de "1 de 6": e o estado em
+     * que o sistema nao ve conversa nenhuma, e quem pergunta precisa saber. */
+    it('nenhuma conectada diz que o sistema não acompanha as conversas', async () => {
+      vendedoras.listar.mockResolvedValue([{ ...VD('Marina', 'DISPONIVEL'), id: 'vd-1' }]);
+      waha.listarSessoes.mockResolvedValue([]);
+
+      const r = await servico.montar().gestaoVendedoras();
+
+      expect(r.linhas[0]).toContain('NENHUMA com o celular conectado');
+      expect(r.linhas[0]).toContain('não acompanha as conversas');
+    });
+
+    /* WAHA fora do ar NAO pode custar a lista: perder os nomes por causa do
+     * status seria trocar o principal pelo acessorio. */
+    it('WAHA fora do ar ainda devolve os nomes', async () => {
+      vendedoras.listar.mockResolvedValue([VD('Marina', 'DISPONIVEL')]);
+      waha.listarSessoes.mockRejectedValue(new Error('conexão recusada'));
+
+      const r = await servico.montar().gestaoVendedoras();
+
+      expect(r.linhas[0]).toContain('Não consegui verificar');
+      expect(r.linhas[1]).toBe('Marina');
+      expect(r.linhas[1]).not.toContain('conectado');
     });
 
     it('a especialidade entra: é o que ajuda a escolher', async () => {
@@ -353,7 +414,7 @@ describe('FerramentasGestaoService', () => {
 
       const r = await servico.montar().gestaoVendedoras();
 
-      expect(r.linhas[0]).toBe('Marina — noivado, alta joalheria');
+      expect(r.linhas[1]).toBe('Marina — celular NÃO conectado — noivado, alta joalheria');
     });
 
     it('só as ATIVAS: quem saiu da equipe não é opção', async () => {

@@ -446,6 +446,11 @@ describe('o panorama de leads da gestao (Anastasia)', () => {
       // Comparação ano a ano (29/09) — dublada.
       { porMes: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }),
         porPeriodo: jest.fn().mockResolvedValue({ rotulo: "x", cortadoNoDia: null, anos: [] }) } as never,
+      // ConexoesService e WahaAdminClient (29/09) — dublados. O `catch`
+      // do handler faz a lista sair mesmo sem WAHA, e e isso que o
+      // `mockRejectedValue` exercita nos testes que nao ligam para conexao.
+      { vendedoraDaSessao: (s: string) => s.replace(/^vend-/, "") } as never,
+      { listarSessoes: jest.fn().mockResolvedValue([]) } as never,
       // A consulta de venda, que desde 25/09 le a MOVIMENTACAO. Dublada aqui:
       // estes testes descrevem o roteamento das ferramentas, nao o SQL.
       { itens: jest.fn().mockResolvedValue({ linhas: [] }) } as never,

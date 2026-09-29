@@ -631,7 +631,7 @@ const GESTAO_LEADS_TOOL: Anthropic.Tool = {
 const GESTAO_VENDEDORAS_TOOL: Anthropic.Tool = {
   name: 'listar_vendedoras',
   description:
-    'Lista as vendedoras ATIVAS da equipe, com a disponibilidade e as especialidades de cada uma. Use para "quais sao as minhas vendedoras", "quem esta disponivel", "para quem eu posso encaminhar" — e sempre que a usuaria precisar escolher uma pessoa e nao souber os nomes. Nao traz venda, meta nem telefone.',
+    'Lista as vendedoras ATIVAS da equipe — a lista JA VEM FILTRADA, entao diga "vendedoras ativas" e nunca apresente o numero como se fosse o cadastro inteiro. Traz, de cada uma, a disponibilidade, as especialidades e SE O CELULAR DELA ESTA CONECTADO ao sistema. A primeira linha da resposta e o resumo (quantas ativas, quantas conectadas): repasse-o. ESTAR ATIVA NO CADASTRO E DIFERENTE DE TER O CELULAR CONECTADO — sem a conexao o sistema nao enxerga as conversas dela com cliente, e toda metrica de atendimento dela fica vazia. Quando a resposta disser que NENHUMA esta conectada, diga isso com todas as letras: e a explicacao de por que nao ha dado de atendimento. Use para "quais sao as minhas vendedoras", "quem esta disponivel", "para quem eu posso encaminhar" — e sempre que a usuaria precisar escolher uma pessoa e nao souber os nomes. Nao traz venda, meta nem telefone.',
   input_schema: {
     type: 'object' as const,
     properties: {},

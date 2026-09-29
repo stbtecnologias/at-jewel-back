@@ -75,6 +75,8 @@ import {
   CompararAnosUseCase,
   variacao,
 } from '../../movimentacoes/application/use-cases/comparar-anos.use-case';
+import { ConexoesService } from '../../atendimento/application/conexoes.service';
+import { WahaAdminClient } from '../../atendimento/infrastructure/whatsapp/waha-admin.client';
 
 const MAXIMO_CLIENTES_HOMONIMOS = 5;
 /** Feedbacks por resposta. Acima disso a mensagem deixa de ser lida. */
@@ -278,6 +280,8 @@ export class FerramentasGestaoService {
     private readonly rankings: RankingsDeAtendimentoUseCase,
     private readonly tom: AnalisarTomUseCase,
     private readonly compararAnos: CompararAnosUseCase,
+    private readonly conexoes: ConexoesService,
+    private readonly waha: WahaAdminClient,
     private readonly listarProdutos: ListarProdutosUseCase,
     private readonly agenda: ConsultarAgendaVendedoraUseCase,
     private readonly desempenho: ConsultarDesempenhoVendedoraUseCase,
@@ -784,18 +788,72 @@ export class FerramentasGestaoService {
           ...ativas.filter((v) => v.statusDisponibilidade === 'DISPONIVEL'),
           ...ativas.filter((v) => v.statusDisponibilidade !== 'DISPONIVEL'),
         ];
-        return {
-          linhas: ordenadas.map((v) => {
-            const partes = [v.nome];
-            if (v.statusDisponibilidade !== 'DISPONIVEL') {
-              partes.push(DISPONIBILIDADE_LEGIVEL[v.statusDisponibilidade]);
-            }
-            if (v.especialidades.length > 0) {
-              partes.push(v.especialidades.join(', '));
-            }
-            return partes.join(' — ');
-          }),
-        };
+        // ================================================================
+        // QUEM ESTA COM O CELULAR CONECTADO — 29/09/2026, pedido do Lucas.
+        //
+        // "Quantas vendedoras ativas temos, e elas estao conversando com
+        // cliente?" era respondido pela metade: a lista dizia quem esta ativa
+        // no CADASTRO e calava sobre quem o sistema de fato enxerga.
+        //
+        // A diferenca e enorme e invisivel. Em 29/09 havia UMA conexao de
+        // vendedora em toda a operacao; sem esta linha, quem le conclui que o
+        // sistema acompanha seis pessoas quando acompanha uma — e toda
+        // metrica de atendimento parece quebrada em vez de vazia.
+        //
+        // UMA CHAMADA SO ao WAHA (`listarSessoes` devolve todas), e nao uma
+        // por vendedora. E se o WAHA nao responder, a LISTA SAI MESMO ASSIM,
+        // dizendo que nao deu para verificar: perder os nomes por causa do
+        // status seria trocar o principal pelo acessorio.
+        // ================================================================
+        const conectadas = await this.waha
+          .listarSessoes()
+          .then(
+            (sessoes) =>
+              new Set(
+                sessoes
+                  .filter((s) => s.status === 'WORKING')
+                  .map((s) => this.conexoes.vendedoraDaSessao(s.nome))
+                  .filter((id): id is string => id !== null),
+              ),
+          )
+          .catch(() => null);
+
+        const linhas = ordenadas.map((v) => {
+          const partes = [v.nome];
+          if (v.statusDisponibilidade !== 'DISPONIVEL') {
+            partes.push(DISPONIBILIDADE_LEGIVEL[v.statusDisponibilidade]);
+          }
+          if (conectadas !== null) {
+            partes.push(
+              v.id && conectadas.has(v.id)
+                ? 'celular conectado'
+                : 'celular NÃO conectado',
+            );
+          }
+          if (v.especialidades.length > 0) {
+            partes.push(v.especialidades.join(', '));
+          }
+          return partes.join(' — ');
+        });
+
+        // O RESUMO VEM ANTES DOS NOMES porque e ele que responde a pergunta.
+        // Quem pede "quantas temos conectadas" quer o numero; a lista e o
+        // detalhe para quem quiser conferir.
+        if (conectadas === null) {
+          linhas.unshift(
+            'Não consegui verificar quais celulares estão conectados agora.',
+          );
+        } else {
+          const n = ordenadas.filter((v) => v.id && conectadas.has(v.id)).length;
+          linhas.unshift(
+            n === 0
+              ? `${ordenadas.length} ativa(s) no cadastro, e NENHUMA com o celular ` +
+                  `conectado — o sistema não acompanha as conversas delas com cliente.`
+              : `${ordenadas.length} ativa(s) no cadastro, ${n} com o celular conectado.`,
+          );
+        }
+
+        return { linhas };
       },
 
       // A RESPOSTA AO AVISO DE LEAD NOVO. Nao passa por aqui nada que decida
