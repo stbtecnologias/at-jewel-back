@@ -714,6 +714,36 @@ const GESTAO_PANORAMA_LEADS_TOOL: Anthropic.Tool = {
   },
 };
 
+/**
+ * AS METRICAS DE ATENDIMENTO — ANA-08 a ANA-12, 29/09/2026.
+ *
+ * ==========================================================================
+ * A DESCRICAO DIZ O QUE ELA *NAO* RESPONDE, E ISSO E METADE DO TRABALHO.
+ *
+ * "Tempo", "media" e "quantos" sao palavras que aparecem em perguntas de
+ * VENDA tambem. Sem a fronteira escrita, o modelo chamaria esta ferramenta
+ * para "qual o ticket medio" e responderia com numero de atendimento — que e
+ * plausivel, errado, e ninguem confere.
+ * ==========================================================================
+ */
+const GESTAO_METRICAS_TOOL: Anthropic.Tool = {
+  name: 'metricas_de_atendimento',
+  description:
+    'Como a equipe ATENDE: tempo medio ate a primeira resposta, duracao media do atendimento, tempo medio ate fechar a venda, quantos leads cada vendedora recebeu e quantas interacoes cada uma registrou. Use para "quanto tempo demoramos para responder", "a equipe esta respondendo rapido", "quanto tempo leva um atendimento", "quantos leads a Marina recebeu", "quem mais interage com cliente", "como foi o atendimento este mes". NAO responde faturamento, ticket medio, quantas pecas foram vendidas nem quem vendeu mais — isso e venda, e sai nas ferramentas de venda. TODA media vem com o TAMANHO DA AMOSTRA junto: repasse esse numero sempre, porque a base ainda e pequena e uma media de dois casos nao e um indicador. Quando vier "sem nenhum caso no periodo", diga exatamente isso — nao invente que foi rapido nem que foi zero.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      ...DATAS_LIVRES,
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
+        description:
+          'O atalho, quando nao houver datas. Padrao MES — em HOJE a media quase sempre sai de zero casos e nao diz nada.',
+      },
+    },
+  },
+};
+
 const GESTAO_FUNIL_TOOL: Anthropic.Tool = {
   name: 'funil_de_atendimentos',
   description:
@@ -957,6 +987,7 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoFeedbacks) tools.push(GESTAO_FEEDBACKS_TOOL);
     if (params.gestaoFunil) tools.push(GESTAO_FUNIL_TOOL);
     if (params.gestaoPanoramaLeads) tools.push(GESTAO_PANORAMA_LEADS_TOOL);
+    if (params.gestaoMetricas) tools.push(GESTAO_METRICAS_TOOL);
     if (params.gestaoDiaDaVendedora)
       tools.push(GESTAO_DIA_DA_VENDEDORA_TOOL);
     if (params.registrarRelato) tools.push(RELATO_TOOL);

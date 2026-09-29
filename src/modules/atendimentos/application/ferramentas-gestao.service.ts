@@ -12,6 +12,7 @@ import type {
   GestaoDiaDaVendedoraHandler,
   GestaoFeedbacksHandler,
   GestaoFunilHandler,
+  GestaoMetricasHandler,
   GestaoPanoramaLeadsHandler,
   GestaoPorFamiliaHandler,
   GestaoLeituraResultado,
@@ -55,6 +56,10 @@ import {
   estadoLegivel,
   linhaDoLead,
 } from '../../leads/application/leads-em-lista';
+import {
+  MetricasDeAtendimentoUseCase,
+  comAmostra,
+} from './use-cases/metricas-de-atendimento.use-case';
 
 const MAXIMO_CLIENTES_HOMONIMOS = 5;
 /** Feedbacks por resposta. Acima disso a mensagem deixa de ser lida. */
@@ -149,6 +154,7 @@ export interface FerramentasGestao {
   gestaoDiaDaVendedora: GestaoDiaDaVendedoraHandler;
   gestaoFunil: GestaoFunilHandler;
   gestaoPanoramaLeads: GestaoPanoramaLeadsHandler;
+  gestaoMetricas: GestaoMetricasHandler;
   gestaoPorFamilia: GestaoPorFamiliaHandler;
   /**
    * NAO E UM HANDLER — e um aviso que viaja junto para o cliente do LLM.
@@ -250,6 +256,7 @@ export class FerramentasGestaoService {
   constructor(
     private readonly resolverVendedora: ResolverVendedoraPorNomeUseCase,
     private readonly consultarVendas: ConsultarVendasUseCase,
+    private readonly metricas: MetricasDeAtendimentoUseCase,
     private readonly listarProdutos: ListarProdutosUseCase,
     private readonly agenda: ConsultarAgendaVendedoraUseCase,
     private readonly desempenho: ConsultarDesempenhoVendedoraUseCase,
@@ -857,6 +864,68 @@ export class FerramentasGestaoService {
        * quantos em cada estado, quem espera encaminhamento e quantos foram
        * para cada uma.
        */
+      /**
+       * AS METRICAS DE ATENDIMENTO — ANA-08 a ANA-12, 29/09/2026.
+       *
+       * ====================================================================
+       * AS CINCO NUMA FERRAMENTA SO.
+       *
+       * "Como foi o mes?" nao e cinco perguntas: e uma. Cinco ferramentas
+       * separadas fariam o modelo encadear cinco chamadas — cinco idas ao
+       * banco e cinco turnos pagos — para montar cinco linhas de texto.
+       *
+       * A AMOSTRA VAI EM TODA MEDIA, e isso e o mais importante aqui. Com um
+       * lead e um celular conectado na base, toda media desta safra sai de
+       * dois ou tres casos: sem o `n` ao lado, a anedota chega com cara de
+       * indicador e a gestao decide em cima dela.
+       * ====================================================================
+       */
+      gestaoMetricas: async ({ de, ate, periodo }) => {
+        const recorte = datasDeRecorte(de, ate);
+        const janela = recorte ?? janelaDoPeriodo(periodo);
+
+        const r = await this.metricas.execute({
+          de: janela.de,
+          ate: janela.ate,
+          vendedoraIds: equipe ?? null,
+        });
+
+        const linhas: string[] = [
+          comAmostra(r.primeiraResposta, 'Tempo médio até a primeira resposta'),
+          comAmostra(r.duracaoDoAtendimento, 'Duração média do atendimento'),
+          comAmostra(r.ateFecharVenda, 'Tempo médio até fechar a venda'),
+        ];
+
+        if (r.leadsPorVendedora.length > 0) {
+          linhas.push(
+            'Leads por vendedora: ' +
+              r.leadsPorVendedora
+                .map((l) => `${l.nome} ${l.quantos}`)
+                .join(', ') +
+              '.',
+          );
+        } else {
+          linhas.push('Nenhum lead novo no período.');
+        }
+
+        if (r.interacoesPorVendedora.length > 0) {
+          linhas.push(
+            'Interações por vendedora: ' +
+              r.interacoesPorVendedora
+                .map(
+                  (i) =>
+                    `${i.nome} ${i.total} (${i.daVendedora} dela) em ${i.atendimentos} atendimento(s)`,
+                )
+                .join(', ') +
+              '.',
+          );
+        } else {
+          linhas.push('Nenhuma interação registrada no período.');
+        }
+
+        return { status: 'OK' as const, de: janela.de, ate: janela.ate, linhas };
+      },
+
       gestaoPanoramaLeads: async ({ vendedora }) => {
         if (vendedora && vendedora.trim()) {
           return this.comVendedora(equipe, vendedora, async (_id, codigoErp) => {
@@ -1139,6 +1208,46 @@ export function mensagemDoAgendamento(r: ResultadoAgendamentoGestao): string {
         `Diga exatamente isso e pergunte como prosseguir. NUNCA diga que o contato foi marcado.`
       );
   }
+}
+
+/**
+ * A janela de um periodo dito em palavra — para as metricas (ANA-08 a 12).
+ *
+ * O PADRAO E O MES, e nao HOJE como nas vendas. Media de tempo de atendimento
+ * "de hoje" quase sempre sai de zero ou um caso; o mes e a menor janela em que
+ * o numero significa alguma coisa nesta loja, que vende em ~12 dias por mes.
+ *
+ * MES e ANO sao do CALENDARIO, como no resto do sistema: quem pergunta "como
+ * foi o mes" compara com a meta do mes, nao com trinta dias corridos.
+ */
+function janelaDoPeriodo(
+  periodo: string | undefined,
+  agora: Date = new Date(),
+): { de: Date; ate: Date } {
+  const de = new Date(agora);
+  de.setHours(0, 0, 0, 0);
+
+  switch (periodo) {
+    case 'HOJE':
+      break;
+    case 'ONTEM': {
+      de.setDate(de.getDate() - 1);
+      const ate = new Date(de);
+      ate.setHours(23, 59, 59, 999);
+      return { de, ate };
+    }
+    case 'SEMANA':
+      de.setDate(de.getDate() - 6);
+      break;
+    case 'ANO':
+      de.setMonth(0, 1);
+      break;
+    case 'MES':
+    default:
+      de.setDate(1);
+      break;
+  }
+  return { de, ate: agora };
 }
 
 export function moeda(v: number): string {

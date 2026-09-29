@@ -52,6 +52,9 @@ import { ClientePerfilOrmEntity } from '../clientes/infrastructure/database/type
 import { AtendimentoRepository } from './infrastructure/database/typeorm/repositories/atendimento.repository';
 import { ConversaWhatsappOrmEntity } from './infrastructure/database/typeorm/entities/conversa-whatsapp.orm-entity';
 import { ConversaWhatsappRepository } from './infrastructure/database/typeorm/repositories/conversa-whatsapp.repository';
+import { METRICAS_ATENDIMENTO_REPOSITORY } from './domain/ports/repositories/metricas-atendimento-repository.port';
+import { MetricasAtendimentoRepository } from './infrastructure/database/typeorm/repositories/metricas-atendimento.repository';
+import { MetricasDeAtendimentoUseCase } from './application/use-cases/metricas-de-atendimento.use-case';
 
 /**
  * Episodios de atendimento (migracao 35) e a linha do tempo de cada um.
@@ -116,6 +119,11 @@ import { ConversaWhatsappRepository } from './infrastructure/database/typeorm/re
       provide: CONVERSA_WHATSAPP_REPOSITORY,
       useClass: ConversaWhatsappRepository,
     },
+    {
+      provide: METRICAS_ATENDIMENTO_REPOSITORY,
+      useClass: MetricasAtendimentoRepository,
+    },
+    MetricasDeAtendimentoUseCase,
     DispararPendenciasUseCase,
     ConsultarAgendaVendedoraUseCase,
     ConsultarDesempenhoVendedoraUseCase,
@@ -162,6 +170,8 @@ import { ConversaWhatsappRepository } from './infrastructure/database/typeorm/re
     // A fila de conversas a ler: o webhook do modulo `atendimento`
     // (singular) enfileira, e o leitor de la consome.
     CONVERSA_WHATSAPP_REPOSITORY,
+    METRICAS_ATENDIMENTO_REPOSITORY,
+    MetricasDeAtendimentoUseCase,
     ProcessarMensagemInternaUseCase,
     RotearMensagemInternaUseCase,
     // O webhook do modulo `atendimento` (singular) registra por aqui o que

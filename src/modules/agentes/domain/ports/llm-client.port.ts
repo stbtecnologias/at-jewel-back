@@ -612,6 +612,26 @@ export type GestaoPanoramaLeadsHandler = (input: {
   vendedora?: string;
 }) => Promise<GestaoLeituraResultado & { total?: number }>;
 
+/**
+ * AS METRICAS DE ATENDIMENTO — ANA-08 a ANA-12, 29/09/2026.
+ *
+ * As cinco numa ferramenta so, porque sao sempre perguntadas juntas ("como foi
+ * o mes?") e saem das mesmas duas tabelas. Separadas, o modelo encadearia
+ * cinco chamadas — cinco idas ao banco e cinco turnos pagos — para montar
+ * cinco linhas.
+ *
+ * Aceita as DUAS formas de recorte, como o resto das consultas de numero: o
+ * atalho em palavra (`periodo`) ou as datas soltas, que ganham quando vem.
+ */
+export type GestaoMetricasHandler = (input: {
+  /** Data inicial `AAAA-MM-DD`. Com `ate`, manda no `periodo`. */
+  de?: string;
+  /** Data final `AAAA-MM-DD`. */
+  ate?: string;
+  /** O atalho. Default MES — em HOJE a media quase sempre sai de zero casos. */
+  periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
+}) => Promise<GestaoLeituraResultado>;
+
 export type GestaoFunilHandler = (input: {
   /** Nome (ou parte). Ausente = a loja inteira. */
   vendedora?: string;
@@ -703,6 +723,7 @@ export interface ChatParams {
   gestaoDiaDaVendedora?: GestaoDiaDaVendedoraHandler;
   gestaoFunil?: GestaoFunilHandler;
   gestaoPanoramaLeads?: GestaoPanoramaLeadsHandler;
+  gestaoMetricas?: GestaoMetricasHandler;
   /**
    * Habilita `gerar_grafico`. Default true, que preserva o painel.
    *

@@ -64,6 +64,15 @@ describe('itens_mais_vendidos e o escopo de quem pergunta', () => {
     servico = new FerramentasGestaoService(
       resolverVendedora as never,
       consultarVendas as never,
+      // As metricas de atendimento (ANA-08 a 12, 29/09) — dubladas: estes
+      // testes descrevem o roteamento das ferramentas, nao o SQL.
+      { execute: jest.fn().mockResolvedValue({
+        de: new Date(), ate: new Date(),
+        leadsPorVendedora: [], interacoesPorVendedora: [],
+        primeiraResposta: { minutos: null, amostra: 0, minimo: null, maximo: null },
+        duracaoDoAtendimento: { minutos: null, amostra: 0, minimo: null, maximo: null },
+        ateFecharVenda: { minutos: null, amostra: 0, minimo: null, maximo: null },
+      }) } as never,
       listarProdutos as never,
       { execute: jest.fn() } as never,
       { vendas: jest.fn(), metas: jest.fn() } as never,
@@ -177,6 +186,14 @@ describe('consultar_produtos da gestao e a quantidade', () => {
     listarProdutos = { execute: jest.fn() };
     servico = new FerramentasGestaoService(
       { execute: jest.fn() } as never,
+      // Metricas de atendimento (ANA-08 a 12, 29/09) — dubladas.
+      { execute: jest.fn().mockResolvedValue({
+        de: new Date(), ate: new Date(),
+        leadsPorVendedora: [], interacoesPorVendedora: [],
+        primeiraResposta: { minutos: null, amostra: 0, minimo: null, maximo: null },
+        duracaoDoAtendimento: { minutos: null, amostra: 0, minimo: null, maximo: null },
+        ateFecharVenda: { minutos: null, amostra: 0, minimo: null, maximo: null },
+      }) } as never,
       { itens: jest.fn() } as never,
       listarProdutos as never,
       { execute: jest.fn() } as never,
@@ -302,6 +319,15 @@ describe('o recorte de equipe nas ferramentas de gestao', () => {
     servico = new FerramentasGestaoService(
       resolverVendedora as never,
       consultarVendas as never,
+      // As metricas de atendimento (ANA-08 a 12, 29/09) — dubladas: estes
+      // testes descrevem o roteamento das ferramentas, nao o SQL.
+      { execute: jest.fn().mockResolvedValue({
+        de: new Date(), ate: new Date(),
+        leadsPorVendedora: [], interacoesPorVendedora: [],
+        primeiraResposta: { minutos: null, amostra: 0, minimo: null, maximo: null },
+        duracaoDoAtendimento: { minutos: null, amostra: 0, minimo: null, maximo: null },
+        ateFecharVenda: { minutos: null, amostra: 0, minimo: null, maximo: null },
+      }) } as never,
       { execute: jest.fn().mockResolvedValue([]) } as never,
       { execute: jest.fn().mockResolvedValue([]) } as never,
       desempenho as never,
@@ -456,6 +482,15 @@ describe('o periodo livre nas ferramentas de venda', () => {
         }),
       } as never,
       consultarVendas as never,
+      // As metricas de atendimento (ANA-08 a 12, 29/09) — dubladas: estes
+      // testes descrevem o roteamento das ferramentas, nao o SQL.
+      { execute: jest.fn().mockResolvedValue({
+        de: new Date(), ate: new Date(),
+        leadsPorVendedora: [], interacoesPorVendedora: [],
+        primeiraResposta: { minutos: null, amostra: 0, minimo: null, maximo: null },
+        duracaoDoAtendimento: { minutos: null, amostra: 0, minimo: null, maximo: null },
+        ateFecharVenda: { minutos: null, amostra: 0, minimo: null, maximo: null },
+      }) } as never,
       { execute: jest.fn().mockResolvedValue([]) } as never,
       { execute: jest.fn().mockResolvedValue([]) } as never,
       { vendas: jest.fn(), metas: jest.fn() } as never,
@@ -575,6 +610,15 @@ describe('o ranking por tipo de peça', () => {
     servico = new FerramentasGestaoService(
       { execute: jest.fn() } as never,
       consultarVendas as never,
+      // As metricas de atendimento (ANA-08 a 12, 29/09) — dubladas: estes
+      // testes descrevem o roteamento das ferramentas, nao o SQL.
+      { execute: jest.fn().mockResolvedValue({
+        de: new Date(), ate: new Date(),
+        leadsPorVendedora: [], interacoesPorVendedora: [],
+        primeiraResposta: { minutos: null, amostra: 0, minimo: null, maximo: null },
+        duracaoDoAtendimento: { minutos: null, amostra: 0, minimo: null, maximo: null },
+        ateFecharVenda: { minutos: null, amostra: 0, minimo: null, maximo: null },
+      }) } as never,
       listarProdutos as never,
       { execute: jest.fn() } as never,
       { vendas: jest.fn(), metas: jest.fn() } as never,
