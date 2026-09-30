@@ -22,8 +22,32 @@ import {
 } from './processar-foto-catalogo.use-case';
 
 export interface MensagemDoCanal {
-  /** Chat de origem, ja traduzido de LID para telefone na borda HTTP. */
+  /**
+   * Chat de origem, ja traduzido de LID para telefone na borda HTTP.
+   *
+   * E PARA ONDE A RESPOSTA VAI. Em conversa direta ele e tambem QUEM FALOU;
+   * num grupo, nao — ver `grupo`.
+   */
   de: string;
+  /**
+   * Presente so quando a mensagem veio de um GRUPO — 30/09/2026.
+   *
+   * ========================================================================
+   * SEM ISTO, O RECONHECIMENTO PROCURARIA UM ADMIN COM O TELEFONE DO GRUPO.
+   *
+   * Todo o canal foi construido sobre "o chat e a pessoa", e em grupo isso
+   * deixa de valer. O `de` continua sendo o destino da resposta; quem falou
+   * passa a viajar aqui.
+   * ========================================================================
+   */
+  grupo?: {
+    /** Quem escreveu, como `NNNNNNN@c.us`. E ele que e reconhecido. */
+    autor: string;
+    /** Os `@lid` mencionados na mensagem. */
+    mencionados: string[];
+    /** Se a agente DESTE numero foi uma das mencionadas. */
+    mencionada: boolean;
+  };
   /**
    * POR QUAL NUMERO DA CASA a mensagem entrou — a segunda pergunta do
    * roteamento, desde 25/09/2026.
@@ -127,7 +151,25 @@ export class RotearMensagemInternaUseCase {
   ) {}
 
   async execute(msg: MensagemDoCanal): Promise<RespostaDoCanal> {
-    const telefone = msg.de.replace(/@.*$/, '');
+    // ---------------------------------------------------------------------
+    // NO GRUPO, SO QUANDO CHAMADA — 30/09/2026, pedido do Lucas.
+    //
+    // Antes de qualquer outra coisa, e de proposito: sem mencao nao se
+    // transcreve audio, nao se baixa foto, nao se chama o modelo. Um grupo
+    // movimentado nao pode virar conta.
+    //
+    // NAO HA LISTA DE GRUPOS AUTORIZADOS, e essa foi a decisao. A trava nunca
+    // foi "qual grupo" — e "quem mencionou", e isso o reconhecimento abaixo ja
+    // faz, default-deny, desde sempre. Qualquer um pode criar um grupo com
+    // ela; quem nao tem cadastro nao recebe resposta, ali como no privado.
+    // ---------------------------------------------------------------------
+    if (msg.grupo && !msg.grupo.mencionada) {
+      return { resposta: null, motivo: 'ignorado_grupo_sem_mencao' };
+    }
+
+    // QUEM FALOU, e nao de onde veio: em grupo os dois sao diferentes. A
+    // resposta ainda vai para `msg.de` — ver `RespostaDoCanal`.
+    const telefone = (msg.grupo?.autor ?? msg.de).replace(/@.*$/, '');
 
     // O texto ja resolvido, memorizado — `undefined` e "ainda nao resolvi".
     // O mesmo audio pode ser consultado no ramo do catalogo e de novo no dos
@@ -535,6 +577,18 @@ export class RotearMensagemInternaUseCase {
       usuarioId: admin!.id,
       nome: admin!.nome,
       role: admin!.role,
+      // ------------------------------------------------------------------
+      // NO GRUPO, A CONVERSA E DO GRUPO — 30/09/2026.
+      //
+      // Sem isto, cada pessoa teria o proprio fio e "e das outras?" do
+      // segundo a falar chegaria sem o assunto do primeiro. A conversa de um
+      // grupo e uma so, e todos a leem.
+      //
+      // E NAO VAZA NADA: tudo que entra nesta memoria ja esta escrito no
+      // grupo, visivel para os mesmos olhos. O que continua sendo por pessoa
+      // e o ESCOPO da resposta — o `role` acima e de quem mencionou.
+      // ------------------------------------------------------------------
+      ...(msg.grupo ? { conversaId: `grupo:${msg.de}` } : {}),
       texto,
     });
   }

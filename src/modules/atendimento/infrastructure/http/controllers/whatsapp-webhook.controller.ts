@@ -15,6 +15,7 @@ import {
   contatoDoEvento,
   extrairMensagemRecebida,
   formatoDoRemetente,
+  semMencoes,
   sessaoDoEvento,
 } from '../waha-webhook';
 import { WahaAuthGuard } from '../guards/waha-auth.guard';
@@ -87,13 +88,34 @@ export class WhatsappWebhookController {
       : undefined;
 
     const msg = extrairMensagemRecebida(body);
-    // Evento ignorado (status, ack, mensagem nossa, grupo, etc.): apenas ack.
+    // Evento ignorado (status, ack, mensagem nossa, etc.): apenas ack.
     if (!msg) return { ok: true, ignorado: true };
 
     // O `from` do WAHA pode ser um LID, e nao um telefone. A traducao e
     // assunto de TRANSPORTE — acontece aqui, na borda, e o use case recebe
     // sempre um identificador com telefone dentro. Ver `resolverRemetente`.
+    //
+    // Chat de GRUPO (`@g.us`) passa intacto: nao e lid e nao ha o que traduzir.
     const de = await this.whatsapp.resolverRemetente(msg.de);
+
+    // ======================================================================
+    // "FUI EU A MENCIONADA?" E PERGUNTA DE TRANSPORTE — 30/09/2026.
+    //
+    // Mora aqui pelo mesmo motivo que a traducao de LID logo acima: a resposta
+    // sai do PROVEDOR (o `me.lid` da sessao), e nao de regra de negocio. O
+    // roteador recebe um booleano e decide a politica em cima dele.
+    //
+    // O `null` do `lidDoAgente` — WAHA fora do ar, sessao caida — resulta em
+    // `false`, e a agente fica calada. E o lado seguro: o erro possivel e ela
+    // deixar de responder, nunca responder a quem nao a chamou.
+    // ======================================================================
+    let mencionada = false;
+    if (msg.grupo) {
+      const meuLid = await this.whatsapp.lidDoAgente(agente ?? 'ANASTASIA');
+      mencionada =
+        !!meuLid &&
+        msg.grupo.mencionados.some((j) => j.replace(/\D/g, '') === meuLid);
+    }
 
     try {
       // O audio, quando ha, segue DESCRITO e nao baixado: so a referencia do
@@ -103,7 +125,19 @@ export class WhatsappWebhookController {
       //
       // O roteador tambem decide QUAL agente responde: Elena para a vendedora,
       // Anastasia para a gestao, silencio para o resto.
-      const resultado = await this.processar.execute({ ...msg, de, agente });
+      const { grupo, ...semGrupo } = msg;
+      const resultado = await this.processar.execute({
+        ...semGrupo,
+        de,
+        agente,
+        // A MENCAO SAI DO TEXTO AQUI, na borda, pelo mesmo motivo que a
+        // traducao de LID: e formato do provedor, nao assunto do roteador. No
+        // `body` ela chega como numero cru, e sem tirar o modelo receberia
+        // "qual o faturamento @558535141045" — ruido para ele, e um telefone
+        // viajando para a API sem precisar. Ver `semMencoes`.
+        ...(grupo ? { texto: semMencoes(msg.texto) } : {}),
+        ...(grupo ? { grupo: { ...grupo, mencionada } } : {}),
+      });
 
       // ATENCAO — ESTE REPASSE ESTA DESLIGADO DESDE 24/09/2026, e o que o
       // cliente recebe hoje e o `return ignorado` la de baixo. A chave e a

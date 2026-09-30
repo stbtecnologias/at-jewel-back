@@ -154,6 +154,102 @@ describe('RotearMensagemInternaUseCase', () => {
     );
   });
 
+  /**
+   * A ANASTASIA EM GRUPO — 30/09/2026, pedido do Lucas.
+   *
+   * ========================================================================
+   * DUAS INVARIANTES, E A SEGUNDA E A QUE NAO SE VE LENDO O CODIGO.
+   *
+   * 1. SEM MENCAO, NADA ACONTECE. Nao e so "nao responde": nao transcreve
+   *    audio, nao reconhece ninguem, nao chama o modelo. Um grupo movimentado
+   *    nao pode virar conta — e a guarda tem de ser a PRIMEIRA linha, senao
+   *    cada mensagem do grupo paga um lookup antes de ser descartada.
+   *
+   * 2. QUEM FALOU E O AUTOR, NAO O CHAT. Em conversa direta os dois sao a
+   *    mesma coisa, e o canal inteiro foi escrito em cima disso. Num grupo,
+   *    procurar um admin com o telefone do grupo nao acha ninguem, nunca —
+   *    e o sintoma seria "ela ignora todo mundo no grupo", sem erro nenhum.
+   * ========================================================================
+   */
+  describe('em grupo', () => {
+    const grupo = (mencionada: boolean) => ({
+      de: '120363111111111111@g.us',
+      texto: 'qual o faturamento da semana?',
+      grupo: {
+        autor: '558586467241@c.us',
+        mencionados: mencionada ? ['158205808246878@lid'] : [],
+        mencionada,
+      },
+    });
+
+    it('sem menção, fica calada — e não gasta nem um lookup', async () => {
+      const r = await useCase.execute(grupo(false));
+
+      expect(r.resposta).toBeNull();
+      expect(r.motivo).toBe('ignorado_grupo_sem_mencao');
+      expect(identificarVendedora.execute).not.toHaveBeenCalled();
+      expect(identificarAdmin.execute).not.toHaveBeenCalled();
+      expect(canalGestao.execute).not.toHaveBeenCalled();
+    });
+
+    it('sem menção, áudio de grupo não é transcrito', async () => {
+      await useCase.execute({ ...grupo(false), texto: '', audio: AUDIO });
+
+      expect(transcricao.transcrever).not.toHaveBeenCalled();
+    });
+
+    /* O reconhecimento usa o AUTOR. Com o telefone do grupo nao acharia
+     * ninguem, e a agente ignoraria todo mundo sem dizer por que. */
+    it('mencionada, reconhece quem FALOU e não o grupo', async () => {
+      identificarAdmin.execute.mockResolvedValue(ADMIN);
+
+      await useCase.execute(grupo(true));
+
+      expect(identificarAdmin.execute).toHaveBeenCalledWith('558586467241');
+    });
+
+    it('mencionada por quem NÃO tem cadastro, continua calada', async () => {
+      identificarVendedora.execute.mockResolvedValue(null);
+      identificarAdmin.execute.mockResolvedValue(null);
+
+      const r = await useCase.execute(grupo(true));
+
+      expect(canalGestao.execute).not.toHaveBeenCalled();
+      expect(r.resposta).toBeNull();
+    });
+
+    /* A conversa do grupo e UMA SO — senao o "e das outras?" do segundo a
+     * falar chegaria sem o assunto do primeiro, dentro de uma conversa que
+     * ele acabou de ler na tela. */
+    it('a memória da conversa é do GRUPO, não de cada pessoa', async () => {
+      identificarAdmin.execute.mockResolvedValue(ADMIN);
+
+      await useCase.execute(grupo(true));
+
+      expect(canalGestao.execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          conversaId: 'grupo:120363111111111111@g.us',
+          // O escopo continua sendo de QUEM MENCIONOU.
+          usuarioId: 'ad-1',
+          role: 'ADMIN',
+        }),
+      );
+    });
+
+    it('no privado não há `conversaId` — nada mudou para a conversa direta', async () => {
+      identificarAdmin.execute.mockResolvedValue(ADMIN);
+
+      await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'qual o faturamento da semana?',
+      });
+
+      expect(canalGestao.execute).toHaveBeenCalledWith(
+        expect.not.objectContaining({ conversaId: expect.anything() }),
+      );
+    });
+  });
+
   it('vendedora vai para a Elena, e a gestao nem e consultada', async () => {
     identificarVendedora.execute.mockResolvedValue(VENDEDORA);
 

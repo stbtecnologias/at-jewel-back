@@ -14,6 +14,23 @@ import { modeloDeIa } from '../../../../shared/config/modelo-de-ia';
 export interface MensagemGestao {
   /** Id do usuario. E a CHAVE da memoria de conversa — nunca o telefone. */
   usuarioId: string;
+  /**
+   * De QUAL fio de conversa esta mensagem faz parte — 30/09/2026.
+   *
+   * ========================================================================
+   * AUSENTE = O FIO E DA PESSOA, que e o privado e continua como sempre foi.
+   *
+   * Presente so no GRUPO, onde a conversa nao e de ninguem: e uma so, e todos
+   * a leem. Sem isto, duas pessoas conversando com ela no mesmo grupo teriam
+   * fios separados, e "e das outras?" do segundo chegaria sem o assunto do
+   * primeiro — dentro de uma conversa que ele acabou de ler na tela.
+   *
+   * O fio compartilhado nao vaza: tudo que entra nele ja esta escrito no
+   * grupo. O que continua sendo por pessoa e o ESCOPO — `role` e `nome` sao
+   * sempre de quem mandou a mensagem.
+   * ========================================================================
+   */
+  conversaId?: string;
   /** Nome de quem esta falando, para a agente tratar pelo primeiro nome. */
   nome: string | null;
   /**
@@ -94,7 +111,9 @@ export class ProcessarMensagemGestaoUseCase {
 
     // A conversa anterior, se houver. Sem isso, "e a Beatriz?" ou "pode
     // transferir" chegariam como frases soltas. Ver MemoriaConversaService.
-    const chave = MemoriaConversaService.chaveGestao(msg.usuarioId);
+    const chave = MemoriaConversaService.chaveGestao(
+      msg.conversaId ?? msg.usuarioId,
+    );
     const historico = this.memoria.carregar(chave);
     const pergunta = limparEHigienizar(msg.texto);
 

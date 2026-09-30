@@ -48,6 +48,20 @@ export interface IWhatsappGateway {
   numeroDoAgente(agente: AgenteDaCasa): Promise<string | null>;
 
   /**
+   * O `@lid` da propria sessao, so digitos, ou `null` se nao deu para saber.
+   *
+   * Existe para uma pergunta so: num grupo, FUI EU a mencionada? A mencao
+   * chega como `@lid` e nao como telefone, e a sessao sabe o proprio lid —
+   * entao a comparacao e direta, sem traduzir nada e sem uma ida ao provedor
+   * por mencao.
+   *
+   * `null` deixa a agente CALADA no grupo, que e o lado seguro do "nao sei":
+   * o erro possivel e ela deixar de responder, nunca responder a quem nao
+   * chamou.
+   */
+  lidDoAgente(agente: AgenteDaCasa): Promise<string | null>;
+
+  /**
    * Descobre o `chatId` real de um telefone, perguntando ao provedor.
    *
    * NAO MONTE O chatId CONCATENANDO. O identificador de uma conta de WhatsApp
