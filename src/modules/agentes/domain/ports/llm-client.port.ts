@@ -456,6 +456,42 @@ export type EsquecerCombinadoHandler = (input: {
   numero: number;
 }) => Promise<{ status: 'OK' | 'NAO_ACHEI'; texto?: string }>;
 
+/**
+ * OS LEMBRETES PESSOAIS — 30/09/2026.
+ *
+ * ==========================================================================
+ * TRES DELES DEVOLVEM `mensagem` PRONTA, e nao um status para o cliente do
+ * LLM traduzir.
+ *
+ * E a forma do `agendar_para_vendedora`, e pelo mesmo motivo: a frase depende
+ * de coisas que so o servico sabe — a hora ja interpretada e formatada, o
+ * texto exato do lembrete, e a lista numerada quando o pedido ficou ambiguo.
+ * Reconstruir isso no despacho seria manter duas versoes da mesma frase.
+ *
+ * Nenhum deles aceita "de quem": o dono entra por closure, do telefone ja
+ * reconhecido. Nao ha campo para o modelo preencher errado.
+ * ==========================================================================
+ */
+export type GuardarLembreteHandler = (input: {
+  texto: string;
+  quandoIso: string;
+}) => Promise<{ mensagem: string }>;
+
+export type MeusLembretesHandler = () => Promise<{
+  /** Uma linha por lembrete, ja numerada — o numero serve ao remarcar e ao cancelar. */
+  linhas: string[];
+}>;
+
+export type RemarcarLembreteHandler = (input: {
+  /** O lembrete, por texto ("o da Faby") ou pela posicao na lista ("2"). */
+  qual: string;
+  quandoIso: string;
+}) => Promise<{ mensagem: string }>;
+
+export type CancelarLembreteHandler = (input: {
+  qual: string;
+}) => Promise<{ mensagem: string }>;
+
 /** Comparativo da equipe inteira — nao resolve nome, entao nao tem status. */
 /**
  * A carteira de UMA vendedora, vista pela gestao.
@@ -796,6 +832,11 @@ export interface ChatParams {
   guardarCombinado?: GuardarCombinadoHandler;
   listarCombinados?: ListarCombinadosHandler;
   esquecerCombinado?: EsquecerCombinadoHandler;
+  // Os lembretes pessoais — do SOLICITANTE, e de mais ninguem.
+  guardarLembrete?: GuardarLembreteHandler;
+  meusLembretes?: MeusLembretesHandler;
+  remarcarLembrete?: RemarcarLembreteHandler;
+  cancelarLembrete?: CancelarLembreteHandler;
   gestaoPanorama?: GestaoPanoramaHandler;
   gestaoItens?: GestaoItensHandler;
   /**

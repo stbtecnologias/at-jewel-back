@@ -572,6 +572,91 @@ const ESQUECER_COMBINADO_TOOL: Anthropic.Tool = {
   },
 };
 
+/**
+ * ==========================================================================
+ * OS LEMBRETES PESSOAIS — 30/09/2026.
+ *
+ * A DESCRICAO PRECISA SEPARAR LEMBRETE DE COMBINADO, porque a agente
+ * confundia os dois. Em 30/09 pediram "me lembra de falar com as vendedoras
+ * daqui a 20 minutos" e ela ofereceu guardar um COMBINADO — que e regra
+ * permanente e so faria ela repetir a frase quando a pessoa voltasse.
+ *
+ *   combinado — vale SEMPRE, em toda conversa, ate mandarem esquecer
+ *   lembrete  — toca UMA vez, na hora marcada, e vai atras da pessoa
+ *
+ * A persona tem uma linha dizendo o mesmo. As duas existem porque a descricao
+ * da ferramenta e o que o modelo le na hora de ESCOLHER, e a persona e o que
+ * ele leu antes de comecar.
+ * ==========================================================================
+ */
+const GUARDAR_LEMBRETE_TOOL: Anthropic.Tool = {
+  name: 'guardar_lembrete',
+  description:
+    'Guarda um lembrete PESSOAL de quem esta falando com voce, e voce manda a mensagem na hora marcada. Use para "me lembra amanha de...", "me avisa as 15h que...", "nao me deixa esquecer de...". VOCE VAI MANDAR SOZINHA na hora — isto nao e combinado, que so vale quando a pessoa volta a perguntar. O lembrete e so dela: ninguem mais ve nem recebe. Serve para qualquer assunto, de trabalho ou nao.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      texto: {
+        type: 'string',
+        description:
+          'O que lembrar, nas palavras DELA. Ate 400 caracteres. Nao reescreva em linguagem formal — ela vai receber isto de volta e precisa reconhecer.',
+      },
+      quandoIso: {
+        type: 'string',
+        description:
+          'Quando avisar, em ISO 8601 com fuso (ex.: 2026-10-01T09:00:00-03:00), calculado a partir da data e hora de hoje informadas acima. Se ela nao disser a HORA, PERGUNTE antes de chamar — nunca escolha uma.',
+      },
+    },
+    required: ['texto', 'quandoIso'],
+  },
+};
+
+const MEUS_LEMBRETES_TOOL: Anthropic.Tool = {
+  name: 'meus_lembretes',
+  description:
+    'Lista os lembretes que a pessoa falando com voce tem guardados, numerados e com a hora de cada um. Use para "quais meus lembretes?", "o que eu tenho marcado?" — e sempre que precisar do numero para remarcar ou cancelar. So aparecem os dela.',
+  input_schema: { type: 'object', properties: {} },
+};
+
+const REMARCAR_LEMBRETE_TOOL: Anthropic.Tool = {
+  name: 'remarcar_lembrete',
+  description:
+    'Muda a hora de um lembrete que ela ja guardou. Use para "adia aquele da Faby para sexta", "muda o horario do lembrete das 9". Se mais de um lembrete casar com o que ela disse, a ferramenta NAO escolhe: devolve a lista para voce perguntar qual.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      qual: {
+        type: 'string',
+        description:
+          'Qual lembrete: um trecho do texto dele ("o da Faby") ou a POSICAO na lista de meus_lembretes ("2"). Prefira o trecho de texto quando ela disse do que se trata.',
+      },
+      quandoIso: {
+        type: 'string',
+        description:
+          'A nova hora, em ISO 8601 com fuso. Se ela nao disser a hora, PERGUNTE — nunca escolha uma.',
+      },
+    },
+    required: ['qual', 'quandoIso'],
+  },
+};
+
+const CANCELAR_LEMBRETE_TOOL: Anthropic.Tool = {
+  name: 'cancelar_lembrete',
+  description:
+    'Cancela um lembrete dela, que entao nao toca mais. Use para "pode tirar aquele do bolo", "cancela o lembrete de sexta", "nao precisa mais me avisar disso". Se mais de um casar, a ferramenta devolve a lista em vez de escolher — pergunte qual.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      qual: {
+        type: 'string',
+        description:
+          'Qual lembrete: um trecho do texto dele ou a POSICAO na lista de meus_lembretes.',
+      },
+    },
+    required: ['qual'],
+  },
+};
+
 const GESTAO_CARTEIRA_TOOL: Anthropic.Tool = {
   name: 'carteira_de_vendedora',
   description:
@@ -1106,6 +1191,14 @@ interface TetosPorTurno {
   avisoEnviado: boolean;
   contatoAgendado: boolean;
   relatoGravado: boolean;
+  /**
+   * Um lembrete por turno.
+   *
+   * Remarcar e cancelar NAO entram: os dois mexem em linha que ja existe, e
+   * quem pede "adia esses dois" merece que os dois sejam adiados. Guardar e
+   * que cria, e e por onde um laco viraria fila.
+   */
+  lembreteGuardado: boolean;
 }
 
 @Injectable()
@@ -1155,6 +1248,10 @@ export class AnthropicClient implements ILlmClient {
     if (params.guardarCombinado) tools.push(GUARDAR_COMBINADO_TOOL);
     if (params.listarCombinados) tools.push(LISTAR_COMBINADOS_TOOL);
     if (params.esquecerCombinado) tools.push(ESQUECER_COMBINADO_TOOL);
+    if (params.guardarLembrete) tools.push(GUARDAR_LEMBRETE_TOOL);
+    if (params.meusLembretes) tools.push(MEUS_LEMBRETES_TOOL);
+    if (params.remarcarLembrete) tools.push(REMARCAR_LEMBRETE_TOOL);
+    if (params.cancelarLembrete) tools.push(CANCELAR_LEMBRETE_TOOL);
     if (params.gestaoPanorama) tools.push(GESTAO_PANORAMA_TOOL);
     // Uma OU outra, nunca as duas: elas tem o mesmo `name`, e declarar as duas
     // deixaria o modelo com dois contratos para a mesma ferramenta.
@@ -1231,6 +1328,7 @@ export class AnthropicClient implements ILlmClient {
       avisoEnviado: false,
       contatoAgendado: false,
       relatoGravado: false,
+      lembreteGuardado: false,
     };
 
     let grafico: GraficoDinamico | undefined;
@@ -1744,6 +1842,60 @@ export class AnthropicClient implements ILlmClient {
               return 'Nao ha combinado nessa posicao. Mostre a lista de novo e pergunte qual e.';
             }
             return `Esquecido: "${r.texto}". Confirme em uma frase, dizendo qual era.`;
+          }),
+        );
+      } else if (toolUse.name === 'guardar_lembrete' && params.guardarLembrete) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            // O TETO E DO TURNO. Ver `TetosPorTurno` — sem isto, um turno de
+            // cinco voltas guardaria cinco lembretes.
+            if (tetos.lembreteGuardado) {
+              return 'Voce ja guardou um lembrete neste turno. Confirme o que guardou e pergunte se ela quer marcar outro.';
+            }
+            const e = toolUse.input as { texto?: string; quandoIso?: string };
+            const r = await params.guardarLembrete!({
+              texto: String(e.texto ?? '').slice(0, 400),
+              quandoIso: String(e.quandoIso ?? ''),
+            });
+            tetos.lembreteGuardado = true;
+            return `${r.mensagem}\n\nResponda com isso, sem mudar o texto nem o horario.`;
+          }),
+        );
+      } else if (toolUse.name === 'meus_lembretes' && params.meusLembretes) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const { linhas } = await params.meusLembretes!();
+            return (
+              `Lembretes dela:\n${linhas.join('\n')}\n\n` +
+              'Repasse com os numeros — sao eles que ela usa para remarcar ou cancelar.'
+            );
+          }),
+        );
+      } else if (
+        toolUse.name === 'remarcar_lembrete' &&
+        params.remarcarLembrete
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as { qual?: string; quandoIso?: string };
+            const r = await params.remarcarLembrete!({
+              qual: String(e.qual ?? '').slice(0, 400),
+              quandoIso: String(e.quandoIso ?? ''),
+            });
+            return `${r.mensagem}\n\nResponda com isso, sem mudar o texto nem o horario.`;
+          }),
+        );
+      } else if (
+        toolUse.name === 'cancelar_lembrete' &&
+        params.cancelarLembrete
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as { qual?: string };
+            const r = await params.cancelarLembrete!({
+              qual: String(e.qual ?? '').slice(0, 400),
+            });
+            return `${r.mensagem}\n\nResponda com isso, sem mudar o texto.`;
           }),
         );
       } else if (toolUse.name === 'itens_mais_vendidos' && params.gestaoItens) {
