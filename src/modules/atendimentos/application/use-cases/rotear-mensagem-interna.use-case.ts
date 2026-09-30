@@ -417,6 +417,29 @@ export class RotearMensagemInternaUseCase {
       };
     }
     if (!texto) {
+      // ------------------------------------------------------------------
+      // NO GRUPO, VAZIO NAO E "SEM CONTEUDO" — 30/09/2026.
+      //
+      // "@anastasia" sozinho e mensagem legitima: e chamar alguem pelo nome
+      // do outro lado da sala. Depois de tirar a mencao sobra vazio, e cair
+      // no silencio daqui foi o que o Lucas viu no primeiro teste — ele
+      // mandou a pergunta numa mensagem e a mencao na seguinte, as duas
+      // certas, nenhuma das duas completa, e o sintoma foi indistinguivel de
+      // "o grupo nao funciona".
+      //
+      // DEPOIS DO RECONHECIMENTO, e isso nao e detalhe: aqui ja se sabe que
+      // quem chamou tem cadastro. Responder antes faria qualquer um descobrir
+      // que ha uma agente ali so mencionando o numero.
+      //
+      // A frase e CANJA — pagar uma chamada ao modelo para ele descobrir que
+      // nao ha pergunta seria pagar para dizer "oi".
+      // ------------------------------------------------------------------
+      if (msg.grupo) {
+        return {
+          resposta: 'Oi! Me diz o que você precisa que eu vejo.',
+          motivo: 'grupo_mencao_sem_pergunta',
+        };
+      }
       return { resposta: null, motivo: 'ignorado_sem_conteudo' };
     }
 

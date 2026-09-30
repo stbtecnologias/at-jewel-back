@@ -115,6 +115,19 @@ export class WhatsappWebhookController {
       mencionada =
         !!meuLid &&
         msg.grupo.mencionados.some((j) => j.replace(/\D/g, '') === meuLid);
+
+      // NENHUM DESCARTE CALADO EM GRUPO — a licao de 29/09, aplicada antes de
+      // custar de novo. Sem esta linha, "ela nao respondeu no grupo" teria
+      // quatro causas possiveis e nenhuma forma de distinguir: sem mencao,
+      // mencao de outra pessoa, sessao sem lid, ou remetente sem cadastro.
+      //
+      // So CONTAGEM e BOOLEANO. Nenhum lid, nenhum telefone, nenhum texto.
+      if (!mencionada) {
+        this.logger.debug(
+          `Grupo: nao fui mencionada — mencoes=${msg.grupo.mencionados.length}, ` +
+            `sei meu lid=${meuLid ? 'sim' : 'NAO'}.`,
+        );
+      }
     }
 
     try {

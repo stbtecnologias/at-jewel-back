@@ -236,6 +236,34 @@ describe('RotearMensagemInternaUseCase', () => {
       );
     });
 
+    /*
+     * O caso que o primeiro teste do Lucas pegou, em 30/09: ele mandou a
+     * pergunta numa mensagem e a mencao na seguinte. Sozinha, a mencao vira
+     * texto vazio depois da limpeza — e vazio ia calado para o modelo.
+     */
+    it('menção sozinha, sem pergunta, pede o que a pessoa precisa', async () => {
+      identificarAdmin.execute.mockResolvedValue(ADMIN);
+
+      const r = await useCase.execute({ ...grupo(true), texto: '' });
+
+      expect(r.motivo).toBe('grupo_mencao_sem_pergunta');
+      expect(r.resposta).toContain('Me diz o que você precisa');
+      // Canja: nao paga uma chamada ao modelo para descobrir que nao ha
+      // pergunta.
+      expect(canalGestao.execute).not.toHaveBeenCalled();
+    });
+
+    /* E o default-deny vale tambem aqui: mencao sozinha de quem nao tem
+     * cadastro nao pode revelar que ha uma agente escutando. */
+    it('menção sozinha de quem não tem cadastro continua no silêncio', async () => {
+      identificarAdmin.execute.mockResolvedValue(null);
+
+      const r = await useCase.execute({ ...grupo(true), texto: '' });
+
+      expect(r.resposta).toBeNull();
+      expect(r.motivo).toBe('ignorado_remetente_desconhecido');
+    });
+
     it('no privado não há `conversaId` — nada mudou para a conversa direta', async () => {
       identificarAdmin.execute.mockResolvedValue(ADMIN);
 
