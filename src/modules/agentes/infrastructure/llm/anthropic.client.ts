@@ -2422,10 +2422,44 @@ export class AnthropicClient implements ILlmClient {
     }
   }
 
+  /**
+   * ==========================================================================
+   * NENHUM TURNO PODE IR VAZIO — 30/09/2026, e e a SEGUNDA vez.
+   *
+   * `400 messages.N: user messages must have non-empty content` rejeita a
+   * conversa INTEIRA, e o erro nao diz de onde veio o vazio. Quem chamou cai
+   * no proprio catch e responde "nao consegui consultar isso agora" — a frase
+   * generica que esconde a causa.
+   *
+   * Em 29/09 o vazio era um `tool_result`; a guarda esta no `despachar`. Em
+   * 30/09 foi o turno do usuario: alguem mencionou a agente num grupo sem
+   * escrever mais nada, e depois de tirar a mencao nao sobrou texto. Duas
+   * portas diferentes, o mesmo 400, e a mesma resposta inutil.
+   *
+   * A guarda fica AQUI porque este e o funil por onde toda mensagem de todo
+   * canal passa. Quem chama com um turno vazio tem um defeito — e o lugar de
+   * consertar e la, com texto que faca sentido para o modelo —, mas nao pode
+   * derrubar a conversa por isso.
+   * ==========================================================================
+   */
   private toApiMessages(
     mensagens: ChatParams['mensagens'],
   ): Anthropic.MessageParam[] {
-    return mensagens.map((m) => ({ role: m.role, content: m.content }));
+    return mensagens.map((m) => {
+      const vazio =
+        typeof m.content === 'string' && m.content.trim() === '';
+      if (vazio) {
+        this.logger.warn(
+          `Turno "${m.role}" chegou VAZIO ao cliente — trocado por um marcador ` +
+            'para nao derrubar a conversa. Quem montou a mensagem deveria ter ' +
+            'texto aqui.',
+        );
+      }
+      return {
+        role: m.role,
+        content: vazio ? '(mensagem sem texto)' : m.content,
+      };
+    });
   }
 
   private extrairTexto(resp: Anthropic.Message): string {

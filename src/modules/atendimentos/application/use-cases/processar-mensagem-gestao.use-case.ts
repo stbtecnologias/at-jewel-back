@@ -135,7 +135,27 @@ export class ProcessarMensagemGestaoUseCase {
       msg.conversaId ?? msg.usuarioId,
     );
     const historico = this.memoria.carregar(chave);
-    const pergunta = limparEHigienizar(msg.texto);
+
+    // ======================================================================
+    // TURNO VAZIO A API RECUSA — 30/09/2026.
+    //
+    // `400 messages.0: user messages must have non-empty content`, e a
+    // conversa INTEIRA e rejeitada. O agente cai no catch la embaixo e
+    // responde "nao consegui consultar isso agora", que nao ajuda ninguem:
+    // nem quem perguntou, nem quem for investigar.
+    //
+    // Chega vazio quando alguem so MENCIONA a agente no grupo, sem escrever
+    // mais nada — depois de tirar a mencao nao sobra texto. E uma mensagem
+    // legitima: e chamar alguem pelo nome do outro lado da sala.
+    //
+    // A frase abaixo ocupa o lugar do vazio e diz o que aconteceu, para ela
+    // responder ao que ficou pendente no grupo em vez de responder ao nada.
+    // E a MESMA classe de defeito do `tool_result` vazio de 29/09: turno sem
+    // conteudo derruba a chamada toda, e o erro nao diz qual campo era.
+    // ======================================================================
+    const pergunta =
+      limparEHigienizar(msg.texto) ||
+      '(me chamaram pelo nome no grupo, sem escrever mais nada)';
 
     try {
       const { texto } = await this.llm.chatComFerramentas({

@@ -181,6 +181,27 @@ describe('o laço de ferramentas', () => {
     expect(create.mock.calls[1][0].max_tokens).toBe(1024);
   });
 
+  /*
+   * A SEGUNDA VEZ QUE UM VAZIO DERRUBOU A CONVERSA — 30/09/2026.
+   *
+   * Em 29/09 foi um `tool_result`; hoje foi o turno do usuario, quando
+   * alguem mencionou a agente num grupo sem escrever mais nada. Mesmo 400,
+   * mesma resposta inutil ("nao consegui consultar isso agora"), e o erro em
+   * nenhum dos dois casos diz de onde veio o vazio.
+   */
+  it('turno vazio não sai daqui vazio', async () => {
+    create.mockResolvedValueOnce(responde('oi'));
+
+    await cliente.chatComFerramentas({
+      ...base(),
+      mensagens: [{ role: 'user', content: '   ' }],
+    } as unknown as ChatParams);
+
+    expect(create.mock.calls[0][0].messages[0].content).toBe(
+      '(mensagem sem texto)',
+    );
+  });
+
   it('os tokens de TODAS as voltas entram na conta', async () => {
     create
       .mockResolvedValueOnce(pede('listar_leads', 'a'))
