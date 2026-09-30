@@ -3,6 +3,7 @@ import { ProcessarFotoCatalogoUseCase } from './processar-foto-catalogo.use-case
 import { SessaoCatalogoService } from '../sessao-catalogo.service';
 import { RecepcaoService } from '../recepcao.service';
 import { RecepcionarUseCase } from './recepcionar.use-case';
+import { MemoriaDeGrupoService } from '../memoria-de-grupo.service';
 
 /**
  * A conferencia da foto NAO participa destes testes: null quer dizer "nao
@@ -151,6 +152,7 @@ describe('RotearMensagemInternaUseCase', () => {
       new RecepcionarUseCase(new RecepcaoService()),
       whatsapp as never,
       transcricao,
+      new MemoriaDeGrupoService(),
     );
   });
 
@@ -241,7 +243,7 @@ describe('RotearMensagemInternaUseCase', () => {
      * pergunta numa mensagem e a mencao na seguinte. Sozinha, a mencao vira
      * texto vazio depois da limpeza — e vazio ia calado para o modelo.
      */
-    it('menção sozinha, sem pergunta, pede o que a pessoa precisa', async () => {
+    it('menção sozinha numa sala vazia pede o que a pessoa precisa', async () => {
       identificarAdmin.execute.mockResolvedValue(ADMIN);
 
       const r = await useCase.execute({ ...grupo(true), texto: '' });
@@ -262,6 +264,91 @@ describe('RotearMensagemInternaUseCase', () => {
 
       expect(r.resposta).toBeNull();
       expect(r.motivo).toBe('ignorado_remetente_desconhecido');
+    });
+
+    /*
+     * ESTE E O PEDIDO DO LUCAS em 30/09: "voce nao esta lendo o contexto da
+     * conversa, da para saber o que quer". Com a sala ouvida, a mencao
+     * sozinha depois de uma pergunta deixa de ser um beco.
+     */
+    describe('ouvindo a sala', () => {
+      const comNome = (mencionada: boolean, texto: string, extra = {}) => {
+        const base = grupo(mencionada);
+        return {
+          ...base,
+          texto,
+          grupo: { ...base.grupo, autorNome: 'Lucas', ...extra },
+        };
+      };
+
+      it('guarda a mensagem SEM menção, e continua sem responder', async () => {
+        const r = await useCase.execute(
+          comNome(false, 'qual o faturamento da semana?'),
+        );
+
+        expect(r.resposta).toBeNull();
+        expect(canalGestao.execute).not.toHaveBeenCalled();
+      });
+
+      it('e depois a menção sozinha responde AO QUE FICOU PENDENTE', async () => {
+        identificarAdmin.execute.mockResolvedValue(ADMIN);
+
+        await useCase.execute(comNome(false, 'qual o faturamento da semana?'));
+        const r = await useCase.execute(comNome(true, ''));
+
+        // Deixou de ser a frase de canja: agora ela tem o que ler.
+        expect(r.motivo).not.toBe('grupo_mencao_sem_pergunta');
+        expect(canalGestao.execute).toHaveBeenCalledWith(
+          expect.objectContaining({
+            contexto: ['Lucas: qual o faturamento da semana?'],
+          }),
+        );
+      });
+
+      /* A mensagem que acabou de chegar ja viaja como a pergunta — no
+       * contexto ela apareceria duas vezes. */
+      it('a mensagem que chegou não se repete no contexto', async () => {
+        identificarAdmin.execute.mockResolvedValue(ADMIN);
+
+        await useCase.execute(comNome(false, 'primeira'));
+        await useCase.execute(comNome(true, 'e das outras?'));
+
+        expect(canalGestao.execute).toHaveBeenCalledWith(
+          expect.objectContaining({ contexto: ['Lucas: primeira'] }),
+        );
+      });
+
+      /* A mira: responder citando uma mensagem diz exatamente a qual. */
+      it('a mensagem CITADA abre o contexto', async () => {
+        identificarAdmin.execute.mockResolvedValue(ADMIN);
+
+        await useCase.execute(comNome(false, 'linha antiga'));
+        await useCase.execute(
+          comNome(true, 'resolve isso', { citada: 'o pedido da Marina' }),
+        );
+
+        expect(canalGestao.execute).toHaveBeenCalledWith(
+          expect.objectContaining({
+            contexto: [
+              '(respondendo a) o pedido da Marina',
+              'Lucas: linha antiga',
+            ],
+          }),
+        );
+      });
+
+      it('no privado não há sala nenhuma para ouvir', async () => {
+        identificarAdmin.execute.mockResolvedValue(ADMIN);
+
+        await useCase.execute({
+          de: '558586467241@c.us',
+          texto: 'qual o faturamento da semana?',
+        });
+
+        expect(canalGestao.execute).toHaveBeenCalledWith(
+          expect.not.objectContaining({ contexto: expect.anything() }),
+        );
+      });
     });
 
     it('no privado não há `conversaId` — nada mudou para a conversa direta', async () => {
@@ -1300,6 +1387,7 @@ describe('RotearMensagemInternaUseCase — a conversa do Yerlon, de ponta a pont
       new RecepcionarUseCase(new RecepcaoService()),
       whatsapp as never,
       { transcrever: jest.fn(), disponivel: () => true },
+      new MemoriaDeGrupoService(),
     );
     const falar = (texto: string, extra: object = {}) =>
       roteador.execute({ de: DE, texto, em: Date.now(), ...extra });
@@ -1442,6 +1530,7 @@ describe('RotearMensagemInternaUseCase — a consulta do Lucas, de ponta a ponta
       new RecepcionarUseCase(new RecepcaoService()),
       {} as never,
       { transcrever: jest.fn(), disponivel: () => true },
+      new MemoriaDeGrupoService(),
     );
     const falar = (texto: string) =>
       roteador.execute({ de: DE, texto, em: Date.now() });

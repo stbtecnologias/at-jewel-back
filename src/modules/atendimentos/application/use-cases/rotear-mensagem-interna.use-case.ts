@@ -14,6 +14,7 @@ import {
   type AudioInterno,
 } from './processar-mensagem-interna.use-case';
 import { ProcessarMensagemGestaoUseCase } from './processar-mensagem-gestao.use-case';
+import { MemoriaDeGrupoService } from '../memoria-de-grupo.service';
 import { RecepcionarUseCase } from './recepcionar.use-case';
 import {
   PERMISSAO_CATALOGO,
@@ -43,6 +44,10 @@ export interface MensagemDoCanal {
   grupo?: {
     /** Quem escreveu, como `NNNNNNN@c.us`. E ele que e reconhecido. */
     autor: string;
+    /** Como a pessoa se chama no WhatsApp. So para rotular a linha da sala. */
+    autorNome?: string;
+    /** O texto da mensagem CITADA, quando esta e uma resposta a outra. */
+    citada?: string;
     /** Os `@lid` mencionados na mensagem. */
     mencionados: string[];
     /** Se a agente DESTE numero foi uma das mencionadas. */
@@ -148,6 +153,7 @@ export class RotearMensagemInternaUseCase {
     private readonly whatsapp: IWhatsappGateway,
     @Inject(TRANSCRICAO_SERVICE)
     private readonly transcricao: ITranscricao,
+    private readonly sala: MemoriaDeGrupoService,
   ) {}
 
   async execute(msg: MensagemDoCanal): Promise<RespostaDoCanal> {
@@ -163,6 +169,19 @@ export class RotearMensagemInternaUseCase {
     // faz, default-deny, desde sempre. Qualquer um pode criar um grupo com
     // ela; quem nao tem cadastro nao recebe resposta, ali como no privado.
     // ---------------------------------------------------------------------
+    // ---------------------------------------------------------------------
+    // ELA OUVE A SALA — 30/09/2026.
+    //
+    // Guardar vem ANTES de decidir se responde, e vale para a mensagem sem
+    // mencao tambem: e justamente ela que vira contexto depois. Guardar e uma
+    // escrita em memoria — o grupo parado continua custando zero.
+    //
+    // Ver `MemoriaDeGrupoService`: so RAM, com prazo, nada vai para o banco.
+    // ---------------------------------------------------------------------
+    if (msg.grupo) {
+      this.sala.registrar(msg.de, msg.grupo.autorNome ?? null, msg.texto);
+    }
+
     if (msg.grupo && !msg.grupo.mencionada) {
       return { resposta: null, motivo: 'ignorado_grupo_sem_mencao' };
     }
@@ -435,12 +454,19 @@ export class RotearMensagemInternaUseCase {
       // nao ha pergunta seria pagar para dizer "oi".
       // ------------------------------------------------------------------
       if (msg.grupo) {
-        return {
-          resposta: 'Oi! Me diz o que você precisa que eu vejo.',
-          motivo: 'grupo_mencao_sem_pergunta',
-        };
+        // SO QUANDO NAO HA O QUE LER. Com a sala guardada, a mencao sozinha
+        // deixa de ser um beco: ela olha o que foi dito antes e responde,
+        // que e o que o Lucas esperava em 30/09 — "da para saber o que quer".
+        // A frase abaixo ficou para o caso de ele chamar numa sala vazia.
+        if (this.contextoDoGrupo(msg).length === 0) {
+          return {
+            resposta: 'Oi! Me diz o que você precisa que eu vejo.',
+            motivo: 'grupo_mencao_sem_pergunta',
+          };
+        }
+      } else {
+        return { resposta: null, motivo: 'ignorado_sem_conteudo' };
       }
-      return { resposta: null, motivo: 'ignorado_sem_conteudo' };
     }
 
     // ---------------------------------------------------------------------
@@ -612,8 +638,35 @@ export class RotearMensagemInternaUseCase {
       // e o ESCOPO da resposta — o `role` acima e de quem mencionou.
       // ------------------------------------------------------------------
       ...(msg.grupo ? { conversaId: `grupo:${msg.de}` } : {}),
+      ...(msg.grupo ? { contexto: this.contextoDoGrupo(msg) } : {}),
       texto,
     });
+  }
+
+  /**
+   * O que ela "ouviu" antes de ser chamada.
+   *
+   * ========================================================================
+   * A CITADA VEM PRIMEIRO, E ISSO E A MIRA.
+   *
+   * Responder uma mensagem mencionando a agente diz EXATAMENTE a qual se
+   * refere — mais preciso que qualquer retrovisor. Quando existe, ela abre a
+   * lista; as linhas da sala vao atras, para o "e das outras?".
+   * ========================================================================
+   *
+   * A PROPRIA MENSAGEM que acabou de chegar fica de fora: ela ja viaja como a
+   * pergunta, e apareceria duas vezes.
+   *
+   * MAS SO QUANDO ELA FOI GUARDADA. A mencao sozinha vira texto vazio, e
+   * vazio nao entra na sala — descontar "a ultima" ali cortaria a linha do
+   * vizinho, que e exatamente a que interessa. Foi o que aconteceu na
+   * primeira versao: com uma pergunta pendente na sala, ela ainda respondia
+   * "me diz o que voce precisa".
+   */
+  private contextoDoGrupo(msg: MensagemDoCanal): string[] {
+    const anteriores = this.sala.anteriores(msg.de, msg.texto.trim() ? 1 : 0);
+    const citada = msg.grupo?.citada;
+    return citada ? [`(respondendo a) ${citada}`, ...anteriores] : anteriores;
   }
 
   /**

@@ -67,6 +67,8 @@ interface WahaWebhookBody {
         MediaType?: string;
         IsGroup?: boolean;
         SenderAlt?: string;
+        /** Nome que a pessoa escolheu no proprio WhatsApp. */
+        PushName?: string;
       };
       Message?: {
         audioMessage?: { mimetype?: string; seconds?: number };
@@ -161,6 +163,25 @@ export interface MensagemDeGrupo {
    * `Info.Sender` vem como `@lid`, sem telefone nenhum.
    */
   autor: string;
+  /**
+   * Como a pessoa se chama no proprio WhatsApp (`PushName`).
+   *
+   * VEM DE GRACA E SEM CONSULTA NENHUMA, e e isso que o torna util: a linha
+   * do grupo guardada sem mencao nao pode pagar um lookup so para saber de
+   * quem e. E nao e dado novo — todo mundo no grupo ve este nome na tela.
+   *
+   * E TEXTO ESCRITO PELA PROPRIA PESSOA, entao vale a mesma regra de todo
+   * conteudo que chega: e dado, nunca instrucao.
+   */
+  autorNome?: string;
+  /**
+   * A mensagem CITADA, quando esta e uma resposta a outra.
+   *
+   * Serve para a mira: "@anastasia isso aqui" respondendo a uma mensagem diz
+   * exatamente a qual. Ausente quando o payload nao traz ou vem num formato
+   * que nao reconhecemos — e ai o contexto do grupo cobre o caso.
+   */
+  citada?: string;
   /**
    * Os `@lid` mencionados na mensagem. Vazio = ninguem foi mencionado.
    *
@@ -423,7 +444,16 @@ export function extrairMensagemRecebida(body: unknown): MensagemWhatsapp | null 
       false,
     );
     if (!autor) return null;
-    grupo = { autor: `${autor}@c.us`, mencionados: mencionadosDoEvento(payload) };
+    grupo = {
+      autor: `${autor}@c.us`,
+      mencionados: mencionadosDoEvento(payload),
+    };
+    const nome = payload._data?.Info?.PushName;
+    if (typeof nome === 'string' && nome.trim()) {
+      grupo.autorNome = nome.trim().slice(0, 40);
+    }
+    const citada = mensagemCitada(payload);
+    if (citada) grupo.citada = citada;
   }
 
   const audio = extrairAudio(payload);
@@ -474,6 +504,36 @@ export function mencionadosDoEvento(
     ?.mentionedJID;
   if (!Array.isArray(bruto)) return [];
   return bruto.filter((j): j is string => typeof j === 'string' && !!j);
+}
+
+/**
+ * O texto da mensagem CITADA, quando esta e uma resposta a outra.
+ *
+ * ==========================================================================
+ * DEFENSIVO DE PROPOSITO: O FORMATO DO `replyTo` NAO FOI MEDIDO.
+ *
+ * A chave existe no payload — apareceu em `payload.chaves` no diagnostico de
+ * 29/09 —, mas o conteudo dela nao foi visto. Em vez de escrever de cor o
+ * caminho, que foi o erro do `@lid`, aqui se aceitam as formas plausiveis e
+ * se devolve `null` em qualquer outra.
+ *
+ * `null` NAO QUEBRA NADA: a memoria do grupo ja carrega as ultimas linhas, e
+ * a citada quase sempre esta entre elas. Isto e mira, nao fundacao.
+ * ==========================================================================
+ */
+export function mensagemCitada(
+  payload: NonNullable<WahaWebhookBody['payload']>,
+): string | null {
+  const bruto = payload.replyTo;
+  if (typeof bruto === 'string') return bruto.trim().slice(0, 500) || null;
+  if (bruto && typeof bruto === 'object') {
+    const o = bruto as Record<string, unknown>;
+    for (const campo of ['body', 'text', 'caption']) {
+      const v = o[campo];
+      if (typeof v === 'string' && v.trim()) return v.trim().slice(0, 500);
+    }
+  }
+  return null;
 }
 
 /**
