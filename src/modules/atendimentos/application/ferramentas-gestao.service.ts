@@ -359,15 +359,58 @@ export class FerramentasGestaoService {
     return {
       gestaoItensExigeVendedora: !verLoja,
 
-      gestaoAgenda: async ({ vendedora, periodo }) =>
-        this.comVendedora(equipe, vendedora, async (id) => {
+      /**
+       * A AGENDA, DE UMA OU DA EQUIPE INTEIRA — 30/09/2026.
+       *
+       * ====================================================================
+       * SEM NOME, A EQUIPE. E a mesma assimetria do `funil_de_atendimentos` e
+       * do `panorama_de_leads`, e agora tambem aqui.
+       *
+       * Ate hoje a ferramenta so aceitava UMA vendedora. Em producao um
+       * usuario pediu "a agenda de hoje da equipe toda" e ouviu "nao tenho
+       * como puxar de uma vez, me passa os nomes" — a agente sendo honesta
+       * com um contrato que era estreito demais.
+       *
+       * Fazer o modelo chamar oito vezes resolveria, mas amarraria a resposta
+       * ao numero de voltas do laco: com equipe grande ele bateria o teto e a
+       * resposta sairia pela metade. Uma chamada que ja traz todas nao tem
+       * esse risco — e custa as mesmas consultas, sem as idas ao modelo.
+       * ====================================================================
+       *
+       * O RECORTE DA GERENTE CONTINUA VALENDO: "equipe toda" e a equipe DELA.
+       */
+      gestaoAgenda: async ({ vendedora, periodo }) => {
+        const linhasDe = async (id: string): Promise<string[]> => {
           const compromissos = await this.agenda.execute(id, periodo);
           return compromissos.map(
             (c) =>
               `${c.cliente} — ${formatarQuando(c.quando)}` +
               `${c.ocasiao ? ` (${c.ocasiao})` : ''}`,
           );
-        }),
+        };
+
+        if (vendedora && vendedora.trim()) {
+          return this.comVendedora(equipe, vendedora, linhasDe);
+        }
+
+        const ativas = (await this.vendedoras.listar({ ativo: true })).filter(
+          (v) => !!v.id && (equipe === null || alcanca(v.id)),
+        );
+
+        const linhas: string[] = [];
+        for (const v of ativas) {
+          const dela = await linhasDe(v.id!);
+          // QUEM NAO TEM NADA APARECE ASSIM MESMO. Omitir faria a lista
+          // parecer a equipe inteira ocupada, e quem le nao teria como
+          // distinguir "sem compromisso" de "nao foi consultada".
+          linhas.push(
+            dela.length === 0
+              ? `${v.nome}: nada agendado.`
+              : `${v.nome}: ${dela.join('; ')}`,
+          );
+        }
+        return { status: 'OK' as const, linhas };
+      },
 
       gestaoVendas: async ({ vendedora, periodo, de, ate }) =>
         this.comVendedora(equipe, vendedora, async (id) => {

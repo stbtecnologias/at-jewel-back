@@ -347,8 +347,16 @@ export interface GestaoLeituraResultado {
   nomes?: string[];
 }
 
+/**
+ * A agenda de UMA vendedora — ou da equipe inteira, quando o nome nao vem.
+ *
+ * A mesma assimetria de `funil_de_atendimentos` e `panorama_de_leads`: o "de
+ * quem" so existe porque quem pergunta e a administracao, e "sem nome" nao e
+ * falta de dado, e o pedido pela equipe.
+ */
 export type GestaoAgendaHandler = (input: {
-  vendedora: string;
+  /** OMITIDO = a equipe inteira (a da gerente, quando houver recorte). */
+  vendedora?: string;
   periodo: PeriodoAgendaLlm;
 }) => Promise<GestaoLeituraResultado>;
 

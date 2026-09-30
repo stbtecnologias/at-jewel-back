@@ -302,13 +302,14 @@ const MELHORES_TOOL: Anthropic.Tool = {
 const GESTAO_AGENDA_TOOL: Anthropic.Tool = {
   name: 'agenda_de_vendedora',
   description:
-    'Consulta os compromissos ja agendados de UMA vendedora da equipe. Use quando perguntarem pela agenda de alguem — "como esta o dia da Marina", "a Beatriz tem contato amanha". CHAME MESMO SEM SABER O PERIODO: a ferramenta tambem e quem confirma se a vendedora existe, e perguntar o periodo antes daria a entender que ela existe. Passe o nome como veio na conversa; se houver mais de uma com aquele nome, ou nenhuma, a ferramenta avisa e ai voce pergunta.',
+    'Consulta os compromissos ja agendados. COM "vendedora", a agenda daquela pessoa — "como esta o dia da Marina", "a Beatriz tem contato amanha". SEM "vendedora", a agenda de TODA a equipe de uma vez, uma linha por pessoa — use assim para "a agenda de hoje da equipe toda", "quem tem contato marcado hoje", "como esta o dia do time". NAO peca os nomes um a um e NAO diga que so da para consultar uma por vez: omitir o campo ja traz todas. CHAME MESMO SEM SABER O PERIODO: a ferramenta tambem e quem confirma se a vendedora existe, e perguntar o periodo antes daria a entender que ela existe. Passe o nome como veio na conversa; se houver mais de uma com aquele nome, ou nenhuma, a ferramenta avisa e ai voce pergunta.',
   input_schema: {
     type: 'object',
     properties: {
       vendedora: {
         type: 'string',
-        description: 'Nome da vendedora, como falado.',
+        description:
+          'Nome da vendedora, como falado. OMITA para a equipe inteira — nao invente um nome quando a pergunta for do time.',
       },
       periodo: {
         type: 'string',
@@ -317,7 +318,6 @@ const GESTAO_AGENDA_TOOL: Anthropic.Tool = {
           'HOJE = o que ainda vem hoje; AMANHA = o dia seguinte inteiro; SEMANA = os proximos sete dias. Omita se nao souber — assume HOJE, e voce diz na resposta que olhou o dia de hoje.',
       },
     },
-    required: ['vendedora'],
   },
 };
 
@@ -1469,9 +1469,13 @@ export class AnthropicClient implements ILlmClient {
               vendedora?: string;
               periodo?: PeriodoAgendaLlm;
             };
+            // VAZIO VIRA `undefined`, e nao string vazia: e o que distingue
+            // "a agenda da Marina" de "a agenda da equipe". Com `''` o
+            // handler cairia no caminho de UMA vendedora sem nome nenhum.
+            const nome = String(e.vendedora ?? '').slice(0, 80);
             return textoDaLeituraDeGestao(
               await params.gestaoAgenda!({
-                vendedora: String(e.vendedora ?? '').slice(0, 80),
+                vendedora: nome || undefined,
                 periodo: e.periodo ?? 'HOJE',
               }),
               'compromisso',
