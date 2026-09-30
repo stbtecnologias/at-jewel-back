@@ -7,6 +7,10 @@ import { VENDEDORA_REPOSITORY } from '../../../vendedoras/domain/ports/injection
 import type { IVendedoraRepository } from '../../../vendedoras/domain/ports/repositories/vendedora-repository.port';
 import { ATENDIMENTO_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { IAtendimentoRepository } from '../../domain/ports/repositories/atendimento-repository.port';
+import {
+  interpretarInstante,
+  quandoEmPalavras,
+} from '../../../../shared/tempo/instante';
 
 /** Minutos antes do combinado em que sai o lembrete. */
 export const MINUTOS_LEMBRETE = 15;
@@ -421,30 +425,20 @@ function nomeDeGente(valor?: string | null): string | null {
   return limpo;
 }
 
-/** Dia e hora em portugues de gente: "hoje às 15:00", "30/09 às 15:00". */
-function formatarQuando(d: Date): string {
-  const hora = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  const soDia = (x: Date) =>
-    new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const dias = (soDia(d) - soDia(new Date())) / 86_400_000;
-
-  if (dias === 0) return `hoje às ${hora}`;
-  if (dias === 1) return `amanhã às ${hora}`;
-  if (dias > 1 && dias < 7) {
-    return `${d.toLocaleDateString('pt-BR', { weekday: 'long' })} às ${hora}`;
-  }
-  return `${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às ${hora}`;
-}
-
 /**
- * Aceita apenas horario FUTURO e dentro de seis meses. Data no passado quase
- * sempre e o modelo errando o ano; data muito distante, alucinacao.
+ * ==========================================================================
+ * `formatarQuando` E `interpretarHorario` SAIRAM DAQUI EM 30/09/2026.
+ *
+ * As duas nasceram privadas neste arquivo e viraram
+ * `shared/tempo/instante.ts` quando os lembretes pessoais precisaram das
+ * mesmas regras. Copiar seria repetir a forma de erro que a auditoria daquele
+ * dia achou quatro vezes no projeto: a regra num caminho e esquecida no
+ * vizinho — e no dia em que o teto de meses mudasse, mudaria de um lado so.
+ *
+ * O comportamento e o mesmo; o teto continua sendo os 180 dias deste arquivo,
+ * passado por parametro.
+ * ==========================================================================
  */
-function interpretarHorario(iso: string): Date | null {
-  const quando = new Date(iso);
-  if (Number.isNaN(quando.getTime())) return null;
-  const agora = Date.now();
-  if (quando.getTime() < agora) return null;
-  if (quando.getTime() > agora + DIAS_MAXIMOS * 24 * 60 * 60_000) return null;
-  return quando;
-}
+const formatarQuando = quandoEmPalavras;
+const interpretarHorario = (iso: string) =>
+  interpretarInstante(iso, DIAS_MAXIMOS);

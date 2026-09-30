@@ -5,6 +5,7 @@ import { ANASTASIA_GESTAO_SYSTEM } from '../../../agentes/application/personas';
 import { LLM_CLIENT } from '../../../agentes/domain/ports/injection-tokens';
 import type { ILlmClient } from '../../../agentes/domain/ports/llm-client.port';
 import { CombinadosService } from '../../../agentes/application/combinados.service';
+import { LembretesService } from '../../../agentes/application/lembretes.service';
 import { PermissionsService } from '../../../auth/application/permissions.service';
 import { EscopoVendasService } from '../../../vendas/application/escopo-vendas.service';
 import { FerramentasGestaoService } from '../ferramentas-gestao.service';
@@ -108,6 +109,7 @@ export class ProcessarMensagemGestaoUseCase {
     private readonly permissoes: PermissionsService,
     private readonly escopo: EscopoVendasService,
     private readonly combinados: CombinadosService,
+    private readonly lembretes: LembretesService,
     @Inject(LLM_CLIENT)
     private readonly llm: ILlmClient,
     private readonly config: ConfigService,
@@ -195,6 +197,19 @@ export class ProcessarMensagemGestaoUseCase {
         // os dois faria a lista de ferramentas de negocio crescer com uma que
         // nao consulta dado nenhum.
         ...this.combinados.handlers('anastasia', msg.usuarioId),
+
+        // OS LEMBRETES PESSOAIS — 30/09/2026. Mesma familia dos combinados, e
+        // aqui pelo mesmo motivo: sao sobre a PESSOA, e nao sobre a loja.
+        //
+        // A diferenca entre os dois precisa ficar clara para quem ler: o
+        // combinado e da AGENTE e vale para todos ("de agora em diante, me
+        // avise quando..."); o lembrete e da PESSOA e so ela ve. Por isso ele
+        // recebe so o `usuarioId`, sem o nome da agente.
+        //
+        // E e o `usuarioId` que faz o escopo: ele entra por CLOSURE, entao
+        // nenhuma das quatro ferramentas tem um campo "de quem" para o modelo
+        // preencher errado.
+        ...this.lembretes.handlers(msg.usuarioId),
       });
 
       // So guarda o que deu certo. Turno com falha na memoria faria a proxima

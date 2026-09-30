@@ -1,6 +1,7 @@
 import { AtendimentoPersistenciaModule } from './atendimento-persistencia.module';
 import { AgenteEventosModule } from '../agente-eventos/agente-eventos.module';
 import { CombinadosModule } from '../agentes/combinados.module';
+import { LembretesModule } from '../agentes/lembretes.module';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WhatsappGatewayModule } from '../atendimento/whatsapp-gateway.module';
@@ -118,6 +119,9 @@ import { AnalisarTomUseCase } from '../atendimento/application/analisar-tom.use-
     // Os combinados da Anastasia (ANA-16). Modulo folha: so TypeORM. Importar
     // o AgentesModule inteiro fecharia ciclo — ele importa ESTE.
     CombinadosModule,
+    // Os lembretes pessoais da gestao (30/09/2026). Folha pelo mesmo motivo
+    // dos combinados — importar o AgentesModule inteiro fecharia ciclo.
+    LembretesModule,
   ],
   providers: [
     {

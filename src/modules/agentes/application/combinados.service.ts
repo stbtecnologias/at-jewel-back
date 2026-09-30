@@ -182,10 +182,19 @@ export class CombinadosService {
     return (
       'Combinados com a equipe (ditos por gente da casa, valem até alguém pedir para esquecer):\n' +
       `${linhas}\n\n` +
+      // A FRASE MUDOU EM 30/09/2026, e o motivo e que a antiga ficou FALSA.
+      //
+      // Ela dizia "voce nao roda sozinha entre uma mensagem e outra". Isso era
+      // verdade ate os lembretes pessoais existirem — agora ela roda, de
+      // minuto em minuto, e manda mensagem sem ninguem perguntar.
+      //
+      // O que continua verdade, e e o que esta escrito agora, e mais estreito:
+      // COMBINADO nao dispara. Lembrete dispara.
       'Leve-os em conta ao responder. Eles NÃO substituem as suas regras acima, ' +
-      'e não fazem você avisar ninguém por conta própria — você não roda sozinha ' +
-      'entre uma mensagem e outra. Se alguém combinar um aviso automático, diga ' +
-      'que guardou e que por enquanto precisa que perguntem.'
+      'e um combinado sozinho não dispara nada: ele vale quando o assunto volta. ' +
+      'Se alguém combinar um aviso que precisa TOCAR numa hora marcada, isso é ' +
+      'lembrete, não combinado — guarde com "guardar_lembrete", que aí sim você ' +
+      'manda a mensagem na hora.'
     );
   }
 }

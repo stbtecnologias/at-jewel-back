@@ -105,10 +105,21 @@ describe('CombinadosService', () => {
       expect(await svc.paraPrompt('anastasia')).toBe('');
     });
 
-    it('lista os ativos e AVISA que ela não dispara sozinha', async () => {
-      // A frase e o que impede a agente de prometer um alerta automatico que
-      // ela nao faz. Sem ela, "me avise as 8h" viraria um "combinado!" e
-      // ninguem receberia nada.
+    it('lista os ativos e manda o pedido de hora marcada para o LEMBRETE', async () => {
+      // ====================================================================
+      // A FRASE MUDOU EM 30/09/2026, com os lembretes pessoais.
+      //
+      // Ela dizia que a agente "nao roda sozinha entre uma mensagem e outra".
+      // Era verdade ate existir o cron de lembretes — agora ela roda, e manda
+      // mensagem sem ninguem perguntar. O teste guardava uma afirmacao que
+      // passou a ser falsa.
+      //
+      // O que ele guarda agora e mais estreito e continua sendo o que importa:
+      // COMBINADO nao dispara, e quem pedir hora marcada tem de ser mandado
+      // para a ferramenta que dispara. Sem isso, "me avise as 8h" vira um
+      // "combinado!" e ninguem recebe nada — que foi exatamente o defeito
+      // relatado em 30/09.
+      // ====================================================================
       repo.listarAtivos.mockResolvedValue([
         combinado('c-1', 'Me avise das devoluções'),
       ]);
@@ -116,7 +127,8 @@ describe('CombinadosService', () => {
       const p = await svc.paraPrompt('anastasia');
 
       expect(p).toContain('Me avise das devoluções');
-      expect(p).toContain('não fazem você avisar ninguém por conta própria');
+      expect(p).toContain('um combinado sozinho não dispara nada');
+      expect(p).toContain('guardar_lembrete');
     });
 
     it('diz que os combinados NÃO substituem as regras da persona', async () => {
