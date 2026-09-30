@@ -298,6 +298,83 @@ describe('FerramentasGestaoService', () => {
     });
   });
 
+  /**
+   * A AGENDA DA EQUIPE — 30/09/2026.
+   *
+   * ======================================================================
+   * NASCEU DE UMA RECUSA QUE PARECIA LIMITE E ERA CONTRATO ESTREITO.
+   *
+   * Em producao um usuario pediu "a agenda de hoje da equipe toda" e ouviu
+   * "nao tenho como puxar de uma vez, me passa os nomes". A agente estava
+   * sendo honesta com a ferramenta que existia — ela so aceitava UMA.
+   *
+   * Fazer o modelo chamar uma vez por vendedora resolveria no papel, e
+   * amarraria a resposta ao teto de voltas do laco: com equipe grande ele
+   * estouraria e a resposta sairia pela metade.
+   * ======================================================================
+   */
+  describe('agenda da equipe', () => {
+    beforeEach(() => {
+      vendedoras.listar.mockResolvedValue([
+        { id: 'vd-1', nome: 'Marina' },
+        { id: 'vd-2', nome: 'Beatriz' },
+      ]);
+    });
+
+    it('sem nome, traz TODAS numa chamada só', async () => {
+      agenda.execute.mockResolvedValue([
+        { cliente: 'Karina', quando: new Date(2026, 8, 30, 14, 0), ocasiao: null },
+      ]);
+
+      const r = await servico.montar().gestaoAgenda({ periodo: 'HOJE' });
+
+      expect(r.status).toBe('OK');
+      expect(r.linhas).toHaveLength(2);
+      expect(r.linhas[0]).toContain('Marina:');
+      expect(r.linhas[1]).toContain('Beatriz:');
+      expect(agenda.execute).toHaveBeenCalledTimes(2);
+    });
+
+    /* Omitir quem nao tem nada faria a lista parecer a equipe inteira
+     * ocupada, e quem le nao distinguiria "sem compromisso" de "nao
+     * consultada". */
+    it('quem não tem nada aparece dizendo que não tem', async () => {
+      agenda.execute.mockResolvedValue([]);
+
+      const r = await servico.montar().gestaoAgenda({ periodo: 'HOJE' });
+
+      expect(r.linhas).toEqual([
+        'Marina: nada agendado.',
+        'Beatriz: nada agendado.',
+      ]);
+    });
+
+    it('"equipe toda" da gerente é a equipe DELA', async () => {
+      agenda.execute.mockResolvedValue([]);
+
+      const r = await servico
+        .montar({ equipe: ['vd-1'] })
+        .gestaoAgenda({ periodo: 'HOJE' });
+
+      expect(r.linhas).toEqual(['Marina: nada agendado.']);
+      expect(agenda.execute).toHaveBeenCalledTimes(1);
+    });
+
+    it('com nome, continua sendo só aquela pessoa', async () => {
+      agenda.execute.mockResolvedValue([]);
+
+      const r = await servico
+        .montar()
+        .gestaoAgenda({ vendedora: 'Marina', periodo: 'HOJE' });
+
+      expect(r.vendedora).toBe('Marina Albuquerque');
+      expect(agenda.execute).toHaveBeenCalledTimes(1);
+      expect(agenda.execute).toHaveBeenCalledWith('vd-1', 'HOJE');
+      // Nao varreu a equipe para responder por uma so.
+      expect(vendedoras.listar).not.toHaveBeenCalled();
+    });
+  });
+
   describe('carteira de uma vendedora', () => {
     it('a consulta usa o CODIGO DO ERP, que e o que define a carteira', async () => {
       await servico.montar().gestaoCarteira({ vendedora: 'Marina', meses: 3 });
