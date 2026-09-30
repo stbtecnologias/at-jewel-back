@@ -1201,6 +1201,26 @@ interface TetosPorTurno {
   lembreteGuardado: boolean;
 }
 
+/**
+ * Os erros que NAO passam sozinhos — ver `executarLeitura`.
+ *
+ * `QueryFailedError` e do TypeORM e cobre o caso que motivou isto: SQL
+ * malformado. Os outros tres sao defeito de codigo puro. Tudo o mais — rede,
+ * timeout, WAHA fora do ar, limite da API — e tratado como passageiro, que e
+ * o lado seguro de errar: mandar tentar de novo algo que era defeito custa
+ * uma tentativa; dizer "esta quebrado" sobre um timeout assusta a toa.
+ */
+const ERROS_DE_DEFEITO = new Set([
+  'QueryFailedError',
+  'TypeError',
+  'ReferenceError',
+  'SyntaxError',
+]);
+
+function ehDefeitoDeCodigo(err: unknown): boolean {
+  return err instanceof Error && ERROS_DE_DEFEITO.has(err.name);
+}
+
 @Injectable()
 export class AnthropicClient implements ILlmClient {
   private readonly logger = new Logger(AnthropicClient.name);
@@ -2376,14 +2396,43 @@ export class AnthropicClient implements ILlmClient {
         content: await corpo(),
       };
     } catch (err) {
-      this.logger.error(
-        `Falha na ferramenta ${toolUse.name}: ${err instanceof Error ? err.message : err}`,
-      );
+      // ====================================================================
+      // DUAS FALHAS DIFERENTES DIZIAM A MESMA COISA, E FOI ISSO QUE ESCONDEU
+      // UM DEFEITO POR OITO DIAS — 30/09/2026.
+      //
+      // Um `$` sumiu de um parametro SQL em 22/09 e derrubou
+      // `feedbacks_de_vendedora`. Toda pergunta de feedback caia aqui, e a
+      // agente respondia "tente de novo em instantes" — a MESMA frase de um
+      // WAHA fora do ar. Ninguem tem como saber que aquilo nunca vai voltar,
+      // entao ninguem reclamou, e o log dizia "Falha na ferramenta" como
+      // diria para um timeout.
+      //
+      // O canal do WhatsApp nao tem quem abra chamado. Se a distincao nao
+      // estiver aqui, ela nao existe em lugar nenhum.
+      // ====================================================================
+      const defeito = ehDefeitoDeCodigo(err);
+      const mensagem = err instanceof Error ? err.message : 'erro desconhecido';
+
+      if (defeito) {
+        // NAO logamos `query` nem `parameters` do erro do TypeORM: os
+        // parametros carregam hash de telefone e nome de cliente. A mensagem
+        // do driver ("operator does not exist: ...") ja diz o que e preciso.
+        this.logger.error(
+          `DEFEITO NA FERRAMENTA ${toolUse.name} (${(err as Error).name}): ${mensagem}`,
+        );
+      } else {
+        this.logger.error(`Falha na ferramenta ${toolUse.name}: ${mensagem}`);
+      }
+
       return {
         type: 'tool_result',
         tool_use_id: toolUse.id,
-        content:
-          'Nao consegui consultar isso agora. Peca desculpa e diga que ela pode tentar de novo em instantes.',
+        // A pessoa nao precisa saber que e defeito — precisa saber que NAO
+        // adianta insistir. Mandar tentar de novo o que nunca vai funcionar e
+        // o pior dos dois mundos: ela perde tempo e nos nao ficamos sabendo.
+        content: defeito
+          ? 'Essa consulta esta com defeito, e tentar de novo nao resolve. Diga que nao consegue trazer isso agora, que o problema ja foi registrado, e ofereca outro caminho. NAO ofereca tentar de novo.'
+          : 'Nao consegui consultar isso agora. Peca desculpa e diga que ela pode tentar de novo em instantes.',
         is_error: true,
       };
     }
