@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { limparEHigienizar } from '../../../shared/http/sanitize/sanitize-text.transform';
 
 /** Quantas linhas de cada grupo ficam guardadas. */
 export const LINHAS_POR_GRUPO = 10;
@@ -56,12 +57,27 @@ export class MemoriaDeGrupoService {
    * nao — e a mencionada tambem entra, senao o proprio pedido sumiria do fio.
    */
   registrar(chatId: string, quem: string | null, texto: string): void {
-    const limpo = texto.trim().slice(0, MAX_CARACTERES);
+    // ====================================================================
+    // HIGIENE ANTES DE GUARDAR — 30/09/2026.
+    //
+    // Ate aqui era so `trim` e corte. Caractere de controle, zero-width e
+    // inversao de direcao de texto passavam inteiros para o prompt, e sao o
+    // jeito de confundir a leitura sem escrever nada que pareca comando.
+    //
+    // A defesa principal do bloco e o delimitador sorteado, em
+    // `contextoDeGrupo`. Esta aqui e a camada de baixo, e vale para os dois
+    // campos: o texto e o nome que a pessoa escolheu no WhatsApp.
+    // ====================================================================
+    const limpo = limparEHigienizar(texto).trim().slice(0, MAX_CARACTERES);
     if (!limpo) return;
 
     const agora = Date.now();
     const sala = this.viva(chatId, agora) ?? { linhas: [], em: agora };
-    sala.linhas.push({ quem, texto: limpo, em: agora });
+    // O `quem` e o PushName — escolhido pela propria pessoa, e por isso passa
+    // pelo mesmo tratamento do texto. Vazio depois da limpeza vira `null`, e a
+    // linha sai sem prefixo em vez de sair com um prefixo em branco.
+    const nome = quem ? limparEHigienizar(quem).trim() || null : null;
+    sala.linhas.push({ quem: nome, texto: limpo, em: agora });
     // Só as ultimas: a sala e um retrovisor, nao um historico.
     if (sala.linhas.length > LINHAS_POR_GRUPO) {
       sala.linhas = sala.linhas.slice(-LINHAS_POR_GRUPO);
