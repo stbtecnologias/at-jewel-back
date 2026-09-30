@@ -40,8 +40,16 @@ const TTL_NUMERO_MS = 10 * 60_000;
 @Injectable()
 export class WahaGateway implements IWhatsappGateway {
   private readonly logger = new Logger(WahaGateway.name);
-  /** Cache do telefone de cada sessao — ver `numeroDoAgente`. */
-  private readonly numeros = new Map<string, { numero: string | null; em: number }>();
+  /**
+   * Cache da identidade de cada sessao — ver `identidadeDaSessao`.
+   *
+   * Telefone e lid ficam JUNTOS porque saem da mesma resposta do WAHA. Dois
+   * caches separados fariam duas idas para buscar o que ja tinha vindo.
+   */
+  private readonly identidades = new Map<
+    string,
+    { numero: string | null; lid: string | null; em: number }
+  >();
 
   constructor(
     private readonly config: ConfigService,
@@ -50,42 +58,66 @@ export class WahaGateway implements IWhatsappGateway {
   ) {}
 
   /**
-   * O telefone conectado numa das sessoes da casa.
+   * Quem e a sessao — telefone e `@lid` — direto do WAHA.
    *
-   * GUARDADO POR ALGUNS MINUTOS: o numero de um chip nao muda, e sem cache
-   * todo desvio pagaria uma ida ao WAHA. O TTL curto existe so para o dia em
-   * que alguem TROCAR o chip — a frase se corrige sozinha, sem restart.
+   * GUARDADO POR ALGUNS MINUTOS: nem o numero nem o lid de um chip mudam, e
+   * sem cache cada mensagem de grupo pagaria uma ida ao WAHA. O TTL curto
+   * existe so para o dia em que alguem TROCAR o chip — ai se corrige sozinho,
+   * sem restart.
    */
-  async numeroDoAgente(agente: AgenteDaCasa): Promise<string | null> {
+  private async identidadeDaSessao(
+    agente: AgenteDaCasa,
+  ): Promise<{ numero: string | null; lid: string | null }> {
     const sessao = this.sessoes.sessaoDe(agente);
-    const guardado = this.numeros.get(sessao);
-    if (guardado && Date.now() - guardado.em < TTL_NUMERO_MS) {
-      return guardado.numero;
-    }
+    const guardado = this.identidades.get(sessao);
+    if (guardado && Date.now() - guardado.em < TTL_NUMERO_MS) return guardado;
 
+    const vazio = { numero: null, lid: null };
     const baseUrl = this.config.get<string>('WAHA_BASE_URL');
     const apiKey = this.config.get<string>('WAHA_API_KEY');
-    if (!baseUrl || !apiKey) return null;
+    if (!baseUrl || !apiKey) return vazio;
 
     try {
       const resp = await fetch(
         `${baseUrl.replace(/\/$/, '')}/api/sessions/${encodeURIComponent(sessao)}`,
         { headers: { 'X-Api-Key': apiKey } },
       );
-      if (!resp.ok) return null;
-      const dados = (await resp.json()) as { me?: { id?: string } | null };
-      // `me.id` vem como `558598490118@c.us`; so os digitos interessam.
-      const numero = dados.me?.id?.replace(/\D/g, '') || null;
-      this.numeros.set(sessao, { numero, em: Date.now() });
-      return numero;
+      if (!resp.ok) return vazio;
+      const dados = (await resp.json()) as {
+        me?: { id?: string; lid?: string } | null;
+      };
+      // `me.id` vem como `558598490118@c.us` e `me.lid` como `1582...@lid`;
+      // so os digitos interessam, dos dois.
+      const identidade = {
+        numero: dados.me?.id?.replace(/\D/g, '') || null,
+        lid: dados.me?.lid?.replace(/\D/g, '') || null,
+      };
+      this.identidades.set(sessao, { ...identidade, em: Date.now() });
+      return identidade;
     } catch (err) {
-      // Sem numero o desvio ainda acontece, so que sem dizer qual — melhor
-      // que nao desviar.
+      // Sem identidade o desvio ainda acontece, so que sem dizer qual numero —
+      // melhor que nao desviar. E no grupo ela so deixa de ser reconhecida,
+      // o que a mantem CALADA: o lado seguro do "nao sei".
       this.logger.warn(
-        `Nao consegui ler o numero da sessao "${sessao}": ${err instanceof Error ? err.message : err}`,
+        `Nao consegui ler a identidade da sessao "${sessao}": ${err instanceof Error ? err.message : err}`,
       );
-      return null;
+      return vazio;
     }
+  }
+
+  async numeroDoAgente(agente: AgenteDaCasa): Promise<string | null> {
+    return (await this.identidadeDaSessao(agente)).numero;
+  }
+
+  /**
+   * O `@lid` da propria sessao, so digitos — para saber se FOI ELA a
+   * mencionada num grupo.
+   *
+   * A mencao chega como `@lid` e a sessao sabe o proprio: comparar lid com lid
+   * dispensa traduzir, e traduzir custaria uma ida ao WAHA por mencao.
+   */
+  async lidDoAgente(agente: AgenteDaCasa): Promise<string | null> {
+    return (await this.identidadeDaSessao(agente)).lid;
   }
 
   async resolverChatId(telefone: string): Promise<string | null> {

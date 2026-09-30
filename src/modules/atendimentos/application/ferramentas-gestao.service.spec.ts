@@ -22,8 +22,9 @@ describe('FerramentasGestaoService', () => {
     buscarPorCodigoErp: jest.Mock;
     buscarPorId: jest.Mock;
   };
-  let clientes: { buscarPorNomeParcial: jest.Mock };
+  let clientes: { buscarPorNomeParcial: jest.Mock; buscarPorId: jest.Mock };
   let leads: { listarAguardandoGestao: jest.Mock };
+  let conversas: { entre: jest.Mock };
   let servico: FerramentasGestaoService;
 
   const MARINA = {
@@ -60,8 +61,12 @@ describe('FerramentasGestaoService', () => {
       buscarPorCodigoErp: jest.fn().mockResolvedValue(null),
       buscarPorId: jest.fn().mockResolvedValue(null),
     };
-    clientes = { buscarPorNomeParcial: jest.fn().mockResolvedValue([]) };
+    clientes = {
+      buscarPorNomeParcial: jest.fn().mockResolvedValue([]),
+      buscarPorId: jest.fn().mockResolvedValue(null),
+    };
     leads = { listarAguardandoGestao: jest.fn().mockResolvedValue([]) };
+    conversas = { entre: jest.fn().mockResolvedValue([]) };
 
     servico = new FerramentasGestaoService(
       resolverVendedora as never,
@@ -109,7 +114,188 @@ describe('FerramentasGestaoService', () => {
       vendedoras as never,
       clientes as never,
       leads as never,
+      // O ponteiro de conversas vivas (29/09) — o `conversas_agora`.
+      conversas as never,
     );
+  });
+
+  /**
+   * O AGORA — `conversas_agora`, 29/09/2026.
+   *
+   * ======================================================================
+   * O QUE ESTES TESTES PROTEGEM E O QUE A FERRAMENTA **NAO** PODE AFIRMAR.
+   *
+   * Ela le o ponteiro, que sabe QUE ha conversa e ha quanto tempo. Nao sabe o
+   * assunto, e nao sabe se o numero desconhecido e cliente — o leitor e quem
+   * decide isso, uma hora depois. Chamar de cliente quem ainda nao foi
+   * identificado transformaria "tem alguem no WhatsApp dela" em "ela esta
+   * atendendo 3 clientes", que e numero inventado com cara de relatorio.
+   * ======================================================================
+   */
+  describe('quem esta conversando agora', () => {
+    const minutosAtras = (n: number) => new Date(Date.now() - n * 60_000);
+
+    it('a janela padrao e de 30 minutos', async () => {
+      const antes = Date.now();
+      await servico.montar().gestaoConversasAgora({});
+
+      const [desde, , id] = conversas.entre.mock.calls[0];
+      expect(id).toBeNull();
+      const janela = (antes - (desde as Date).getTime()) / 60_000;
+      expect(janela).toBeGreaterThanOrEqual(29.9);
+      expect(janela).toBeLessThan(31);
+    });
+
+    it('quem pede outra janela recebe a que pediu', async () => {
+      const antes = Date.now();
+      await servico.montar().gestaoConversasAgora({ minutos: 120 });
+
+      const [desde] = conversas.entre.mock.calls[0];
+      const janela = (antes - (desde as Date).getTime()) / 60_000;
+      expect(janela).toBeGreaterThanOrEqual(119.9);
+      expect(janela).toBeLessThan(121);
+    });
+
+    it('janela absurda cai no padrao em vez de virar consulta', async () => {
+      const antes = Date.now();
+      await servico.montar().gestaoConversasAgora({ minutos: 99999 });
+
+      const [desde] = conversas.entre.mock.calls[0];
+      expect((antes - (desde as Date).getTime()) / 60_000).toBeLessThan(31);
+    });
+
+    /*
+     * O TESTE CENTRAL. Sem ele, a forma mais natural de escrever o handler —
+     * contar as linhas e chamar de clientes — passaria despercebida.
+     */
+    it('numero ainda nao identificado NAO e chamado de cliente', async () => {
+      conversas.entre.mockResolvedValue([
+        { vendedoraId: 'vd-1', clienteId: null, ultimaMensagemEm: minutosAtras(9) },
+      ]);
+      vendedoras.listar.mockResolvedValue([
+        { id: 'vd-1', nome: 'Marina Albuquerque' },
+      ]);
+
+      const r = await servico.montar().gestaoConversasAgora({});
+
+      const texto = r.linhas.join('\n');
+      expect(texto).toContain('NÃO identificado');
+      expect(texto).not.toMatch(/\bclientes?\b/i);
+      expect(clientes.buscarPorId).not.toHaveBeenCalled();
+    });
+
+    it('cliente conhecida aparece pelo nome, com ha quanto tempo', async () => {
+      conversas.entre.mockResolvedValue([
+        { vendedoraId: 'vd-1', clienteId: 'cl-1', ultimaMensagemEm: minutosAtras(9) },
+      ]);
+      vendedoras.listar.mockResolvedValue([{ id: 'vd-1', nome: 'Marina' }]);
+      clientes.buscarPorId.mockResolvedValue({ nome: 'Patrícia Lima' });
+
+      const r = await servico.montar().gestaoConversasAgora({});
+
+      expect(r.linhas[0]).toContain('1 conversa');
+      expect(r.linhas[1]).toBe('Marina: Patrícia Lima — última mensagem há 9 min');
+    });
+
+    /*
+     * Com uma vendedora so, o nome dela ja volta no `vendedora` do resultado.
+     * Repeti-lo em cada linha e ruido — e custava uma consulta a mais.
+     */
+    it('com o nome de uma vendedora, as linhas nao repetem o nome dela', async () => {
+      conversas.entre.mockResolvedValue([
+        { vendedoraId: 'vd-1', clienteId: 'cl-1', ultimaMensagemEm: minutosAtras(2) },
+      ]);
+      clientes.buscarPorId.mockResolvedValue({ nome: 'Patrícia Lima' });
+
+      const r = await servico.montar().gestaoConversasAgora({ vendedora: 'Marina' });
+
+      expect(r.status).toBe('OK');
+      expect(r.vendedora).toBe('Marina Albuquerque');
+      expect(conversas.entre.mock.calls[0][2]).toBe('vd-1');
+      expect(r.linhas[1]).toBe('Patrícia Lima — última mensagem há 2 min');
+      expect(vendedoras.listar).not.toHaveBeenCalled();
+    });
+
+    it('sem nome, a gerente so ve o celular da equipe dela', async () => {
+      conversas.entre.mockResolvedValue([
+        { vendedoraId: 'vd-1', clienteId: null, ultimaMensagemEm: minutosAtras(1) },
+        { vendedoraId: 'vd-9', clienteId: null, ultimaMensagemEm: minutosAtras(1) },
+      ]);
+      vendedoras.listar.mockResolvedValue([
+        { id: 'vd-1', nome: 'Marina' },
+        { id: 'vd-9', nome: 'Fora da equipe' },
+      ]);
+
+      const r = await servico
+        .montar({ equipe: ['vd-1'] })
+        .gestaoConversasAgora({});
+
+      expect(r.linhas[0]).toContain('1 conversa');
+      expect(r.linhas.join('\n')).not.toContain('Fora da equipe');
+    });
+
+    it('nenhuma conversa devolve lista vazia, e nao uma linha dizendo zero', async () => {
+      const r = await servico.montar().gestaoConversasAgora({});
+
+      expect(r.status).toBe('OK');
+      expect(r.linhas).toEqual([]);
+    });
+  });
+
+  /**
+   * O DIA DA VENDEDORA LE DUAS FONTES — 29/09/2026.
+   *
+   * ======================================================================
+   * O DIA ESTAVA VAZIO NUM DIA EM QUE ELA CONVERSOU.
+   *
+   * A linha do tempo nasce de `atendimentos`, e atendimento exige
+   * `cliente_id`. A pessoa nova nao e cliente cadastrada — entao a conversa
+   * com ela nao gerava interacao, nao gerava atendimento, e o dia respondia
+   * "nao ha registro nenhum".
+   *
+   * Aconteceu de verdade em 29/09: a Aline conversou com a Patricia as
+   * 15:08, o lead nasceu, e o dia dela continuava vazio porque o lead nao
+   * fora ENCAMINHADO — nem precisava ser, ja era dela.
+   * ======================================================================
+   */
+  describe('o dia de uma vendedora', () => {
+    it('busca nas duas fontes, com a MESMA janela de dia', async () => {
+      await servico
+        .montar()
+        .gestaoDiaDaVendedora({ vendedora: 'Marina', dia: '2026-09-08' });
+
+      expect(linha.doDia).toHaveBeenCalledWith('vd-1', '2026-09-08');
+
+      const [de, ate, id] = conversas.entre.mock.calls[0];
+      expect(id).toBe('vd-1');
+      expect(de).toEqual(new Date(2026, 8, 8, 0, 0, 0, 0));
+      expect(ate).toEqual(new Date(2026, 8, 9, 0, 0, 0, 0));
+    });
+
+    /* O caso que provocou a mudanca: zero pontos, uma conversa. */
+    it('conversa com pessoa nova NAO deixa mais o dia vazio', async () => {
+      linha.doDia.mockResolvedValue([]);
+      conversas.entre.mockResolvedValue([
+        { vendedoraId: 'vd-1', clienteId: null, ultimaMensagemEm: new Date() },
+      ]);
+
+      const r = await servico
+        .montar()
+        .gestaoDiaDaVendedora({ vendedora: 'Marina' });
+
+      expect(r.status).toBe('OK');
+      expect(r.linhas[0]).toBe(
+        'Falou com 1 pessoa pelo WhatsApp: 1 número ainda NÃO identificado.',
+      );
+    });
+
+    it('dia sem ponto e sem conversa continua vazio', async () => {
+      const r = await servico
+        .montar()
+        .gestaoDiaDaVendedora({ vendedora: 'Marina' });
+
+      expect(r.linhas).toEqual([]);
+    });
   });
 
   describe('carteira de uma vendedora', () => {

@@ -677,10 +677,29 @@ const GESTAO_CARTEIRA_CLIENTE_TOOL: Anthropic.Tool = {
   },
 };
 
+/**
+ * `AAAA-MM-DD` — a data que o modelo manda, conferida antes de virar consulta.
+ *
+ * ==========================================================================
+ * CONSTANTE COM NOME, E NAO LITERAL EMBUTIDO, PORQUE ELA JA ESTEVE ERRADA.
+ *
+ * Ate 29/09/2026 o teste era `/^d{4}-d{2}-d{2}$/` — as barras do `\d` tinham
+ * sumido. Aquilo casa com o texto literal "dddd-dd-dd" e com data nenhuma:
+ * TODA data pedida caia no `undefined` EM SILENCIO e virava hoje. Perguntar
+ * "como foi o dia da Aline no dia 25?" devolvia os numeros de HOJE, sem aviso
+ * de que a data tinha sido ignorada — a pior forma de errar, porque a resposta
+ * parece certa.
+ *
+ * Um literal enfiado no meio de uma chamada nao tem como ser testado; uma
+ * constante exportada tem, e o teste esta em `data-iso.spec.ts`.
+ * ==========================================================================
+ */
+export const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+
 const GESTAO_DIA_DA_VENDEDORA_TOOL: Anthropic.Tool = {
   name: 'dia_da_vendedora',
   description:
-    'O DIA DE UMA VENDEDORA num resumo: com quantas clientes ela falou pelo WhatsApp, quantas escreveram e ainda nao foram respondidas, os contatos que ela marcou e para que horas, o que vendeu, o que fechou e o que venceu sem resposta. Use para "como esta o canal da Marina", "como foi o dia da Bianca", "a Renata falou com alguem hoje". ATENCAO: isto NAO le o texto das conversas dela — os numeros sao exatos, mas nao ha como dizer O QUE a cliente quer. Nao invente conteudo de conversa.',
+    'O DIA DE UMA VENDEDORA num resumo: com quantas PESSOAS ela falou pelo WhatsApp — clientes cadastradas E numeros que o sistema ainda nao identificou —, quantas escreveram e ainda nao foram respondidas, os contatos que ela marcou e para que horas, o que vendeu, o que fechou e o que venceu sem resposta. Use para "como esta o canal da Marina", "como foi o dia da Bianca", "a Renata falou com alguem hoje". DUAS ATENCOES: (1) isto NAO le o texto das conversas dela — os numeros sao exatos, mas nao ha como dizer O QUE a pessoa quer, entao nao invente conteudo de conversa; (2) numero "ainda NAO identificado" NAO pode ser chamado de cliente: repasse como esta. Para saber quem esta conversando NESTE MOMENTO, use conversas_agora.',
   input_schema: {
     type: 'object',
     properties: {
@@ -695,6 +714,35 @@ const GESTAO_DIA_DA_VENDEDORA_TOOL: Anthropic.Tool = {
       },
     },
     required: ['vendedora'],
+  },
+};
+
+/**
+ * A DESCRICAO PRECISA DISPUTAR COM O `dia_da_vendedora` — 29/09/2026.
+ *
+ * As duas respondem a frases parecidas ("a Aline esta com algum cliente?") e o
+ * modelo escolhe pela descricao. A diferenca que importa esta na primeira
+ * linha de cada uma: esta e AGORA, aquela e O DIA — e o dia leva uma hora para
+ * existir, porque so o leitor o escreve.
+ */
+const GESTAO_CONVERSAS_AGORA_TOOL: Anthropic.Tool = {
+  name: 'conversas_agora',
+  description:
+    'QUEM ESTA CONVERSANDO NESTE MOMENTO no WhatsApp corporativo, ao vivo. Use SEMPRE que a pergunta for sobre o presente: "a Aline esta com algum cliente", "quem esta atendendo agora", "tem alguem conversando", "a Marina esta ocupada". COM "vendedora", so o celular dela; SEM, a loja inteira. IMPORTANTE: esta e a UNICA ferramenta que enxerga a conversa enquanto ela acontece — todas as outras (dia_da_vendedora, funil_de_atendimentos, metricas_de_atendimento) so enxergam depois que o sistema le a conversa, o que acontece uma hora DEPOIS da ultima mensagem. Entao se aqui aparece conversa e la nao aparece nada, NAO ha defeito nenhum: a leitura ainda nao rodou, e e isso que voce deve explicar. LIMITES: nao diz o assunto da conversa (isto e ponteiro, nao texto) e nao afirma que um numero ainda nao identificado e cliente — repasse "nao identificado" como esta.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      vendedora: {
+        type: 'string',
+        description:
+          'Nome da vendedora, como falado. OMITA para a loja inteira — nao invente um nome quando a pergunta for geral.',
+      },
+      minutos: {
+        type: 'number',
+        description:
+          'Quanto tempo atras ainda conta como "agora". Omita para 30 minutos. Use apenas se pedirem outra janela ("na ultima hora" = 60).',
+      },
+    },
   },
 };
 
@@ -1026,6 +1074,40 @@ interface DemandaToolInput {
 // Limite defensivo para a descricao vinda do modelo (espelha o MaxLength do DTO).
 const DEMANDA_DESCRICAO_MAX = 4000;
 
+/**
+ * Quantas voltas de ferramenta um turno pode dar.
+ *
+ * ==========================================================================
+ * CINCO PORQUE O CUSTO E LINEAR E O SILENCIO ERA TOTAL.
+ *
+ * Cada volta e uma chamada ao modelo, entao teto alto transforma pergunta mal
+ * formulada em conta cara. Mas teto baixo corta pergunta legitima: "e das
+ * outras vendedoras?" precisa de duas voltas — uma para saber quem sao, outra
+ * para as agendas delas.
+ *
+ * Cinco cobre com folga o que apareceu na pratica (nenhuma pergunta real
+ * passou de tres) e para antes de a conta doer. E o numero nao e o que
+ * importa: e que estourar o teto NAO descarta pedido calado, como acontecia
+ * — obriga o modelo a responder com o que ja tem.
+ * ==========================================================================
+ */
+const MAX_VOLTAS = 5;
+
+/**
+ * As travas de ESCRITA, que valem para o TURNO e nao para a volta.
+ *
+ * Elas existem contra criacao em massa — inclusive por injecao no texto que um
+ * cliente escreveu. Se nascessem a cada volta, um turno de cinco voltas daria
+ * cinco demandas, cinco avisos e cinco agendamentos, e a trava viraria enfeite.
+ * Por isso viajam por fora do despacho, e nao dentro dele.
+ */
+interface TetosPorTurno {
+  demandaRegistrada: boolean;
+  avisoEnviado: boolean;
+  contatoAgendado: boolean;
+  relatoGravado: boolean;
+}
+
 @Injectable()
 export class AnthropicClient implements ILlmClient {
   private readonly logger = new Logger(AnthropicClient.name);
@@ -1105,6 +1187,7 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoCompararAnterior) tools.push(GESTAO_COMPARAR_ANTERIOR_TOOL);
     if (params.gestaoDiaDaVendedora)
       tools.push(GESTAO_DIA_DA_VENDEDORA_TOOL);
+    if (params.gestaoConversasAgora) tools.push(GESTAO_CONVERSAS_AGORA_TOOL);
     if (params.registrarRelato) tools.push(RELATO_TOOL);
     if (params.consultarVendas) tools.push(VENDAS_TOOL);
     if (params.consultarMetas) tools.push(METAS_TOOL);
@@ -1126,27 +1209,114 @@ export class AnthropicClient implements ILlmClient {
 
     let tokens = first.usage.output_tokens;
 
-    const toolUses = first.content.filter(
-      (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
-    );
+    // ======================================================================
+    // O LACO DAVA UMA VOLTA SO, E ISSO SUMIA COM PERGUNTA ENCADEADA.
+    //
+    // Era: pede ferramentas -> roda -> pergunta de novo -> devolve o texto.
+    // Se a SEGUNDA resposta tambem pedisse ferramentas, os pedidos eram
+    // descartados em silencio, porque `extrairTexto` le so o bloco de texto.
+    //
+    // O Lucas viu em 29/09: "como esta a agenda da Aline hoje?" respondeu, e
+    // "e das outras vendedoras?" devolveu "Vou olhar a agenda de hoje das
+    // outras sete." e mais nada. O modelo tinha pedido as outras seis agendas
+    // na segunda volta, e ninguem rodou.
+    //
+    // O sintoma engana: pergunta simples sempre funciona, entao parece
+    // instabilidade em vez de desenho. E vale para toda pergunta que precisa
+    // olhar duas vezes — "e da outra?", "compara com...", "e quanto ela
+    // vendeu disso?".
+    // ======================================================================
+    const tetos: TetosPorTurno = {
+      demandaRegistrada: false,
+      avisoEnviado: false,
+      contatoAgendado: false,
+      relatoGravado: false,
+    };
 
-    if (toolUses.length === 0) {
-      return { texto: this.extrairTexto(first), tokens };
+    let grafico: GraficoDinamico | undefined;
+    const conversa: Anthropic.MessageParam[] = [...apiMessages];
+    let resp = first;
+
+    for (let volta = 1; ; volta += 1) {
+      const pedidos = resp.content.filter(
+        (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
+      );
+      if (pedidos.length === 0) {
+        return { texto: this.extrairTexto(resp), tokens, grafico };
+      }
+
+      const rodada = await this.despachar(pedidos, params, tetos);
+      // O grafico e um so por turno: o ultimo pedido vence, e nao ha
+      // acumulo — a tela mostra um.
+      grafico = rodada.grafico ?? grafico;
+
+      // ====================================================================
+      // O TETO NAO DESCARTA PEDIDO EM SILENCIO — foi esse o defeito.
+      //
+      // Na ultima volta as ferramentas continuam declaradas (a conversa ja
+      // tem `tool_result` dentro, e some-las confundiria a API), mas o
+      // `tool_choice: none` obriga o modelo a RESPONDER com o que ja tem.
+      // Assim o turno sempre termina em texto, mesmo quando ele pediria mais.
+      // ====================================================================
+      const ultima = volta >= MAX_VOLTAS;
+      const conteudo: Anthropic.ContentBlockParam[] = [...rodada.toolResults];
+      if (ultima) {
+        this.logger.warn(
+          `O modelo pediu ferramentas por ${MAX_VOLTAS} voltas seguidas — ` +
+            'fechando o turno com o que ja foi consultado.',
+        );
+        conteudo.push({
+          type: 'text',
+          text:
+            'Pare de consultar e responda AGORA com o que ja tem em maos. Se ' +
+            'faltou alguma coisa, diga o que faltou e ofereca buscar em ' +
+            'seguida — NAO invente o que nao consultou.',
+        });
+      }
+
+      conversa.push(
+        { role: 'assistant', content: resp.content },
+        { role: 'user', content: conteudo },
+      );
+
+      resp = await this.client.messages.create({
+        model: params.model,
+        // Era 1024 fixo, ignorando o teto de quem chamou. Quem pede 2048 para
+        // a resposta tinha a continuacao — que e a resposta de verdade —
+        // cortada pela metade.
+        max_tokens: Math.max(params.maxTokens, 1024),
+        system: params.system,
+        tools,
+        ...(ultima ? { tool_choice: { type: 'none' as const } } : {}),
+        messages: conversa,
+      });
+      tokens += resp.usage.output_tokens;
     }
+  }
 
+  /**
+   * Roda as ferramentas de UMA volta e devolve os `tool_result`.
+   *
+   * Vivia solto dentro do `chatComFerramentas` ate 29/09/2026, e por isso o
+   * laco so podia dar uma volta. Virou metodo para poder ser chamado de novo.
+   *
+   * As travas de ESCRITA chegam por `tetos` e valem para o TURNO, nao para a
+   * volta: se elas nascessem aqui, o modelo teria uma demanda, um aviso e um
+   * agendamento novos a cada volta do laco — que e exatamente o que elas
+   * existem para impedir.
+   */
+  private async despachar(
+    toolUses: Anthropic.ToolUseBlock[],
+    params: ChatParams,
+    tetos: TetosPorTurno,
+  ): Promise<{
+    toolResults: Anthropic.ToolResultBlockParam[];
+    grafico?: GraficoDinamico;
+  }> {
     // Processa cada tool_use, acumulando o resultado (grafico) e os
-    // tool_result que voltam ao modelo na continuacao.
+    // tool_result que voltam ao modelo na volta seguinte.
     let grafico: GraficoDinamico | undefined;
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
-    // Teto: 1 demanda por turno de chat, mesmo que o modelo emita varios
-    // blocos registrar_demanda (mitiga criacao em massa via prompt injection).
-    let demandaRegistrada = false;
-    // Mesmo teto para o aviso: um WhatsApp disparado por turno, no maximo.
-    let avisoEnviado = false;
-    // E para o agendamento: uma escrita por mensagem, como no aviso.
-    let contatoAgendado = false;
-    // E para o relato: uma gravacao por mensagem dela.
-    let relatoGravado = false;
 
     for (const toolUse of toolUses) {
       if (toolUse.name === 'gerar_grafico') {
@@ -1172,7 +1342,7 @@ export class AnthropicClient implements ILlmClient {
         toolUse.name === 'registrar_demanda' &&
         params.registrarDemanda
       ) {
-        if (demandaRegistrada) {
+        if (tetos.demandaRegistrada) {
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolUse.id,
@@ -1182,7 +1352,7 @@ export class AnthropicClient implements ILlmClient {
           });
           continue;
         }
-        demandaRegistrada = true;
+        tetos.demandaRegistrada = true;
         toolResults.push(
           await this.executarRegistrarDemanda(toolUse, params.registrarDemanda),
         );
@@ -1190,7 +1360,7 @@ export class AnthropicClient implements ILlmClient {
         toolUse.name === 'registrar_relato' &&
         params.registrarRelato
       ) {
-        if (relatoGravado) {
+        if (tetos.relatoGravado) {
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolUse.id,
@@ -1199,7 +1369,7 @@ export class AnthropicClient implements ILlmClient {
           });
           continue;
         }
-        relatoGravado = true;
+        tetos.relatoGravado = true;
         toolResults.push(
           await this.executarRegistrarRelato(toolUse, params.registrarRelato),
         );
@@ -1662,9 +1832,24 @@ export class AnthropicClient implements ILlmClient {
             const dia = String(e.dia ?? "");
             const r = await params.gestaoDiaDaVendedora!({
               vendedora: String(e.vendedora ?? "").slice(0, 80),
-              dia: /^d{4}-d{2}-d{2}$/.test(dia) ? dia : undefined,
+              dia: DATA_ISO.test(dia) ? dia : undefined,
             });
             return textoDoDiaDaVendedora(r);
+          }),
+        );
+      } else if (
+        toolUse.name === 'conversas_agora' &&
+        params.gestaoConversasAgora
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as { vendedora?: string; minutos?: number };
+            const nome = String(e.vendedora ?? '').slice(0, 80);
+            const r = await params.gestaoConversasAgora!({
+              vendedora: nome || undefined,
+              minutos: typeof e.minutos === 'number' ? e.minutos : undefined,
+            });
+            return textoDasConversasAgora(r, Boolean(nome));
           }),
         );
       } else if (toolUse.name === 'listar_leads' && params.gestaoLeads) {
@@ -1891,7 +2076,7 @@ export class AnthropicClient implements ILlmClient {
           }),
         );
       } else if (toolUse.name === 'agendar_contato' && params.agendarContato) {
-        if (contatoAgendado) {
+        if (tetos.contatoAgendado) {
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolUse.id,
@@ -1901,7 +2086,7 @@ export class AnthropicClient implements ILlmClient {
           });
           continue;
         }
-        contatoAgendado = true;
+        tetos.contatoAgendado = true;
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
             const entrada = toolUse.input as {
@@ -1968,7 +2153,7 @@ export class AnthropicClient implements ILlmClient {
         toolUse.name === 'avisar_vendedora' &&
         params.avisarVendedora
       ) {
-        if (avisoEnviado) {
+        if (tetos.avisoEnviado) {
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolUse.id,
@@ -1978,14 +2163,13 @@ export class AnthropicClient implements ILlmClient {
           });
           continue;
         }
-        avisoEnviado = true;
+        tetos.avisoEnviado = true;
         toolResults.push(
           await this.executarAvisarVendedora(toolUse, params.avisarVendedora),
         );
       }
     }
 
-    // Continuacao: devolve os tool_result e pede o comentario final.
     // ========================================================================
     // NENHUM `tool_result` PODE IR VAZIO — 29/09/2026.
     //
@@ -2014,21 +2198,9 @@ export class AnthropicClient implements ILlmClient {
         : r,
     );
 
-    const cont = await this.client.messages.create({
-      model: params.model,
-      max_tokens: 1024,
-      system: params.system,
-      tools,
-      messages: [
-        ...apiMessages,
-        { role: 'assistant', content: first.content },
-        { role: 'user', content: resultadosSeguros },
-      ],
-    });
-
-    tokens += cont.usage.output_tokens;
-    return { texto: this.extrairTexto(cont), tokens, grafico };
+    return { toolResults: resultadosSeguros, grafico };
   }
+
 
   /**
    * Envelope comum das ferramentas de LEITURA do canal interno.
@@ -2250,10 +2422,44 @@ export class AnthropicClient implements ILlmClient {
     }
   }
 
+  /**
+   * ==========================================================================
+   * NENHUM TURNO PODE IR VAZIO — 30/09/2026, e e a SEGUNDA vez.
+   *
+   * `400 messages.N: user messages must have non-empty content` rejeita a
+   * conversa INTEIRA, e o erro nao diz de onde veio o vazio. Quem chamou cai
+   * no proprio catch e responde "nao consegui consultar isso agora" — a frase
+   * generica que esconde a causa.
+   *
+   * Em 29/09 o vazio era um `tool_result`; a guarda esta no `despachar`. Em
+   * 30/09 foi o turno do usuario: alguem mencionou a agente num grupo sem
+   * escrever mais nada, e depois de tirar a mencao nao sobrou texto. Duas
+   * portas diferentes, o mesmo 400, e a mesma resposta inutil.
+   *
+   * A guarda fica AQUI porque este e o funil por onde toda mensagem de todo
+   * canal passa. Quem chama com um turno vazio tem um defeito — e o lugar de
+   * consertar e la, com texto que faca sentido para o modelo —, mas nao pode
+   * derrubar a conversa por isso.
+   * ==========================================================================
+   */
   private toApiMessages(
     mensagens: ChatParams['mensagens'],
   ): Anthropic.MessageParam[] {
-    return mensagens.map((m) => ({ role: m.role, content: m.content }));
+    return mensagens.map((m) => {
+      const vazio =
+        typeof m.content === 'string' && m.content.trim() === '';
+      if (vazio) {
+        this.logger.warn(
+          `Turno "${m.role}" chegou VAZIO ao cliente — trocado por um marcador ` +
+            'para nao derrubar a conversa. Quem montou a mensagem deveria ter ' +
+            'texto aqui.',
+        );
+      }
+      return {
+        role: m.role,
+        content: vazio ? '(mensagem sem texto)' : m.content,
+      };
+    });
   }
 
   private extrairTexto(resp: Anthropic.Message): string {
@@ -2321,17 +2527,89 @@ function textoDoDiaDaVendedora(r: GestaoLeituraResultado): string {
       : 'Nao ha vendedora com esse nome. Diga isso em uma frase.';
   }
   if (r.linhas.length === 0) {
+    // ====================================================================
+    // O VAZIO TINHA UMA EXPLICACAO SO, E ELA ENVELHECEU — 29/09/2026.
+    //
+    // Ate hoje este texto oferecia como UNICA hipotese "o numero dela ainda
+    // nao esta pareado". Era verdade enquanto nenhum celular estava
+    // conectado. No dia em que o primeiro foi pareado, virou a hipotese
+    // ERRADA — e continuou sendo a unica que o modelo tinha: o Lucas trocou
+    // mensagem com a vendedora as 15:08 e as 15:17 ouviu que o celular dela
+    // talvez nao estivesse conectado, com o celular conectado.
+    //
+    // Agora vem a hipotese CERTA primeiro — o registro do dia nasce da
+    // leitura, que roda uma hora depois da ultima mensagem — e a antiga vira
+    // o que sempre deveria ter sido: algo a CONFERIR, com a ferramenta que
+    // sabe conferir, em vez de um palpite entregue como explicacao.
+    // ====================================================================
     return (
       `Nao ha nenhum registro de ${r.vendedora} nesse dia. Diga isso em uma ` +
-      'frase. NAO conclua que ela nao trabalhou: pode ser que o numero dela ' +
-      'ainda nao esteja pareado no painel.'
+      'frase. NAO conclua que ela nao trabalhou, e NAO afirme que o celular ' +
+      'dela esta desconectado — voce nao verificou isso. Se o dia perguntado ' +
+      'for HOJE, a explicacao mais provavel e outra: o registro do dia nasce ' +
+      'da leitura das conversas, que so roda UMA HORA depois da ultima ' +
+      'mensagem, entao conversa recente ainda nao aparece aqui. Para saber se ' +
+      'ela esta conversando NESTE MOMENTO, use conversas_agora. Para saber se ' +
+      'o celular dela esta mesmo conectado, use listar_vendedoras.'
     );
   }
   return (
     `O dia de ${r.vendedora}:\n${r.linhas.map((l) => `- ${l}`).join("\n")}\n\n` +
     'Conte isso como quem esta contando o dia dela, em texto corrido. Repasse ' +
     'os numeros exatamente como estao. NAO diga o que as clientes queriam nem ' +
-    'o assunto das conversas — isto aqui nao le o texto delas.'
+    'o assunto das conversas — isto aqui nao le o texto delas. E quem aparece ' +
+    'como "numero ainda NAO identificado" NAO pode ser chamado de cliente nem ' +
+    'entrar numa contagem de clientes: o sistema so descobre de quem e o numero ' +
+    'quando le a conversa, uma hora depois da ultima mensagem.'
+  );
+}
+
+/**
+ * O AGORA das conversas — 29/09/2026.
+ *
+ * ==========================================================================
+ * O VAZIO AQUI E INFORMACAO, E PRECISA DIZER O QUE NAO E.
+ *
+ * "Ninguem conversando" pode ser calmaria ou pode ser celular desconectado, e
+ * as duas exigem reacoes opostas. Esta funcao NAO escolhe entre elas — manda o
+ * modelo conferir com quem sabe (`listar_vendedoras`), que e exatamente o que
+ * faltava no `dia_da_vendedora` e produziu o palpite errado de 29/09.
+ * ==========================================================================
+ */
+function textoDasConversasAgora(
+  r: GestaoLeituraResultado,
+  pediuVendedora: boolean,
+): string {
+  if (r.status === 'AMBIGUA') {
+    return (
+      `Mais de uma vendedora com esse nome: ${(r.nomes ?? []).join(', ')}. ` +
+      'Pergunte de qual se trata. NAO escolha uma.'
+    );
+  }
+  if (r.status === 'NAO_ENCONTRADA') {
+    const equipe = (r.nomes ?? []).join(', ');
+    return equipe
+      ? `Nao ha vendedora com esse nome. A equipe ativa e: ${equipe}. Diga isso e pergunte qual delas.`
+      : 'Nao ha vendedora com esse nome. Diga isso em uma frase.';
+  }
+  if (r.linhas.length === 0) {
+    const quem = pediuVendedora ? r.vendedora : 'ninguem';
+    return (
+      `Nenhuma conversa em andamento ${pediuVendedora ? `de ${quem}` : 'na loja'} ` +
+      'nesta janela. Diga isso em uma frase, e NAO afirme o motivo: pode ser ' +
+      'calmaria ou pode ser celular desconectado, e voce nao sabe qual. Se ' +
+      'importar para quem perguntou, use listar_vendedoras para conferir as ' +
+      'conexoes antes de opinar.'
+    );
+  }
+  return (
+    `Conversas em andamento AGORA:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+    'Conte isso em texto corrido. REGRAS: (1) NAO diga sobre o que estao ' +
+    'conversando — isto nao le o texto das mensagens, so sabe que houve troca ' +
+    'e ha quanto tempo; (2) quem aparece como "numero ainda NAO identificado" ' +
+    'NAO pode ser chamado de cliente nem entrar numa contagem de clientes: o ' +
+    'sistema so descobre de quem e o numero depois que le a conversa, uma hora ' +
+    'depois da ultima mensagem. Repasse como "ainda nao identificado".'
   );
 }
 

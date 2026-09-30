@@ -10,6 +10,7 @@ import type {
   GestaoLeadsHandler,
   GestaoVendedorasHandler,
   GestaoDiaDaVendedoraHandler,
+  GestaoConversasAgoraHandler,
   GestaoFeedbacksHandler,
   GestaoFunilHandler,
   GestaoMetricasHandler,
@@ -27,6 +28,12 @@ import type {
   GestaoVendasHandler,
   GestaoAgendaHandler,
 } from '../../agentes/domain/ports/llm-client.port';
+import { janelaDoDia } from '../../../shared/tempo/janela-do-dia';
+import { CONVERSA_WHATSAPP_REPOSITORY } from '../domain/ports/injection-tokens';
+import type {
+  ConversaEmAndamento,
+  IConversaWhatsappRepository,
+} from '../domain/ports/repositories/conversa-whatsapp-repository.port';
 import { CLIENTE_REPOSITORY } from '../../clientes/domain/ports/injection-tokens';
 import { LEAD_REPOSITORY } from '../../leads/domain/ports/injection-tokens';
 import type { ILeadRepository } from '../../leads/domain/ports/repositories/lead-repository.port';
@@ -157,6 +164,28 @@ const MESES = [
 /** Janela padrao quando nao dizem "hoje" nem "esta semana". */
 const DIAS_PADRAO_FEEDBACK = 7;
 
+/**
+ * O que conta como "agora" numa conversa de WhatsApp — 29/09/2026.
+ *
+ * Trinta minutos, e o numero e do Lucas. Conversa de loja tem silencio no
+ * meio: a cliente pergunta o preco, some para pensar, volta. Cinco minutos
+ * diriam que ela foi embora; duas horas diriam que esta conversando quando o
+ * assunto morreu no almoco.
+ *
+ * Acima desta janela a resposta e outra — "falou hoje", que e o
+ * `dia_da_vendedora` — e por isso este numero nao vira teto de nada: quem
+ * pedir "nas ultimas duas horas" recebe duas horas.
+ */
+const MINUTOS_CONVERSA_AGORA = 30;
+
+/** Uma conversa do ponteiro com o nome ja resolvido. */
+export interface ConversaComNome {
+  vendedoraId: string;
+  ultimaMensagemEm: Date;
+  /** `null` = numero que o sistema ainda NAO identificou. */
+  cliente: string | null;
+}
+
 /** O conjunto de handlers da gestao, pronto para entrar no `chatComFerramentas`. */
 export interface FerramentasGestao {
   gestaoAgenda: GestaoAgendaHandler;
@@ -174,6 +203,7 @@ export interface FerramentasGestao {
   gestaoMelhores: GestaoMelhoresHandler;
   gestaoFeedbacks: GestaoFeedbacksHandler;
   gestaoDiaDaVendedora: GestaoDiaDaVendedoraHandler;
+  gestaoConversasAgora: GestaoConversasAgoraHandler;
   gestaoFunil: GestaoFunilHandler;
   gestaoPanoramaLeads: GestaoPanoramaLeadsHandler;
   gestaoMetricas: GestaoMetricasHandler;
@@ -303,6 +333,8 @@ export class FerramentasGestaoService {
     private readonly clientes: IClienteRepository,
     @Inject(LEAD_REPOSITORY)
     private readonly leads: ILeadRepository,
+    @Inject(CONVERSA_WHATSAPP_REPOSITORY)
+    private readonly conversas: IConversaWhatsappRepository,
   ) {}
 
   /**
@@ -914,10 +946,113 @@ export class FerramentasGestaoService {
        */
       gestaoDiaDaVendedora: async ({ vendedora, dia }) =>
         this.comVendedora(equipe, vendedora, async (id) => {
-          const pontos = await this.linha.doDia(id, dia);
-          if (pontos.length === 0) return [];
-          return resumoDoDia(pontos);
+          // ================================================================
+          // O DIA TEM DUAS FONTES, E A SEGUNDA ENTROU EM 29/09/2026.
+          //
+          // A linha do tempo so enxerga quem esta CADASTRADO como cliente —
+          // um atendimento exige `cliente_id`. Entao "a Aline falou com
+          // alguem hoje?" respondia NAO num dia em que ela trocou mensagem
+          // com uma pessoa nova, que e justamente a conversa que mais
+          // interessa: a que ainda pode virar cliente.
+          //
+          // O ponteiro nao tem esse buraco — ele registra toda conversa do
+          // celular dela, cadastrada ou nao. Vai junto, e e dele que sai a
+          // contagem de "com quantas pessoas ela falou".
+          // ================================================================
+          const { de, ate } = janelaDoDia(dia);
+          const [pontos, conversas] = await Promise.all([
+            this.linha.doDia(id, dia),
+            this.conversas.entre(de, ate, id),
+          ]);
+          if (pontos.length === 0 && conversas.length === 0) return [];
+          return resumoDoDia(pontos, await this.comNome(conversas));
         }),
+
+      /**
+       * QUEM ESTA CONVERSANDO AGORA — 29/09/2026, pedido do Lucas.
+       *
+       * ====================================================================
+       * A UNICA LEITURA DA GESTAO QUE NAO ESPERA O LEITOR.
+       *
+       * Todas as outras — inclusive o `dia_da_vendedora` logo acima — leem a
+       * linha do tempo, que so existe depois que o leitor roda, e o leitor
+       * roda uma hora depois de a conversa PARAR. "A Aline esta com algum
+       * cliente?" e uma pergunta sobre o presente sendo respondida por um
+       * dado que e, por construcao, de uma hora atras.
+       *
+       * Em 29/09 o Lucas trocou mensagem com a vendedora as 15:08 e as 15:17
+       * a Anastasia respondeu que nao havia registro nenhum. Estava correta e
+       * era inutil: o ponteiro sabia da conversa desde as 15:08.
+       * ====================================================================
+       *
+       * TRES COISAS QUE ELA NAO PODE DIZER, e as tres estao na forma da
+       * resposta:
+       *
+       *   - NAO DIZ O ASSUNTO. Isto e ponteiro, nao texto.
+       *   - NAO CHAMA DE CLIENTE quem o sistema ainda nao identificou. Sem o
+       *     leitor, o numero desconhecido e indistinguivel entre a cliente
+       *     nova e o entregador — e contar os dois juntos como "2 clientes"
+       *     seria inventar com cara de numero.
+       *   - NAO MOSTRA O TELEFONE. Quem pergunta isto nao vai ligar para
+       *     ninguem; um numero de contato que nem se sabe se e cliente so
+       *     serviria para ser repassado adiante. Mesma regra do aviso de lead.
+       *
+       * A conversa `IGNORADA` fica de fora no repositorio — ver o comentario
+       * da porta. E privacidade: o WAHA le a conta inteira, e a familia da
+       * vendedora nao e assunto da gestao.
+       */
+      gestaoConversasAgora: async ({ vendedora, minutos }) => {
+        const janela =
+          typeof minutos === 'number' && minutos >= 1 && minutos <= 1440
+            ? Math.floor(minutos)
+            : MINUTOS_CONVERSA_AGORA;
+        const agora = Date.now();
+        const desde = new Date(agora - janela * 60_000);
+
+        const responder = async (
+          vendedoraId: string | null,
+        ): Promise<string[]> => {
+          // COM NOME, o repositorio ja recorta. SEM nome, o recorte de equipe
+          // e aplicado aqui — a gerente nao ve o celular de outro time.
+          const vivas = (
+            await this.conversas.entre(desde, new Date(agora), vendedoraId)
+          ).filter((c) => vendedoraId !== null || alcanca(c.vendedoraId));
+
+          if (vivas.length === 0) return [];
+
+          // So no caso da loja inteira: com uma vendedora so, o nome dela ja
+          // vem do `comVendedora` e repeti-lo em cada linha seria ruido.
+          const nomes =
+            vendedoraId === null
+              ? new Map(
+                  (await this.vendedoras.listar({}))
+                    .filter((v): v is typeof v & { id: string } => !!v.id)
+                    .map((v) => [v.id, v.nome] as [string, string]),
+                )
+              : null;
+
+          const linhas = [
+            `${vivas.length} conversa(s) com mensagem nos últimos ${janela} min.`,
+          ];
+          for (const c of await this.comNome(vivas)) {
+            const ha = Math.max(
+              0,
+              Math.round((agora - c.ultimaMensagemEm.getTime()) / 60_000),
+            );
+            const dona = nomes
+              ? `${nomes.get(c.vendedoraId) ?? 'vendedora fora do cadastro'}: `
+              : '';
+            linhas.push(
+              `${dona}${c.cliente ?? 'número ainda NÃO identificado'} — última mensagem há ${ha} min`,
+            );
+          }
+          return linhas;
+        };
+
+        return vendedora && vendedora.trim()
+          ? this.comVendedora(equipe, vendedora, (id) => responder(id))
+          : { status: 'OK' as const, linhas: await responder(null) };
+      },
 
       /**
        * O FUNIL AGORA — 21/09/2026. O espelho da carteira da Elena.
@@ -1492,6 +1627,37 @@ export class FerramentasGestaoService {
    * que a recusa acabou de esconder.
    * ==========================================================================
    */
+  /**
+   * O ponteiro nao guarda nome — guarda `cliente_id`, ou nada.
+   *
+   * ======================================================================
+   * `null` NO `cliente` E UM ESTADO, E NAO UMA FALHA DE BUSCA.
+   *
+   * Ele quer dizer "o sistema ainda nao sabe de quem e este numero", porque
+   * quem sabe e o leitor e ele passa uma hora depois. Nao pode virar "sem
+   * nome" nem sumir da contagem: a conversa existe, e e provavelmente a mais
+   * interessante do dia — a pessoa nova.
+   *
+   * Cliente cadastrada mas sem nome preenchido e OUTRO caso, e por isso tem
+   * texto proprio: ali o sistema sabe de quem e, e o cadastro e que esta
+   * incompleto.
+   * ======================================================================
+   */
+  private async comNome(
+    conversas: ConversaEmAndamento[],
+  ): Promise<ConversaComNome[]> {
+    return Promise.all(
+      conversas.map(async (c) => ({
+        vendedoraId: c.vendedoraId,
+        ultimaMensagemEm: c.ultimaMensagemEm,
+        cliente: c.clienteId
+          ? ((await this.clientes.buscarPorId(c.clienteId))?.nome ??
+            'cliente sem nome no cadastro')
+          : null,
+      })),
+    );
+  }
+
   private async comVendedora(
     equipe: string[] | null,
     nome: string,
@@ -1763,17 +1929,45 @@ function esperaLegivel(desde: Date, agora = new Date()): string {
  * quer — isso sai de LER a conversa, e nao de contar os pontos.
  * ==========================================================================
  */
-export function resumoDoDia(pontos: PontoDaLinha[]): string[] {
+export function resumoDoDia(
+  pontos: PontoDaLinha[],
+  conversas: ConversaComNome[] = [],
+): string[] {
   const linhas: string[] = [];
 
-  const clientesFalados = new Set(
-    pontos
-      .filter(
-        (p) => p.tipo === 'CONTATO_CLIENTE' || p.tipo === 'RESPOSTA_VENDEDORA',
-      )
-      .map((p) => p.clienteId)
-      .filter((id): id is string => Boolean(id)),
-  );
+  // ========================================================================
+  // A CONTAGEM SAI DO PONTEIRO, E NAO DAS INTERACOES — 29/09/2026.
+  //
+  // A interacao so nasce quando o numero JA E cliente cadastrada; o ponteiro
+  // registra toda conversa do celular. Como todo cliente cadastrado aparece
+  // nos dois, trocar a fonte nao perde ninguem — so passa a incluir quem
+  // ainda nao foi identificado, que antes sumia.
+  //
+  // Some numa contagem so, e depois separa. "Falou com 3" e a resposta da
+  // pergunta; o detalhe de quem e quem vem atras, porque chamar de cliente
+  // um numero que o sistema nao identificou seria inventar.
+  // ========================================================================
+  if (conversas.length > 0) {
+    const identificadas = conversas
+      .map((c) => c.cliente)
+      .filter((n): n is string => n !== null);
+    const anonimas = conversas.length - identificadas.length;
+
+    const detalhe: string[] = [];
+    if (identificadas.length > 0) {
+      detalhe.push(`${identificadas.join(', ')}`);
+    }
+    if (anonimas > 0) {
+      detalhe.push(
+        `${anonimas} ${anonimas === 1 ? 'número ainda NÃO identificado' : 'números ainda NÃO identificados'}`,
+      );
+    }
+    linhas.push(
+      `Falou com ${conversas.length} ${conversas.length === 1 ? 'pessoa' : 'pessoas'} pelo WhatsApp: ` +
+        `${detalhe.join(' e ')}.`,
+    );
+  }
+
   const escreveram = new Set(
     pontos
       .filter((p) => p.tipo === 'CONTATO_CLIENTE')
@@ -1786,12 +1980,6 @@ export function resumoDoDia(pontos: PontoDaLinha[]): string[] {
       .map((p) => p.clienteId)
       .filter((id): id is string => Boolean(id)),
   );
-
-  if (clientesFalados.size > 0) {
-    linhas.push(
-      `Falou com ${clientesFalados.size} ${clientesFalados.size === 1 ? 'cliente' : 'clientes'} pelo WhatsApp.`,
-    );
-  }
 
   // QUEM ESCREVEU E NAO FOI RESPONDIDA. E o numero que a gestao procura sem
   // saber pedir, e o unico aqui que aponta uma falha.

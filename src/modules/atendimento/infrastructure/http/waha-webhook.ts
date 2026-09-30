@@ -62,8 +62,26 @@ interface WahaWebhookBody {
     timestamp?: number;
     media?: { url?: string; mimetype?: string } | null;
     _data?: {
-      Info?: { Type?: string; MediaType?: string };
-      Message?: { audioMessage?: { mimetype?: string; seconds?: number } };
+      Info?: {
+        Type?: string;
+        MediaType?: string;
+        IsGroup?: boolean;
+        SenderAlt?: string;
+        /** Nome que a pessoa escolheu no proprio WhatsApp. */
+        PushName?: string;
+      };
+      Message?: {
+        audioMessage?: { mimetype?: string; seconds?: number };
+        /**
+         * `mentionedJID` com JID MAIUSCULO — conferido em 30/09/2026 num grupo
+         * de verdade. Toda documentacao e todo exemplo publico escrevem
+         * `mentionedJid`, e essa forma NAO existe no payload: quem escrever de
+         * cor nunca casa, e falha calado.
+         */
+        extendedTextMessage?: {
+          contextInfo?: { mentionedJID?: unknown };
+        };
+      };
     };
     [k: string]: unknown;
   };
@@ -120,6 +138,58 @@ export interface MensagemWhatsapp {
    * Ausente quando o payload nao traz — e ai quem usa cai na hora de agora.
    */
   em?: number;
+  /** Presente so quando a mensagem veio de um GRUPO. Ver `MensagemDeGrupo`. */
+  grupo?: MensagemDeGrupo;
+}
+
+/**
+ * O que so existe quando a mensagem veio de grupo — 30/09/2026.
+ *
+ * ==========================================================================
+ * EM GRUPO, "DE ONDE VEIO" E "QUEM FALOU" DEIXAM DE SER A MESMA COISA.
+ *
+ * Na conversa direta o chat E a pessoa, e o canal inteiro foi construido em
+ * cima disso: o roteador tira o `@` do `de` e tem o telefone de quem escreveu.
+ * Num grupo o `de` e o GRUPO — a resposta vai para la —, e quem escreveu esta
+ * a parte. Sem esta separacao, o reconhecimento tentaria achar um admin com o
+ * telefone do grupo e nao acharia nunca.
+ * ==========================================================================
+ */
+export interface MensagemDeGrupo {
+  /**
+   * Quem escreveu, ja como `NNNNNNN@c.us` — sufixo de aparelho fora.
+   *
+   * Sai do `_data.Info.SenderAlt`, porque em grupo o `participant` e o
+   * `Info.Sender` vem como `@lid`, sem telefone nenhum.
+   */
+  autor: string;
+  /**
+   * Como a pessoa se chama no proprio WhatsApp (`PushName`).
+   *
+   * VEM DE GRACA E SEM CONSULTA NENHUMA, e e isso que o torna util: a linha
+   * do grupo guardada sem mencao nao pode pagar um lookup so para saber de
+   * quem e. E nao e dado novo — todo mundo no grupo ve este nome na tela.
+   *
+   * E TEXTO ESCRITO PELA PROPRIA PESSOA, entao vale a mesma regra de todo
+   * conteudo que chega: e dado, nunca instrucao.
+   */
+  autorNome?: string;
+  /**
+   * A mensagem CITADA, quando esta e uma resposta a outra.
+   *
+   * Serve para a mira: "@anastasia isso aqui" respondendo a uma mensagem diz
+   * exatamente a qual. Ausente quando o payload nao traz ou vem num formato
+   * que nao reconhecemos — e ai o contexto do grupo cobre o caso.
+   */
+  citada?: string;
+  /**
+   * Os `@lid` mencionados na mensagem. Vazio = ninguem foi mencionado.
+   *
+   * SAO `@lid` E NAO TELEFONES, de proposito: e assim que o WhatsApp manda, e
+   * a sessao sabe o PROPRIO lid (`me.lid`). Comparar lid com lid dispensa
+   * traduzir, e traduzir custaria uma ida ao WAHA por mencao.
+   */
+  mencionados: string[];
 }
 
 /**
@@ -329,7 +399,7 @@ export function telefoneDoIdentificador(
  * null quando o evento deve ser ignorado:
  * - nao e evento de mensagem;
  * - e mensagem enviada por nos mesmos (fromMe);
- * - e de grupo (`@g.us`) — o canal so trata conversas diretas;
+ * - e de grupo e nao da para saber QUEM escreveu;
  * - nao tem remetente;
  * - nao tem texto, nem audio, nem imagem (documento, sticker, evento de status).
  *
@@ -352,7 +422,39 @@ export function extrairMensagemRecebida(body: unknown): MensagemWhatsapp | null 
   const texto = typeof payload.body === 'string' ? payload.body : '';
 
   if (payload.fromMe === true) return null;
-  if (!de || de.endsWith('@g.us')) return null;
+  if (!de) return null;
+
+  // ========================================================================
+  // O GRUPO PASSA DESDE 30/09/2026 — ate aqui era descartado em silencio.
+  //
+  // Passar nao e responder: quem decide isso e o roteador, e a regra dele e
+  // "so quando mencionada, e so para quem tem cadastro". Aqui so se reconhece
+  // o formato.
+  //
+  // SEM AUTOR, NAO PASSA. Um grupo sem `SenderAlt` nao permite saber quem
+  // falou, e sem isso o reconhecimento nao tem como acontecer — deixar entrar
+  // so adiaria o descarte para um lugar onde ele seria mais confuso.
+  // ========================================================================
+  const ehGrupo = payload._data?.Info?.IsGroup === true || de.endsWith('@g.us');
+  let grupo: MensagemDeGrupo | undefined;
+  if (ehGrupo) {
+    const autor = telefoneDoIdentificador(
+      payload._data?.Info?.SenderAlt,
+      payload._data?.Info as Record<string, unknown> | undefined,
+      false,
+    );
+    if (!autor) return null;
+    grupo = {
+      autor: `${autor}@c.us`,
+      mencionados: mencionadosDoEvento(payload),
+    };
+    const nome = payload._data?.Info?.PushName;
+    if (typeof nome === 'string' && nome.trim()) {
+      grupo.autorNome = nome.trim().slice(0, 40);
+    }
+    const citada = mensagemCitada(payload);
+    if (citada) grupo.citada = citada;
+  }
 
   const audio = extrairAudio(payload);
   // Imagem so e procurada quando NAO ha audio: os dois usam `media`, e um
@@ -364,6 +466,7 @@ export function extrairMensagemRecebida(body: unknown): MensagemWhatsapp | null 
   if (!texto.trim() && !audio && !imagem) return null;
 
   const msg: MensagemWhatsapp = { de, texto };
+  if (grupo) msg.grupo = grupo;
   if (audio) msg.audio = audio;
   if (imagem) msg.imagem = imagem;
   // O WAHA manda o timestamp em SEGUNDOS — o mesmo campo que o
@@ -372,6 +475,91 @@ export function extrairMensagemRecebida(body: unknown): MensagemWhatsapp | null 
     msg.em = payload.timestamp * 1000;
   }
   return msg;
+}
+
+/**
+ * Quem foi mencionado na mensagem, como `@lid`.
+ *
+ * ==========================================================================
+ * A CHAVE E `mentionedJID`, COM JID MAIUSCULO.
+ *
+ * Conferido em 30/09/2026 num grupo de verdade, por busca RECURSIVA de
+ * qualquer chave contendo "mention". Toda documentacao e todo exemplo publico
+ * escrevem `mentionedJid` — essa forma nao existe no payload.
+ *
+ * Escrever de cor produziria o pior defeito possivel: a lista vem sempre
+ * vazia, a agente nunca responde no grupo, e nao ha erro em lugar nenhum
+ * para explicar por que. Foi exatamente assim que o `@lid` sumiu com toda
+ * mensagem de cliente em 29/09.
+ * ==========================================================================
+ *
+ * A LISTA E A FONTE, E NAO O TEXTO — e e o que faz a posicao da mencao nao
+ * importar. "@anastasia qual o faturamento" e "qual o faturamento\n@anastasia"
+ * chegam aqui identicos, porque o WhatsApp monta esta lista a parte da frase.
+ */
+export function mencionadosDoEvento(
+  payload: NonNullable<WahaWebhookBody['payload']>,
+): string[] {
+  const bruto = payload._data?.Message?.extendedTextMessage?.contextInfo
+    ?.mentionedJID;
+  if (!Array.isArray(bruto)) return [];
+  return bruto.filter((j): j is string => typeof j === 'string' && !!j);
+}
+
+/**
+ * O texto da mensagem CITADA, quando esta e uma resposta a outra.
+ *
+ * ==========================================================================
+ * DEFENSIVO DE PROPOSITO: O FORMATO DO `replyTo` NAO FOI MEDIDO.
+ *
+ * A chave existe no payload — apareceu em `payload.chaves` no diagnostico de
+ * 29/09 —, mas o conteudo dela nao foi visto. Em vez de escrever de cor o
+ * caminho, que foi o erro do `@lid`, aqui se aceitam as formas plausiveis e
+ * se devolve `null` em qualquer outra.
+ *
+ * `null` NAO QUEBRA NADA: a memoria do grupo ja carrega as ultimas linhas, e
+ * a citada quase sempre esta entre elas. Isto e mira, nao fundacao.
+ * ==========================================================================
+ */
+export function mensagemCitada(
+  payload: NonNullable<WahaWebhookBody['payload']>,
+): string | null {
+  const bruto = payload.replyTo;
+  if (typeof bruto === 'string') return bruto.trim().slice(0, 500) || null;
+  if (bruto && typeof bruto === 'object') {
+    const o = bruto as Record<string, unknown>;
+    for (const campo of ['body', 'text', 'caption']) {
+      const v = o[campo];
+      if (typeof v === 'string' && v.trim()) return v.trim().slice(0, 500);
+    }
+  }
+  return null;
+}
+
+/**
+ * Tira as mencoes do texto que vai para o modelo.
+ *
+ * ==========================================================================
+ * NO CORPO DA MENSAGEM A MENCAO CHEGA COMO NUMERO CRU.
+ *
+ * A tela mostra "@~Artz Teste"; o `body` traz o identificador. Sem limpar,
+ * "qual o faturamento da semana @558535141045" chega ao modelo com um numero
+ * de telefone solto no meio da pergunta — ruido para ele e um dado pessoal
+ * viajando para a API sem precisar.
+ *
+ * TIRA QUALQUER `@digitos`, e nao so os da lista, porque os dois lados nao
+ * batem: a lista vem em `@lid` e o texto costuma trazer o telefone. Casar um
+ * com o outro exigiria traduzir cada mencao; e o que se perde com a regra
+ * larga e desprezivel — mensagem de loja nao tem "@12345678" com outro
+ * sentido.
+ * ==========================================================================
+ */
+export function semMencoes(texto: string): string {
+  return texto
+    .replace(/@\d{8,20}\b/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ ?\n ?/g, '\n')
+    .trim();
 }
 
 function extrairImagem(

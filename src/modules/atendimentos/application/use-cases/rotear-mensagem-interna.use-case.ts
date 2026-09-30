@@ -14,6 +14,7 @@ import {
   type AudioInterno,
 } from './processar-mensagem-interna.use-case';
 import { ProcessarMensagemGestaoUseCase } from './processar-mensagem-gestao.use-case';
+import { MemoriaDeGrupoService } from '../memoria-de-grupo.service';
 import { RecepcionarUseCase } from './recepcionar.use-case';
 import {
   PERMISSAO_CATALOGO,
@@ -22,8 +23,36 @@ import {
 } from './processar-foto-catalogo.use-case';
 
 export interface MensagemDoCanal {
-  /** Chat de origem, ja traduzido de LID para telefone na borda HTTP. */
+  /**
+   * Chat de origem, ja traduzido de LID para telefone na borda HTTP.
+   *
+   * E PARA ONDE A RESPOSTA VAI. Em conversa direta ele e tambem QUEM FALOU;
+   * num grupo, nao — ver `grupo`.
+   */
   de: string;
+  /**
+   * Presente so quando a mensagem veio de um GRUPO — 30/09/2026.
+   *
+   * ========================================================================
+   * SEM ISTO, O RECONHECIMENTO PROCURARIA UM ADMIN COM O TELEFONE DO GRUPO.
+   *
+   * Todo o canal foi construido sobre "o chat e a pessoa", e em grupo isso
+   * deixa de valer. O `de` continua sendo o destino da resposta; quem falou
+   * passa a viajar aqui.
+   * ========================================================================
+   */
+  grupo?: {
+    /** Quem escreveu, como `NNNNNNN@c.us`. E ele que e reconhecido. */
+    autor: string;
+    /** Como a pessoa se chama no WhatsApp. So para rotular a linha da sala. */
+    autorNome?: string;
+    /** O texto da mensagem CITADA, quando esta e uma resposta a outra. */
+    citada?: string;
+    /** Os `@lid` mencionados na mensagem. */
+    mencionados: string[];
+    /** Se a agente DESTE numero foi uma das mencionadas. */
+    mencionada: boolean;
+  };
   /**
    * POR QUAL NUMERO DA CASA a mensagem entrou — a segunda pergunta do
    * roteamento, desde 25/09/2026.
@@ -124,10 +153,42 @@ export class RotearMensagemInternaUseCase {
     private readonly whatsapp: IWhatsappGateway,
     @Inject(TRANSCRICAO_SERVICE)
     private readonly transcricao: ITranscricao,
+    private readonly sala: MemoriaDeGrupoService,
   ) {}
 
   async execute(msg: MensagemDoCanal): Promise<RespostaDoCanal> {
-    const telefone = msg.de.replace(/@.*$/, '');
+    // ---------------------------------------------------------------------
+    // NO GRUPO, SO QUANDO CHAMADA — 30/09/2026, pedido do Lucas.
+    //
+    // Antes de qualquer outra coisa, e de proposito: sem mencao nao se
+    // transcreve audio, nao se baixa foto, nao se chama o modelo. Um grupo
+    // movimentado nao pode virar conta.
+    //
+    // NAO HA LISTA DE GRUPOS AUTORIZADOS, e essa foi a decisao. A trava nunca
+    // foi "qual grupo" — e "quem mencionou", e isso o reconhecimento abaixo ja
+    // faz, default-deny, desde sempre. Qualquer um pode criar um grupo com
+    // ela; quem nao tem cadastro nao recebe resposta, ali como no privado.
+    // ---------------------------------------------------------------------
+    // ---------------------------------------------------------------------
+    // ELA OUVE A SALA — 30/09/2026.
+    //
+    // Guardar vem ANTES de decidir se responde, e vale para a mensagem sem
+    // mencao tambem: e justamente ela que vira contexto depois. Guardar e uma
+    // escrita em memoria — o grupo parado continua custando zero.
+    //
+    // Ver `MemoriaDeGrupoService`: so RAM, com prazo, nada vai para o banco.
+    // ---------------------------------------------------------------------
+    if (msg.grupo) {
+      this.sala.registrar(msg.de, msg.grupo.autorNome ?? null, msg.texto);
+    }
+
+    if (msg.grupo && !msg.grupo.mencionada) {
+      return { resposta: null, motivo: 'ignorado_grupo_sem_mencao' };
+    }
+
+    // QUEM FALOU, e nao de onde veio: em grupo os dois sao diferentes. A
+    // resposta ainda vai para `msg.de` — ver `RespostaDoCanal`.
+    const telefone = (msg.grupo?.autor ?? msg.de).replace(/@.*$/, '');
 
     // O texto ja resolvido, memorizado — `undefined` e "ainda nao resolvi".
     // O mesmo audio pode ser consultado no ramo do catalogo e de novo no dos
@@ -375,7 +436,37 @@ export class RotearMensagemInternaUseCase {
       };
     }
     if (!texto) {
-      return { resposta: null, motivo: 'ignorado_sem_conteudo' };
+      // ------------------------------------------------------------------
+      // NO GRUPO, VAZIO NAO E "SEM CONTEUDO" — 30/09/2026.
+      //
+      // "@anastasia" sozinho e mensagem legitima: e chamar alguem pelo nome
+      // do outro lado da sala. Depois de tirar a mencao sobra vazio, e cair
+      // no silencio daqui foi o que o Lucas viu no primeiro teste — ele
+      // mandou a pergunta numa mensagem e a mencao na seguinte, as duas
+      // certas, nenhuma das duas completa, e o sintoma foi indistinguivel de
+      // "o grupo nao funciona".
+      //
+      // DEPOIS DO RECONHECIMENTO, e isso nao e detalhe: aqui ja se sabe que
+      // quem chamou tem cadastro. Responder antes faria qualquer um descobrir
+      // que ha uma agente ali so mencionando o numero.
+      //
+      // A frase e CANJA — pagar uma chamada ao modelo para ele descobrir que
+      // nao ha pergunta seria pagar para dizer "oi".
+      // ------------------------------------------------------------------
+      if (msg.grupo) {
+        // SO QUANDO NAO HA O QUE LER. Com a sala guardada, a mencao sozinha
+        // deixa de ser um beco: ela olha o que foi dito antes e responde,
+        // que e o que o Lucas esperava em 30/09 — "da para saber o que quer".
+        // A frase abaixo ficou para o caso de ele chamar numa sala vazia.
+        if (this.contextoDoGrupo(msg).length === 0) {
+          return {
+            resposta: 'Oi! Me diz o que você precisa que eu vejo.',
+            motivo: 'grupo_mencao_sem_pergunta',
+          };
+        }
+      } else {
+        return { resposta: null, motivo: 'ignorado_sem_conteudo' };
+      }
     }
 
     // ---------------------------------------------------------------------
@@ -535,8 +626,47 @@ export class RotearMensagemInternaUseCase {
       usuarioId: admin!.id,
       nome: admin!.nome,
       role: admin!.role,
+      // ------------------------------------------------------------------
+      // NO GRUPO, A CONVERSA E DO GRUPO — 30/09/2026.
+      //
+      // Sem isto, cada pessoa teria o proprio fio e "e das outras?" do
+      // segundo a falar chegaria sem o assunto do primeiro. A conversa de um
+      // grupo e uma so, e todos a leem.
+      //
+      // E NAO VAZA NADA: tudo que entra nesta memoria ja esta escrito no
+      // grupo, visivel para os mesmos olhos. O que continua sendo por pessoa
+      // e o ESCOPO da resposta — o `role` acima e de quem mencionou.
+      // ------------------------------------------------------------------
+      ...(msg.grupo ? { conversaId: `grupo:${msg.de}` } : {}),
+      ...(msg.grupo ? { contexto: this.contextoDoGrupo(msg) } : {}),
       texto,
     });
+  }
+
+  /**
+   * O que ela "ouviu" antes de ser chamada.
+   *
+   * ========================================================================
+   * A CITADA VEM PRIMEIRO, E ISSO E A MIRA.
+   *
+   * Responder uma mensagem mencionando a agente diz EXATAMENTE a qual se
+   * refere — mais preciso que qualquer retrovisor. Quando existe, ela abre a
+   * lista; as linhas da sala vao atras, para o "e das outras?".
+   * ========================================================================
+   *
+   * A PROPRIA MENSAGEM que acabou de chegar fica de fora: ela ja viaja como a
+   * pergunta, e apareceria duas vezes.
+   *
+   * MAS SO QUANDO ELA FOI GUARDADA. A mencao sozinha vira texto vazio, e
+   * vazio nao entra na sala — descontar "a ultima" ali cortaria a linha do
+   * vizinho, que e exatamente a que interessa. Foi o que aconteceu na
+   * primeira versao: com uma pergunta pendente na sala, ela ainda respondia
+   * "me diz o que voce precisa".
+   */
+  private contextoDoGrupo(msg: MensagemDoCanal): string[] {
+    const anteriores = this.sala.anteriores(msg.de, msg.texto.trim() ? 1 : 0);
+    const citada = msg.grupo?.citada;
+    return citada ? [`(respondendo a) ${citada}`, ...anteriores] : anteriores;
   }
 
   /**

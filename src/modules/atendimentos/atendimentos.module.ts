@@ -37,6 +37,7 @@ import { ProcessarRelatoVendedoraUseCase } from './application/use-cases/process
 import { FerramentasGestaoService } from './application/ferramentas-gestao.service';
 import { FerramentasVendedoraService } from './application/ferramentas-vendedora.service';
 import { MemoriaConversaService } from './application/memoria-conversa.service';
+import { MemoriaDeGrupoService } from './application/memoria-de-grupo.service';
 import { SessaoCatalogoService } from './application/sessao-catalogo.service';
 import { RecepcaoService } from './application/recepcao.service';
 import { RecepcionarUseCase } from './application/use-cases/recepcionar.use-case';
@@ -140,6 +141,7 @@ import { AnalisarTomUseCase } from '../atendimento/application/analisar-tom.use-
     // Memoria de conversa dos DOIS canais. Singleton do Nest — uma instancia
     // para o processo inteiro, que e onde o Map vive.
     MemoriaConversaService,
+    MemoriaDeGrupoService,
     FerramentasGestaoService,
     FerramentasVendedoraService,
     PendenciasScheduler,
