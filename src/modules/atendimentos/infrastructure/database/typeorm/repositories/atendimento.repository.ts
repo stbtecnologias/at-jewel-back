@@ -837,8 +837,12 @@ function zerado(): ContagemPorEtapa {
  * Monta o WHERE por POSICAO. Nada de interpolar valor na string: o nome do
  * cliente vem de quem digita, e um curinga de LIKE solto ali viraria "traga
  * todo mundo" — mesmo cuidado do repositorio de clientes.
+ *
+ * EXPORTADA SO PARA O SPEC, e a excecao se paga: e funcao pura, e o defeito de
+ * 22/09 foi um `$` ausente numa das condicoes. Testar por fora dela exigiria
+ * banco; testar aqui e afirmar exatamente o que quebrou.
  */
-function montarFiltro(f: Partial<FiltroAuditoria>): {
+export function montarFiltro(f: Partial<FiltroAuditoria>): {
   where: string;
   params: unknown[];
 } {
@@ -862,9 +866,25 @@ function montarFiltro(f: Partial<FiltroAuditoria>): {
   if (f.apenasAbertos) {
     cond.push('v.desfecho IS NULL');
   }
+  // ========================================================================
+  // O `$` DESTA LINHA SUMIU EM 22/09/2026, NO COMMIT `4edd9ae`.
+  //
+  // Sem ele o SQL vira `v.aberto_em >= 2`, e o Postgres nao chega a filtrar:
+  // recusa no parse, porque nao existe `timestamptz >= integer`. Derrubava
+  // TODA consulta de auditoria que recebesse `de`.
+  //
+  // FICOU OITO DIAS FORA porque quem reclamaria nao existe: a tela
+  // `/admin/auditoria` esta fora do menu desde 08/09, e o unico caminho vivo
+  // e a ferramenta `feedbacks_de_vendedora` — cujo erro `executarLeitura`
+  // traduz para "nao consegui consultar isso agora", a mesma frase de uma
+  // falha passageira. A agente pedia desculpa e seguia.
+  //
+  // `montarFiltro` e exportada por causa disto: o spec ao lado afirma que a
+  // condicao sai como `$N` e nao como `N`.
+  // ========================================================================
   if (f.de) {
     params.push(f.de);
-    cond.push(`v.aberto_em >= ${params.length}`);
+    cond.push(`v.aberto_em >= $${params.length}`);
   }
   if (f.ate) {
     params.push(f.ate);
