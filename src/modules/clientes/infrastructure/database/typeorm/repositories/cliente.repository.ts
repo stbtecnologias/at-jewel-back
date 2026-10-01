@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, FindOptionsWhere, ILike, Repository } from 'typeorm';
+import { vendaEfetiva } from '../../../../../../shared/database/sql/movimentacao-como-venda';
 import { escaparCuringas } from '../../../../../../shared/database/sql/escapar-curingas';
 import { Cliente } from '../../../../domain/entities/cliente.entity';
 import { ClientePerfil } from '../../../../domain/entities/cliente-perfil.entity';
@@ -69,7 +70,7 @@ export class ClienteRepository implements IClienteRepository {
       WITH compras AS (
         SELECT c.id, COUNT(v.id) AS n
         FROM clientes c
-        LEFT JOIN vendas v ON v.cliente_id = c.id AND v.status = 'concluida'${joinCp}
+        LEFT JOIN movimentacoes v ON v.cliente_id = c.id AND ${vendaEfetiva('v')}${joinCp}
         WHERE TRUE${whereDemo}
         GROUP BY c.id
       )
@@ -248,19 +249,19 @@ export class ClienteRepository implements IClienteRepository {
       `
       SELECT c.id,
              c.nome,
-             MAX(v.data_venda)               AS ultima_compra,
-             COUNT(v.id)                     AS quantidade,
-             COALESCE(SUM(v.valor_total), 0) AS valor_total
+             MAX(v.data_movimentacao)   AS ultima_compra,
+             COUNT(v.id)                AS quantidade,
+             COALESCE(SUM(v.valor), 0)  AS valor_total
       FROM clientes c
-      LEFT JOIN vendas v
+      LEFT JOIN movimentacoes v
              ON v.cliente_id = c.id
-            AND v.status = 'concluida'
+            AND ${vendaEfetiva('v')}
       WHERE c.vendedora_codigo_erp = $1
         AND c.ativo = TRUE
       GROUP BY c.id, c.nome
-      HAVING MAX(v.data_venda) IS NULL
-          OR MAX(v.data_venda) < now() - ($2 || ' months')::interval
-      ORDER BY MAX(v.data_venda) ASC NULLS FIRST
+      HAVING MAX(v.data_movimentacao) IS NULL
+          OR MAX(v.data_movimentacao) < now() - ($2 || ' months')::interval
+      ORDER BY MAX(v.data_movimentacao) ASC NULLS FIRST
       LIMIT $3
       `,
       [vendedoraCodigoErp, String(meses), limite],
@@ -293,14 +294,14 @@ export class ClienteRepository implements IClienteRepository {
       SELECT COUNT(*) AS total FROM (
         SELECT c.id
         FROM clientes c
-        LEFT JOIN vendas v
+        LEFT JOIN movimentacoes v
                ON v.cliente_id = c.id
-              AND v.status = 'concluida'
+              AND ${vendaEfetiva('v')}
         WHERE c.vendedora_codigo_erp = $1
           AND c.ativo = TRUE
         GROUP BY c.id
-        HAVING MAX(v.data_venda) IS NULL
-            OR MAX(v.data_venda) < now() - ($2 || ' months')::interval
+        HAVING MAX(v.data_movimentacao) IS NULL
+            OR MAX(v.data_movimentacao) < now() - ($2 || ' months')::interval
       ) AS parados
       `,
       [vendedoraCodigoErp, String(meses)],
@@ -319,7 +320,7 @@ export class ClienteRepository implements IClienteRepository {
     if (opcoes.categoria) {
       params.push(opcoes.categoria);
       joinItens =
-        ' JOIN itens_venda i ON i.venda_id = v.id' +
+        ' JOIN movimentacoes_itens i ON i.movimentacao_id = v.id AND i.ativo' +
         ' JOIN produtos p ON p.id = i.produto_id';
       filtroCategoria =
         "AND p.categoria ILIKE '%' || $" + params.length + " || '%'";
@@ -328,14 +329,14 @@ export class ClienteRepository implements IClienteRepository {
     let filtroData = '';
     if (opcoes.desde) {
       params.push(opcoes.desde);
-      filtroData = 'AND v.data_venda >= $' + params.length;
+      filtroData = 'AND v.data_movimentacao >= $' + params.length;
     }
 
     const rows = await this.repo.manager.query<{ total: string }[]>(
       `
       SELECT COUNT(DISTINCT c.id) AS total
       FROM clientes c
-      JOIN vendas v ON v.cliente_id = c.id AND v.status = 'concluida'${joinItens}
+      JOIN movimentacoes v ON v.cliente_id = c.id AND ${vendaEfetiva('v')}${joinItens}
       WHERE c.vendedora_codigo_erp = $1
         AND c.ativo = TRUE
         ${filtroCategoria}
@@ -357,23 +358,23 @@ export class ClienteRepository implements IClienteRepository {
     let joinItens = '';
     let filtroCategoria = '';
     let quantidade = 'COUNT(DISTINCT v.id)';
-    let valor = 'COALESCE(SUM(v.valor_total), 0)';
+    let valor = 'COALESCE(SUM(v.valor), 0)';
 
     if (opcoes.categoria) {
       params.push(opcoes.categoria);
       joinItens =
-        ' JOIN itens_venda i ON i.venda_id = v.id' +
+        ' JOIN movimentacoes_itens i ON i.movimentacao_id = v.id AND i.ativo' +
         ' JOIN produtos p ON p.id = i.produto_id';
       filtroCategoria =
         "AND p.categoria ILIKE '%' || $" + params.length + " || '%'";
       quantidade = 'COALESCE(SUM(i.quantidade), 0)';
-      valor = 'COALESCE(SUM(i.valor_total_item), 0)';
+      valor = 'COALESCE(SUM(i.quantidade * i.valor_unitario), 0)';
     }
 
     let filtroData = '';
     if (opcoes.desde) {
       params.push(opcoes.desde);
-      filtroData = 'AND v.data_venda >= $' + params.length;
+      filtroData = 'AND v.data_movimentacao >= $' + params.length;
     }
 
     params.push(opcoes.limite);
@@ -391,11 +392,11 @@ export class ClienteRepository implements IClienteRepository {
       `
       SELECT c.id,
              c.nome,
-             MAX(v.data_venda) AS ultima_compra,
+             MAX(v.data_movimentacao) AS ultima_compra,
              ${quantidade}     AS quantidade,
              ${valor}          AS valor_total
       FROM clientes c
-      JOIN vendas v ON v.cliente_id = c.id AND v.status = 'concluida'${joinItens}
+      JOIN movimentacoes v ON v.cliente_id = c.id AND ${vendaEfetiva('v')}${joinItens}
       WHERE c.vendedora_codigo_erp = $1
         AND c.ativo = TRUE
         ${filtroCategoria}
