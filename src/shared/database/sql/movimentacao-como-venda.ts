@@ -107,3 +107,23 @@ export function valorAssinado(alias = 'm', campo = 'valor'): string {
 export function formaPagamentoDe(alias = 'mp'): string {
   return `COALESCE(${alias}.forma_pagamento_id, ${alias}.forma_pagamento_id_erp::uuid)`;
 }
+
+/**
+ * O VALOR DO ITEM, COM SINAL — para a meta por produto.
+ *
+ * A devolucao TEM itens (126 linhas em 101 documentos), entao a peca que voltou
+ * nao pode continuar contando para a meta de quem a vendeu. Mesma regra da
+ * receita, um nivel abaixo: a movimentacao decide o sinal, o item da o valor.
+ *
+ * `movimentacoes_itens` nao tem `valor_total_item` — o total e
+ * `quantidade * valor_unitario`, e isso fecha com o valor do documento em 1.287
+ * de 1.287.
+ */
+export function itemAssinado(mov = 'm', item = 'i'): string {
+  const total = `${item}.quantidade * ${item}.valor_unitario`;
+  return `CASE
+    WHEN NOT ${mov}.ativo THEN 0
+    WHEN ${mov}.entrada   THEN -(${total})
+    ELSE                        (${total})
+  END`;
+}

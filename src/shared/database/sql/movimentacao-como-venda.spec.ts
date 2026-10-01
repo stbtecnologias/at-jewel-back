@@ -2,6 +2,7 @@ import {
   STATUS_DE_MOVIMENTACAO,
   devolucaoEfetiva,
   formaPagamentoDe,
+  itemAssinado,
   receitaLiquida,
   valorAssinado,
   vendaEfetiva,
@@ -132,6 +133,36 @@ describe('movimentacao lida como venda — o fragmento', () => {
 
     it('converte o `_id_erp` para uuid — a coluna e texto', () => {
       expect(formaPagamentoDe('mp')).toContain('::uuid');
+    });
+  });
+
+  describe('o item com sinal, para a meta por produto', () => {
+    /* ESTE E O TESTE. */
+    it('a peca DEVOLVIDA abate a meta de quem a vendeu', () => {
+      // A devolucao tem itens — 126 linhas em 101 documentos. Sem o sinal, a
+      // vendedora bateria a meta com uma venda que voltou.
+      const sql = semEspacos(itemAssinado('m', 'i'));
+
+      expect(sql).toContain('WHEN m.entrada THEN -(i.quantidade * i.valor_unitario)');
+    });
+
+    it('o total do item e quantidade x unitario — nao existe coluna pronta', () => {
+      // `movimentacoes_itens` nao tem `valor_total_item`. O produto fecha com o
+      // valor do documento em 1.287 de 1.287.
+      expect(itemAssinado()).toContain('i.quantidade * i.valor_unitario');
+      expect(itemAssinado()).not.toContain('valor_total_item');
+    });
+
+    it('cancelada vale zero, como no valor do documento', () => {
+      expect(semEspacos(itemAssinado('m', 'i'))).toContain('WHEN NOT m.ativo THEN 0');
+    });
+
+    it('os dois aliases sao parametro — a movimentacao da o sinal, o item o valor', () => {
+      const sql = itemAssinado('mov', 'it');
+
+      expect(sql).toContain('mov.entrada');
+      expect(sql).toContain('it.quantidade');
+      expect(sql).not.toContain('m.entrada');
     });
   });
 
