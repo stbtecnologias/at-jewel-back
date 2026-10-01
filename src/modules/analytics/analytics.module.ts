@@ -12,6 +12,7 @@ import { ReceitaMensalUseCase } from './application/use-cases/receita-mensal.use
 import { ResumoPeriodoUseCase } from './application/use-cases/resumo-periodo.use-case';
 import { TopProdutosUseCase } from './application/use-cases/top-produtos.use-case';
 import { ANALYTICS_REPOSITORY } from './domain/ports/injection-tokens';
+import { AnalyticsDeMovimentacaoRepository } from './infrastructure/database/typeorm/repositories/analytics-de-movimentacao.repository';
 import { AnalyticsRepository } from './infrastructure/database/typeorm/repositories/analytics.repository';
 import { AnalyticsController } from './infrastructure/http/controllers/analytics.controller';
 
@@ -30,7 +31,17 @@ import { AnalyticsController } from './infrastructure/http/controllers/analytics
     ComportamentoDatasUseCase,
     ExportarVendasCsvUseCase,
     ResumoPeriodoUseCase,
-    { provide: ANALYTICS_REPOSITORY, useClass: AnalyticsRepository },
+    // A LEITURA VEM DA MOVIMENTACAO DESDE 01/10/2026.
+    //
+    // `vendas`, `itens_venda` e `pagamentos_venda` tem ZERO linhas — nada as
+    // escreve, porque o ERP manda movimentacao. A tela mostrava 0 em tudo com
+    // 1.388 documentos e tres anos de historico no banco.
+    //
+    // O ANTIGO FICA REGISTRADO porque o novo delega a ele as cinco leituras que
+    // nao vem da venda (inventario, origem, demografia e os dois giros). E
+    // voltar atras e trocar o `useClass` desta linha.
+    AnalyticsRepository,
+    { provide: ANALYTICS_REPOSITORY, useClass: AnalyticsDeMovimentacaoRepository },
   ],
 })
 export class AnalyticsModule {}
