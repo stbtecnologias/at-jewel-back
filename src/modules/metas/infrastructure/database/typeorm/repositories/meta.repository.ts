@@ -8,6 +8,10 @@ import type {
   IMetaRepository,
 } from '../../../../domain/ports/repositories/meta-repository.port';
 import { MetaOrmEntity } from '../entities/meta.orm-entity';
+import {
+  itemAssinado,
+  receitaLiquida,
+} from '../../../../../../shared/database/sql/movimentacao-como-venda';
 
 @Injectable()
 export class MetaRepository implements IMetaRepository {
@@ -53,18 +57,39 @@ export class MetaRepository implements IMetaRepository {
     await this.repo.delete(id);
   }
 
+  /**
+   * O REALIZADO VEM DA MOVIMENTACAO — 01/10/2026.
+   *
+   * ======================================================================
+   * ELE LIA `vendas`, QUE TEM ZERO LINHAS.
+   *
+   * Nada escreve naquela tabela: o ERP manda movimentacao. Toda meta mostraria
+   * 0% de progresso por mais que a loja vendesse — e ninguem percebeu porque
+   * `metas` tambem esta vazia. Mesma causa do Analytics: a migracao de 25/09
+   * virou a tela de Vendas e deixou o resto para tras.
+   * ======================================================================
+   *
+   * A DEVOLUCAO ABATE, e aqui pesa mais que no resto: a peca que voltou nao
+   * pode seguir contando para a meta de quem a vendeu. Vale para os quatro
+   * tipos — inclusive POR_PRODUTO, porque a devolucao TEM itens (126 linhas em
+   * 101 documentos).
+   *
+   * A JANELA e a mesma de antes: da criacao da meta ate o prazo.
+   */
   async calcularRealizado(meta: Meta): Promise<number> {
     const inicio = meta.criadoEm ?? new Date(0);
     const fim = meta.prazo;
 
-    // POR_PRODUTO soma os itens da venda; os demais somam o total da venda.
+    // POR_PRODUTO soma os itens; os demais somam o total do documento.
     if (meta.tipo === 'POR_PRODUTO') {
       const rows = await this.repo.manager.query<{ total: number }[]>(
         `
-        SELECT COALESCE(SUM(i.valor_total_item), 0)::float AS total
-        FROM itens_venda i
-        JOIN vendas v ON v.id = i.venda_id AND v.status = 'concluida'
-        WHERE i.produto_id = $1 AND v.data_venda BETWEEN $2 AND $3
+        SELECT COALESCE(SUM(${itemAssinado('m', 'i')}), 0)::float AS total
+        FROM movimentacoes_itens i
+        JOIN movimentacoes m ON m.id = i.movimentacao_id AND m.ativo
+        WHERE i.ativo
+          AND i.produto_id = $1
+          AND m.data_movimentacao BETWEEN $2 AND $3
         `,
         [meta.referenciaId, inicio, fim],
       );
@@ -74,18 +99,18 @@ export class MetaRepository implements IMetaRepository {
     const params: unknown[] = [inicio, fim];
     let filtro = '';
     if (meta.tipo === 'POR_VENDEDORA') {
-      filtro = 'AND vendedora_id = $3';
+      filtro = 'AND m.vendedora_id = $3';
       params.push(meta.referenciaId);
     } else if (meta.tipo === 'POR_CLIENTE') {
-      filtro = 'AND cliente_id = $3';
+      filtro = 'AND m.cliente_id = $3';
       params.push(meta.referenciaId);
     }
 
     const rows = await this.repo.manager.query<{ total: number }[]>(
       `
-      SELECT COALESCE(SUM(valor_total), 0)::float AS total
-      FROM vendas
-      WHERE status = 'concluida' AND data_venda BETWEEN $1 AND $2 ${filtro}
+      SELECT COALESCE(${receitaLiquida('m')}, 0)::float AS total
+      FROM movimentacoes m
+      WHERE m.ativo AND m.data_movimentacao BETWEEN $1 AND $2 ${filtro}
       `,
       params,
     );

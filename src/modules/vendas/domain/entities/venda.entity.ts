@@ -128,10 +128,27 @@ export class Venda {
     }
   }
 
-  // Serializacao para resposta administrativa. Sem PII (apenas FKs
-  // de cliente/vendedora). Inclui o agregado completo de itens e
-  // pagamentos quando carregado.
-  toPublic(): Record<string, unknown> {
+  /**
+   * Serializacao para resposta administrativa. Sem PII (apenas FKs de
+   * cliente/vendedora). Inclui o agregado completo de itens e pagamentos
+   * quando carregado.
+   *
+   * ========================================================================
+   * "SEM PII" NAO QUER DIZER "SEM DADO SENSIVEL", e esse comentario enganou.
+   *
+   * Ele estava certo sobre PII e foi lido como atestado geral. O custo de cada
+   * peca saia por aqui, via `ItemVenda.toPublic`, para quem tem
+   * `vendas:read_all` e NAO tem `produtos:custo` — que e exatamente o
+   * `GERENTE_VENDAS` da migracao 72.
+   *
+   * O `custo` nao tem default `true`: quem esquecer de passar recebe a versao
+   * ESTREITA. E a mesma ordem do `Cliente.toPublic`, onde o default e
+   * mascarar — errar para o lado seguro.
+   * ========================================================================
+   *
+   * @param custo `produtos:custo`. Sem ele, a chave do custo nao existe.
+   */
+  toPublic(custo = false): Record<string, unknown> {
     return {
       id: this.id,
       idErpVenda: this.idErp,
@@ -146,7 +163,7 @@ export class Venda {
       status: this.status,
       observacao: this.observacao,
       ativo: this.ativo,
-      itens: this.itens.map((i) => i.toPublic()),
+      itens: this.itens.map((i) => i.toPublic(custo)),
       pagamentos: this.pagamentos.map((p) => p.toPublic()),
       criadoEm: this.criadoEm,
       atualizadoEm: this.atualizadoEm,

@@ -7,6 +7,9 @@ import {
   TipoCompra,
   UrgenciaCompra,
 } from './enums';
+// A MESMA mascara do cliente, e nao uma copia: o mesmo numero nao pode
+// aparecer de dois jeitos na mesma resposta.
+import { mascararTelefone } from './mascara-de-contato';
 
 export interface ClientePerfilProps {
   clienteId: string;
@@ -147,10 +150,31 @@ export class ClientePerfil {
     };
   }
 
-  toPublic(): Record<string, unknown> {
+  /**
+   * @param mascarar `true` esconde o WhatsApp. O padrao e mascarar — mesma
+   *   regra do `Cliente.toPublic`: quem esquecer de passar entrega MENOS.
+   *
+   * ========================================================================
+   * O WHATSAPP DAQUI FURAVA A MASCARA DO CLIENTE — 01/10/2026.
+   *
+   * O `Cliente.toPublic` mascara `telefone1`, `telefone2` e `email` desde
+   * 28/09 (RF-10) — e anexava este objeto INTEIRO logo depois, com o numero
+   * legivel. A resposta saia meio escondida e meio aberta, e quem lesse o
+   * metodo de cima via a mascara funcionando.
+   *
+   * E este nao e um telefone a mais: e o numero pelo qual a cliente FALA com
+   * a loja, e a chave pela qual a agente a reconhece. Esconder os outros tres
+   * e entregar este nao esconde ninguem.
+   *
+   * A mascara e a MESMA funcao do cliente — dois digitos no fim. Uma segunda
+   * forma de esconder faria o mesmo numero aparecer de dois jeitos na mesma
+   * resposta.
+   * ========================================================================
+   */
+  toPublic(mascarar = true): Record<string, unknown> {
     return {
       clienteId: this.clienteId,
-      whatsapp: this.whatsapp,
+      whatsapp: mascarar ? mascararTelefone(this.whatsapp) : this.whatsapp,
       origemContato: this.origemContato,
       estadoConversa: this.estadoConversa,
       estadoAtualizadoEm: this.estadoAtualizadoEm,

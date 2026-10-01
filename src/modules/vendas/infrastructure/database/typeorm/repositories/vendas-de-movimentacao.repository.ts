@@ -1,6 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+// A REGRA MORA NO SHARED DESDE 01/10 — o Analytics passou a ler a movimentacao
+// tambem, e duas copias do que decide a receita divergiriam.
+import {
+  STATUS_DE_MOVIMENTACAO as STATUS_SQL,
+  formaPagamentoDe,
+  receitaLiquida,
+} from '../../../../../../shared/database/sql/movimentacao-como-venda';
 import { FUSO_DA_LOJA } from '../../../../../../shared/erp/data-do-erp';
 import type { StatusVenda } from '../../../../domain/entities/enums';
 import type {
@@ -116,7 +123,7 @@ export class VendasDeMovimentacaoRepository implements IVendasLeituraRepository 
           SELECT 1
             FROM movimentacoes_pagamentos mp
             LEFT JOIN formas_pagamento fp
-              ON fp.id = COALESCE(mp.forma_pagamento_id, mp.forma_pagamento_id_erp::uuid)
+              ON fp.id = ${formaPagamentoDe('mp')}
            WHERE mp.movimentacao_id = m.id
              AND mp.ativo
              AND fp.nome = ANY($${params.length}::text[])
@@ -177,7 +184,7 @@ export class VendasDeMovimentacaoRepository implements IVendasLeituraRepository 
         SELECT array_agg(DISTINCT f.nome ORDER BY f.nome) AS formas
           FROM movimentacoes_pagamentos mp
           JOIN formas_pagamento f
-            ON f.id = COALESCE(mp.forma_pagamento_id, mp.forma_pagamento_id_erp::uuid)
+            ON f.id = ${formaPagamentoDe('mp')}
          WHERE mp.movimentacao_id = m.id AND mp.ativo
       ) fp ON TRUE
       WHERE TRUE ${where} ${joinPagamento}
@@ -232,8 +239,7 @@ export class VendasDeMovimentacaoRepository implements IVendasLeituraRepository 
       )
       SELECT
         count(*) FILTER (WHERE f.saida AND f.ativo)                    AS concluidas,
-        COALESCE(sum(f.valor) FILTER (WHERE f.saida AND f.ativo), 0)
-          - COALESCE(sum(f.valor) FILTER (WHERE f.entrada AND f.ativo), 0)
+        ${receitaLiquida('f')}
                                                                        AS receita,
         count(*) FILTER (WHERE f.entrada AND f.ativo)                  AS devolvidas,
         count(*) FILTER (WHERE NOT f.ativo)                            AS canceladas,
@@ -279,8 +285,7 @@ export class VendasDeMovimentacaoRepository implements IVendasLeituraRepository 
         m.vendedora_id,
         vd.nome                                        AS vendedora_nome,
         count(*) FILTER (WHERE m.saida)                AS total_vendas,
-        COALESCE(sum(m.valor) FILTER (WHERE m.saida), 0)
-          - COALESCE(sum(m.valor) FILTER (WHERE m.entrada), 0)
+        ${receitaLiquida('m')}
                                                        AS receita,
         COALESCE(sum(qi.qtd) FILTER (WHERE m.saida), 0) AS qtd_pecas,
         count(DISTINCT m.cliente_id) FILTER (WHERE m.saida)
@@ -347,8 +352,7 @@ export class VendasDeMovimentacaoRepository implements IVendasLeituraRepository 
       ),
       vendas AS (
         SELECT date_trunc('month', m.data_movimentacao AT TIME ZONE $${iFuso}) AS mes,
-               COALESCE(sum(m.valor) FILTER (WHERE m.saida), 0)
-                 - COALESCE(sum(m.valor) FILTER (WHERE m.entrada), 0) AS receita,
+               ${receitaLiquida('m')} AS receita,
                count(*) FILTER (WHERE m.saida)                        AS total
           FROM movimentacoes m
          WHERE m.ativo
@@ -389,19 +393,6 @@ export class VendasDeMovimentacaoRepository implements IVendasLeituraRepository 
     };
   }
 }
-
-/**
- * O status, derivado em SQL — usado tanto no SELECT quanto no filtro.
- *
- * Fica numa constante porque as duas usos TEM que concordar: filtrar por
- * `concluida` e receber linhas marcadas de outro jeito seria um defeito mudo.
- */
-const STATUS_SQL = `
-  CASE
-    WHEN NOT m.ativo    THEN 'cancelada'
-    WHEN m.entrada      THEN 'devolvida'
-    ELSE                     'concluida'
-  END`;
 
 interface LinhaListagem {
   id: string;

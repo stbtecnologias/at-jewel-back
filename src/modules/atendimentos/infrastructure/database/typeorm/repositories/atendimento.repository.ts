@@ -30,6 +30,7 @@ import { AtendimentoInteracaoOrmEntity } from '../entities/atendimento-interacao
 import { AtendimentoOrmEntity } from '../entities/atendimento.orm-entity';
 import { ClientePerfilOrmEntity } from '../../../../../clientes/infrastructure/database/typeorm/entities/cliente-perfil.orm-entity';
 import { escaparCuringas } from '../../../../../../shared/database/sql/escapar-curingas';
+import { vendaEfetiva } from '../../../../../../shared/database/sql/movimentacao-como-venda';
 
 @Injectable()
 export class AtendimentoRepository implements IAtendimentoRepository {
@@ -552,19 +553,38 @@ export class AtendimentoRepository implements IAtendimentoRepository {
 
       UNION ALL
 
-      -- 4. A venda registrada. Sem cliente: 'vendas' nao aponta para ele.
+      -- 4. A VENDA REGISTRADA — passou a vir da MOVIMENTACAO em 01/10/2026.
+      --
+      -- ====================================================================
+      -- A REGUA NUNCA MOSTROU UMA VENDA.
+      --
+      -- Ela lia a tabela vendas, que tem ZERO linhas: nada escreve ali, o ERP manda
+      -- movimentacao. Das seis fontes da linha do tempo, esta era a unica que
+      -- jamais devolveu uma linha, e isso nao aparecia como erro — aparecia
+      -- como "a vendedora nao vendeu nesse dia".
+      --
+      -- E O CLIENTE AGORA VEM JUNTO: o comentario antigo dizia "sem cliente:
+      -- 'vendas' nao aponta para ele". A movimentacao aponta, nos 1.388
+      -- documentos. A venda deixa de ser a unica linha anonima da regua.
+      --
+      -- SO A VENDA EFETIVA entra. A devolucao e um documento proprio e viraria
+      -- um tipo novo na tela, que nao existe no front — fica para quando
+      -- alguem decidir como mostra-la.
+      -- ====================================================================
       SELECT
-        'venda:' || v.id, 'VENDA',
-        v.vendedora_id, vd.nome,
-        v.data_venda,
-        NULL::uuid, NULL::text,
-        NULL::timestamptz, v.valor_total,
+        'venda:' || m.id, 'VENDA',
+        m.vendedora_id, vd.nome,
+        m.data_movimentacao,
+        m.cliente_id, cl.nome,
+        NULL::timestamptz, m.valor,
         NULL::text, NULL::uuid
-      FROM vendas v
-      JOIN vendedoras vd ON vd.id = v.vendedora_id
+      FROM movimentacoes m
+      JOIN vendedoras vd ON vd.id = m.vendedora_id
+      LEFT JOIN clientes cl ON cl.id = m.cliente_id
       , janela j
-      WHERE v.data_venda >= j.de AND v.data_venda < j.ate
-        AND v.vendedora_id IS NOT NULL
+      WHERE m.data_movimentacao >= j.de AND m.data_movimentacao < j.ate
+        AND m.vendedora_id IS NOT NULL
+        AND ${vendaEfetiva('m')}
 
       UNION ALL
 
@@ -705,7 +725,8 @@ export class AtendimentoRepository implements IAtendimentoRepository {
         UNION ALL
         SELECT max(date_trunc('day', a.fechado_em)) FROM atendimentos a
         UNION ALL
-        SELECT max(date_trunc('day', v.data_venda)) FROM vendas v WHERE v.vendedora_id IS NOT NULL
+        SELECT max(date_trunc('day', m.data_movimentacao)) FROM movimentacoes m
+         WHERE m.vendedora_id IS NOT NULL AND m.saida AND m.ativo
         UNION ALL
         SELECT max(date_trunc('day', c.data_saida)) FROM consignacoes c WHERE c.vendedora_id IS NOT NULL
       ) t
@@ -837,8 +858,12 @@ function zerado(): ContagemPorEtapa {
  * Monta o WHERE por POSICAO. Nada de interpolar valor na string: o nome do
  * cliente vem de quem digita, e um curinga de LIKE solto ali viraria "traga
  * todo mundo" — mesmo cuidado do repositorio de clientes.
+ *
+ * EXPORTADA SO PARA O SPEC, e a excecao se paga: e funcao pura, e o defeito de
+ * 22/09 foi um `$` ausente numa das condicoes. Testar por fora dela exigiria
+ * banco; testar aqui e afirmar exatamente o que quebrou.
  */
-function montarFiltro(f: Partial<FiltroAuditoria>): {
+export function montarFiltro(f: Partial<FiltroAuditoria>): {
   where: string;
   params: unknown[];
 } {
@@ -862,9 +887,25 @@ function montarFiltro(f: Partial<FiltroAuditoria>): {
   if (f.apenasAbertos) {
     cond.push('v.desfecho IS NULL');
   }
+  // ========================================================================
+  // O `$` DESTA LINHA SUMIU EM 22/09/2026, NO COMMIT `4edd9ae`.
+  //
+  // Sem ele o SQL vira `v.aberto_em >= 2`, e o Postgres nao chega a filtrar:
+  // recusa no parse, porque nao existe `timestamptz >= integer`. Derrubava
+  // TODA consulta de auditoria que recebesse `de`.
+  //
+  // FICOU OITO DIAS FORA porque quem reclamaria nao existe: a tela
+  // `/admin/auditoria` esta fora do menu desde 08/09, e o unico caminho vivo
+  // e a ferramenta `feedbacks_de_vendedora` — cujo erro `executarLeitura`
+  // traduz para "nao consegui consultar isso agora", a mesma frase de uma
+  // falha passageira. A agente pedia desculpa e seguia.
+  //
+  // `montarFiltro` e exportada por causa disto: o spec ao lado afirma que a
+  // condicao sai como `$N` e nao como `N`.
+  // ========================================================================
   if (f.de) {
     params.push(f.de);
-    cond.push(`v.aberto_em >= ${params.length}`);
+    cond.push(`v.aberto_em >= $${params.length}`);
   }
   if (f.ate) {
     params.push(f.ate);

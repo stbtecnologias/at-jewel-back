@@ -267,8 +267,30 @@ export interface ConsultarCarteiraLlmResultado {
   total: number;
 }
 
+/**
+ * TRES FORMAS DE DIZER O MESMO RECORTE — 01/10/2026.
+ *
+ * So `meses` existia, e era obrigatorio: "ha 45 dias" e "desde julho" nao
+ * tinham como chegar. Todos opcionais agora, e sem nenhum o padrao e seis
+ * meses — o mesmo de antes.
+ */
 export type ClientesSemComprarHandler = (input: {
-  meses: number;
+  meses?: number;
+  dias?: number;
+  /** `AAAA-MM-DD`. Vence os outros dois: e a forma mais especifica. */
+  desde?: string;
+}) => Promise<ConsultarCarteiraLlmResultado>;
+
+/**
+ * Quem compra NAQUELA EPOCA, somando todos os anos — 01/10/2026.
+ *
+ * Um dos dois campos, nunca os dois: mes OU data comemorativa. Sem nenhum a
+ * pergunta nao ficou de pe, e o handler devolve vazio em vez de responder
+ * outra coisa.
+ */
+export type ClientesPorEpocaHandler = (input: {
+  mes?: number;
+  dataComemorativa?: string;
 }) => Promise<ConsultarCarteiraLlmResultado>;
 
 export type MelhoresClientesHandler = (input: {
@@ -506,6 +528,33 @@ export type GestaoCarteiraHandler = (input: {
   /** Meses sem comprar. Default 6. */
   meses?: number;
 }) => Promise<GestaoLeituraResultado & { total?: number }>;
+
+/**
+ * QUEM COMPRA NAQUELA EPOCA, pela gestao — 01/10/2026.
+ *
+ * COM `vendedora`, a carteira dela; SEM, a loja inteira — e e por isso que
+ * carrega `EXIGE_VENDEDORA`: quem nao ve a loja (GERENTE_VENDAS, sem
+ * `analytics:read`) e nao disse de quem quer nao recebeu "nenhum resultado",
+ * recebeu uma pergunta incompleta. Dizer "nao encontrei" faria soar como dado
+ * ausente.
+ *
+ * A UNIAO E DECLARADA AQUI, e nao no `GestaoLeituraResultado`: aquele tipo e
+ * compartilhado por uma duzia de handlers e quatro formatadores, e alargar o
+ * compartilhado para um caso e superficie que nao precisa ser tocada. Mesmo
+ * desenho do `GestaoItensHandler`.
+ */
+export type GestaoEpocaHandler = (input: {
+  /** Omitido = a loja inteira, quando quem pergunta pode ve-la. */
+  vendedora?: string;
+  mes?: number;
+  dataComemorativa?: string;
+}) => Promise<{
+  status: 'OK' | 'AMBIGUA' | 'NAO_ENCONTRADA' | 'EXIGE_VENDEDORA';
+  vendedora?: string;
+  linhas: string[];
+  nomes?: string[];
+  total?: number;
+}>;
 
 export type GestaoMelhoresHandler = (input: {
   vendedora: string;
@@ -820,6 +869,10 @@ export interface ChatParams {
   atualizarLead?: AtualizarLeadHandler;
   // Idem para as duas de carteira.
   clientesSemComprar?: ClientesSemComprarHandler;
+  clientesPorEpoca?: ClientesPorEpocaHandler;
+  gestaoEpoca?: GestaoEpocaHandler;
+  /** Espelha o `gestaoItensExigeVendedora`: sem `verLoja`, o schema obriga. */
+  gestaoEpocaExigeVendedora?: boolean;
   melhoresClientes?: MelhoresClientesHandler;
   // Idem para `agendar_contato` — a unica que escreve.
   agendarContato?: AgendarContatoHandler;

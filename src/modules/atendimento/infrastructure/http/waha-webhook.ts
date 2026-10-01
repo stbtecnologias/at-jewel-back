@@ -1,3 +1,8 @@
+// O UNICO import deste arquivo, e ele e deliberado: a borda e parsing puro,
+// sem dependencia de Nest nem de dominio. O higienizador entra porque a
+// mensagem citada precisa sair limpa DAQUI — ver `mensagemCitada`.
+import { limparEHigienizar } from '../../../../shared/http/sanitize/sanitize-text.transform';
+
 /**
  * ESTE EVENTO E UMA MENSAGEM? — 25/09/2026.
  *
@@ -524,13 +529,24 @@ export function mencionadosDoEvento(
 export function mensagemCitada(
   payload: NonNullable<WahaWebhookBody['payload']>,
 ): string | null {
+  // ==========================================================================
+  // HIGIENIZADA AQUI, E NAO ADIANTE — 30/09/2026.
+  //
+  // A citada e a UNICA linha do contexto de grupo que nao passa pelo
+  // `MemoriaDeGrupoService.registrar`: ela vai direto para o TOPO da lista, em
+  // `contextoDoGrupo`. Entao a limpeza que as outras ganham no registro tem de
+  // acontecer na origem — senao ela e a unica que chega crua, e ainda por cima
+  // na posicao de maior influencia do bloco.
+  // ==========================================================================
+  const limpar = (v: string) => limparEHigienizar(v).trim().slice(0, 500);
+
   const bruto = payload.replyTo;
-  if (typeof bruto === 'string') return bruto.trim().slice(0, 500) || null;
+  if (typeof bruto === 'string') return limpar(bruto) || null;
   if (bruto && typeof bruto === 'object') {
     const o = bruto as Record<string, unknown>;
     for (const campo of ['body', 'text', 'caption']) {
       const v = o[campo];
-      if (typeof v === 'string' && v.trim()) return v.trim().slice(0, 500);
+      if (typeof v === 'string' && v.trim()) return limpar(v) || null;
     }
   }
   return null;

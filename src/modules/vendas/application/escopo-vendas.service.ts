@@ -113,4 +113,25 @@ export class EscopoVendasService {
   async equipeDoUsuario(adminUserId: string): Promise<string[] | null> {
     return this.vendaRepo.vendedorasDaEquipeDoUsuario(adminUserId);
   }
+
+  /**
+   * O CUSTO DA PECA VENDIDA — 01/10/2026.
+   *
+   * ========================================================================
+   * MORA AQUI, E NAO NO `EscopoProdutosService`, por dependencia de modulo.
+   *
+   * A chave e a mesma — `produtos:custo`, criada pela migracao 70 — e a
+   * pergunta e a mesma. Mas aquele servico nao e exportado pelo ProdutosModule
+   * e o VendasModule nao importa aquele modulo: trazer os dois para um
+   * booleano custaria uma aresta nova no grafo por nada.
+   *
+   * O que NAO podia acontecer era um `if (role === ...)` solto no controller.
+   * A decisao continua saindo de um servico de escopo, com a mesma forma dos
+   * irmaos e lendo a MESMA chave — no dia em que `produtos:custo` mudar de
+   * nome, uma busca pelo nome antigo acha os dois lugares.
+   * ========================================================================
+   */
+  async podeVerCusto(user: { role: string }): Promise<boolean> {
+    return this.permissions.possui(user.role, 'produtos:custo');
+  }
 }

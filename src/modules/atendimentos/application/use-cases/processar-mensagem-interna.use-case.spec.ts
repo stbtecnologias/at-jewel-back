@@ -196,7 +196,9 @@ describe('ProcessarMensagemInternaUseCase', () => {
       await params().clientesSemComprar!({ meses: 6 });
       await params().melhoresClientes!({ categoria: 'Anel' });
 
-      expect(carteira.semComprar).toHaveBeenCalledWith('SEED-VD01', 6);
+      // O segundo argumento virou DATA em 01/10/2026 — aqui o que se prova e
+      // que o CODIGO e sempre o da vendedora identificada pelo telefone.
+      expect(carteira.semComprar).toHaveBeenCalledWith('SEED-VD01', expect.any(Date));
       expect(carteira.maioresCompradores).toHaveBeenCalledWith('SEED-VD01', {
         categoria: 'Anel',
         ultimosMeses: undefined,

@@ -265,10 +265,64 @@ const SEM_COMPRAR_TOOL: Anthropic.Tool = {
       meses: {
         type: 'integer',
         description:
-          'Quantos meses sem comprar. Se ela nao disser um numero, use 6.',
+          'Quantos MESES sem comprar. O padrao quando ela nao disser nada: 6.',
+      },
+      dias: {
+        type: 'integer',
+        description:
+          'Quantos DIAS sem comprar. Use quando ela falar em dias ou semanas ("ha 45 dias", "ha duas semanas"), em vez de arredondar para meses.',
+      },
+      desde: {
+        type: 'string',
+        description:
+          'Data no formato AAAA-MM-DD, quando ela der uma data ou um mes ("desde julho", "desde 10/03"). Mais especifico que os outros dois.',
       },
     },
-    required: ['meses'],
+  },
+};
+
+/**
+ * OS CAMPOS DA PERGUNTA DE EPOCA, escritos uma vez — 01/10/2026.
+ *
+ * Tres schemas os usam: a da vendedora e as duas da gestao. A lista de datas
+ * tem de ser a mesma nos tres, e a mesma do calculo em
+ * `datas-comemorativas.ts` — data que o modelo oferece e o calculo nao conhece
+ * devolve janela vazia, sem erro nenhum.
+ */
+const CAMPOS_DE_EPOCA = {
+  mes: {
+    type: 'integer' as const,
+    description: 'O mes, de 1 a 12. Use quando citarem um mes do ano.',
+  },
+  dataComemorativa: {
+    type: 'string' as const,
+    enum: [
+      'Carnaval',
+      'Páscoa',
+      'Dia das Mães',
+      'Dia dos Namorados',
+      'Dia dos Pais',
+      'Natal',
+    ],
+    description:
+      'A data comemorativa. A janela considerada sao os 15 dias que antecedem a data, em cada ano — e quando a joia e comprada.',
+  },
+};
+
+/**
+ * QUEM COMPRA NAQUELA EPOCA — 01/10/2026.
+ *
+ * UMA ferramenta para mes E data comemorativa, e nao duas: para quem conversa
+ * e a mesma pergunta, e duas ferramentas parecidas e o que faz o modelo
+ * escolher a errada.
+ */
+const EPOCA_TOOL: Anthropic.Tool = {
+  name: 'clientes_por_epoca',
+  description:
+    'Lista os clientes DA CARTEIRA DELA que mais compram numa EPOCA do ano, somando TODOS OS ANOS do historico. Use para "quem mais compra em outubro", "quem compra no Dia das Maes", "quem some no Natal". Informe UM dos dois: o mes OU a data comemorativa. So enxerga a carteira dela.',
+  input_schema: {
+    type: 'object',
+    properties: { ...CAMPOS_DE_EPOCA },
   },
 };
 
@@ -298,6 +352,49 @@ const MELHORES_TOOL: Anthropic.Tool = {
 // distintas, e nao as mesmas com um parametro a mais. Um canal recebe um
 // conjunto, o outro recebe o outro; nunca os dois.
 // ===========================================================================
+
+/**
+ * QUEM COMPRA NAQUELA EPOCA, pela gestao — 01/10/2026.
+ *
+ * SEM `vendedora` e a LOJA INTEIRA, e e por isso que existe a segunda versao
+ * logo abaixo: a pergunta geral e de quem administra, e a da carteira e de quem
+ * gerencia uma vendedora. Decisao do Lucas: "geral seria se fosse os admin".
+ */
+const GESTAO_EPOCA_TOOL: Anthropic.Tool = {
+  name: 'clientes_por_epoca',
+  description:
+    'Os clientes que mais compram numa EPOCA do ano, somando TODOS OS ANOS do historico. Use para "quem mais compra em outubro", "quem compra no Dia das Maes", "quem some no Natal". Informe UM dos dois: o mes OU a data comemorativa. Com \`vendedora\`, so a carteira dela; sem, a loja inteira.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      vendedora: {
+        type: 'string',
+        description:
+          'Nome de uma vendedora, como veio na conversa, para recortar so a carteira dela. Omita para a loja inteira.',
+      },
+      ...CAMPOS_DE_EPOCA,
+    },
+    required: [],
+  },
+};
+
+/** A mesma, para quem NAO ve a loja — mesmo desenho do `itens_mais_vendidos`. */
+const GESTAO_EPOCA_DA_VENDEDORA_TOOL: Anthropic.Tool = {
+  name: 'clientes_por_epoca',
+  description:
+    'Os clientes de UMA VENDEDORA que mais compram numa EPOCA do ano, somando TODOS OS ANOS. Use para "quem mais compra no Natal na carteira da Bianca". Informe UM dos dois: o mes OU a data comemorativa. SEMPRE exige a vendedora — esta consulta nao responde pela loja inteira. Se perguntarem sem dizer de quem, pergunte de qual vendedora.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      vendedora: {
+        type: 'string',
+        description: 'Nome da vendedora, como veio na conversa.',
+      },
+      ...CAMPOS_DE_EPOCA,
+    },
+    required: ['vendedora'],
+  },
+};
 
 const GESTAO_AGENDA_TOOL: Anthropic.Tool = {
   name: 'agenda_de_vendedora',
@@ -1201,6 +1298,26 @@ interface TetosPorTurno {
   lembreteGuardado: boolean;
 }
 
+/**
+ * Os erros que NAO passam sozinhos — ver `executarLeitura`.
+ *
+ * `QueryFailedError` e do TypeORM e cobre o caso que motivou isto: SQL
+ * malformado. Os outros tres sao defeito de codigo puro. Tudo o mais — rede,
+ * timeout, WAHA fora do ar, limite da API — e tratado como passageiro, que e
+ * o lado seguro de errar: mandar tentar de novo algo que era defeito custa
+ * uma tentativa; dizer "esta quebrado" sobre um timeout assusta a toa.
+ */
+const ERROS_DE_DEFEITO = new Set([
+  'QueryFailedError',
+  'TypeError',
+  'ReferenceError',
+  'SyntaxError',
+]);
+
+function ehDefeitoDeCodigo(err: unknown): boolean {
+  return err instanceof Error && ERROS_DE_DEFEITO.has(err.name);
+}
+
 @Injectable()
 export class AnthropicClient implements ILlmClient {
   private readonly logger = new Logger(AnthropicClient.name);
@@ -1262,6 +1379,14 @@ export class AnthropicClient implements ILlmClient {
           : GESTAO_ITENS_TOOL,
       );
     }
+    // So quando o canal NAO e o da vendedora — as duas usam o mesmo nome.
+    if (params.gestaoEpoca && !params.clientesPorEpoca) {
+      tools.push(
+        params.gestaoEpocaExigeVendedora
+          ? GESTAO_EPOCA_DA_VENDEDORA_TOOL
+          : GESTAO_EPOCA_TOOL,
+      );
+    }
     // So quando o canal NAO e o da vendedora — os dois usam o mesmo nome.
     if (params.gestaoProdutos && !params.consultarProdutos) {
       tools.push(GESTAO_PRODUTOS_TOOL);
@@ -1293,6 +1418,7 @@ export class AnthropicClient implements ILlmClient {
     if (params.consultarMeusLeads) tools.push(MEUS_LEADS_TOOL);
     if (params.atualizarLead) tools.push(ATUALIZAR_LEAD_TOOL);
     if (params.clientesSemComprar) tools.push(SEM_COMPRAR_TOOL);
+    if (params.clientesPorEpoca) tools.push(EPOCA_TOOL);
     if (params.melhoresClientes) tools.push(MELHORES_TOOL);
     if (params.agendarContato) tools.push(AGENDAR_TOOL);
 
@@ -2262,9 +2388,18 @@ export class AnthropicClient implements ILlmClient {
       ) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
-            const entrada = toolUse.input as { meses?: number };
+            const entrada = toolUse.input as {
+              meses?: number;
+              dias?: number;
+              desde?: string;
+            };
+            // NENHUM TRATAMENTO DE PADRAO AQUI — `dataDeCorte` decide, e e um
+            // lugar so. Dois defaults em dois arquivos divergem na primeira
+            // mudanca de um lado.
             const { clientes } = await params.clientesSemComprar!({
-              meses: Number(entrada.meses) > 0 ? Number(entrada.meses) : 6,
+              meses: Number(entrada.meses) || undefined,
+              dias: Number(entrada.dias) || undefined,
+              desde: entrada.desde ? String(entrada.desde) : undefined,
             });
             if (clientes.length === 0) {
               return 'Nenhum cliente da carteira dela esta parado nesse periodo. Diga isso em uma frase.';
@@ -2272,6 +2407,70 @@ export class AnthropicClient implements ILlmClient {
             return (
               `Clientes parados:\n${clientes.map((c) => `- ${c.linha}`).join(`\n`)}\n\n` +
               'Repasse os nomes e as datas exatamente como estao.'
+            );
+          }),
+        );
+      } else if (toolUse.name === 'clientes_por_epoca' && params.gestaoEpoca) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const entrada = toolUse.input as {
+              vendedora?: string;
+              mes?: number;
+              dataComemorativa?: string;
+            };
+            const mes = Number(entrada.mes);
+            const r = await params.gestaoEpoca!({
+              vendedora: entrada.vendedora ? String(entrada.vendedora) : undefined,
+              mes: mes >= 1 && mes <= 12 ? mes : undefined,
+              dataComemorativa: entrada.dataComemorativa
+                ? String(entrada.dataComemorativa)
+                : undefined,
+            });
+            // Faltou dizer DE QUEM, e quem pergunta nao ve a loja inteira. Nao
+            // e "nao encontrei": e uma pergunta incompleta.
+            if (r.status === 'EXIGE_VENDEDORA') {
+              return 'Esta consulta e sempre por vendedora. Pergunte de qual vendedora ela quer, sem mencionar permissao nem limitacao de acesso.';
+            }
+            if (r.status === 'NAO_ENCONTRADA') {
+              return 'Nao achei essa vendedora na equipe. Diga isso e pergunte o nome de novo.';
+            }
+            if (r.status === 'AMBIGUA') {
+              return (
+                `Ha mais de uma vendedora com esse nome:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+                'Pergunte qual delas.'
+              );
+            }
+            if (r.linhas.length === 0) {
+              return 'Nenhuma compra nessa epoca. Diga isso em uma frase, e ofereca outro mes ou outra data.';
+            }
+            return (
+              `Clientes dessa epoca${r.vendedora ? ` (carteira da ${r.vendedora})` : ' (loja inteira)'} — ${r.total ?? r.linhas.length} no total:\n` +
+              `${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+              'Repasse os nomes e numeros exatamente como estao. "Em N anos diferentes" quer dizer que a pessoa comprou nessa mesma epoca em N anos — e o que separa habito de coincidencia; sem isso, nao afirme que alguem "sempre compra" nessa data.'
+            );
+          }),
+        );
+      } else if (toolUse.name === 'clientes_por_epoca' && params.clientesPorEpoca) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const entrada = toolUse.input as {
+              mes?: number;
+              dataComemorativa?: string;
+            };
+            const mes = Number(entrada.mes);
+            const { clientes, total } = await params.clientesPorEpoca!({
+              mes: mes >= 1 && mes <= 12 ? mes : undefined,
+              dataComemorativa: entrada.dataComemorativa
+                ? String(entrada.dataComemorativa)
+                : undefined,
+            });
+            if (clientes.length === 0) {
+              return 'Nenhuma compra da carteira dela nessa epoca. Diga isso em uma frase, e ofereca outro mes ou outra data.';
+            }
+            return (
+              `Clientes dessa epoca (${total} no total):\n` +
+              `${clientes.map((c) => `- ${c.linha}`).join('\n')}\n\n` +
+              'Repasse os nomes e numeros exatamente como estao. "Em N anos diferentes" quer dizer que a pessoa comprou nessa mesma epoca em N anos — e o que separa habito de coincidencia; sem isso, nao afirme que alguem "sempre compra" nessa data.'
             );
           }),
         );
@@ -2376,14 +2575,43 @@ export class AnthropicClient implements ILlmClient {
         content: await corpo(),
       };
     } catch (err) {
-      this.logger.error(
-        `Falha na ferramenta ${toolUse.name}: ${err instanceof Error ? err.message : err}`,
-      );
+      // ====================================================================
+      // DUAS FALHAS DIFERENTES DIZIAM A MESMA COISA, E FOI ISSO QUE ESCONDEU
+      // UM DEFEITO POR OITO DIAS — 30/09/2026.
+      //
+      // Um `$` sumiu de um parametro SQL em 22/09 e derrubou
+      // `feedbacks_de_vendedora`. Toda pergunta de feedback caia aqui, e a
+      // agente respondia "tente de novo em instantes" — a MESMA frase de um
+      // WAHA fora do ar. Ninguem tem como saber que aquilo nunca vai voltar,
+      // entao ninguem reclamou, e o log dizia "Falha na ferramenta" como
+      // diria para um timeout.
+      //
+      // O canal do WhatsApp nao tem quem abra chamado. Se a distincao nao
+      // estiver aqui, ela nao existe em lugar nenhum.
+      // ====================================================================
+      const defeito = ehDefeitoDeCodigo(err);
+      const mensagem = err instanceof Error ? err.message : 'erro desconhecido';
+
+      if (defeito) {
+        // NAO logamos `query` nem `parameters` do erro do TypeORM: os
+        // parametros carregam hash de telefone e nome de cliente. A mensagem
+        // do driver ("operator does not exist: ...") ja diz o que e preciso.
+        this.logger.error(
+          `DEFEITO NA FERRAMENTA ${toolUse.name} (${(err as Error).name}): ${mensagem}`,
+        );
+      } else {
+        this.logger.error(`Falha na ferramenta ${toolUse.name}: ${mensagem}`);
+      }
+
       return {
         type: 'tool_result',
         tool_use_id: toolUse.id,
-        content:
-          'Nao consegui consultar isso agora. Peca desculpa e diga que ela pode tentar de novo em instantes.',
+        // A pessoa nao precisa saber que e defeito — precisa saber que NAO
+        // adianta insistir. Mandar tentar de novo o que nunca vai funcionar e
+        // o pior dos dois mundos: ela perde tempo e nos nao ficamos sabendo.
+        content: defeito
+          ? 'Essa consulta esta com defeito, e tentar de novo nao resolve. Diga que nao consegue trazer isso agora, que o problema ja foi registrado, e ofereca outro caminho. NAO ofereca tentar de novo.'
+          : 'Nao consegui consultar isso agora. Peca desculpa e diga que ela pode tentar de novo em instantes.',
         is_error: true,
       };
     }

@@ -1,4 +1,8 @@
 import { ClientePerfil } from './cliente-perfil.entity';
+// As duas sairam deste arquivo em 01/10/2026 — ver o cabecalho de
+// `mascara-de-contato.ts`: o perfil passou a precisar delas, e importar de
+// volta fecharia um ciclo.
+import { mascararEmail, mascararTelefone } from './mascara-de-contato';
 import { TabelaPreco, TipoPessoa } from './enums';
 
 export interface ClienteProps {
@@ -121,7 +125,22 @@ export class Cliente {
       vendedoraCodigoErp: this.vendedoraCodigoErp,
       criadoEm: this.criadoEm,
       atualizadoEm: this.atualizadoEm,
-      perfil: this.perfil?.toPublic() ?? null,
+      // ====================================================================
+      // O `mascarar` TEM DE ATRAVESSAR — 01/10/2026.
+      //
+      // Ate aqui o perfil era anexado inteiro, com o WhatsApp legivel, logo
+      // depois de os tres campos de cima terem sido mascarados. O objeto saia
+      // meio escondido e meio aberto — e quem lesse este metodo veria a
+      // mascara funcionando.
+      //
+      // E o WhatsApp do perfil nao e um telefone a mais: e o numero pelo qual
+      // a cliente FALA com a loja, e a chave que faz a agente reconhece-la.
+      // Esconder `telefone1` e entregar este nao esconde ninguem.
+      //
+      // Atinge quem tem `clientes:read` sem `clientes:contato` — hoje o
+      // `GERENTE_VENDAS`, que a migracao 70 deixou de fora de proposito.
+      // ====================================================================
+      perfil: this.perfil?.toPublic(mascarar) ?? null,
     };
   }
 
@@ -157,59 +176,3 @@ export class Cliente {
   }
 }
 
-/** Quantos digitos do fim ficam visiveis. Ver `mascararTelefone`. */
-const DIGITOS_VISIVEIS = 2;
-
-/**
- * `(85) 98846-1045` -> `(••) •••••-••45`.
- *
- * ==========================================================================
- * O FINAL FICA, E E DE PROPOSITO — mas dois digitos, nao quatro.
- *
- * Mascara existe para quem precisa DISTINGUIR sem precisar LIGAR: duas
- * clientes homonimas na tela viram a mesma linha se o telefone sumir inteiro,
- * e o dado deixa de servir para o trabalho.
- *
- * Dois digitos dao 1 em 100 de colisao — suficiente para separar duas linhas,
- * inutil para discar. Quatro seriam o suficiente para alguem reconhecer um
- * numero que ja conhece, que e exatamente o que a mascara deveria impedir.
- *
- * A FORMA E PRESERVADA (parenteses, hifen, espacos) para a tela nao quebrar o
- * alinhamento da coluna, e porque um campo que muda de formato conforme quem
- * olha parece defeito.
- * ==========================================================================
- */
-export function mascararTelefone(valor: string | null): string | null {
-  if (!valor) return valor;
-
-  const digitos = valor.replace(/\D/g, '');
-  // Numero curto demais para esconder alguma coisa: mascara tudo. Deixar os
-  // dois ultimos de um numero de quatro digitos nao esconde nada.
-  const manter = digitos.length > DIGITOS_VISIVEIS * 2 ? DIGITOS_VISIVEIS : 0;
-  const trocar = digitos.length - manter;
-
-  let vistos = 0;
-  return valor.replace(/\d/g, (d) => (vistos++ < trocar ? '•' : d));
-}
-
-/**
- * `maria.silva@gmail.com` -> `m•••••@gmail.com`.
- *
- * O DOMINIO FICA porque ele nao identifica ninguem — `@gmail.com` e metade do
- * Brasil — e porque distingue e-mail pessoal de corporativo, que e informacao
- * de atendimento. A parte local vai quase toda: e ela que costuma carregar
- * nome e sobrenome.
- */
-export function mascararEmail(valor: string | null): string | null {
-  if (!valor) return valor;
-
-  const arroba = valor.lastIndexOf('@');
-  // Sem `@` nao e e-mail — pode ser lixo de cadastro. Mascara inteiro em vez
-  // de devolver como esta: o conteudo desconhecido e justamente o que nao se
-  // deve assumir inofensivo.
-  if (arroba < 1) return '•'.repeat(valor.length);
-
-  const local = valor.slice(0, arroba);
-  const dominio = valor.slice(arroba);
-  return `${local[0]}${'•'.repeat(Math.max(local.length - 1, 1))}${dominio}`;
-}

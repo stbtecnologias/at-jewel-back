@@ -1,4 +1,4 @@
-import { datasDeRecorte } from './recorte-de-datas';
+import { dataDeCorte, datasDeRecorte } from './recorte-de-datas';
 
 /**
  * O PARSER DO PERIODO LIVRE — 28/09/2026.
@@ -83,5 +83,77 @@ describe('datasDeRecorte', () => {
 
     expect(r.de.getHours()).toBe(0);
     expect(r.ate.getHours()).toBe(0);
+  });
+});
+
+/**
+ * A DATA DE CORTE DE "QUEM ESTA PARADO" — 01/10/2026.
+ *
+ * ==========================================================================
+ * TRES FORMAS DE DIZER O MESMO RECORTE, E UMA ORDEM ENTRE ELAS.
+ *
+ * Ate hoje so existia `meses`. "Ha 45 dias" chegava como 1 ou 2 meses, porque
+ * era o unico campo que o modelo tinha — e a resposta vinha de um recorte que
+ * ninguem pediu, sem erro nenhum aparecer.
+ * ==========================================================================
+ */
+describe('dataDeCorte — quem nao compra desde quando', () => {
+  const agora = new Date(2026, 9, 1, 15, 0, 0); // 01/10/2026, 15h
+
+  /* ESTE E O TESTE. O resto e contorno. */
+  it('a DATA dita vence os outros dois — e a forma mais especifica', () => {
+    const d = dataDeCorte({ meses: 6, dias: 45, desde: '2026-07-01' }, agora);
+
+    expect(d.getFullYear()).toBe(2026);
+    expect(d.getMonth() + 1).toBe(7);
+    expect(d.getDate()).toBe(1);
+  });
+
+  it('dias vence meses, porque carrega mais informacao', () => {
+    const d = dataDeCorte({ meses: 6, dias: 45 }, agora);
+
+    // 45 dias antes de 01/10 = 17/08.
+    expect(d.getMonth() + 1).toBe(8);
+    expect(d.getDate()).toBe(17);
+  });
+
+  it('dias sozinho', () => {
+    const d = dataDeCorte({ dias: 10 }, agora);
+
+    expect(d.getMonth() + 1).toBe(9);
+    expect(d.getDate()).toBe(21);
+  });
+
+  it('meses sozinho', () => {
+    const d = dataDeCorte({ meses: 3 }, agora);
+
+    expect(d.getMonth() + 1).toBe(7);
+    expect(d.getDate()).toBe(1);
+  });
+
+  it('SEM NADA, seis meses — o mesmo padrao de antes', () => {
+    const d = dataDeCorte({}, agora);
+
+    expect(d.getMonth() + 1).toBe(4);
+    expect(d.getDate()).toBe(1);
+  });
+
+  it('data impossivel cai no padrao, em vez de virar outro mes CALADO', () => {
+    // `new Date('2026-02-31')` vira 3 de marco sem avisar. O parser recusa, e
+    // recusar aqui significa seis meses — nao uma janela plausivel e errada.
+    const d = dataDeCorte({ desde: '2026-02-31' }, agora);
+
+    expect(d.getMonth() + 1).toBe(4);
+  });
+
+  it('numero zero ou negativo nao vira recorte', () => {
+    expect(dataDeCorte({ meses: 0 }, agora).getMonth() + 1).toBe(4);
+    expect(dataDeCorte({ dias: -5 }, agora).getMonth() + 1).toBe(4);
+  });
+
+  it('NUNCA devolve nulo: a pergunta "quem esta parado" sempre tem resposta', () => {
+    for (const entrada of [{}, { desde: 'ontem' }, { meses: NaN }]) {
+      expect(dataDeCorte(entrada, agora)).toBeInstanceOf(Date);
+    }
   });
 });
