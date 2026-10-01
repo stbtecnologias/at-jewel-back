@@ -1,4 +1,13 @@
 {
   "extends": "./tsconfig.json",
-  "exclude": ["node_modules", "test", "dist", "**/*spec.ts"]
+  // `scripts` FICA DE FORA DO BUILD — 01/10/2026.
+  //
+  // Os scripts de conferencia importam de `src/` (eles rodam as classes de
+  // verdade, e e isso que os torna prova). Sem esta linha o `nest build` passa
+  // a incluir `scripts/`, a raiz comum vira o diretorio do projeto e a saida
+  // migra de `dist/main.js` para `dist/src/main.js` — o que quebra o
+  // `start:prod`, que e `node dist/main`.
+  //
+  // Eles nunca foram para o build: rodam por `ts-node`, sob demanda.
+  "exclude": ["node_modules", "test", "dist", "scripts", "**/*spec.ts"]
 }
