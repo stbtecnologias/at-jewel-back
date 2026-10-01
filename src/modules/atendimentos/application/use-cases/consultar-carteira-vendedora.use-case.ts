@@ -47,6 +47,24 @@ export interface PaginaDaCarteira {
   total: number;
 }
 
+/**
+ * As janelas de um recorte de epoca, para os dois escopos.
+ *
+ * SEM MES E SEM DATA, LISTA VAZIA — e a consulta devolve nada. A pergunta nao
+ * ficou de pe, e responder "a carteira inteira ordenada por compras" seria
+ * responder OUTRA coisa com cara de resposta certa.
+ */
+function janelasDoRecorte(recorte: {
+  mes?: number;
+  dataComemorativa?: NomeComemorativo;
+}): { de: Date; ate: Date }[] {
+  const anos = anosRecentes(ANOS_DE_HISTORICO);
+  if (recorte.dataComemorativa) {
+    return janelasDaDataComemorativa(recorte.dataComemorativa, anos);
+  }
+  return recorte.mes ? janelasDoMes(recorte.mes, anos) : [];
+}
+
 /** O mesmo, para a pergunta de epoca: cada linha diz em quantos anos repetiu. */
 export interface PaginaDaEpoca {
   clientes: ClienteDaEpoca[];
@@ -117,14 +135,35 @@ export class ConsultarCarteiraVendedoraUseCase {
   ): Promise<PaginaDaEpoca> {
     if (!vendedoraCodigoErp) return { clientes: [], total: 0 };
 
-    const anos = anosRecentes(ANOS_DE_HISTORICO);
-    const janelas = recorte.dataComemorativa
-      ? janelasDaDataComemorativa(recorte.dataComemorativa, anos)
-      : recorte.mes
-        ? janelasDoMes(recorte.mes, anos)
-        : [];
+    const janelas = janelasDoRecorte(recorte);
 
-    return this.clientes.compradoresPorEpoca(vendedoraCodigoErp, janelas, MAXIMO);
+    return this.clientes.compradoresPorEpoca(
+      { tipo: 'CARTEIRA', vendedoraCodigoErp },
+      janelas,
+      MAXIMO,
+    );
+  }
+
+  /**
+   * A MESMA PERGUNTA, PELA LOJA INTEIRA — 01/10/2026.
+   *
+   * ======================================================================
+   * METODO SEPARADO, E NAO O MESMO COM O CODIGO NULO.
+   *
+   * "Sem vendedora = a loja" seria um desastre mudo: no canal da vendedora o
+   * codigo chega NULO quando ela nao tem cadastro no ERP, e ela veria a loja
+   * inteira sem ninguem ter escrito isso em lugar nenhum.
+   *
+   * Quem chama este metodo esta dizendo LOJA com todas as letras — e quem
+   * chama e so a gestao, atras da guarda de `verLoja`.
+   * ======================================================================
+   */
+  async porEpocaDaLoja(recorte: {
+    mes?: number;
+    dataComemorativa?: NomeComemorativo;
+  }): Promise<PaginaDaEpoca> {
+    const janelas = janelasDoRecorte(recorte);
+    return this.clientes.compradoresPorEpoca({ tipo: 'LOJA' }, janelas, MAXIMO);
   }
 
   /**

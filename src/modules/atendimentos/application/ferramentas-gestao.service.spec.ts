@@ -12,7 +12,12 @@ describe('FerramentasGestaoService', () => {
   let resolverVendedora: { execute: jest.Mock };
   let agenda: { execute: jest.Mock };
   let desempenho: { vendas: jest.Mock; metas: jest.Mock };
-  let carteira: { semComprar: jest.Mock; maioresCompradores: jest.Mock };
+  let carteira: {
+    semComprar: jest.Mock;
+    maioresCompradores: jest.Mock;
+    porEpoca: jest.Mock;
+    porEpocaDaLoja: jest.Mock;
+  };
   let agendarGestao: { execute: jest.Mock };
   let auditoria: { listar: jest.Mock; detalhe: jest.Mock };
   let linha: { doDia: jest.Mock };
@@ -48,6 +53,8 @@ describe('FerramentasGestaoService', () => {
       maioresCompradores: jest
         .fn()
         .mockResolvedValue({ clientes: [], total: 0 }),
+      porEpoca: jest.fn().mockResolvedValue({ clientes: [], total: 0 }),
+      porEpocaDaLoja: jest.fn().mockResolvedValue({ clientes: [], total: 0 }),
     };
     agendarGestao = { execute: jest.fn() };
     auditoria = {
@@ -803,6 +810,95 @@ describe('FerramentasGestaoService', () => {
       expect(resolverVendedora.execute).toHaveBeenCalledWith('Marina');
     });
   });
+  describe('quem compra naquela época — e de quem é a pergunta', () => {
+    /**
+     * ========================================================================
+     * "GERAL SERIA SE FOSSE OS ADMIN" — Lucas, 01/10/2026.
+     *
+     * A mesma pergunta responde pela carteira de UMA vendedora ou pela loja
+     * inteira, e e o `verLoja` que separa as duas. O schema ja obriga o nome
+     * quando falta a permissao — isto aqui e a SEGUNDA barreira, porque schema
+     * e pedido e nao permissao.
+     * ========================================================================
+     */
+    it('sem ver a loja e sem vendedora, PEDE O NOME — e nao consulta nada', async () => {
+      const r = await servico.montar({ verLoja: false }).gestaoEpoca({ mes: 12 });
+
+      expect(r.status).toBe('EXIGE_VENDEDORA');
+      // O ponto do teste: a consulta da LOJA nao chega a rodar. Recusar depois
+      // de consultar deixaria a clientela carregada em memoria, a um `return`
+      // de distancia de vazar numa refatoracao.
+      expect(carteira.porEpocaDaLoja).not.toHaveBeenCalled();
+      expect(carteira.porEpoca).not.toHaveBeenCalled();
+    });
+
+    it('vendedora em branco conta como ausente', async () => {
+      const r = await servico
+        .montar({ verLoja: false })
+        .gestaoEpoca({ mes: 12, vendedora: '   ' });
+
+      expect(r.status).toBe('EXIGE_VENDEDORA');
+      expect(carteira.porEpocaDaLoja).not.toHaveBeenCalled();
+    });
+
+    it('o padrão do montar já é o escopo estreito — esquecer não abre nada', () => {
+      expect(servico.montar().gestaoEpocaExigeVendedora).toBe(true);
+      expect(servico.montar({}).gestaoEpocaExigeVendedora).toBe(true);
+    });
+
+    it('COM verLoja e sem vendedora, responde pela LOJA', async () => {
+      const r = await servico.montar({ verLoja: true }).gestaoEpoca({ mes: 12 });
+
+      expect(r.status).toBe('OK');
+      expect(carteira.porEpocaDaLoja).toHaveBeenCalledWith({
+        mes: 12,
+        dataComemorativa: undefined,
+      });
+      expect(carteira.porEpoca).not.toHaveBeenCalled();
+    });
+
+    it('COM vendedora, é a carteira dela — mesmo para quem vê a loja', async () => {
+      await servico
+        .montar({ verLoja: true })
+        .gestaoEpoca({ vendedora: 'Marina', dataComemorativa: 'Natal' });
+
+      expect(carteira.porEpoca).toHaveBeenCalledWith('SEED-VD01', {
+        mes: undefined,
+        dataComemorativa: 'Natal',
+      });
+      expect(carteira.porEpocaDaLoja).not.toHaveBeenCalled();
+    });
+
+    it('a linha diz em quantos ANOS a pessoa repetiu', async () => {
+      carteira.porEpocaDaLoja.mockResolvedValue({
+        total: 2,
+        clientes: [
+          {
+            nome: 'Ana',
+            quantidade: 4,
+            anos: 3,
+            valorTotal: 1000,
+            ultimaCompra: new Date(2025, 11, 18),
+          },
+          {
+            nome: 'Bia',
+            quantidade: 2,
+            anos: 1,
+            valorTotal: 500,
+            ultimaCompra: null,
+          },
+        ],
+      });
+
+      const r = await servico.montar({ verLoja: true }).gestaoEpoca({ mes: 12 });
+
+      // Habito e coincidencia nao podem sair iguais: quatro compras em tres
+      // dezembros nao e a mesma coisa que duas no mesmo dezembro.
+      expect(r.linhas[0]).toContain('em 3 anos diferentes');
+      expect(r.linhas[1]).toContain('num ano só');
+    });
+  });
+
 });
 
 /**

@@ -22,6 +22,20 @@ export interface ClienteDaEpoca extends ClienteDaCarteira {
   anos: number;
 }
 
+/**
+ * DE QUEM E A PERGUNTA — e ele e EXPLICITO de proposito.
+ *
+ * A tentacao era "codigo nulo = a loja inteira". Seria um desastre silencioso:
+ * no canal da vendedora o codigo CHEGA NULO quando ela nao tem cadastro no ERP,
+ * e aquela vendedora passaria a ver a loja toda sem ninguem ter escrito isso em
+ * lugar nenhum.
+ *
+ * Com o discriminante, "a loja" so acontece quando alguem escreve LOJA.
+ */
+export type EscopoDeEpoca =
+  | { tipo: 'CARTEIRA'; vendedoraCodigoErp: string }
+  | { tipo: 'LOJA' };
+
 export interface FiltroCliente {
   ativo?: boolean;
   tabelaPreco?: TabelaPreco;
@@ -198,7 +212,7 @@ export interface IClienteRepository {
    * mesma coisa que tres no mesmo dezembro.
    */
   compradoresPorEpoca(
-    vendedoraCodigoErp: string,
+    escopo: EscopoDeEpoca,
     janelas: { de: Date; ate: Date }[],
     limite: number,
   ): Promise<{ clientes: ClienteDaEpoca[]; total: number }>;

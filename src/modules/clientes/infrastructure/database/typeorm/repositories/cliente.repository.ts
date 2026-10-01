@@ -8,6 +8,7 @@ import { ClientePerfil } from '../../../../domain/entities/cliente-perfil.entity
 import {
   ClienteDaCarteira,
   ClienteDaEpoca,
+  EscopoDeEpoca,
   FiltroCliente,
   FiltroDemografico,
   IClienteRepository,
@@ -436,7 +437,7 @@ export class ClienteRepository implements IClienteRepository {
    * contagem tem HAVING.
    */
   async compradoresPorEpoca(
-    vendedoraCodigoErp: string,
+    escopo: EscopoDeEpoca,
     janelas: { de: Date; ate: Date }[],
     limite: number,
   ): Promise<{ clientes: ClienteDaEpoca[]; total: number }> {
@@ -444,7 +445,15 @@ export class ClienteRepository implements IClienteRepository {
     // seria responder outra coisa; vazio e a resposta honesta.
     if (janelas.length === 0) return { clientes: [], total: 0 };
 
-    const params: unknown[] = [vendedoraCodigoErp];
+    // O RECORTE DA CARTEIRA SO EXISTE QUANDO O ESCOPO DIZ CARTEIRA. Nao ha
+    // caminho em que o filtro "cai" por um valor ausente — ele e escrito ou nao
+    // e, e o tipo obriga quem chama a dizer qual dos dois quer.
+    const params: unknown[] = [];
+    let daCarteira = '';
+    if (escopo.tipo === 'CARTEIRA') {
+      params.push(escopo.vendedoraCodigoErp);
+      daCarteira = `AND c.vendedora_codigo_erp = $${params.length}`;
+    }
     const faixas = janelas.map((j) => {
       params.push(j.de, j.ate);
       return `(v.data_movimentacao BETWEEN $${params.length - 1} AND $${params.length})`;
@@ -472,8 +481,8 @@ export class ClienteRepository implements IClienteRepository {
              COUNT(*) OVER ()                                       AS total
       FROM clientes c
       JOIN movimentacoes v ON v.cliente_id = c.id AND ${vendaEfetiva('v')}
-      WHERE c.vendedora_codigo_erp = $1
-        AND c.ativo = TRUE
+      WHERE c.ativo = TRUE
+        ${daCarteira}
         AND (${faixas.join(' OR ')})
       GROUP BY c.id, c.nome
       ORDER BY quantidade DESC, valor_total DESC

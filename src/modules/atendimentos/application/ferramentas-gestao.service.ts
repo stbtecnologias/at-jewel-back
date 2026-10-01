@@ -1,8 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { diasDeCalendario } from '../../../shared/tempo/dias-de-calendario';
 import { dataDeCorte, datasDeRecorte } from '../../../shared/tempo/recorte-de-datas';
+import type { NomeComemorativo } from '../../../shared/tempo/datas-comemorativas';
 import type {
   GestaoCarteiraHandler,
+  GestaoEpocaHandler,
   GestaoMelhoresHandler,
   GestaoAgendarHandler,
   GestaoCarteiraDoClienteHandler,
@@ -200,6 +202,7 @@ export interface FerramentasGestao {
   gestaoLeads: GestaoLeadsHandler;
   gestaoVendedoras: GestaoVendedorasHandler;
   gestaoCarteira: GestaoCarteiraHandler;
+  gestaoEpoca: GestaoEpocaHandler;
   gestaoMelhores: GestaoMelhoresHandler;
   gestaoFeedbacks: GestaoFeedbacksHandler;
   gestaoDiaDaVendedora: GestaoDiaDaVendedoraHandler;
@@ -224,6 +227,7 @@ export interface FerramentasGestao {
    * `montar` e o unico lugar que decide, e o resultado carrega a decisao.
    */
   gestaoItensExigeVendedora?: boolean;
+  gestaoEpocaExigeVendedora?: boolean;
 }
 
 /** O que o `montar` precisa saber sobre quem esta do outro lado. */
@@ -358,6 +362,7 @@ export class FerramentasGestaoService {
 
     return {
       gestaoItensExigeVendedora: !verLoja,
+      gestaoEpocaExigeVendedora: !verLoja,
 
       /**
        * A AGENDA, DE UMA OU DA EQUIPE INTEIRA — 30/09/2026.
@@ -459,6 +464,44 @@ export class FerramentasGestaoService {
           );
         });
         return { ...r, total };
+      },
+
+      /**
+       * "Quem mais compra no Natal?" — da loja ou de uma vendedora.
+       *
+       * A MESMA GUARDA DO `gestaoItens`, pelo mesmo motivo: o schema ja pede
+       * a vendedora quando falta `verLoja`, mas schema e PEDIDO — vale
+       * enquanto ninguem mexer na lista de tools, e quem mexer nao vai lembrar
+       * deste arquivo. Duas barreiras independentes para o mesmo erro, que e
+       * silencioso: entregar a clientela da loja a quem nao pode ve-la nao
+       * levanta excecao nenhuma.
+       */
+      gestaoEpoca: async ({ vendedora, mes, dataComemorativa }) => {
+        if (!verLoja && !vendedora?.trim()) {
+          return { status: 'EXIGE_VENDEDORA', linhas: [] };
+        }
+
+        const recorte = {
+          mes,
+          dataComemorativa: dataComemorativa as NomeComemorativo | undefined,
+        };
+
+        if (vendedora?.trim()) {
+          let total = 0;
+          const r = await this.comVendedora(equipe, vendedora, async (_id, codigoErp) => {
+            const pagina = await this.carteira.porEpoca(codigoErp, recorte);
+            total = pagina.total;
+            return pagina.clientes.map(linhaDaEpoca);
+          });
+          return { ...r, total };
+        }
+
+        const pagina = await this.carteira.porEpocaDaLoja(recorte);
+        return {
+          status: 'OK' as const,
+          linhas: pagina.clientes.map(linhaDaEpoca),
+          total: pagina.total,
+        };
       },
 
       gestaoMelhores: async ({ vendedora, categoria, ultimosMeses }) => {
@@ -2092,4 +2135,30 @@ export function resumoDoDia(
   }
 
   return linhas;
+}
+
+/**
+ * A linha de um cliente na pergunta de epoca.
+ *
+ * "EM N ANOS DIFERENTES" E A PARTE QUE IMPORTA: tres compras em tres
+ * dezembros e habito; tres no mesmo dezembro e uma tarde de compras. Sem isso
+ * a agente apresentaria as duas como a mesma coisa.
+ *
+ * A MESMA funcao serve a carteira e a loja — o texto nao pode mudar conforme
+ * quem pergunta, senao a mesma pessoa aparece descrita de dois jeitos.
+ */
+function linhaDaEpoca(c: {
+  nome: string;
+  quantidade: number;
+  anos: number;
+  valorTotal: number;
+  ultimaCompra: Date | null;
+}): string {
+  const compras = c.quantidade === 1 ? 'compra' : 'compras';
+  const repeticao =
+    c.anos > 1 ? ` em ${c.anos} anos diferentes` : ' (num ano só)';
+  const ultima = c.ultimaCompra
+    ? `, a última em ${c.ultimaCompra.toLocaleDateString('pt-BR')}`
+    : '';
+  return `${c.nome} — ${c.quantidade} ${compras}${repeticao}, ${moeda(c.valorTotal)}${ultima}`;
 }

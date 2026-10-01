@@ -282,6 +282,34 @@ const SEM_COMPRAR_TOOL: Anthropic.Tool = {
 };
 
 /**
+ * OS CAMPOS DA PERGUNTA DE EPOCA, escritos uma vez — 01/10/2026.
+ *
+ * Tres schemas os usam: a da vendedora e as duas da gestao. A lista de datas
+ * tem de ser a mesma nos tres, e a mesma do calculo em
+ * `datas-comemorativas.ts` — data que o modelo oferece e o calculo nao conhece
+ * devolve janela vazia, sem erro nenhum.
+ */
+const CAMPOS_DE_EPOCA = {
+  mes: {
+    type: 'integer' as const,
+    description: 'O mes, de 1 a 12. Use quando citarem um mes do ano.',
+  },
+  dataComemorativa: {
+    type: 'string' as const,
+    enum: [
+      'Carnaval',
+      'Páscoa',
+      'Dia das Mães',
+      'Dia dos Namorados',
+      'Dia dos Pais',
+      'Natal',
+    ],
+    description:
+      'A data comemorativa. A janela considerada sao os 15 dias que antecedem a data, em cada ano — e quando a joia e comprada.',
+  },
+};
+
+/**
  * QUEM COMPRA NAQUELA EPOCA — 01/10/2026.
  *
  * UMA ferramenta para mes E data comemorativa, e nao duas: para quem conversa
@@ -294,25 +322,7 @@ const EPOCA_TOOL: Anthropic.Tool = {
     'Lista os clientes DA CARTEIRA DELA que mais compram numa EPOCA do ano, somando TODOS OS ANOS do historico. Use para "quem mais compra em outubro", "quem compra no Dia das Maes", "quem some no Natal". Informe UM dos dois: o mes OU a data comemorativa. So enxerga a carteira dela.',
   input_schema: {
     type: 'object',
-    properties: {
-      mes: {
-        type: 'integer',
-        description: 'O mes, de 1 a 12. Use quando ela citar um mes do ano.',
-      },
-      dataComemorativa: {
-        type: 'string',
-        enum: [
-          'Carnaval',
-          'Páscoa',
-          'Dia das Mães',
-          'Dia dos Namorados',
-          'Dia dos Pais',
-          'Natal',
-        ],
-        description:
-          'A data comemorativa. A janela considerada sao os 15 dias que antecedem a data, em cada ano — e quando a joia e comprada.',
-      },
-    },
+    properties: { ...CAMPOS_DE_EPOCA },
   },
 };
 
@@ -342,6 +352,49 @@ const MELHORES_TOOL: Anthropic.Tool = {
 // distintas, e nao as mesmas com um parametro a mais. Um canal recebe um
 // conjunto, o outro recebe o outro; nunca os dois.
 // ===========================================================================
+
+/**
+ * QUEM COMPRA NAQUELA EPOCA, pela gestao — 01/10/2026.
+ *
+ * SEM `vendedora` e a LOJA INTEIRA, e e por isso que existe a segunda versao
+ * logo abaixo: a pergunta geral e de quem administra, e a da carteira e de quem
+ * gerencia uma vendedora. Decisao do Lucas: "geral seria se fosse os admin".
+ */
+const GESTAO_EPOCA_TOOL: Anthropic.Tool = {
+  name: 'clientes_por_epoca',
+  description:
+    'Os clientes que mais compram numa EPOCA do ano, somando TODOS OS ANOS do historico. Use para "quem mais compra em outubro", "quem compra no Dia das Maes", "quem some no Natal". Informe UM dos dois: o mes OU a data comemorativa. Com \`vendedora\`, so a carteira dela; sem, a loja inteira.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      vendedora: {
+        type: 'string',
+        description:
+          'Nome de uma vendedora, como veio na conversa, para recortar so a carteira dela. Omita para a loja inteira.',
+      },
+      ...CAMPOS_DE_EPOCA,
+    },
+    required: [],
+  },
+};
+
+/** A mesma, para quem NAO ve a loja — mesmo desenho do `itens_mais_vendidos`. */
+const GESTAO_EPOCA_DA_VENDEDORA_TOOL: Anthropic.Tool = {
+  name: 'clientes_por_epoca',
+  description:
+    'Os clientes de UMA VENDEDORA que mais compram numa EPOCA do ano, somando TODOS OS ANOS. Use para "quem mais compra no Natal na carteira da Bianca". Informe UM dos dois: o mes OU a data comemorativa. SEMPRE exige a vendedora — esta consulta nao responde pela loja inteira. Se perguntarem sem dizer de quem, pergunte de qual vendedora.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      vendedora: {
+        type: 'string',
+        description: 'Nome da vendedora, como veio na conversa.',
+      },
+      ...CAMPOS_DE_EPOCA,
+    },
+    required: ['vendedora'],
+  },
+};
 
 const GESTAO_AGENDA_TOOL: Anthropic.Tool = {
   name: 'agenda_de_vendedora',
@@ -1324,6 +1377,14 @@ export class AnthropicClient implements ILlmClient {
         params.gestaoItensExigeVendedora
           ? GESTAO_ITENS_DA_VENDEDORA_TOOL
           : GESTAO_ITENS_TOOL,
+      );
+    }
+    // So quando o canal NAO e o da vendedora — as duas usam o mesmo nome.
+    if (params.gestaoEpoca && !params.clientesPorEpoca) {
+      tools.push(
+        params.gestaoEpocaExigeVendedora
+          ? GESTAO_EPOCA_DA_VENDEDORA_TOOL
+          : GESTAO_EPOCA_TOOL,
       );
     }
     // So quando o canal NAO e o da vendedora — os dois usam o mesmo nome.
@@ -2346,6 +2407,46 @@ export class AnthropicClient implements ILlmClient {
             return (
               `Clientes parados:\n${clientes.map((c) => `- ${c.linha}`).join(`\n`)}\n\n` +
               'Repasse os nomes e as datas exatamente como estao.'
+            );
+          }),
+        );
+      } else if (toolUse.name === 'clientes_por_epoca' && params.gestaoEpoca) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const entrada = toolUse.input as {
+              vendedora?: string;
+              mes?: number;
+              dataComemorativa?: string;
+            };
+            const mes = Number(entrada.mes);
+            const r = await params.gestaoEpoca!({
+              vendedora: entrada.vendedora ? String(entrada.vendedora) : undefined,
+              mes: mes >= 1 && mes <= 12 ? mes : undefined,
+              dataComemorativa: entrada.dataComemorativa
+                ? String(entrada.dataComemorativa)
+                : undefined,
+            });
+            // Faltou dizer DE QUEM, e quem pergunta nao ve a loja inteira. Nao
+            // e "nao encontrei": e uma pergunta incompleta.
+            if (r.status === 'EXIGE_VENDEDORA') {
+              return 'Esta consulta e sempre por vendedora. Pergunte de qual vendedora ela quer, sem mencionar permissao nem limitacao de acesso.';
+            }
+            if (r.status === 'NAO_ENCONTRADA') {
+              return 'Nao achei essa vendedora na equipe. Diga isso e pergunte o nome de novo.';
+            }
+            if (r.status === 'AMBIGUA') {
+              return (
+                `Ha mais de uma vendedora com esse nome:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+                'Pergunte qual delas.'
+              );
+            }
+            if (r.linhas.length === 0) {
+              return 'Nenhuma compra nessa epoca. Diga isso em uma frase, e ofereca outro mes ou outra data.';
+            }
+            return (
+              `Clientes dessa epoca${r.vendedora ? ` (carteira da ${r.vendedora})` : ' (loja inteira)'} — ${r.total ?? r.linhas.length} no total:\n` +
+              `${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+              'Repasse os nomes e numeros exatamente como estao. "Em N anos diferentes" quer dizer que a pessoa comprou nessa mesma epoca em N anos — e o que separa habito de coincidencia; sem isso, nao afirme que alguem "sempre compra" nessa data.'
             );
           }),
         );

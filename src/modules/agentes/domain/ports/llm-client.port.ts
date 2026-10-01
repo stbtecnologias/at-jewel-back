@@ -529,6 +529,33 @@ export type GestaoCarteiraHandler = (input: {
   meses?: number;
 }) => Promise<GestaoLeituraResultado & { total?: number }>;
 
+/**
+ * QUEM COMPRA NAQUELA EPOCA, pela gestao — 01/10/2026.
+ *
+ * COM `vendedora`, a carteira dela; SEM, a loja inteira — e e por isso que
+ * carrega `EXIGE_VENDEDORA`: quem nao ve a loja (GERENTE_VENDAS, sem
+ * `analytics:read`) e nao disse de quem quer nao recebeu "nenhum resultado",
+ * recebeu uma pergunta incompleta. Dizer "nao encontrei" faria soar como dado
+ * ausente.
+ *
+ * A UNIAO E DECLARADA AQUI, e nao no `GestaoLeituraResultado`: aquele tipo e
+ * compartilhado por uma duzia de handlers e quatro formatadores, e alargar o
+ * compartilhado para um caso e superficie que nao precisa ser tocada. Mesmo
+ * desenho do `GestaoItensHandler`.
+ */
+export type GestaoEpocaHandler = (input: {
+  /** Omitido = a loja inteira, quando quem pergunta pode ve-la. */
+  vendedora?: string;
+  mes?: number;
+  dataComemorativa?: string;
+}) => Promise<{
+  status: 'OK' | 'AMBIGUA' | 'NAO_ENCONTRADA' | 'EXIGE_VENDEDORA';
+  vendedora?: string;
+  linhas: string[];
+  nomes?: string[];
+  total?: number;
+}>;
+
 export type GestaoMelhoresHandler = (input: {
   vendedora: string;
   categoria?: string;
@@ -843,6 +870,9 @@ export interface ChatParams {
   // Idem para as duas de carteira.
   clientesSemComprar?: ClientesSemComprarHandler;
   clientesPorEpoca?: ClientesPorEpocaHandler;
+  gestaoEpoca?: GestaoEpocaHandler;
+  /** Espelha o `gestaoItensExigeVendedora`: sem `verLoja`, o schema obriga. */
+  gestaoEpocaExigeVendedora?: boolean;
   melhoresClientes?: MelhoresClientesHandler;
   // Idem para `agendar_contato` — a unica que escreve.
   agendarContato?: AgendarContatoHandler;
