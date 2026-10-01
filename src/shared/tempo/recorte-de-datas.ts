@@ -61,3 +61,44 @@ function dataOuNulo(texto: string): Date | null {
     ? d
     : null;
 }
+
+/** O padrao de "faz tempo" quando ela nao diz quanto. Era o default do schema. */
+const MESES_PADRAO = 6;
+
+/**
+ * A DATA DE CORTE de "quem nao compra desde..." — 01/10/2026.
+ *
+ * ==========================================================================
+ * TRES FORMAS DE DIZER A MESMA COISA.
+ *
+ * Ate hoje a ferramenta so aceitava MESES, inteiro e obrigatorio: "ha 45 dias"
+ * e "desde julho" nao tinham como chegar — o modelo arredondava para 1 ou 2
+ * meses, e a resposta vinha de um recorte que ninguem pediu.
+ * ==========================================================================
+ *
+ * A ORDEM E DA MAIS ESPECIFICA PARA A MENOS: uma data dita e mais precisa que
+ * "45 dias", que e mais precisa que "uns meses". Se vierem duas, vale a que
+ * carrega mais informacao — e nao a primeira que o modelo escreveu.
+ *
+ * NUNCA DEVOLVE `null`. Diferente do `datasDeRecorte`, aqui nao existe "janela
+ * invalida": a pergunta "quem esta parado" tem resposta com qualquer corte, e
+ * o padrao de seis meses e o que a ferramenta ja usava. Cair no padrao e
+ * explicavel; recusar a pergunta nao e.
+ */
+export function dataDeCorte(
+  entrada: { meses?: number; dias?: number; desde?: string },
+  agora: Date = new Date(),
+): Date {
+  const data = entrada.desde ? dataOuNulo(entrada.desde) : null;
+  if (data) return data;
+
+  const corte = new Date(agora);
+  if (entrada.dias && entrada.dias > 0) {
+    corte.setDate(corte.getDate() - entrada.dias);
+    return corte;
+  }
+
+  const meses = entrada.meses && entrada.meses > 0 ? entrada.meses : MESES_PADRAO;
+  corte.setMonth(corte.getMonth() - meses);
+  return corte;
+}

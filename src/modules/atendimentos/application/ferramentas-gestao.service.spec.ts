@@ -379,13 +379,20 @@ describe('FerramentasGestaoService', () => {
     it('a consulta usa o CODIGO DO ERP, que e o que define a carteira', async () => {
       await servico.montar().gestaoCarteira({ vendedora: 'Marina', meses: 3 });
 
-      expect(carteira.semComprar).toHaveBeenCalledWith('SEED-VD01', 3);
+      // A DATA chega pronta desde 01/10/2026, e nao o numero de meses. O que
+      // importa aqui e o CODIGO; o corte em si tem spec proprio em
+      // `recorte-de-datas.spec`.
+      const [codigo, corte] = carteira.semComprar.mock.calls[0] as [string, Date];
+      expect(codigo).toBe('SEED-VD01');
+      expect(corte).toBeInstanceOf(Date);
+      expect(mesesAtras(corte)).toBe(3);
     });
 
     it('sem meses informado, usa seis', async () => {
       await servico.montar().gestaoCarteira({ vendedora: 'Marina' });
 
-      expect(carteira.semComprar).toHaveBeenCalledWith('SEED-VD01', 6);
+      const [, corte] = carteira.semComprar.mock.calls[0] as [string, Date];
+      expect(mesesAtras(corte)).toBe(6);
     });
 
     /** O teste do teto. */
@@ -797,3 +804,14 @@ describe('FerramentasGestaoService', () => {
     });
   });
 });
+
+/**
+ * Quantos MESES atras esta a data de corte, arredondado.
+ *
+ * O handler converte meses em data; o teste faz o caminho de volta para
+ * conferir o recorte sem travar no milissegundo em que o teste rodou.
+ */
+function mesesAtras(corte: Date, agora: Date = new Date()): number {
+  const dias = (agora.getTime() - corte.getTime()) / 86_400_000;
+  return Math.round(dias / 30.44);
+}

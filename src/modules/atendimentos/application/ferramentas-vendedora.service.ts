@@ -3,6 +3,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type {
   AgendarContatoHandler,
   AtualizarLeadHandler,
+  ClientesPorEpocaHandler,
   ClientesSemComprarHandler,
   ConsultarAgendaHandler,
   ConsultarMetasHandler,
@@ -16,6 +17,8 @@ import type {
 import { AgendarContatoVendedoraUseCase } from './use-cases/agendar-contato-vendedora.use-case';
 import { ConsultarAgendaVendedoraUseCase } from './use-cases/consultar-agenda-vendedora.use-case';
 import { ConsultarCarteiraVendedoraUseCase } from './use-cases/consultar-carteira-vendedora.use-case';
+import { dataDeCorte } from '../../../shared/tempo/recorte-de-datas';
+import type { NomeComemorativo } from '../../../shared/tempo/datas-comemorativas';
 import { ConsultarDesempenhoVendedoraUseCase } from './use-cases/consultar-desempenho-vendedora.use-case';
 import { ConsultarProdutosVendedoraUseCase } from './use-cases/consultar-produtos-vendedora.use-case';
 import { ProcessarRelatoVendedoraUseCase } from './use-cases/processar-relato-vendedora.use-case';
@@ -63,6 +66,7 @@ export interface FerramentasVendedora {
   /** A UNICA escrita dela sobre lead — dar baixa, ou dizer que virou cliente. */
   atualizarLead: AtualizarLeadHandler;
   clientesSemComprar: ClientesSemComprarHandler;
+  clientesPorEpoca: ClientesPorEpocaHandler;
   melhoresClientes: MelhoresClientesHandler;
   agendarContato: AgendarContatoHandler;
   /** So existe quando ha mensagem original para extrair — ver `montar`. */
@@ -400,13 +404,43 @@ export class FerramentasVendedoraService {
         };
       },
 
-      clientesSemComprar: async ({ meses }) => {
-        const { clientes, total } = await this.carteira.semComprar(codigoErp, meses);
+      clientesSemComprar: async ({ meses, dias, desde }) => {
+        // A FRASE VIRA DATA AQUI, e nao no SQL — 01/10/2026. "Ha 45 dias",
+        // "desde julho" e "ha 6 meses" sao a mesma pergunta com tres roupas.
+        const { clientes, total } = await this.carteira.semComprar(
+          codigoErp,
+          dataDeCorte({ meses, dias, desde }),
+        );
         return {
           clientes: clientes.map((c) => ({
             linha: c.ultimaCompra
               ? `${c.nome} — última compra em ${c.ultimaCompra.toLocaleDateString('pt-BR')}, ${c.quantidade} ${c.quantidade === 1 ? 'compra' : 'compras'} no total`
               : `${c.nome} — nunca comprou`,
+          })),
+          total,
+        };
+      },
+
+      /**
+       * "Quem mais compra em outubro?", "quem compra no Dia das Maes?"
+       *
+       * A LINHA DIZ EM QUANTOS ANOS a pessoa repetiu, e nao so o total: tres
+       * compras em tres dezembros e habito; tres no mesmo dezembro e uma
+       * tarde de compras. Sem essa coluna a agente apresentaria as duas como
+       * a mesma coisa.
+       */
+      clientesPorEpoca: async ({ mes, dataComemorativa }) => {
+        const { clientes, total } = await this.carteira.porEpoca(codigoErp, {
+          mes,
+          dataComemorativa: dataComemorativa as NomeComemorativo | undefined,
+        });
+        return {
+          clientes: clientes.map((c) => ({
+            linha:
+              `${c.nome} — ${c.quantidade} ${c.quantidade === 1 ? 'compra' : 'compras'}` +
+              `${c.anos > 1 ? ` em ${c.anos} anos diferentes` : ' (num ano só)'}` +
+              `, ${moeda(c.valorTotal)}` +
+              `${c.ultimaCompra ? `, a última em ${c.ultimaCompra.toLocaleDateString('pt-BR')}` : ''}`,
           })),
           total,
         };

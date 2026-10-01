@@ -7,6 +7,7 @@ import { Cliente } from '../../../../domain/entities/cliente.entity';
 import { ClientePerfil } from '../../../../domain/entities/cliente-perfil.entity';
 import {
   ClienteDaCarteira,
+  ClienteDaEpoca,
   FiltroCliente,
   FiltroDemografico,
   IClienteRepository,
@@ -231,7 +232,7 @@ export class ClienteRepository implements IClienteRepository {
 
   async inativosDaCarteira(
     vendedoraCodigoErp: string,
-    meses: number,
+    desde: Date,
     limite: number,
   ): Promise<ClienteDaCarteira[]> {
     // LEFT JOIN, e nao INNER: quem NUNCA comprou tambem e resposta para
@@ -260,11 +261,11 @@ export class ClienteRepository implements IClienteRepository {
         AND c.ativo = TRUE
       GROUP BY c.id, c.nome
       HAVING MAX(v.data_movimentacao) IS NULL
-          OR MAX(v.data_movimentacao) < now() - ($2 || ' months')::interval
+          OR MAX(v.data_movimentacao) < $2
       ORDER BY MAX(v.data_movimentacao) ASC NULLS FIRST
       LIMIT $3
       `,
-      [vendedoraCodigoErp, String(meses), limite],
+      [vendedoraCodigoErp, desde, limite],
     );
 
     return rows.map((r) => ({
@@ -287,7 +288,7 @@ export class ClienteRepository implements IClienteRepository {
    */
   async contarInativosDaCarteira(
     vendedoraCodigoErp: string,
-    meses: number,
+    desde: Date,
   ): Promise<number> {
     const rows = await this.repo.manager.query<{ total: string }[]>(
       `
@@ -301,10 +302,10 @@ export class ClienteRepository implements IClienteRepository {
           AND c.ativo = TRUE
         GROUP BY c.id
         HAVING MAX(v.data_movimentacao) IS NULL
-            OR MAX(v.data_movimentacao) < now() - ($2 || ' months')::interval
+            OR MAX(v.data_movimentacao) < $2
       ) AS parados
       `,
-      [vendedoraCodigoErp, String(meses)],
+      [vendedoraCodigoErp, desde],
     );
     return Number(rows[0]?.total ?? 0);
   }
@@ -415,6 +416,85 @@ export class ClienteRepository implements IClienteRepository {
       quantidade: Number(r.quantidade),
       valorTotal: Number(r.valor_total),
     }));
+  }
+
+  /**
+   * QUEM COMPRA NAQUELA EPOCA — 01/10/2026.
+   *
+   * ======================================================================
+   * UMA JANELA POR ANO, SOMADAS.
+   *
+   * "Quem mais compra em outubro" e "quem compra no Dia das Maes" chegam
+   * aqui iguais: uma lista de intervalos. Quem monta a lista sabe qual
+   * pergunta foi feita — e por isso as datas MOVEIS funcionam sem esta
+   * consulta precisar saber que a Pascoa muda de dia.
+   * ======================================================================
+   *
+   * O TOTAL SAI DA MESMA VARREDURA, por COUNT(*) OVER (): a amostra e o
+   * total respondem ao MESMO criterio. As outras duas da carteira usam duas
+   * consultas porque la os criterios divergem — a lista tem LIMIT, a
+   * contagem tem HAVING.
+   */
+  async compradoresPorEpoca(
+    vendedoraCodigoErp: string,
+    janelas: { de: Date; ate: Date }[],
+    limite: number,
+  ): Promise<{ clientes: ClienteDaEpoca[]; total: number }> {
+    // JANELA NENHUMA = PERGUNTA SEM RECORTE. Devolver a carteira inteira
+    // seria responder outra coisa; vazio e a resposta honesta.
+    if (janelas.length === 0) return { clientes: [], total: 0 };
+
+    const params: unknown[] = [vendedoraCodigoErp];
+    const faixas = janelas.map((j) => {
+      params.push(j.de, j.ate);
+      return `(v.data_movimentacao BETWEEN $${params.length - 1} AND $${params.length})`;
+    });
+    params.push(limite);
+
+    const rows = await this.dataSource.query<
+      {
+        id: string;
+        nome: string;
+        ultima_compra: Date | null;
+        quantidade: string;
+        valor_total: string;
+        anos: string;
+        total: string;
+      }[]
+    >(
+      `
+      SELECT c.id,
+             c.nome,
+             MAX(v.data_movimentacao)                               AS ultima_compra,
+             COUNT(*)                                               AS quantidade,
+             COALESCE(SUM(v.valor), 0)                              AS valor_total,
+             COUNT(DISTINCT date_part('year', v.data_movimentacao)) AS anos,
+             COUNT(*) OVER ()                                       AS total
+      FROM clientes c
+      JOIN movimentacoes v ON v.cliente_id = c.id AND ${vendaEfetiva('v')}
+      WHERE c.vendedora_codigo_erp = $1
+        AND c.ativo = TRUE
+        AND (${faixas.join(' OR ')})
+      GROUP BY c.id, c.nome
+      ORDER BY quantidade DESC, valor_total DESC
+      LIMIT $${params.length}
+      `,
+      params,
+    );
+
+    return {
+      clientes: rows.map((r) => ({
+        id: r.id,
+        nome: r.nome,
+        ultimaCompra: r.ultima_compra,
+        quantidade: Number(r.quantidade),
+        valorTotal: Number(r.valor_total),
+        anos: Number(r.anos),
+      })),
+      // COUNT(*) OVER () conta os GRUPOS da consulta inteira, antes do LIMIT
+      // — e exatamente "quantos clientes atendem ao criterio".
+      total: Number(rows[0]?.total ?? 0),
+    };
   }
 
   async resolverVendedoraCodigoErpPorAdminUser(

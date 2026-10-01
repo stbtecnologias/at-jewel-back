@@ -2,8 +2,15 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CLIENTE_REPOSITORY } from '../../../clientes/domain/ports/injection-tokens';
 import type {
   ClienteDaCarteira,
+  ClienteDaEpoca,
   IClienteRepository,
 } from '../../../clientes/domain/ports/repositories/cliente-repository.port';
+import {
+  janelasDaDataComemorativa,
+  janelasDoMes,
+  anosRecentes,
+  type NomeComemorativo,
+} from '../../../../shared/tempo/datas-comemorativas';
 
 /** Teto de resultados. Lista longa nao ajuda numa conversa de WhatsApp. */
 /**
@@ -40,6 +47,20 @@ export interface PaginaDaCarteira {
   total: number;
 }
 
+/** O mesmo, para a pergunta de epoca: cada linha diz em quantos anos repetiu. */
+export interface PaginaDaEpoca {
+  clientes: ClienteDaEpoca[];
+  total: number;
+}
+
+/**
+ * Quantos anos para tras a pergunta de epoca olha.
+ *
+ * A base comeca em junho de 2023. Cinco cobre o historico inteiro e sobra —
+ * ano sem venda devolve vazio e nao custa quase nada.
+ */
+const ANOS_DE_HISTORICO = 5;
+
 @Injectable()
 export class ConsultarCarteiraVendedoraUseCase {
   constructor(
@@ -48,7 +69,11 @@ export class ConsultarCarteiraVendedoraUseCase {
   ) {}
 
   /**
-   * Quem esta ha `meses` sem comprar — inclui quem nunca comprou.
+   * Quem nao compra desde `desde` — inclui quem nunca comprou.
+   *
+   * A DATA CHEGA PRONTA, e nao um numero de meses — 01/10/2026. Ela pergunta
+   * "ha 45 dias", "desde julho" e "ha 6 meses", e quem entende a frase e quem
+   * conversa com ela; aqui dentro so existe uma data de corte.
    *
    * Devolve a amostra E o total. Sem o total, "estes estao parados" soa
    * completo com dez de trezentos, e quem le vai embora com a impressao
@@ -56,15 +81,50 @@ export class ConsultarCarteiraVendedoraUseCase {
    */
   async semComprar(
     vendedoraCodigoErp: string | null,
-    meses: number,
+    desde: Date,
   ): Promise<PaginaDaCarteira> {
     if (!vendedoraCodigoErp) return { clientes: [], total: 0 };
 
     const [clientes, total] = await Promise.all([
-      this.clientes.inativosDaCarteira(vendedoraCodigoErp, meses, MAXIMO),
-      this.clientes.contarInativosDaCarteira(vendedoraCodigoErp, meses),
+      this.clientes.inativosDaCarteira(vendedoraCodigoErp, desde, MAXIMO),
+      this.clientes.contarInativosDaCarteira(vendedoraCodigoErp, desde),
     ]);
     return { clientes, total };
+  }
+
+  /**
+   * QUEM COMPRA NAQUELA EPOCA, somando todos os anos — 01/10/2026.
+   *
+   * Pedido do Lucas: "quem mais compra no mes de outubro?", "quem mais compra
+   * no dia das maes?", "quem mais compra no natal?".
+   *
+   * UMA PERGUNTA SO, e nao duas ferramentas. Mes e data comemorativa viram a
+   * mesma lista de janelas antes de chegar ao banco — para quem conversa, e a
+   * mesma pergunta, e duas ferramentas parecidas e o que faz o modelo escolher
+   * errado.
+   *
+   * CINCO ANOS. A base tem historico desde 2023; pedir mais anos do que existe
+   * custa uma faixa a mais no `OR` e devolve vazio, o que e barato. Pedir
+   * menos esconderia dado que esta la.
+   *
+   * SEM RECORTE, VAZIO. Nem mes nem data = a pergunta nao ficou de pe. Devolver
+   * a carteira inteira ordenada por compras seria responder OUTRA coisa — e a
+   * agente apresentaria como se fosse a resposta certa.
+   */
+  async porEpoca(
+    vendedoraCodigoErp: string | null,
+    recorte: { mes?: number; dataComemorativa?: NomeComemorativo },
+  ): Promise<PaginaDaEpoca> {
+    if (!vendedoraCodigoErp) return { clientes: [], total: 0 };
+
+    const anos = anosRecentes(ANOS_DE_HISTORICO);
+    const janelas = recorte.dataComemorativa
+      ? janelasDaDataComemorativa(recorte.dataComemorativa, anos)
+      : recorte.mes
+        ? janelasDoMes(recorte.mes, anos)
+        : [];
+
+    return this.clientes.compradoresPorEpoca(vendedoraCodigoErp, janelas, MAXIMO);
   }
 
   /**

@@ -265,10 +265,54 @@ const SEM_COMPRAR_TOOL: Anthropic.Tool = {
       meses: {
         type: 'integer',
         description:
-          'Quantos meses sem comprar. Se ela nao disser um numero, use 6.',
+          'Quantos MESES sem comprar. O padrao quando ela nao disser nada: 6.',
+      },
+      dias: {
+        type: 'integer',
+        description:
+          'Quantos DIAS sem comprar. Use quando ela falar em dias ou semanas ("ha 45 dias", "ha duas semanas"), em vez de arredondar para meses.',
+      },
+      desde: {
+        type: 'string',
+        description:
+          'Data no formato AAAA-MM-DD, quando ela der uma data ou um mes ("desde julho", "desde 10/03"). Mais especifico que os outros dois.',
       },
     },
-    required: ['meses'],
+  },
+};
+
+/**
+ * QUEM COMPRA NAQUELA EPOCA — 01/10/2026.
+ *
+ * UMA ferramenta para mes E data comemorativa, e nao duas: para quem conversa
+ * e a mesma pergunta, e duas ferramentas parecidas e o que faz o modelo
+ * escolher a errada.
+ */
+const EPOCA_TOOL: Anthropic.Tool = {
+  name: 'clientes_por_epoca',
+  description:
+    'Lista os clientes DA CARTEIRA DELA que mais compram numa EPOCA do ano, somando TODOS OS ANOS do historico. Use para "quem mais compra em outubro", "quem compra no Dia das Maes", "quem some no Natal". Informe UM dos dois: o mes OU a data comemorativa. So enxerga a carteira dela.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      mes: {
+        type: 'integer',
+        description: 'O mes, de 1 a 12. Use quando ela citar um mes do ano.',
+      },
+      dataComemorativa: {
+        type: 'string',
+        enum: [
+          'Carnaval',
+          'Páscoa',
+          'Dia das Mães',
+          'Dia dos Namorados',
+          'Dia dos Pais',
+          'Natal',
+        ],
+        description:
+          'A data comemorativa. A janela considerada sao os 15 dias que antecedem a data, em cada ano — e quando a joia e comprada.',
+      },
+    },
   },
 };
 
@@ -1313,6 +1357,7 @@ export class AnthropicClient implements ILlmClient {
     if (params.consultarMeusLeads) tools.push(MEUS_LEADS_TOOL);
     if (params.atualizarLead) tools.push(ATUALIZAR_LEAD_TOOL);
     if (params.clientesSemComprar) tools.push(SEM_COMPRAR_TOOL);
+    if (params.clientesPorEpoca) tools.push(EPOCA_TOOL);
     if (params.melhoresClientes) tools.push(MELHORES_TOOL);
     if (params.agendarContato) tools.push(AGENDAR_TOOL);
 
@@ -2282,9 +2327,18 @@ export class AnthropicClient implements ILlmClient {
       ) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
-            const entrada = toolUse.input as { meses?: number };
+            const entrada = toolUse.input as {
+              meses?: number;
+              dias?: number;
+              desde?: string;
+            };
+            // NENHUM TRATAMENTO DE PADRAO AQUI — `dataDeCorte` decide, e e um
+            // lugar so. Dois defaults em dois arquivos divergem na primeira
+            // mudanca de um lado.
             const { clientes } = await params.clientesSemComprar!({
-              meses: Number(entrada.meses) > 0 ? Number(entrada.meses) : 6,
+              meses: Number(entrada.meses) || undefined,
+              dias: Number(entrada.dias) || undefined,
+              desde: entrada.desde ? String(entrada.desde) : undefined,
             });
             if (clientes.length === 0) {
               return 'Nenhum cliente da carteira dela esta parado nesse periodo. Diga isso em uma frase.';
@@ -2292,6 +2346,30 @@ export class AnthropicClient implements ILlmClient {
             return (
               `Clientes parados:\n${clientes.map((c) => `- ${c.linha}`).join(`\n`)}\n\n` +
               'Repasse os nomes e as datas exatamente como estao.'
+            );
+          }),
+        );
+      } else if (toolUse.name === 'clientes_por_epoca' && params.clientesPorEpoca) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const entrada = toolUse.input as {
+              mes?: number;
+              dataComemorativa?: string;
+            };
+            const mes = Number(entrada.mes);
+            const { clientes, total } = await params.clientesPorEpoca!({
+              mes: mes >= 1 && mes <= 12 ? mes : undefined,
+              dataComemorativa: entrada.dataComemorativa
+                ? String(entrada.dataComemorativa)
+                : undefined,
+            });
+            if (clientes.length === 0) {
+              return 'Nenhuma compra da carteira dela nessa epoca. Diga isso em uma frase, e ofereca outro mes ou outra data.';
+            }
+            return (
+              `Clientes dessa epoca (${total} no total):\n` +
+              `${clientes.map((c) => `- ${c.linha}`).join('\n')}\n\n` +
+              'Repasse os nomes e numeros exatamente como estao. "Em N anos diferentes" quer dizer que a pessoa comprou nessa mesma epoca em N anos — e o que separa habito de coincidencia; sem isso, nao afirme que alguem "sempre compra" nessa data.'
             );
           }),
         );

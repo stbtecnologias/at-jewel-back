@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { datasComemorativas } from '../../domain/commemorative-dates';
+import { datasComemorativas } from '../../../../shared/tempo/datas-comemorativas';
 import { ANALYTICS_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type {
   ComportamentoData,

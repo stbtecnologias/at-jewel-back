@@ -13,6 +13,15 @@ export interface ClienteDaCarteira {
   valorTotal: number;
 }
 
+/**
+ * Uma linha da resposta sobre a epoca. Alem do que a carteira ja devolve,
+ * carrega EM QUANTOS ANOS a pessoa comprou naquela janela.
+ */
+export interface ClienteDaEpoca extends ClienteDaCarteira {
+  /** Quantos anos diferentes tiveram compra na janela. Habito x coincidencia. */
+  anos: number;
+}
+
 export interface FiltroCliente {
   ativo?: boolean;
   tabelaPreco?: TabelaPreco;
@@ -131,9 +140,16 @@ export interface IClienteRepository {
     limite: number,
   ): Promise<Cliente[]>;
 
+  /**
+   * Quem nao compra DESDE `desde`.
+   *
+   * A DATA VEM PRONTA, e nao um numero de meses — 01/10/2026. A vendedora
+   * pergunta "ha 45 dias", "desde julho" e "ha 6 meses", e traduzir frase em
+   * data e trabalho de quem le a frase. O SQL fica com uma pergunta so.
+   */
   inativosDaCarteira(
     vendedoraCodigoErp: string,
-    meses: number,
+    desde: Date,
     limite: number,
   ): Promise<ClienteDaCarteira[]>;
 
@@ -147,7 +163,7 @@ export interface IClienteRepository {
    */
   contarInativosDaCarteira(
     vendedoraCodigoErp: string,
-    meses: number,
+    desde: Date,
   ): Promise<number>;
 
   /**
@@ -168,6 +184,24 @@ export interface IClienteRepository {
     vendedoraCodigoErp: string,
     opcoes: { categoria?: string; desde?: Date },
   ): Promise<number>;
+
+  /**
+   * QUEM COMPRA NAQUELA EPOCA — 01/10/2026.
+   *
+   * Recebe uma JANELA POR ANO (dezembro de 2023, de 2024, de 2025...) e soma
+   * todas. E por isso que mes e data comemorativa chegam aqui iguais: quem
+   * monta as janelas sabe qual pergunta foi feita; esta consulta nao precisa
+   * saber.
+   *
+   * Devolve tambem EM QUANTOS ANOS DIFERENTES a pessoa comprou, que e o que
+   * separa habito de coincidencia — tres compras em tres dezembros nao e a
+   * mesma coisa que tres no mesmo dezembro.
+   */
+  compradoresPorEpoca(
+    vendedoraCodigoErp: string,
+    janelas: { de: Date; ate: Date }[],
+    limite: number,
+  ): Promise<{ clientes: ClienteDaEpoca[]; total: number }>;
   buscarPorTelefone1Hash(hash: string): Promise<Cliente | null>;
   buscarPorEmailHash(hash: string): Promise<Cliente | null>;
 

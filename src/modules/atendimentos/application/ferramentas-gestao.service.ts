@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { diasDeCalendario } from '../../../shared/tempo/dias-de-calendario';
-import { datasDeRecorte } from '../../../shared/tempo/recorte-de-datas';
+import { dataDeCorte, datasDeRecorte } from '../../../shared/tempo/recorte-de-datas';
 import type {
   GestaoCarteiraHandler,
   GestaoMelhoresHandler,
@@ -446,7 +446,11 @@ export class FerramentasGestaoService {
         // simplesmente nao tem carteira — o use case devolve vazio.
         let total = 0;
         const r = await this.comVendedora(equipe, vendedora, async (_id, codigoErp) => {
-          const pagina = await this.carteira.semComprar(codigoErp, meses ?? 6);
+          // A data de corte vem pronta desde 01/10 — ver `dataDeCorte`.
+          const pagina = await this.carteira.semComprar(
+            codigoErp,
+            dataDeCorte({ meses }),
+          );
           total = pagina.total;
           return pagina.clientes.map((c) =>
             c.ultimaCompra

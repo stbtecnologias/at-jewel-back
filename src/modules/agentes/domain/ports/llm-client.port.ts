@@ -267,8 +267,30 @@ export interface ConsultarCarteiraLlmResultado {
   total: number;
 }
 
+/**
+ * TRES FORMAS DE DIZER O MESMO RECORTE — 01/10/2026.
+ *
+ * So `meses` existia, e era obrigatorio: "ha 45 dias" e "desde julho" nao
+ * tinham como chegar. Todos opcionais agora, e sem nenhum o padrao e seis
+ * meses — o mesmo de antes.
+ */
 export type ClientesSemComprarHandler = (input: {
-  meses: number;
+  meses?: number;
+  dias?: number;
+  /** `AAAA-MM-DD`. Vence os outros dois: e a forma mais especifica. */
+  desde?: string;
+}) => Promise<ConsultarCarteiraLlmResultado>;
+
+/**
+ * Quem compra NAQUELA EPOCA, somando todos os anos — 01/10/2026.
+ *
+ * Um dos dois campos, nunca os dois: mes OU data comemorativa. Sem nenhum a
+ * pergunta nao ficou de pe, e o handler devolve vazio em vez de responder
+ * outra coisa.
+ */
+export type ClientesPorEpocaHandler = (input: {
+  mes?: number;
+  dataComemorativa?: string;
 }) => Promise<ConsultarCarteiraLlmResultado>;
 
 export type MelhoresClientesHandler = (input: {
@@ -820,6 +842,7 @@ export interface ChatParams {
   atualizarLead?: AtualizarLeadHandler;
   // Idem para as duas de carteira.
   clientesSemComprar?: ClientesSemComprarHandler;
+  clientesPorEpoca?: ClientesPorEpocaHandler;
   melhoresClientes?: MelhoresClientesHandler;
   // Idem para `agendar_contato` — a unica que escreve.
   agendarContato?: AgendarContatoHandler;
