@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import {
+  receitaLiquida,
+  vendaEfetiva,
+} from '../../../../../../shared/database/sql/movimentacao-como-venda';
+import {
   SALDO_POR_PRODUTO,
   saldoDe,
 } from '../../../../../../shared/database/sql/saldo-do-produto';
@@ -29,14 +33,18 @@ export class AgentesDataRepository implements IAgentesDataRepository {
     let filtro = '';
     if (dataInicio && dataFim) {
       params.push(dataInicio, dataFim);
-      filtro = 'AND data_venda BETWEEN $1 AND $2';
+      filtro = 'AND m.data_movimentacao BETWEEN $1 AND $2';
     }
+    // A RECEITA DO RELATORIO E A MESMA DA TELA — 01/10/2026. Lia `vendas`, que
+    // tem zero linhas: a Anastasia respondia "R$ 0,00 e 0 vendas" com confianca,
+    // enquanto o painel mostrava R$ 23 milhoes. A contagem segue so das vendas;
+    // a devolucao abate a receita e nao vira venda negativa.
     const rows = await this.ds.query<{ receitaTotal: number; totalVendas: number }[]>(
       `
-      SELECT COALESCE(SUM(valor_total), 0)::float AS "receitaTotal",
-             COUNT(*)::int AS "totalVendas"
-      FROM vendas
-      WHERE status = 'concluida' ${filtro}
+      SELECT COALESCE(${receitaLiquida('m')}, 0)::float             AS "receitaTotal",
+             COUNT(*) FILTER (WHERE ${vendaEfetiva('m')})::int      AS "totalVendas"
+      FROM movimentacoes m
+      WHERE m.ativo ${filtro}
       `,
       params,
     );
@@ -127,12 +135,15 @@ export class AgentesDataRepository implements IAgentesDataRepository {
     const [ultimasVendas, ocorrencias, totais] = await Promise.all([
       this.ds.query<{ dataVenda: string; valor: number }[]>(
         `
-        SELECT to_char(v.data_venda, 'YYYY-MM-DD') AS "dataVenda",
-               i.valor_total_item::float AS valor
-        FROM itens_venda i
-        JOIN vendas v ON v.id = i.venda_id AND v.status = 'concluida'
-        WHERE i.produto_id = $1
-        ORDER BY v.data_venda DESC
+        -- SO VENDA EFETIVA, e nao o valor com sinal: uma linha negativa no meio
+        -- das "ultimas vendas" confundiria a agente, e a devolucao ja chega a
+        -- ela pela outra fonte desta mesma analise (defeitos_devolucoes).
+        SELECT to_char(m.data_movimentacao, 'YYYY-MM-DD')        AS "dataVenda",
+               (i.quantidade * i.valor_unitario)::float          AS valor
+        FROM movimentacoes_itens i
+        JOIN movimentacoes m ON m.id = i.movimentacao_id AND ${vendaEfetiva('m')}
+        WHERE i.ativo AND i.produto_id = $1
+        ORDER BY m.data_movimentacao DESC
         LIMIT 20
         `,
         [produtoId],
@@ -150,10 +161,10 @@ export class AgentesDataRepository implements IAgentesDataRepository {
       ),
       this.ds.query<{ totalVendas: number }[]>(
         `
-        SELECT COUNT(DISTINCT i.venda_id)::int AS "totalVendas"
-        FROM itens_venda i
-        JOIN vendas v ON v.id = i.venda_id AND v.status = 'concluida'
-        WHERE i.produto_id = $1
+        SELECT COUNT(DISTINCT i.movimentacao_id)::int AS "totalVendas"
+        FROM movimentacoes_itens i
+        JOIN movimentacoes m ON m.id = i.movimentacao_id AND ${vendaEfetiva('m')}
+        WHERE i.ativo AND i.produto_id = $1
         `,
         [produtoId],
       ),
