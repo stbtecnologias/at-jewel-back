@@ -1,4 +1,4 @@
-import { mascararEmail, mascararTelefone } from './cliente.entity';
+import { mascararEmail, mascararTelefone } from './mascara-de-contato';
 
 /**
  * A MASCARA DE CONTATO — requisito RF-10, 28/09/2026.

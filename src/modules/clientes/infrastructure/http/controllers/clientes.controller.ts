@@ -23,7 +23,7 @@ import { JwtOrApiKeyGuard } from '../../../../auth/infrastructure/http/guards/jw
 import { PermissionsGuard } from '../../../../auth/infrastructure/http/guards/permissions.guard';
 import { ScopesGuard } from '../../../../auth/infrastructure/http/guards/scopes.guard';
 import type { JwtPayload } from '../../../../auth/infrastructure/http/strategies/jwt.strategy';
-import { mascararTelefone } from '../../../domain/entities/cliente.entity';
+import { mascararTelefone } from '../../../domain/entities/mascara-de-contato';
 import { EscopoClientesService } from '../../../application/escopo-clientes.service';
 import { AtualizarClienteUseCase } from '../../../application/use-cases/atualizar-cliente.use-case';
 import { AtualizarPerfilClienteUseCase } from '../../../application/use-cases/atualizar-perfil-cliente.use-case';
