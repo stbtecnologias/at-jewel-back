@@ -89,7 +89,12 @@ export class VendasController {
         dataPagamento: p.dataPagamento ? new Date(p.dataPagamento) : null,
       })),
     });
-    return venda.toPublic();
+    // O ECO DO POST LEVA O CUSTO, e isso nao e excecao a regra — e o outro
+    // lado dela. Quem entra aqui e o integrador, por API Key com escopo
+    // `vendas:write`, e foi ELE quem acabou de mandar o `valorCustoUnitario`.
+    // Recortar o eco quebraria a ida e volta da integracao sem proteger nada:
+    // o dado ja e dele. Mesmo raciocinio do `paraIntegrador` em produtos.
+    return venda.toPublic(true);
   }
 
   @Get()
@@ -182,11 +187,30 @@ export class VendasController {
     });
   }
 
+  /**
+   * O DETALHE DA VENDA — e a porta por onde o custo saia.
+   *
+   * ========================================================================
+   * `vendas:read_all` NAO E `produtos:custo`, e a diferenca tem dono.
+   *
+   * O `GERENTE_VENDAS` tem a primeira e nao tem a segunda, de proposito: a
+   * migracao 72 diz que ela acompanha o TIME dela e nao ve custo nem margem.
+   * Ate 01/10/2026 bastava abrir uma venda para ver o custo de cada peca.
+   *
+   * E a mesma reincidencia de 28/09, quando o custo foi fechado no produto e
+   * continuou saindo por outro caminho. A licao ficou escrita no repositorio e
+   * vale repetir: *um campo sensivel nao se protege no serializador, se
+   * protege em TODA porta por onde ele sai*.
+   * ========================================================================
+   */
   @Get(':id')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @Permissions('vendas:read_all')
-  async buscarPorId(@Param('id', ParseUUIDPipe) id: string) {
+  async buscarPorId(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Request() req: { user: JwtPayload },
+  ) {
     const venda = await this.buscar.execute(id);
-    return venda.toPublic();
+    return venda.toPublic(await this.escopo.podeVerCusto(req.user));
   }
 }

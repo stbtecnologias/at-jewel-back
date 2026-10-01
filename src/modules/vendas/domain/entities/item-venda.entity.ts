@@ -47,7 +47,26 @@ export class ItemVenda {
     return new ItemVenda(props);
   }
 
-  toPublic(): Record<string, unknown> {
+  /**
+   * @param custo `produtos:custo`. **Sem ele a chave do custo nao existe.**
+   *
+   * ========================================================================
+   * O CUSTO SAIA POR AQUI, E E REINCIDENCIA — 01/10/2026.
+   *
+   * Em 28/09 o custo foi fechado no serializador do PRODUTO, com a licao
+   * escrita no proprio repositorio: "um campo sensivel nao se protege no
+   * serializador, se protege em TODA porta por onde ele sai". Esta porta
+   * ficou: `GET /vendas/:id` exige so `vendas:read_all`, e `GERENTE_VENDAS`
+   * tem essa chave sem ter `produtos:custo` — de proposito, pela migracao 72.
+   *
+   * O espalhamento condicional e o que faz a chave DESAPARECER. Um
+   * `valorCustoUnitario: null` ainda contaria quantas pecas nao tem custo,
+   * e num item com valor ao lado entregaria quais tem. Chave ausente nao
+   * responde nada disso — e o criterio CA-02 de 28/09 e literalmente
+   * "ausencia da chave, nao valor nulo".
+   * ========================================================================
+   */
+  toPublic(custo = false): Record<string, unknown> {
     return {
       id: this.id,
       produtoId: this.produtoId,
@@ -55,9 +74,9 @@ export class ItemVenda {
       codigoErpItem: this.codigoErpItem,
       quantidade: this.quantidade,
       valorUnitario: this.valorUnitario,
-      valorCustoUnitario: this.valorCustoUnitario,
       valorDescontoItem: this.valorDescontoItem,
       valorTotalItem: this.valorTotalItem,
+      ...(custo ? { valorCustoUnitario: this.valorCustoUnitario } : {}),
     };
   }
 }
