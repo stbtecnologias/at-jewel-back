@@ -19,6 +19,11 @@ import {
 import type { FormaPagamento, StatusVenda } from '../../../../domain/entities/enums';
 import { ItemVendaOrmEntity } from '../entities/item-venda.orm-entity';
 import { PagamentoVendaOrmEntity } from '../entities/pagamento-venda.orm-entity';
+import {
+  STATUS_DE_MOVIMENTACAO,
+  receitaLiquida,
+  vendaEfetiva,
+} from '../../../../../../shared/database/sql/movimentacao-como-venda';
 import { VendaOrmEntity } from '../entities/venda.orm-entity';
 
 /** O fuso da operacao — o mesmo da auditoria. */
@@ -614,46 +619,61 @@ export class VendaRepository implements IVendaRepository {
     };
   }
 
+  /**
+   * A SERIE DA AUDITORIA, VINDA DA MOVIMENTACAO — 01/10/2026.
+   *
+   * ======================================================================
+   * TODO BALDE MOSTRAVA "ZERO VENDIDO".
+   *
+   * Ela lia a tabela vendas, que tem ZERO linhas — e o proprio comentario do
+   * caso de uso avisa que "balde sem venda nenhuma fica com vendido zerado, e
+   * nao nulo: zero vendido e um fato". Era um fato falso em todos os baldes.
+   * ======================================================================
+   *
+   * O DIA E O DA LOJA. data_movimentacao e timestamptz: truncar sem dizer o
+   * fuso usaria o do servidor, em UTC, e uma venda das 22h de sexta cairia no
+   * sabado.
+   */
   async serieAgregada(
     filtros: Pick<FiltroVenda, 'dataDe' | 'dataAte' | 'vendedoraId'>,
     granularidade: 'DIA' | 'SEMANA',
   ): Promise<BucketVendas[]> {
-    // SQL cru e posicional, como o `listar()` deste mesmo repositorio. O
-    // agrupamento e por posicao (`GROUP BY 1`), e o construtor de query nao
-    // garante que o `1` chegue como expressao em vez de nome de coluna.
-    const params: unknown[] = ['concluida' satisfies StatusVenda];
-    const conds: string[] = ['v.ativo = true', 'v.status = $1'];
+    // SQL cru e posicional, como o resto deste repositorio. O agrupamento e por
+    // posicao (GROUP BY 1), e o construtor de query nao garante que o 1 chegue
+    // como expressao em vez de nome de coluna.
+    const params: unknown[] = [];
+    const conds: string[] = ['m.ativo'];
 
     if (filtros.dataDe !== undefined) {
       params.push(filtros.dataDe);
-      conds.push(`v.data_venda >= $${params.length}`);
+      conds.push(`m.data_movimentacao >= $${params.length}`);
     }
     if (filtros.dataAte !== undefined) {
       params.push(filtros.dataAte);
-      conds.push(`v.data_venda <= $${params.length}`);
+      conds.push(`m.data_movimentacao <= $${params.length}`);
     }
     if (filtros.vendedoraId !== undefined) {
       params.push(filtros.vendedoraId);
-      conds.push(`v.vendedora_id = ANY($${params.length}::uuid[])`);
+      conds.push(`m.vendedora_id = ANY($${params.length}::uuid[])`);
     }
 
-    // O dia e o da loja. `data_venda` e timestamptz: truncar sem dizer o fuso
-    // usaria o do servidor, que roda em UTC — e uma venda das 22h de sexta
-    // cairia no sabado.
     params.push(granularidade === 'DIA' ? 'day' : 'week');
     const iUnidade = params.length;
     params.push(FUSO_DA_LOJA);
     const iFuso = params.length;
 
+    // A CONTAGEM e so das vendas; a RECEITA abate a devolucao. O balde em que
+    // so houve devolucao aparece com 0 vendas e receita negativa — e e o que
+    // aconteceu de verdade naquele dia.
     const linhas = await this.dataSource.query<
       { inicio: Date; vendas: string; receita: string }[]
     >(
       `
-      SELECT (date_trunc($${iUnidade}::text, v.data_venda AT TIME ZONE $${iFuso}::text)
-                AT TIME ZONE $${iFuso}::text) AS inicio,
-             COUNT(v.id) AS vendas,
-             COALESCE(SUM(v.valor_total), 0) AS receita
-      FROM vendas v
+      SELECT (date_trunc($${iUnidade}::text, m.data_movimentacao AT TIME ZONE $${iFuso}::text)
+                AT TIME ZONE $${iFuso}::text)              AS inicio,
+             COUNT(*) FILTER (WHERE ${vendaEfetiva('m')})  AS vendas,
+             COALESCE(${receitaLiquida('m')}, 0)           AS receita
+      FROM movimentacoes m
       WHERE ${conds.join(' AND ')}
       GROUP BY 1
       ORDER BY 1 DESC
@@ -673,6 +693,20 @@ export class VendaRepository implements IVendaRepository {
     });
   }
 
+  /**
+   * O HISTORICO DE COMPRAS, VINDO DA MOVIMENTACAO — 01/10/2026.
+   *
+   * ======================================================================
+   * TODA CLIENTE APARECIA SEM NENHUMA COMPRA.
+   *
+   * Lia a tabela vendas, com ZERO linhas. A tela mostrava "nunca comprou"
+   * para quem comprou 39 vezes.
+   * ======================================================================
+   *
+   * A LISTA leva os tres estados (o campo status diz qual); o RESUMO conta so
+   * a venda efetiva e abate a devolucao do valor — mesmo criterio do resumo da
+   * tela de Vendas e do relatorio da Anastasia.
+   */
   async listarHistoricoPorCliente(
     clienteId: string,
     opts?: { limit?: number; offset?: number },
@@ -680,33 +714,33 @@ export class VendaRepository implements IVendaRepository {
     const limit = Math.min(opts?.limit ?? LIMIT_PADRAO, LIMIT_MAXIMO);
     const offset = opts?.offset ?? 0;
 
-    // Lista de vendas do cliente (todos os status) com a contagem de itens
-    // resolvida no proprio SELECT via subquery correlacionada — evita N+1.
-    // Apenas FK de vendedora e dados de venda; nenhuma PII do cliente.
-    const linhas = await this.repo
-      .createQueryBuilder('v')
-      .select('v.id', 'id')
-      .addSelect('v.data_venda', 'data_venda')
-      .addSelect('v.valor_total', 'valor_total')
-      .addSelect('v.status', 'status')
-      .addSelect('v.vendedora_id', 'vendedora_id')
-      .addSelect(
-        '(SELECT COUNT(*) FROM itens_venda iv WHERE iv.venda_id = v.id)',
-        'qtd_itens',
-      )
-      .where('v.cliente_id = :clienteId', { clienteId })
-      .andWhere('v.ativo = true')
-      .orderBy('v.data_venda', 'DESC')
-      .limit(limit)
-      .offset(offset)
-      .getRawMany<{
+    // A contagem de itens sai no proprio SELECT, por subconsulta correlacionada
+    // — evita N+1. Apenas FK de vendedora e dados do documento; nenhuma PII.
+    const linhas = await this.dataSource.query<
+      {
         id: string;
         data_venda: Date;
         valor_total: string;
         status: StatusVenda;
         vendedora_id: string | null;
         qtd_itens: string;
-      }>();
+      }[]
+    >(
+      `
+      SELECT m.id                                  AS id,
+             m.data_movimentacao                   AS data_venda,
+             m.valor                               AS valor_total,
+             ${STATUS_DE_MOVIMENTACAO}             AS status,
+             m.vendedora_id                        AS vendedora_id,
+             (SELECT COUNT(*) FROM movimentacoes_itens mi
+               WHERE mi.movimentacao_id = m.id AND mi.ativo) AS qtd_itens
+      FROM movimentacoes m
+      WHERE m.cliente_id = $1
+      ORDER BY m.data_movimentacao DESC
+      LIMIT $2 OFFSET $3
+      `,
+      [clienteId, limit, offset],
+    );
 
     const vendas: ItemHistoricoCliente[] = linhas.map((l) => ({
       id: l.id,
@@ -717,21 +751,23 @@ export class VendaRepository implements IVendaRepository {
       qtdItens: Number(l.qtd_itens),
     }));
 
-    // Resumo agregado sobre TODO o historico concluido (independente da
-    // paginacao da lista). Calculado em SQL.
-    const resumoRow = await this.repo
-      .createQueryBuilder('v')
-      .select('COUNT(v.id)', 'total_compras')
-      .addSelect('COALESCE(SUM(v.valor_total), 0)', 'valor_total')
-      .addSelect('MAX(v.data_venda)', 'ultima_compra_em')
-      .where('v.cliente_id = :clienteId', { clienteId })
-      .andWhere('v.ativo = true')
-      .andWhere("v.status = 'concluida'")
-      .getRawOne<{
+    // Resumo sobre TODO o historico, independente da paginacao da lista.
+    const [resumoRow] = await this.dataSource.query<
+      {
         total_compras: string;
         valor_total: string;
         ultima_compra_em: Date | null;
-      }>();
+      }[]
+    >(
+      `
+      SELECT COUNT(*) FILTER (WHERE ${vendaEfetiva('m')})                 AS total_compras,
+             COALESCE(${receitaLiquida('m')}, 0)                          AS valor_total,
+             MAX(m.data_movimentacao) FILTER (WHERE ${vendaEfetiva('m')}) AS ultima_compra_em
+      FROM movimentacoes m
+      WHERE m.cliente_id = $1 AND m.ativo
+      `,
+      [clienteId],
+    );
 
     const totalCompras = Number(resumoRow?.total_compras ?? 0);
     const valorTotal = Number(resumoRow?.valor_total ?? 0);
