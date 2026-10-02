@@ -652,14 +652,14 @@ const GESTAO_ITENS_DA_VENDEDORA_TOOL: Anthropic.Tool = {
 const GESTAO_POR_FAMILIA_TOOL: Anthropic.Tool = {
   name: 'quem_mais_vende',
   description:
-    'O ranking das vendedoras para UM tipo de peca, da que mais vendeu para a que menos vendeu, com quantidade e valor. Use para "quem vende mais brinco", "qual vendedora mais vendeu anel esse ano", "quem e a melhor em colar". Conta PECAS, nao faturamento — e a devolucao ja esta abatida. Para o ranking geral, sem separar tipo, use panorama_da_equipe.',
+    'O ranking das vendedoras para UM tipo de peca, da que mais vendeu para a que menos vendeu, com quantidade e valor. Conta PECAS, nao faturamento — e a devolucao ja esta abatida. Aceita QUALQUER tipo do catalogo, que tem dezenas: alem de brinco, anel, colar e pulseira, existem pingente, piercing, solitario, argolas e tambem decoracao (vaso, vela, livro, bowl). Se o nome nao existir, a resposta traz a lista. NUNCA SOME VARIOS TIPOS A MAO para chegar a um total por vendedora: para isso existe o panorama_da_equipe, que ja conta TODAS as pecas de TODAS as familias numa consulta so.',
   input_schema: {
     type: 'object',
     properties: {
       familia: {
         type: 'string',
         description:
-          'O tipo de peca, como a pessoa falou: "brinco", "anel", "colar", "pulseira". Se o nome nao existir no catalogo, a resposta traz a lista dos que existem — repasse e pergunte qual.',
+          'O tipo de peca, como a pessoa falou. Vale QUALQUER um do catalogo, e os exemplos sao so exemplos: brinco, anel, colar, pulseira, pingente, piercing, solitario, argolas, e tambem decoracao como vaso, vela e livro. Se o nome nao existir, a resposta traz a lista dos que existem — repasse e pergunte qual.',
       },
       periodo: {
         type: 'string',
@@ -1973,7 +1973,13 @@ export class AnthropicClient implements ILlmClient {
             }
             return (
               `Ranking no periodo:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
-              'A primeira linha e a resposta. Repasse os numeros exatamente como estao.'
+              'A primeira linha e a resposta. Repasse os numeros exatamente como estao. ' +
+              // A RESSALVA QUE A AGENTE INVENTAVA — 02/10/2026. Somando quatro
+              // familias a mao, ela avisou que "isso cobre so essas quatro" e
+              // citou tipos que ela mesma escolheu nao consultar; um deles
+              // ("alianca") nem existe no catalogo. O recorte e de UM tipo, e
+              // dizer isso e diferente de alegar que o resto ficou de fora.
+              'Este ranking e de UM tipo de peca, o que foi pedido. Nao diga que outros tipos "ficaram de fora da conta" nem invente nomes de tipos: se ela quiser o total de pecas por vendedora, some nada — peca o panorama_da_equipe, que ja traz todas as familias.'
             );
           }),
         );
