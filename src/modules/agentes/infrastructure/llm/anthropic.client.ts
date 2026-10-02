@@ -125,13 +125,26 @@ const AGENDA_TOOL: Anthropic.Tool = {
  *
  * DUPLICADO NAS TRES de proposito — a descricao de `periodo` e diferente em
  * cada uma (enums diferentes, padroes diferentes), entao so este par e comum.
+ *
+ * UM PERIODO POR CHAMADA — 02/10/2026.
+ *
+ * "Quantos pingentes foram vendidos em agosto e setembro?" teve duas
+ * respostas certas e diferentes na mesma tarde: as 15h52 ela consultou mes a
+ * mes ("2 em agosto, 7 em setembro") e as 16h01 consultou 01/08 a 30/09 de
+ * uma vez ("9 no total, 8 da Camila"). Os numeros batem — 2 + 6 = 8 —, mas a
+ * segunda apaga o que a pergunta procurava: a Camila TRIPLICOU de um mes para
+ * o outro, e isso nao esta em lugar nenhum do "8".
+ *
+ * A instrucao mora aqui, e nao na ferramenta de familia onde o sintoma
+ * apareceu, porque o par `de`/`ate` e o mesmo em doze ferramentas e a escolha
+ * de recorte e a mesma em todas.
  * ==========================================================================
  */
 const DATAS_LIVRES = {
   de: {
     type: 'string' as const,
     description:
-      'Inicio do periodo, AAAA-MM-DD. Use com `ate` quando o recorte pedido nao couber no `periodo`: "ultimos 6 meses", "de janeiro a marco", "agosto", "do dia 10 ate hoje". VOCE calcula as datas a partir da data de hoje, que esta no inicio desta conversa.',
+      'Inicio do periodo, AAAA-MM-DD. Use com `ate` quando o recorte pedido nao couber no `periodo`: "ultimos 6 meses", "de janeiro a marco", "agosto", "do dia 10 ate hoje". VOCE calcula as datas a partir da data de hoje, que esta no inicio desta conversa. SE A PERGUNTA CITAR MAIS DE UM PERIODO ("agosto e setembro", "2024 e 2025"), CHAME A FERRAMENTA UMA VEZ POR PERIODO e responda um de cada vez, em vez de abrir uma janela unica que vai de um ate o outro: a janela unica devolve a SOMA, e a soma apaga a comparacao que a pergunta pediu.',
   },
   ate: {
     type: 'string' as const,
