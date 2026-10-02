@@ -129,6 +129,14 @@ export interface FiltroAnalitico {
    * Vazio nunca chega: o controller transforma em `undefined`, que e "sem
    * recorte". Uma lista vazia significaria "nenhum valor serve".
    */
+  /**
+   * UMA OU MAIS EMPRESAS DO GRUPO — 02/10/2026.
+   *
+   * AUSENTE = TODAS, e isso importa: o numero que a gestao conhece e a soma
+   * dos CNPJs, e mudar o padrao mudaria o significado de toda tela de uma
+   * vez.
+   */
+  empresaId?: string[];
   sexo?: string[];
   origem?: string[];
   faixaEtaria?: string;
@@ -166,4 +174,7 @@ export interface IAnalyticsRepository {
   distribuicaoOrigem(filtro?: FiltroAnalitico): Promise<DistribuicaoOrigem[]>;
   demografia(filtro?: FiltroAnalitico): Promise<Demografia>;
   linhasVendaCsv(dataInicio?: Date, dataFim?: Date): Promise<LinhaVendaCsv[]>;
+
+  /** As empresas do grupo que tem movimento — as opcoes do filtro. */
+  empresasComMovimento(): Promise<{ id: string; nome: string }[]>;
 }

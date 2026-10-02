@@ -36,6 +36,14 @@ export interface IVendasLeituraRepository {
     filtros: FiltroVenda,
     janela: { de: Date; ate: Date },
   ): Promise<SerieMensalVendas>;
+
+  /**
+   * As empresas do grupo que tem movimento — as opcoes do filtro da tela.
+   *
+   * SO AS QUE TEM VENDA: o grupo tem oito CNPJs e dois com movimento, e
+   * oferecer os oito faria o filtro parecer um cadastro.
+   */
+  empresasComMovimento(): Promise<{ id: string; nome: string }[]>;
 }
 
 export const VENDAS_LEITURA_REPOSITORY = Symbol('IVendasLeituraRepository');

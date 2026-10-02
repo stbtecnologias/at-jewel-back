@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { EMPRESAS_COM_MOVIMENTO } from '../../../../../../shared/database/sql/movimentacao-como-venda';
 import {
   SALDO_POR_PRODUTO,
   saldoDe,
@@ -458,6 +459,18 @@ export class AnalyticsRepository implements IAnalyticsRepository {
       paramsCruzada,
     );
     return { porSexo, porFaixaEtaria, cruzada };
+  }
+
+  /**
+   * A LISTA DE EMPRESAS — 02/10/2026.
+   *
+   * Este repositorio le o modelo antigo (`vendas`, vazio desde sempre), e
+   * por isso aqui a lista sai da MOVIMENTACAO mesmo assim: o filtro da tela
+   * precisa das opcoes de verdade, e nao de uma lista vazia que faria o
+   * controle sumir.
+   */
+  async empresasComMovimento(): Promise<{ id: string; nome: string }[]> {
+    return this.ds.query<{ id: string; nome: string }[]>(EMPRESAS_COM_MOVIMENTO);
   }
 
   async linhasVendaCsv(dataInicio?: Date, dataFim?: Date): Promise<LinhaVendaCsv[]> {

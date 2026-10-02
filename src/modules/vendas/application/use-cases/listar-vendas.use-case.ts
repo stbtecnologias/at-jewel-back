@@ -24,4 +24,14 @@ export class ListarVendasUseCase {
   async execute(filtros: FiltroVenda): Promise<VendaResumo[]> {
     return this.vendaRepo.listar(filtros);
   }
+
+  /**
+   * As empresas do grupo que tem movimento — as opcoes do filtro da tela.
+   *
+   * MORA AQUI porque e a mesma leitura da listagem: quem lista venda e quem
+   * sabe por quais CNPJs ela saiu.
+   */
+  async empresas(): Promise<{ id: string; nome: string }[]> {
+    return this.vendaRepo.empresasComMovimento();
+  }
 }

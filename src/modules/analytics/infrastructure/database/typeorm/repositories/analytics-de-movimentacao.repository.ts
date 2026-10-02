@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import {
+  EMPRESAS_COM_MOVIMENTO,
   STATUS_DE_MOVIMENTACAO,
   formaPagamentoDe,
   receitaLiquida,
@@ -106,6 +107,11 @@ export class AnalyticsDeMovimentacaoRepository implements IAnalyticsRepository {
     if (filtro?.dataInicio && filtro?.dataFim) {
       params.push(filtro.dataInicio, filtro.dataFim);
       where += ` AND m.data_movimentacao BETWEEN $${params.length - 1} AND $${params.length}`;
+    }
+    // A EMPRESA DO GRUPO — 02/10/2026. Ausente = todas, somadas como sempre.
+    if (filtro?.empresaId?.length) {
+      params.push(filtro.empresaId);
+      where += ` AND m.empresa_id = ANY($${params.length}::uuid[])`;
     }
     const precisaPerfil =
       filtro?.sexo != null ||
@@ -370,6 +376,16 @@ export class AnalyticsDeMovimentacaoRepository implements IAnalyticsRepository {
       `,
       params,
     );
+  }
+
+  /**
+   * As empresas que aparecem no filtro — ver `EMPRESAS_COM_MOVIMENTO`.
+   *
+   * A MESMA CONSULTA DA TELA DE VENDAS, do mesmo arquivo: as duas telas tem
+   * de oferecer as mesmas opcoes.
+   */
+  async empresasComMovimento(): Promise<{ id: string; nome: string }[]> {
+    return this.ds.query<{ id: string; nome: string }[]>(EMPRESAS_COM_MOVIMENTO);
   }
 
   // ---- as cinco que nao vem da venda ------------------------------------

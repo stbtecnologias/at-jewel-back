@@ -6,6 +6,7 @@ import { PermissionsGuard } from '../../../../auth/infrastructure/http/guards/pe
 import { ComportamentoDatasUseCase } from '../../../application/use-cases/comportamento-datas.use-case';
 import { DemografiaUseCase } from '../../../application/use-cases/demografia.use-case';
 import { DistribuicaoOrigemUseCase } from '../../../application/use-cases/distribuicao-origem.use-case';
+import { EmpresasDoFiltroUseCase } from '../../../application/use-cases/empresas-do-filtro.use-case';
 import { DistribuicaoPagamentoUseCase } from '../../../application/use-cases/distribuicao-pagamento.use-case';
 import { EstatisticasInventarioUseCase } from '../../../application/use-cases/estatisticas-inventario.use-case';
 import { ExportarVendasCsvUseCase } from '../../../application/use-cases/exportar-vendas-csv.use-case';
@@ -29,6 +30,7 @@ function parseFiltro(
   faixa?: string,
   idadeMin?: string,
   idadeMax?: string,
+  empresa?: string | string[],
 ): FiltroAnalitico | undefined {
   const filtro: FiltroAnalitico = {};
   if (de && ate) {
@@ -43,6 +45,10 @@ function parseFiltro(
   // as duas, mais a lista por virgula, e devolve `undefined` quando vazio.
   const sexos = listaEntrada(sexo) as string[] | undefined;
   const origens = listaEntrada(origem) as string[] | undefined;
+  // A EMPRESA DO GRUPO — 02/10/2026. Mesma forma dos outros: `?empresa=a&empresa=b`,
+  // lista por virgula ou valor unico. AUSENTE = TODAS, somadas como sempre.
+  const empresas = listaEntrada(empresa) as string[] | undefined;
+  if (empresas) filtro.empresaId = empresas;
   if (sexos) filtro.sexo = sexos;
   if (origens) filtro.origem = origens;
   if (faixa) filtro.faixaEtaria = faixa;
@@ -71,6 +77,7 @@ export class AnalyticsController {
     private readonly distribuicaoPagamento: DistribuicaoPagamentoUseCase,
     private readonly estatisticasInventario: EstatisticasInventarioUseCase,
     private readonly distribuicaoOrigem: DistribuicaoOrigemUseCase,
+    private readonly empresasDoFiltro: EmpresasDoFiltroUseCase,
     private readonly demografia: DemografiaUseCase,
     private readonly comportamentoDatas: ComportamentoDatasUseCase,
     private readonly exportarVendasCsv: ExportarVendasCsvUseCase,
@@ -88,10 +95,24 @@ export class AnalyticsController {
     @Query('faixa') faixa?: string,
     @Query('idade_min') idadeMin?: string,
     @Query('idade_max') idadeMax?: string,
+    @Query('empresa') empresa?: string | string[],
   ) {
     return this.resumoPeriodo.execute(
-      parseFiltro(dataInicio, dataFim, sexo, origem, faixa, idadeMin, idadeMax),
+      parseFiltro(dataInicio, dataFim, sexo, origem, faixa, idadeMin, idadeMax, empresa),
     );
+  }
+
+  /**
+   * AS OPCOES DO FILTRO DE EMPRESA — 02/10/2026.
+   *
+   * Guardada por `analytics:read`, e nao por `empresas:read`: quem abre esta
+   * tela tem de poder montar o filtro dela. Pendurar o controle numa segunda
+   * permissao faria a tela carregar e o filtro sumir, que e pior que nao ter
+   * o filtro.
+   */
+  @Get('empresas')
+  async empresas() {
+    return this.empresasDoFiltro.execute();
   }
 
   // Com o filtro da tela desde 11/09/2026 — sem ele, os ultimos `meses`.
@@ -105,10 +126,11 @@ export class AnalyticsController {
     @Query('faixa') faixa?: string,
     @Query('idade_min') idadeMin?: string,
     @Query('idade_max') idadeMax?: string,
+    @Query('empresa') empresa?: string | string[],
   ) {
     return this.receitaMensal.execute(
       meses ? Number(meses) : undefined,
-      parseFiltro(dataInicio, dataFim, sexo, origem, faixa, idadeMin, idadeMax),
+      parseFiltro(dataInicio, dataFim, sexo, origem, faixa, idadeMin, idadeMax, empresa),
     );
   }
 
@@ -122,10 +144,11 @@ export class AnalyticsController {
     @Query('faixa') faixa?: string,
     @Query('idade_min') idadeMin?: string,
     @Query('idade_max') idadeMax?: string,
+    @Query('empresa') empresa?: string | string[],
   ) {
     return this.topProdutos.execute(
       limit ? Number(limit) : undefined,
-      parseFiltro(dataInicio, dataFim, sexo, origem, faixa, idadeMin, idadeMax),
+      parseFiltro(dataInicio, dataFim, sexo, origem, faixa, idadeMin, idadeMax, empresa),
     );
   }
 
@@ -138,9 +161,10 @@ export class AnalyticsController {
     @Query('faixa') faixa?: string,
     @Query('idade_min') idadeMin?: string,
     @Query('idade_max') idadeMax?: string,
+    @Query('empresa') empresa?: string | string[],
   ) {
     return this.giroEstoque.execute(
-      parseFiltro(dataInicio, dataFim, sexo, origem, faixa, idadeMin, idadeMax),
+      parseFiltro(dataInicio, dataFim, sexo, origem, faixa, idadeMin, idadeMax, empresa),
     );
   }
 
@@ -155,9 +179,10 @@ export class AnalyticsController {
     @Query('faixa') faixa?: string,
     @Query('idade_min') idadeMin?: string,
     @Query('idade_max') idadeMax?: string,
+    @Query('empresa') empresa?: string | string[],
   ) {
     return this.giroFamilias.execute(
-      parseFiltro(dataInicio, dataFim, sexo, origem, faixa, idadeMin, idadeMax),
+      parseFiltro(dataInicio, dataFim, sexo, origem, faixa, idadeMin, idadeMax, empresa),
     );
   }
 
@@ -170,9 +195,10 @@ export class AnalyticsController {
     @Query('faixa') faixa?: string,
     @Query('idade_min') idadeMin?: string,
     @Query('idade_max') idadeMax?: string,
+    @Query('empresa') empresa?: string | string[],
   ) {
     return this.distribuicaoPagamento.execute(
-      parseFiltro(dataInicio, dataFim, sexo, origem, faixa, idadeMin, idadeMax),
+      parseFiltro(dataInicio, dataFim, sexo, origem, faixa, idadeMin, idadeMax, empresa),
     );
   }
 
@@ -213,9 +239,10 @@ export class AnalyticsController {
     @Query('faixa') faixa?: string,
     @Query('idade_min') idadeMin?: string,
     @Query('idade_max') idadeMax?: string,
+    @Query('empresa') empresa?: string | string[],
   ) {
     return this.distribuicaoOrigem.execute(
-      parseFiltro(dataInicio, dataFim, sexo, origem, faixa, idadeMin, idadeMax),
+      parseFiltro(dataInicio, dataFim, sexo, origem, faixa, idadeMin, idadeMax, empresa),
     );
   }
 
@@ -228,9 +255,10 @@ export class AnalyticsController {
     @Query('faixa') faixa?: string,
     @Query('idade_min') idadeMin?: string,
     @Query('idade_max') idadeMax?: string,
+    @Query('empresa') empresa?: string | string[],
   ) {
     return this.demografia.execute(
-      parseFiltro(dataInicio, dataFim, sexo, origem, faixa, idadeMin, idadeMax),
+      parseFiltro(dataInicio, dataFim, sexo, origem, faixa, idadeMin, idadeMax, empresa),
     );
   }
 
@@ -245,6 +273,7 @@ export class AnalyticsController {
     @Query('faixa') faixa?: string,
     @Query('idade_min') idadeMin?: string,
     @Query('idade_max') idadeMax?: string,
+    @Query('empresa') empresa?: string | string[],
   ) {
     const anoNum = Number(ano);
     const alvo = Number.isInteger(anoNum) && anoNum > 2000 ? anoNum : new Date().getFullYear();

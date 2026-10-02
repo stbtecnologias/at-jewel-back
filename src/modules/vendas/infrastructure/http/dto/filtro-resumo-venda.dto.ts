@@ -33,6 +33,13 @@ export class FiltroResumoVendaDto {
   @IsUUID(undefined, { each: true })
   vendedoraId?: string[];
 
+  /** A empresa do grupo. AUSENTE = TODAS, somadas como sempre (02/10/2026). */
+  @IsOptional()
+  @Transform(({ value }) => listaEntrada(value))
+  @IsArray()
+  @IsUUID(undefined, { each: true })
+  empresaId?: string[];
+
   /**
    * Aceita MAIS DE UM valor desde 10/09/2026 — pedido do Yerlon na revisao
    * de homologacao. O `listaEntrada` cobre as tres formas de envio; a antiga

@@ -127,3 +127,25 @@ export function itemAssinado(mov = 'm', item = 'i'): string {
     ELSE                        (${total})
   END`;
 }
+
+/**
+ * AS EMPRESAS QUE APARECEM NO FILTRO — 02/10/2026.
+ *
+ * SO AS QUE TEM MOVIMENTO. O grupo tem oito CNPJs cadastrados e dois com
+ * venda; oferecer as oito faria o filtro parecer um cadastro, e seis delas
+ * nao mudariam numero nenhum.
+ *
+ * A LISTA SAI DO MESMO LUGAR NAS DUAS TELAS. Vendas e Analytics precisam
+ * das MESMAS opcoes — uma empresa que aparece num filtro e nao no outro e
+ * a mesma classe de divergencia que o abatimento da devolucao criou em
+ * 25/09.
+ */
+export const EMPRESAS_COM_MOVIMENTO = `
+  SELECT e.id, e.nome
+    FROM empresas e
+   WHERE EXISTS (
+     SELECT 1 FROM movimentacoes m
+      WHERE m.empresa_id = e.id AND m.ativo
+   )
+   ORDER BY e.nome
+`;

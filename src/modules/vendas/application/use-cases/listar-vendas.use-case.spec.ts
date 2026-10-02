@@ -1,21 +1,22 @@
-import {
-  IVendaRepository,
-  VendaResumo,
-} from '../../domain/ports/repositories/venda-repository.port';
+import { VendaResumo } from '../../domain/ports/repositories/venda-repository.port';
+import { IVendasLeituraRepository } from '../../domain/ports/repositories/vendas-leitura-repository.port';
 import { ListarVendasUseCase } from './listar-vendas.use-case';
 
-function makeRepoMock(): jest.Mocked<IVendaRepository> {
+function makeRepoMock(): jest.Mocked<IVendasLeituraRepository> {
   return {
     criarComAgregado: jest.fn(),
     buscarPorId: jest.fn(),
     buscarPorCodigoErp: jest.fn(),
     listar: jest.fn(),
-  } as unknown as jest.Mocked<IVendaRepository>;
+    // As opcoes do filtro de empresa (02/10) — dubladas: estes testes
+    // descrevem o caso de uso, nao a consulta.
+    empresasComMovimento: jest.fn().mockResolvedValue([]),
+  } as unknown as jest.Mocked<IVendasLeituraRepository>;
 }
 
 describe('ListarVendasUseCase', () => {
   let useCase: ListarVendasUseCase;
-  let repo: jest.Mocked<IVendaRepository>;
+  let repo: jest.Mocked<IVendasLeituraRepository>;
 
   beforeEach(() => {
     repo = makeRepoMock();

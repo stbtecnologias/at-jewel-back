@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 // A REGRA MORA NO SHARED DESDE 01/10 — o Analytics passou a ler a movimentacao
 // tambem, e duas copias do que decide a receita divergiriam.
 import {
+  EMPRESAS_COM_MOVIMENTO,
   STATUS_DE_MOVIMENTACAO as STATUS_SQL,
   formaPagamentoDe,
   receitaLiquida,
@@ -108,6 +109,11 @@ export class VendasDeMovimentacaoRepository implements IVendasLeituraRepository 
       params.push(f.vendedoraId);
       conds.push(`m.vendedora_id = ANY($${params.length}::uuid[])`);
     }
+    // A EMPRESA DO GRUPO — 02/10/2026. Ausente = todas, somadas como sempre.
+    if (f.empresaId?.length) {
+      params.push(f.empresaId);
+      conds.push(`m.empresa_id = ANY($${params.length}::uuid[])`);
+    }
     if (f.status?.length) {
       params.push(f.status);
       conds.push(`${STATUS_SQL} = ANY($${params.length}::text[])`);
@@ -134,6 +140,11 @@ export class VendasDeMovimentacaoRepository implements IVendasLeituraRepository 
       where: conds.length ? `AND ${conds.join(' AND ')}` : '',
       joinPagamento,
     };
+  }
+
+  /** As opcoes do filtro de empresa — ver `EMPRESAS_COM_MOVIMENTO`. */
+  async empresasComMovimento(): Promise<{ id: string; nome: string }[]> {
+    return this.ds.query<{ id: string; nome: string }[]>(EMPRESAS_COM_MOVIMENTO);
   }
 
   async listar(filtros: FiltroVenda): Promise<VendaResumo[]> {
