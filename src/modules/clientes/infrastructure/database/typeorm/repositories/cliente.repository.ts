@@ -17,6 +17,36 @@ import {
 import { ClienteOrmEntity } from '../entities/cliente.orm-entity';
 import { ClientePerfilOrmEntity } from '../entities/cliente-perfil.orm-entity';
 
+/**
+ * O NOME QUEBRADO EM PALAVRAS — 02/10/2026.
+ *
+ * ==========================================================================
+ * "RAFAELA SANTOS" NAO ACHAVA "RAFAELA FAVORITO SANTOS".
+ *
+ * A busca era UM pedaco so: `nome ILIKE %Rafaela Santos%`. Quem tem nome do
+ * meio — e em joalheria e a maioria — nao era encontrada, e a agente
+ * respondia "nao encontrei nenhuma cliente com esse nome", que e falso e
+ * soa definitivo. Quem pergunta desiste ali.
+ * ==========================================================================
+ *
+ * CADA PALAVRA VIRA UMA CONDICAO, todas obrigatorias: "Rafaela" E "Santos",
+ * em qualquer ordem e com qualquer coisa no meio. Buscar por uma palavra so
+ * continua funcionando igual.
+ *
+ * TETO DE CINCO: nome completo tem seis, sete palavras, e cada uma vira um
+ * ILIKE sem indice. Cinco ja identifica qualquer pessoa, e quem digitar o
+ * nome inteiro acha do mesmo jeito pelas cinco primeiras.
+ *
+ * TERMO VAZIO DEVOLVE LISTA VAZIA, e nao a base inteira: sem palavra nenhuma
+ * nao ha condicao, e uma consulta sem condicao traria todo mundo.
+ */
+export function palavrasDoNome(termo: string): string[] {
+  return escaparCuringas(termo)
+    .split(/\s+/)
+    .filter((p) => p.length > 0)
+    .slice(0, 5);
+}
+
 @Injectable()
 export class ClienteRepository implements IClienteRepository {
   constructor(
@@ -149,11 +179,16 @@ export class ClienteRepository implements IClienteRepository {
     // unaccent nao esta instalado no banco; ILIKE resolve maiuscula/minuscula,
     // e o acento fica por conta de quem digita. Escapamos os curingas do LIKE
     // para que "%" digitado pelo ADM nao vire "traga todo mundo".
-    const alvo = escaparCuringas(termo);
-    const rows = await this.repo
-      .createQueryBuilder('c')
-      .where('c.nome ILIKE :alvo', { alvo: '%' + alvo + '%' })
-      .andWhere('c.ativo = true')
+    const palavras = palavrasDoNome(termo);
+    if (palavras.length === 0) return [];
+
+    const qb = this.repo.createQueryBuilder('c').where('c.ativo = true');
+    // UMA CONDICAO POR PALAVRA — ver `palavrasDoNome`. "Rafaela Santos" acha
+    // "RAFAELA FAVORITO SANTOS"; com um pedaco so, nao achava.
+    palavras.forEach((palavra, i) => {
+      qb.andWhere(`c.nome ILIKE :p${i}`, { [`p${i}`]: `%${palavra}%` });
+    });
+    const rows = await qb
       .orderBy('c.nome', 'ASC')
       .limit(limite)
       .getMany();
@@ -217,14 +252,21 @@ export class ClienteRepository implements IClienteRepository {
     termo: string,
     limite: number,
   ): Promise<Cliente[]> {
-    // Escapa os curingas do LIKE: "%" digitado nao pode virar "traga todo
-    // mundo" — mesmo cuidado do buscarPorNomeParcial.
-    const alvo = escaparCuringas(termo);
-    const rows = await this.repo
+    // Escapa os curingas do LIKE e quebra em palavras — mesmo tratamento do
+    // `buscarPorNomeParcial`. As duas buscas tem de achar a mesma pessoa: a
+    // vendedora que procura "Rafaela Santos" na carteira dela nao pode receber
+    // "nao encontrei" por causa do nome do meio.
+    const palavras = palavrasDoNome(termo);
+    if (palavras.length === 0) return [];
+
+    const qb = this.repo
       .createQueryBuilder('c')
       .where('c.vendedora_codigo_erp = :codigo', { codigo: vendedoraCodigoErp })
-      .andWhere('c.nome ILIKE :alvo', { alvo: '%' + alvo + '%' })
-      .andWhere('c.ativo = true')
+      .andWhere('c.ativo = true');
+    palavras.forEach((palavra, i) => {
+      qb.andWhere(`c.nome ILIKE :p${i}`, { [`p${i}`]: `%${palavra}%` });
+    });
+    const rows = await qb
       .orderBy('c.nome', 'ASC')
       .limit(limite)
       .getMany();
