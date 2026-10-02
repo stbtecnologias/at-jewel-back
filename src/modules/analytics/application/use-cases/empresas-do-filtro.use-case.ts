@@ -6,14 +6,14 @@ import type { IAnalyticsRepository } from '../../domain/ports/repositories/analy
  * AS OPCOES DO FILTRO DE EMPRESA — 02/10/2026.
  *
  * ==========================================================================
- * SO AS EMPRESAS QUE TEM MOVIMENTO.
+ * TODAS AS ATIVAS, inclusive as que nunca venderam — decisao do Lucas.
  *
- * O grupo tem oito CNPJs cadastrados e dois com venda. Oferecer os oito faria
- * o filtro parecer um cadastro — e seis deles nao mudariam numero nenhum,
- * entao seriam seis opcoes que so devolvem tela vazia.
+ * Seis das oito devolvem tela vazia hoje, e isso e informacao: "a AT HOME
+ * vendeu alguma coisa?" so tem resposta se der para seleciona-la. Empresa
+ * fora da lista parece empresa que nao existe.
  *
- * Quando a filial de SP comecar a exportar, ela aparece aqui sozinha: a lista
- * sai do dado, e nao de uma constante que alguem precisaria lembrar de mexer.
+ * A filial de SP ja aparece — e, enquanto nao exportar, responde vazio, que
+ * e exatamente o que esta acontecendo com ela.
  * ==========================================================================
  */
 @Injectable()
@@ -24,6 +24,6 @@ export class EmpresasDoFiltroUseCase {
   ) {}
 
   async execute(): Promise<{ id: string; nome: string }[]> {
-    return this.repo.empresasComMovimento();
+    return this.repo.empresasDoGrupo();
   }
 }

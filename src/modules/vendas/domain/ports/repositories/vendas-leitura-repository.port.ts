@@ -38,12 +38,13 @@ export interface IVendasLeituraRepository {
   ): Promise<SerieMensalVendas>;
 
   /**
-   * As empresas do grupo que tem movimento — as opcoes do filtro da tela.
+   * As empresas ATIVAS do grupo — as opcoes do filtro da tela.
    *
-   * SO AS QUE TEM VENDA: o grupo tem oito CNPJs e dois com movimento, e
-   * oferecer os oito faria o filtro parecer um cadastro.
+   * TODAS, inclusive as que nunca venderam: empresa ausente da lista parece
+   * empresa que nao existe, e "a AT HOME vendeu alguma coisa?" so tem
+   * resposta se der para seleciona-la e ver a tela vazia.
    */
-  empresasComMovimento(): Promise<{ id: string; nome: string }[]>;
+  empresasDoGrupo(): Promise<{ id: string; nome: string }[]>;
 }
 
 export const VENDAS_LEITURA_REPOSITORY = Symbol('IVendasLeituraRepository');

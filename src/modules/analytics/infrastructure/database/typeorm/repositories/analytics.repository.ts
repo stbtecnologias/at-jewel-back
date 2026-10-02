@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { EMPRESAS_COM_MOVIMENTO } from '../../../../../../shared/database/sql/movimentacao-como-venda';
+import { EMPRESAS_DO_GRUPO } from '../../../../../../shared/database/sql/movimentacao-como-venda';
 import {
   SALDO_POR_PRODUTO,
   saldoDe,
@@ -469,8 +469,8 @@ export class AnalyticsRepository implements IAnalyticsRepository {
    * precisa das opcoes de verdade, e nao de uma lista vazia que faria o
    * controle sumir.
    */
-  async empresasComMovimento(): Promise<{ id: string; nome: string }[]> {
-    return this.ds.query<{ id: string; nome: string }[]>(EMPRESAS_COM_MOVIMENTO);
+  async empresasDoGrupo(): Promise<{ id: string; nome: string }[]> {
+    return this.ds.query<{ id: string; nome: string }[]>(EMPRESAS_DO_GRUPO);
   }
 
   async linhasVendaCsv(dataInicio?: Date, dataFim?: Date): Promise<LinhaVendaCsv[]> {

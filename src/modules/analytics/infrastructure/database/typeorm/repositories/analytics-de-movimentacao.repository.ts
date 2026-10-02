@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import {
-  EMPRESAS_COM_MOVIMENTO,
+  EMPRESAS_DO_GRUPO,
   STATUS_DE_MOVIMENTACAO,
   formaPagamentoDe,
   receitaLiquida,
@@ -379,13 +379,13 @@ export class AnalyticsDeMovimentacaoRepository implements IAnalyticsRepository {
   }
 
   /**
-   * As empresas que aparecem no filtro — ver `EMPRESAS_COM_MOVIMENTO`.
+   * As empresas que aparecem no filtro — ver `EMPRESAS_DO_GRUPO`.
    *
    * A MESMA CONSULTA DA TELA DE VENDAS, do mesmo arquivo: as duas telas tem
    * de oferecer as mesmas opcoes.
    */
-  async empresasComMovimento(): Promise<{ id: string; nome: string }[]> {
-    return this.ds.query<{ id: string; nome: string }[]>(EMPRESAS_COM_MOVIMENTO);
+  async empresasDoGrupo(): Promise<{ id: string; nome: string }[]> {
+    return this.ds.query<{ id: string; nome: string }[]>(EMPRESAS_DO_GRUPO);
   }
 
   // ---- as cinco que nao vem da venda ------------------------------------

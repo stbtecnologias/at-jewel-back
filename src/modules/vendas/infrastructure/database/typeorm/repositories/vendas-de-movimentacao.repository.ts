@@ -4,7 +4,7 @@ import { DataSource } from 'typeorm';
 // A REGRA MORA NO SHARED DESDE 01/10 — o Analytics passou a ler a movimentacao
 // tambem, e duas copias do que decide a receita divergiriam.
 import {
-  EMPRESAS_COM_MOVIMENTO,
+  EMPRESAS_DO_GRUPO,
   STATUS_DE_MOVIMENTACAO as STATUS_SQL,
   formaPagamentoDe,
   receitaLiquida,
@@ -142,9 +142,9 @@ export class VendasDeMovimentacaoRepository implements IVendasLeituraRepository 
     };
   }
 
-  /** As opcoes do filtro de empresa — ver `EMPRESAS_COM_MOVIMENTO`. */
-  async empresasComMovimento(): Promise<{ id: string; nome: string }[]> {
-    return this.ds.query<{ id: string; nome: string }[]>(EMPRESAS_COM_MOVIMENTO);
+  /** As opcoes do filtro de empresa — ver `EMPRESAS_DO_GRUPO`. */
+  async empresasDoGrupo(): Promise<{ id: string; nome: string }[]> {
+    return this.ds.query<{ id: string; nome: string }[]>(EMPRESAS_DO_GRUPO);
   }
 
   async listar(filtros: FiltroVenda): Promise<VendaResumo[]> {

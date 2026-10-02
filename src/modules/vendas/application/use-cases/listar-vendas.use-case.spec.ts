@@ -10,7 +10,7 @@ function makeRepoMock(): jest.Mocked<IVendasLeituraRepository> {
     listar: jest.fn(),
     // As opcoes do filtro de empresa (02/10) — dubladas: estes testes
     // descrevem o caso de uso, nao a consulta.
-    empresasComMovimento: jest.fn().mockResolvedValue([]),
+    empresasDoGrupo: jest.fn().mockResolvedValue([]),
   } as unknown as jest.Mocked<IVendasLeituraRepository>;
 }
 

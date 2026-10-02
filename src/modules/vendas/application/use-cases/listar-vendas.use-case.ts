@@ -32,6 +32,6 @@ export class ListarVendasUseCase {
    * sabe por quais CNPJs ela saiu.
    */
   async empresas(): Promise<{ id: string; nome: string }[]> {
-    return this.vendaRepo.empresasComMovimento();
+    return this.vendaRepo.empresasDoGrupo();
   }
 }

@@ -175,6 +175,6 @@ export interface IAnalyticsRepository {
   demografia(filtro?: FiltroAnalitico): Promise<Demografia>;
   linhasVendaCsv(dataInicio?: Date, dataFim?: Date): Promise<LinhaVendaCsv[]>;
 
-  /** As empresas do grupo que tem movimento — as opcoes do filtro. */
-  empresasComMovimento(): Promise<{ id: string; nome: string }[]>;
+  /** As empresas ATIVAS do grupo — as opcoes do filtro das telas. */
+  empresasDoGrupo(): Promise<{ id: string; nome: string }[]>;
 }
