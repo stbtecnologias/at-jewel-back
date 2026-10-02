@@ -896,9 +896,15 @@ export class FerramentasGestaoService {
         // SAO PERGUNTAS DIFERENTES, e a linha traz as tres: quem vende uma
         // alianca de R$ 200 mil lidera o faturamento e pode ser a ultima em
         // pecas.
+        //
+        // A PECA E A VENDIDA; O DINHEIRO E LIQUIDO — 02/10/2026. Reguas
+        // diferentes de proposito: a receita tem de fechar com a tela de
+        // Vendas, e a peca tem de fazer sentido para quem le. Enquanto a peca
+        // tambem abatia, a Ylka saia como "2 vendas, 0 pecas". A devolucao nao
+        // sumiu — vai no fim da linha, com o que voltou em peca e em dinheiro.
         const linhas = venderam.map(
           (r) =>
-            `${r.nome}: ${r.quantidade} ${r.quantidade === 1 ? 'venda' : 'vendas'}, ${r.pecas} ${r.pecas === 1 ? 'peça' : 'peças'}${quebraPorTipo(r.familias)}, ${moeda(r.valor)}`,
+            `${r.nome}: ${r.quantidade} ${r.quantidade === 1 ? 'venda' : 'vendas'}, ${r.pecas} ${r.pecas === 1 ? 'peça' : 'peças'}${quebraPorTipo(r.familias)}, ${moeda(r.valor)}${devolucaoDaLinha(r)}`,
         );
 
         // As que ainda trabalham aqui e nao venderam, no fim.
@@ -2370,25 +2376,67 @@ function linhaDaEmpresa(e: {
  * TETO DE QUATRO TIPOS, com o resto somado em "e mais N": a linha vai para o
  * WhatsApp, e uma vendedora com doze tipos viraria um paragrafo. Os quatro
  * primeiros ja dizem o perfil dela.
+ *
+ * A SOMA DOS TIPOS TEM DE DAR O NUMERO AO LADO, e isso nao e enfeite: foi
+ * assim que a gestao achou o defeito de 02/10 — "6 vendas, 5 pecas" com
+ * quatro tipos somando 6. Quem mexer aqui mantem isso verdadeiro.
+ *
+ * NAO EXISTE MAIS FAMILIA NEGATIVA. Ate 02/10 a quebra era liquida, e a
+ * familia que so tinha devolucao vinha com sinal; o teto escondia justamente
+ * ela, que continuava descontando no total. Hoje a venda e a devolucao vem
+ * em listas separadas do banco, e o negativo deixou de ser representavel.
  */
+const TETO_DE_TIPOS = 4;
+
+function tiposDaLinha(
+  familias: { familia: string; quantidade: number }[] | undefined,
+): string[] {
+  if (!familias?.length) return [];
+
+  // O QUINTO APARECE QUANDO E O ULTIMO: esconder um tipo para escrever
+  // "e mais 1" ocupa o mesmo espaco na linha e diz menos.
+  const teto =
+    familias.length === TETO_DE_TIPOS + 1 ? TETO_DE_TIPOS + 1 : TETO_DE_TIPOS;
+  const partes = familias
+    .slice(0, teto)
+    .map((f) => pecas(f.quantidade, f.familia));
+  const resto = familias.slice(teto).reduce((s, f) => s + f.quantidade, 0);
+  if (resto > 0) {
+    partes.push(`e mais ${resto}`);
+  }
+  return partes;
+}
+
 function quebraPorTipo(
   familias: { familia: string; quantidade: number }[] | undefined,
 ): string {
   // SEM QUEBRA, SEM PARENTESES. A quebra e um detalhe da linha; faltar nao pode
   // derrubar o panorama inteiro, que e a resposta.
-  if (!familias?.length) return '';
+  const partes = tiposDaLinha(familias);
+  return partes.length ? ` (${partes.join(', ')})` : '';
+}
 
-  const mostrar = familias.slice(0, 4);
-  const resto = familias.slice(4).reduce((s, f) => s + f.quantidade, 0);
-  // O NEGATIVO EXISTE: familia que so teve devolucao no recorte. Pluraliza
-  // pelo modulo ("-2 colares", e nao "-2 colar"), e o sinal fica visivel.
-  const partes = mostrar.map((f) =>
-    f.quantidade < 0
-      ? `-${pecas(Math.abs(f.quantidade), f.familia)} (devolvida)`
-      : pecas(f.quantidade, f.familia),
-  );
-  if (resto > 0) {
-    partes.push(`e mais ${resto}`);
-  }
-  return ` (${partes.join(', ')})`;
+/**
+ * ", 2 devolvidas (2 pulseiras, R$ 110.460)" na linha da vendedora — 02/10.
+ *
+ * SO QUANDO HOUVE: em 236 das 268 linhas (vendedora x mes) da base nao ha
+ * devolucao nenhuma, e ali a linha sai exatamente como era.
+ *
+ * O VALOR ENTRA AQUI porque ele JA SAIU do numero principal. A Ylka aparece
+ * com R$ 33.590 em agosto tendo vendido R$ 144.050: sem este pedaco, 77% do
+ * mes dela e invisivel e a leitura vira "vendeu pouco" em vez de "teve
+ * devolucao" — que e outra conversa inteiramente.
+ */
+function devolucaoDaLinha(r: {
+  devolvidas: number;
+  valorDevolvido: number;
+  familiasDevolvidas?: { familia: string; quantidade: number }[];
+}): string {
+  if (!r.devolvidas) return '';
+  const dentro = [
+    ...tiposDaLinha(r.familiasDevolvidas),
+    moeda(r.valorDevolvido),
+  ];
+  const unidade = r.devolvidas === 1 ? 'devolvida' : 'devolvidas';
+  return `, ${r.devolvidas} ${unidade} (${dentro.join(', ')})`;
 }

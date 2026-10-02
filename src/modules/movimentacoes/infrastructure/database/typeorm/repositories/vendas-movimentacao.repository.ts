@@ -265,7 +265,10 @@ export class VendasMovimentacaoRepository
         quantidade: string;
         valor: string;
         pecas: string;
+        devolvidas: string;
+        valor_devolvido: string;
         familias: { familia: string; quantidade: number }[] | null;
+        familias_devolvidas: { familia: string; quantidade: number }[] | null;
       }[]
     >(
       `
@@ -275,32 +278,56 @@ export class VendasMovimentacaoRepository
              count(*) FILTER (WHERE m.saida)                     AS quantidade,
              COALESCE(sum(m.valor) FILTER (WHERE m.saida), 0)
                - COALESCE(sum(m.valor) FILTER (WHERE m.entrada), 0) AS valor,
-             -- AS PECAS, com a devolucao abatendo (02/10/2026). A peca que
-             -- voltou nao foi vendida, pelo mesmo criterio da receita.
-             COALESCE(sum(qi.qtd) FILTER (WHERE m.saida), 0)
-               - COALESCE(sum(qi.qtd) FILTER (WHERE m.entrada), 0) AS pecas,
+             -- AS PECAS SAO AS VENDIDAS, e o que voltou vem ao lado em vez de
+             -- abater (02/10/2026). Abatendo, a Ylka era "2 vendas, 0 pecas":
+             -- ela vendeu duas, e as duas que voltaram eram de outro mes.
+             COALESCE(sum(qi.qtd) FILTER (WHERE m.saida), 0)       AS pecas,
+             COALESCE(sum(qi.qtd) FILTER (WHERE m.entrada), 0)     AS devolvidas,
+             COALESCE(sum(m.valor) FILTER (WHERE m.entrada), 0)    AS valor_devolvido,
              -- A QUEBRA POR TIPO, numa subconsulta por vendedora (02/10/2026).
              -- Agrupar por familia no mesmo GROUP BY daria uma linha por tipo,
              -- e a vendedora apareceria varias vezes no ranking.
+             --
+             -- SO SAIDA AQUI, desde 02/10. Enquanto a quebra era liquida uma
+             -- familia podia fechar NEGATIVA, e o teto de tipos do formatador
+             -- escondia justamente ela: a Bianca saiu com "5 pecas" e quatro
+             -- tipos somando 6. Separando venda de devolucao, familia negativa
+             -- deixa de existir e a soma fecha por construcao.
              (SELECT jsonb_agg(
                        jsonb_build_object('familia', f.familia, 'quantidade', f.qtd)
                        ORDER BY f.qtd DESC)
                 FROM (
                   SELECT COALESCE(NULLIF(p.familia, ''), 'sem tipo') AS familia,
-                         sum(CASE WHEN mm.entrada THEN -i.quantidade ELSE i.quantidade END) AS qtd
+                         sum(i.quantidade) AS qtd
                     FROM movimentacoes mm
                     JOIN movimentacoes_itens i ON i.movimentacao_id = mm.id AND i.ativo
                     LEFT JOIN produtos p ON p.id = i.produto_id
                    WHERE mm.vendedora_id = v.id
                      AND mm.ativo
+                     AND mm.saida
                      AND mm.data_movimentacao >= $1
                      AND mm.data_movimentacao <= $2
                    GROUP BY 1
-                  -- <> 0, E NAO > 0: com '> 0' a familia que fechou negativa
-                  -- sumia da quebra e CONTINUAVA descontando no total — a soma
-                  -- dos tipos nao batia com o numero ao lado dela.
-                  HAVING sum(CASE WHEN mm.entrada THEN -i.quantidade ELSE i.quantidade END) <> 0
-                ) f)                                               AS familias
+                ) f)                                               AS familias,
+             -- A IRMA, do outro lado: o que VOLTOU, por tipo. Duas consultas
+             -- em vez de uma assinada porque sao dois numeros na linha, e
+             -- somar os dois num so foi justamente o que deu errado.
+             (SELECT jsonb_agg(
+                       jsonb_build_object('familia', f.familia, 'quantidade', f.qtd)
+                       ORDER BY f.qtd DESC)
+                FROM (
+                  SELECT COALESCE(NULLIF(p.familia, ''), 'sem tipo') AS familia,
+                         sum(i.quantidade) AS qtd
+                    FROM movimentacoes mm
+                    JOIN movimentacoes_itens i ON i.movimentacao_id = mm.id AND i.ativo
+                    LEFT JOIN produtos p ON p.id = i.produto_id
+                   WHERE mm.vendedora_id = v.id
+                     AND mm.ativo
+                     AND mm.entrada
+                     AND mm.data_movimentacao >= $1
+                     AND mm.data_movimentacao <= $2
+                   GROUP BY 1
+                ) f)                                               AS familias_devolvidas
         FROM movimentacoes m
         JOIN vendedoras v ON v.id = m.vendedora_id
         -- As pecas somadas POR FORA do agrupamento: contar item no mesmo
@@ -328,7 +355,13 @@ export class VendasMovimentacaoRepository
       quantidade: Number(l.quantidade),
       valor: Number(l.valor),
       pecas: Number(l.pecas),
+      devolvidas: Number(l.devolvidas),
+      valorDevolvido: Number(l.valor_devolvido),
       familias: (l.familias ?? []).map((f) => ({
+        familia: f.familia,
+        quantidade: Number(f.quantidade),
+      })),
+      familiasDevolvidas: (l.familias_devolvidas ?? []).map((f) => ({
         familia: f.familia,
         quantidade: Number(f.quantidade),
       })),

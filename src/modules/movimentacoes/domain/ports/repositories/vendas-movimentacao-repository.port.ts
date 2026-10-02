@@ -74,7 +74,16 @@ export interface VendedoraNoRanking {
    * familia, uma de cada vez. Quem vende uma alianca de R$ 200 mil lidera o
    * faturamento e pode ser a ultima em pecas — sao perguntas diferentes.
    *
-   * A DEVOLUCAO ABATE, como na receita: peca que voltou nao foi vendida.
+   * A DEVOLUCAO NAO ABATE AQUI — mudou em 02/10/2026. Abatendo, a Ylka saia
+   * como "2 vendas, 0 pecas" em agosto: ela vendeu duas pecas, e as duas
+   * pulseiras que voltaram no mes tinham sido vendidas em OUTRO. O liquido
+   * somava dois meses num numero so, e o resultado nao se explicava para quem
+   * lia — a gestao olha e diz que nao faz sentido, com razao.
+   *
+   * O DINHEIRO CONTINUA LIQUIDO, porque e a receita e e ela que fecha com a
+   * tela de Vendas: agosto/2026 da R$ 934.126,50 somando exatamente estas
+   * linhas. As reguas ficam diferentes de proposito, e por isso a devolucao
+   * viaja ao lado, nos tres campos abaixo: muda a regua, nada fica escondido.
    */
   pecas: number;
   /**
@@ -85,6 +94,23 @@ export interface VendedoraNoRanking {
    * estava montando a mao, somando familia por familia.
    */
   familias: { familia: string; quantidade: number }[];
+  /**
+   * PECAS QUE VOLTARAM no recorte — 02/10/2026.
+   *
+   * Zero na grande maioria: 32 de 268 linhas (vendedora x mes) da base tem
+   * alguma devolucao, e nas outras 236 a linha sai igual ao que era.
+   */
+  devolvidas: number;
+  /**
+   * Quanto voltou em dinheiro — JA DESCONTADO do `valor`.
+   *
+   * E o campo que explica a linha. A Ylka aparece com R$ 33.590 em agosto
+   * tendo vendido R$ 144.050: sem este numero, 77% do mes dela e invisivel e
+   * a leitura vira "vendeu pouco" em vez de "teve devolucao".
+   */
+  valorDevolvido: number;
+  /** As devolvidas por tipo, da maior para a menor. */
+  familiasDevolvidas: { familia: string; quantidade: number }[];
 }
 
 export interface ItemMaisVendido {

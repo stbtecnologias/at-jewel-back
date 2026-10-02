@@ -479,6 +479,132 @@ describe('o recorte de equipe nas ferramentas de gestao', () => {
 
       expect(r.linhas).toHaveLength(2);
     });
+
+    /**
+     * ======================================================================
+     * A SOMA DOS TIPOS TEM DE DAR O NUMERO AO LADO — 02/10/2026.
+     *
+     * O TESTE QUE FALTAVA. A quebra por tipo entrou de manha sem nenhum
+     * teste sobre a SOMA dela, e a gestao achou o defeito na primeira
+     * mensagem: "Bianca — 6 vendas, 5 pecas (2 brincos, 2 pulseiras, 1 anel,
+     * 1 piercing)", quatro tipos somando 6. O quinto tipo era um colar
+     * devolvido, valia -1, e o formatador so mostrava o resto quando ele era
+     * POSITIVO — entao ele sumia da linha e continuava descontando no total.
+     *
+     * E a mesma familia de defeito do `HAVING > 0` que eu tinha corrigido no
+     * SQL horas antes, dois andares acima. Por isso o teste e sobre a
+     * PROPRIEDADE, e nao sobre um texto: qualquer caminho que volte a abrir
+     * uma fresta entre a conta e a lista cai aqui.
+     * ======================================================================
+     */
+    /** Soma o primeiro numero de cada pedaco do primeiro parenteses. */
+    const somaDosTipos = (linha: string): number => {
+      const dentro = /\(([^)]*)\)/.exec(linha)?.[1] ?? '';
+      return dentro
+        .split(', ')
+        .map((pedaco) => Number(/-?\d+/.exec(pedaco)?.[0] ?? 0))
+        .reduce((soma, n) => soma + n, 0);
+    };
+
+    const comRanking = async (linha: Record<string, unknown>) => {
+      consultarVendas.ranking.mockResolvedValue({
+        linhas: [
+          {
+            vendedoraId: MARINA_ID,
+            nome: 'Marina',
+            codigoErp: 'VD01',
+            devolvidas: 0,
+            valorDevolvido: 0,
+            familiasDevolvidas: [],
+            ...linha,
+          },
+        ],
+      });
+      const r = await servico.montar(soMarina).gestaoPanorama({ periodo: 'MES' });
+      return r.linhas[0];
+    };
+
+    it('a quebra fecha com as pecas — o caso da Bianca, cinco tipos', async () => {
+      // Cinco tipos: o quinto APARECE em vez de virar "e mais 1". Esconder um
+      // tipo para escrever "e mais 1" ocupa o mesmo espaco e diz menos.
+      const linha = await comRanking({
+        quantidade: 6,
+        valor: 159809,
+        pecas: 7,
+        familias: [
+          { familia: 'BRINCO', quantidade: 2 },
+          { familia: 'PULSEIRA', quantidade: 2 },
+          { familia: 'ANEL', quantidade: 1 },
+          { familia: 'PIERCING', quantidade: 1 },
+          { familia: 'RIVEIRA', quantidade: 1 },
+        ],
+      });
+
+      expect(linha).toContain('7 peças');
+      expect(linha).not.toContain('e mais');
+      expect(somaDosTipos(linha)).toBe(7);
+    });
+
+    it('com muitos tipos, o "e mais N" entra na conta', async () => {
+      const linha = await comRanking({
+        quantidade: 9,
+        valor: 50000,
+        pecas: 13,
+        familias: [
+          { familia: 'VELA', quantidade: 4 },
+          { familia: 'BRINCO', quantidade: 3 },
+          { familia: 'ANEL', quantidade: 2 },
+          { familia: 'COLAR', quantidade: 2 },
+          { familia: 'COPO', quantidade: 1 },
+          { familia: 'LIVRO', quantidade: 1 },
+        ],
+      });
+
+      expect(linha).toContain('e mais 2');
+      expect(somaDosTipos(linha)).toBe(13);
+    });
+
+    it('o caso da Ylka: 2 vendas e 2 pecas, com o que voltou ao lado', async () => {
+      // Era "2 vendas, 0 pecas" — a gestao olhava e dizia que nao fazia
+      // sentido, com razao: ela vendeu duas pecas, e as duas pulseiras que
+      // voltaram no mes tinham sido vendidas em OUTRO.
+      const linha = await comRanking({
+        quantidade: 2,
+        valor: 33590,
+        pecas: 2,
+        familias: [
+          { familia: 'COLAR', quantidade: 1 },
+          { familia: 'PIERCING', quantidade: 1 },
+        ],
+        devolvidas: 2,
+        valorDevolvido: 110460,
+        familiasDevolvidas: [{ familia: 'PULSEIRA', quantidade: 2 }],
+      });
+
+      expect(linha).toContain('2 vendas');
+      expect(linha).toContain('2 peças');
+      expect(linha).not.toContain('0 peças');
+      expect(somaDosTipos(linha)).toBe(2);
+
+      // O QUE VOLTOU FICA VISIVEL, em peca e em dinheiro: sem isso, 77% do
+      // mes dela e invisivel e a leitura vira "vendeu pouco".
+      expect(linha).toContain('2 devolvidas');
+      expect(linha).toContain('2 pulseiras');
+      expect(linha).toContain('110.460');
+    });
+
+    it('sem devolucao, a linha sai exatamente como era', async () => {
+      // 236 das 268 linhas da base nao tem devolucao nenhuma.
+      const linha = await comRanking({
+        quantidade: 1,
+        valor: 222530,
+        pecas: 1,
+        familias: [{ familia: 'RIVEIRA', quantidade: 1 }],
+      });
+
+      expect(linha).toMatch(/^Marina: 1 venda, 1 peça \(1 riveira\), R\$.222\.530$/);
+      expect(linha).not.toContain('devolvida');
+    });
   });
 
   describe('listar_vendedoras', () => {
