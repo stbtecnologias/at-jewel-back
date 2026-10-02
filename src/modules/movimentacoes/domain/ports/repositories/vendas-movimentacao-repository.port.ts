@@ -77,6 +77,14 @@ export interface VendedoraNoRanking {
    * A DEVOLUCAO ABATE, como na receita: peca que voltou nao foi vendida.
    */
   pecas: number;
+  /**
+   * As pecas QUEBRADAS POR TIPO, da maior para a menor — 02/10/2026.
+   *
+   * "12 pecas" responde quem vendeu mais; "12 pecas (6 colares, 4 aneis, 2
+   * solitarios)" responde o que ela vende. Era a leitura que a gestora
+   * estava montando a mao, somando familia por familia.
+   */
+  familias: { familia: string; quantidade: number }[];
 }
 
 export interface ItemMaisVendido {

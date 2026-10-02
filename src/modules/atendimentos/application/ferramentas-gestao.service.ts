@@ -898,7 +898,7 @@ export class FerramentasGestaoService {
         // pecas.
         const linhas = venderam.map(
           (r) =>
-            `${r.nome}: ${r.quantidade} ${r.quantidade === 1 ? 'venda' : 'vendas'}, ${r.pecas} ${r.pecas === 1 ? 'peça' : 'peças'}, ${moeda(r.valor)}`,
+            `${r.nome}: ${r.quantidade} ${r.quantidade === 1 ? 'venda' : 'vendas'}, ${r.pecas} ${r.pecas === 1 ? 'peça' : 'peças'}${quebraPorTipo(r.familias)}, ${moeda(r.valor)}`,
         );
 
         // As que ainda trabalham aqui e nao venderam, no fim.
@@ -2358,4 +2358,37 @@ function linhaDaEmpresa(e: {
       ? `, ${e.devolucoes} ${e.devolucoes === 1 ? "devolução" : "devoluções"}`
       : '';
   return `${e.empresa}: ${moeda(e.receita)} em ${e.vendas} ${unidade} (ticket ${moeda(ticket)})${devolvidas}`;
+}
+
+/**
+ * A QUEBRA POR TIPO na linha do panorama — 02/10/2026.
+ *
+ * "12 pecas" responde QUEM vendeu mais; "12 pecas (6 colares, 4 aneis, 2
+ * solitarios)" responde O QUE ela vende. Era a leitura que a gestora estava
+ * montando a mao, somando familia por familia.
+ *
+ * TETO DE QUATRO TIPOS, com o resto somado em "e mais N": a linha vai para o
+ * WhatsApp, e uma vendedora com doze tipos viraria um paragrafo. Os quatro
+ * primeiros ja dizem o perfil dela.
+ */
+function quebraPorTipo(
+  familias: { familia: string; quantidade: number }[] | undefined,
+): string {
+  // SEM QUEBRA, SEM PARENTESES. A quebra e um detalhe da linha; faltar nao pode
+  // derrubar o panorama inteiro, que e a resposta.
+  if (!familias?.length) return '';
+
+  const mostrar = familias.slice(0, 4);
+  const resto = familias.slice(4).reduce((s, f) => s + f.quantidade, 0);
+  // O NEGATIVO EXISTE: familia que so teve devolucao no recorte. Pluraliza
+  // pelo modulo ("-2 colares", e nao "-2 colar"), e o sinal fica visivel.
+  const partes = mostrar.map((f) =>
+    f.quantidade < 0
+      ? `-${pecas(Math.abs(f.quantidade), f.familia)} (devolvida)`
+      : pecas(f.quantidade, f.familia),
+  );
+  if (resto > 0) {
+    partes.push(`e mais ${resto}`);
+  }
+  return ` (${partes.join(', ')})`;
 }

@@ -265,6 +265,7 @@ export class VendasMovimentacaoRepository
         quantidade: string;
         valor: string;
         pecas: string;
+        familias: { familia: string; quantidade: number }[] | null;
       }[]
     >(
       `
@@ -277,7 +278,29 @@ export class VendasMovimentacaoRepository
              -- AS PECAS, com a devolucao abatendo (02/10/2026). A peca que
              -- voltou nao foi vendida, pelo mesmo criterio da receita.
              COALESCE(sum(qi.qtd) FILTER (WHERE m.saida), 0)
-               - COALESCE(sum(qi.qtd) FILTER (WHERE m.entrada), 0) AS pecas
+               - COALESCE(sum(qi.qtd) FILTER (WHERE m.entrada), 0) AS pecas,
+             -- A QUEBRA POR TIPO, numa subconsulta por vendedora (02/10/2026).
+             -- Agrupar por familia no mesmo GROUP BY daria uma linha por tipo,
+             -- e a vendedora apareceria varias vezes no ranking.
+             (SELECT jsonb_agg(
+                       jsonb_build_object('familia', f.familia, 'quantidade', f.qtd)
+                       ORDER BY f.qtd DESC)
+                FROM (
+                  SELECT COALESCE(NULLIF(p.familia, ''), 'sem tipo') AS familia,
+                         sum(CASE WHEN mm.entrada THEN -i.quantidade ELSE i.quantidade END) AS qtd
+                    FROM movimentacoes mm
+                    JOIN movimentacoes_itens i ON i.movimentacao_id = mm.id AND i.ativo
+                    LEFT JOIN produtos p ON p.id = i.produto_id
+                   WHERE mm.vendedora_id = v.id
+                     AND mm.ativo
+                     AND mm.data_movimentacao >= $1
+                     AND mm.data_movimentacao <= $2
+                   GROUP BY 1
+                  -- <> 0, E NAO > 0: com '> 0' a familia que fechou negativa
+                  -- sumia da quebra e CONTINUAVA descontando no total — a soma
+                  -- dos tipos nao batia com o numero ao lado dela.
+                  HAVING sum(CASE WHEN mm.entrada THEN -i.quantidade ELSE i.quantidade END) <> 0
+                ) f)                                               AS familias
         FROM movimentacoes m
         JOIN vendedoras v ON v.id = m.vendedora_id
         -- As pecas somadas POR FORA do agrupamento: contar item no mesmo
@@ -305,6 +328,10 @@ export class VendasMovimentacaoRepository
       quantidade: Number(l.quantidade),
       valor: Number(l.valor),
       pecas: Number(l.pecas),
+      familias: (l.familias ?? []).map((f) => ({
+        familia: f.familia,
+        quantidade: Number(f.quantidade),
+      })),
     }));
   }
 
