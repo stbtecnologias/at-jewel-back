@@ -127,7 +127,14 @@ export interface ItemMaisVendido {
 export interface VendedoraPorFamilia {
   vendedoraId: string;
   nome: string;
-  /** Pecas daquela familia, com a devolucao ja abatida. */
+  /**
+   * Pecas daquela familia VENDIDAS no recorte — a devolucao nao abate.
+   *
+   * Abatia ate 02/10/2026, e a lista saia com "KEYCIANE BARBOSA: -1
+   * pingentes": a agente apagou essa linha ao responder, porque ela nao tem
+   * leitura numa pergunta sobre o que foi vendido. "Se e vendas, nao entra
+   * devolucao" — a regra do Lucas no mesmo dia.
+   */
   quantidade: number;
   valor: number;
 }

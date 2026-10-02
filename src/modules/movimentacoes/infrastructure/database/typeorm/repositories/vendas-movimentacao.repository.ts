@@ -430,19 +430,32 @@ export class VendasMovimentacaoRepository
     limite: number,
   ): Promise<VendedoraPorFamilia[]> {
     // ====================================================================
-    // AQUI A DEVOLUCAO ABATE — e o `itensMaisVendidos`, logo acima, NAO.
+    // SO AS SAIDAS — mudou em 02/10/2026, e agora os tres rankings contam
+    // igual (este, o `itensMaisVendidos` e as pecas do `rankingDeVendedoras`).
     //
-    // Nao e incoerencia: sao perguntas diferentes.
+    // ATE HOJE A DEVOLUCAO ABATIA AQUI, com o argumento de que "quem vendeu
+    // dez e teve tres de volta vendeu sete". O argumento parece certo e
+    // produzia linhas ilegiveis: perguntada quantos pingentes sairam em
+    // setembro, a lista saiu
     //
-    //   "que peca mais saiu"  -> a peca saiu, e voltar e outro evento. Abater
-    //                            misturaria as duas coisas (decisao registrada
-    //                            no metodo acima).
-    //   "quem mais VENDEU"    -> se ela vendeu dez e tres voltaram, ela vendeu
-    //                            sete. Um ranking de PESSOAS que nao abate
-    //                            premia quem vende e perde a venda.
+    //     CAMILA BRITO:      6 pingentes
+    //     YLKA FRANCK:       1 pingente
+    //     KEYCIANE BARBOSA: -1 pingentes
     //
-    // E e a mesma regra do `rankingDeVendedoras`, que abate desde 25/09 — este
-    // ranking e o irmao dele com um filtro, e tem de contar igual.
+    // e a agente simplesmente APAGOU a terceira ao responder — "-1 pingente
+    // vendido" nao tem leitura possivel numa pergunta sobre o que foi
+    // vendido. O numero que ela deu (7) era o bruto; somando a lista como ela
+    // veio, daria 6. A regua liquida fazia a resposta nao poder bater com a
+    // lista que a produziu.
+    //
+    // A REGRA DO LUCAS, em 02/10: "se e vendas, nao entra devolucao; se
+    // vendeu, ok". Quem so devolveu no recorte nao vendeu nada, entao nao
+    // aparece num ranking de quem vendeu — e some por construcao, pelo filtro
+    // `m.saida`, sem precisar de um HAVING para expulsar negativo.
+    //
+    // A DEVOLUCAO NAO FICA SEM DONO: ela e pergunta propria ("quantas
+    // devolucoes esse mes"), e no panorama da equipe ela viaja ao lado da
+    // vendedora. O que ela nao faz mais e se disfarcar de venda negativa.
     // ====================================================================
     const linhas = await this.ds.query<
       {
@@ -455,16 +468,16 @@ export class VendasMovimentacaoRepository
       `
       SELECT v.id   AS vendedora_id,
              v.nome AS nome,
-             COALESCE(sum(i.quantidade) FILTER (WHERE m.saida), 0)
-               - COALESCE(sum(i.quantidade) FILTER (WHERE m.entrada), 0) AS quantidade,
-             COALESCE(sum(i.quantidade * i.valor_unitario) FILTER (WHERE m.saida), 0)
-               - COALESCE(sum(i.quantidade * i.valor_unitario) FILTER (WHERE m.entrada), 0) AS valor
+             COALESCE(sum(i.quantidade), 0)                      AS quantidade,
+             COALESCE(sum(i.quantidade * i.valor_unitario), 0)   AS valor
         FROM movimentacoes_itens i
         JOIN movimentacoes m ON m.id = i.movimentacao_id
         JOIN produtos p      ON p.id = i.produto_id
         JOIN vendedoras v    ON v.id = m.vendedora_id
        WHERE m.ativo
          AND i.ativo
+         -- A LINHA QUE DEFINE A PERGUNTA. Ver o bloco acima.
+         AND m.saida
          AND m.data_movimentacao >= $1
          AND m.data_movimentacao <= $2
          AND upper(p.familia) = upper($3::text)
@@ -610,9 +623,12 @@ export class VendasMovimentacaoRepository
     // sem nada dizer. A pergunta e "quem ganhou em cada outubro", entao o
     // corte tem de ser por ano.
     //
-    // A DEVOLUCAO ABATE, pelo mesmo motivo do `rankingPorFamilia`: e ranking
-    // de PESSOA. E o `HAVING > 0` tira quem so devolveu — quantidade negativa
-    // e verdade sobre o saldo e absurdo como resposta a "quem mais vendeu".
+    // SO AS SAIDAS, pelo mesmo motivo do `rankingPorFamilia` (02/10/2026).
+    // O `HAVING > 0` que existia aqui ja dizia a verdade pela metade: ele
+    // expulsava quem fechava negativo, mas quem vendia dez e devolvia tres
+    // continuava contando sete num ranking chamado "quem mais vendeu". Com o
+    // filtro `m.saida` o HAVING fica sem funcao — quem nao vendeu nao tem
+    // linha para ser expulsa.
     // ====================================================================
     const linhas = await this.ds.query<
       {
@@ -628,21 +644,19 @@ export class VendasMovimentacaoRepository
         SELECT extract(year from m.data_movimentacao)::int AS ano,
                v.id   AS vendedora_id,
                v.nome AS nome,
-               COALESCE(sum(i.quantidade) FILTER (WHERE m.saida), 0)
-                 - COALESCE(sum(i.quantidade) FILTER (WHERE m.entrada), 0) AS quantidade,
-               COALESCE(sum(i.quantidade * i.valor_unitario) FILTER (WHERE m.saida), 0)
-                 - COALESCE(sum(i.quantidade * i.valor_unitario) FILTER (WHERE m.entrada), 0) AS valor
+               COALESCE(sum(i.quantidade), 0)                    AS quantidade,
+               COALESCE(sum(i.quantidade * i.valor_unitario), 0) AS valor
           FROM movimentacoes_itens i
           JOIN movimentacoes m ON m.id = i.movimentacao_id
           JOIN produtos p      ON p.id = i.produto_id
           JOIN vendedoras v    ON v.id = m.vendedora_id
          WHERE m.ativo
            AND i.ativo
+           -- A LINHA QUE DEFINE A PERGUNTA. Ver o bloco acima.
+           AND m.saida
            AND extract(month from m.data_movimentacao) = $1
            AND upper(p.familia) = upper($2::text)
          GROUP BY 1, 2, 3
-        HAVING COALESCE(sum(i.quantidade) FILTER (WHERE m.saida), 0)
-                 - COALESCE(sum(i.quantidade) FILTER (WHERE m.entrada), 0) > 0
       )
       SELECT ano, vendedora_id, nome, quantidade, valor
         FROM (

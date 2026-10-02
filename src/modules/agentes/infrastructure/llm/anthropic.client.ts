@@ -1979,7 +1979,14 @@ export class AnthropicClient implements ILlmClient {
               // citou tipos que ela mesma escolheu nao consultar; um deles
               // ("alianca") nem existe no catalogo. O recorte e de UM tipo, e
               // dizer isso e diferente de alegar que o resto ficou de fora.
-              'Este ranking e de UM tipo de peca, o que foi pedido. Nao diga que outros tipos "ficaram de fora da conta" nem invente nomes de tipos: se ela quiser o total de pecas por vendedora, some nada — peca o panorama_da_equipe, que ja traz todas as familias.'
+              'Este ranking e de UM tipo de peca, o que foi pedido. Nao diga que outros tipos "ficaram de fora da conta" nem invente nomes de tipos: se ela quiser o total de pecas por vendedora, some nada — peca o panorama_da_equipe, que ja traz todas as familias.' +
+              // O TRAVESSAO SE LE COMO MENOS — 02/10/2026. Perguntada quantos
+              // pingentes sairam em agosto e setembro, ela respondeu "Em
+              // setembro, 7 — 6 da Camila Brito e 1 da Ylka Franck". O 7 esta
+              // certo e o travessao era de aposto, mas o Lucas leu "7 - 6" e
+              // perguntou o que era. Quem le no WhatsApp nao tem a lista ao
+              // lado para conferir.
+              ' MAIS DE UMA VENDEDORA SE LE EM LISTA, uma por linha, com o numero de cada uma. E nunca separe um total da quebra dele com travessao, porque travessao entre dois numeros se le como subtracao: escreva "7 pingentes: 6 da Camila Brito e 1 da Ylka Franck", nunca "7 — 6 da Camila Brito".'
             );
           }),
         );
