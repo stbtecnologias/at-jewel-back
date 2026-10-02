@@ -33,6 +33,7 @@ describe('FerramentasGestaoService', () => {
     buscarPorCodigoErp: jest.Mock;
   };
   let vendasDetalhadas: jest.Mock;
+  let porEmpresa: jest.Mock;
   let leads: { listarAguardandoGestao: jest.Mock };
   let conversas: { entre: jest.Mock };
   let servico: FerramentasGestaoService;
@@ -79,6 +80,10 @@ describe('FerramentasGestaoService', () => {
       buscarPorCodigoErp: jest.fn().mockResolvedValue(null),
     };
     vendasDetalhadas = jest.fn().mockResolvedValue({ vendas: [], total: 0 });
+    porEmpresa = jest.fn().mockResolvedValue([
+      { empresa: 'AT JEWEL LTDA', vendas: 1087, receita: 61711799.82, devolucoes: 92 },
+      { empresa: 'MP COMERCIO DE METAIS LTDA', vendas: 200, receita: 542905.55, devolucoes: 9 },
+    ]);
     leads = { listarAguardandoGestao: jest.fn().mockResolvedValue([]) };
     conversas = { entre: jest.fn().mockResolvedValue([]) };
 
@@ -89,6 +94,7 @@ describe('FerramentasGestaoService', () => {
       {
         itens: jest.fn().mockResolvedValue({ linhas: [] }),
         detalhadas: vendasDetalhadas,
+        porEmpresa,
       } as never,
       // As metricas de atendimento (ANA-08 a 12, 29/09) — dubladas: estes
       // testes descrevem o roteamento das ferramentas, nao o SQL.
@@ -1018,6 +1024,68 @@ describe('FerramentasGestaoService', () => {
 
       expect(r.total).toBe(39);
       expect(r.linhas).toHaveLength(1);
+    });
+  });
+
+
+  describe('o faturamento por empresa do grupo', () => {
+    /**
+     * ========================================================================
+     * A A.T TEM OITO CNPJs, E TODO NUMERO ERA A SOMA DELES.
+     *
+     * Perguntada pela receita da MP Comercio, a agente procurou "MP" na lista
+     * de CLIENTES — empresa nao existia para ferramenta nenhuma.
+     * ========================================================================
+     */
+    it('sem ver a loja, NÃO consulta — o grupo não tem versão estreita', async () => {
+      const r = await servico.montar({ verLoja: false }).gestaoPorEmpresa({});
+
+      expect(r.status).toBe('INDISPONIVEL');
+      expect(porEmpresa).not.toHaveBeenCalled();
+    });
+
+    it('a ferramenta nem é oferecida a quem não vê a loja', () => {
+      // Oferecer e recusar depois seria pior: o modelo anuncia o que nao pode
+      // entregar, e a conversa termina em desculpa.
+      expect(servico.montar({ verLoja: false }).gestaoPorEmpresaDisponivel).toBe(false);
+      expect(servico.montar().gestaoPorEmpresaDisponivel).toBe(false);
+      expect(servico.montar({ verLoja: true }).gestaoPorEmpresaDisponivel).toBe(true);
+    });
+
+    it('com verLoja, traz TODAS as empresas com movimento', async () => {
+      const r = await servico.montar({ verLoja: true }).gestaoPorEmpresa({});
+
+      expect(r.status).toBe('OK');
+      expect(r.linhas).toHaveLength(2);
+      expect(r.linhas[0]).toContain('AT JEWEL LTDA');
+      expect(r.linhas[1]).toContain('MP COMERCIO');
+    });
+
+    it('a linha traz receita, vendas e TICKET', async () => {
+      const [linha] = (await servico.montar({ verLoja: true }).gestaoPorEmpresa({})).linhas;
+
+      // 61.711.799,82 / 1087 = 56.772,58 — o ticket sai da divisao, e nao do
+      // banco, como no resumo.
+      expect(linha).toContain('1087 vendas');
+      expect(linha).toContain('56.773');
+      expect(linha).toContain('92 devoluções');
+    });
+
+    it('sem período, pede o histórico inteiro', async () => {
+      await servico.montar({ verLoja: true }).gestaoPorEmpresa({});
+
+      expect(porEmpresa).toHaveBeenCalledWith(undefined, undefined, undefined);
+    });
+
+    it('empresa sem venda no recorte não divide por zero', async () => {
+      porEmpresa.mockResolvedValue([
+        { empresa: 'AT HOME LTDA', vendas: 0, receita: -1500, devolucoes: 1 },
+      ]);
+
+      const [linha] = (await servico.montar({ verLoja: true }).gestaoPorEmpresa({})).linhas;
+
+      expect(linha).toContain('0 vendas');
+      expect(linha).not.toContain('NaN');
     });
   });
 

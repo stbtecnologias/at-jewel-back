@@ -354,6 +354,32 @@ const MELHORES_TOOL: Anthropic.Tool = {
 // ===========================================================================
 
 /**
+ * O FATURAMENTO DE CADA EMPRESA DO GRUPO — 02/10/2026.
+ *
+ * SEM PARAMETRO DE NOME: devolve a quebra inteira. Sao oito CNPJs e duas com
+ * movimento — resolver "MP", "a de metais" e "MP Comercio" para a mesma
+ * empresa seria trabalho para responder menos.
+ */
+const GESTAO_POR_EMPRESA_TOOL: Anthropic.Tool = {
+  name: 'faturamento_por_empresa',
+  description:
+    'O faturamento de CADA EMPRESA do grupo (os CNPJs: AT JEWEL, MP COMERCIO, AT HOME, AT JEWEL SP e as demais), com numero de vendas e ticket medio. Use para "qual a receita da MP Comercio", "faturamento por empresa", "quanto a filial de SP vendeu", "as vendas da AT HOME". Devolve TODAS as empresas com movimento — leia na lista a que ela perguntou. Sem periodo, e o historico inteiro.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
+        description:
+          'Recorte de tempo. Omita para o historico inteiro — "qual o faturamento da MP" costuma ser sobre a vida da empresa.',
+      },
+      ...DATAS_LIVRES,
+    },
+    required: [],
+  },
+};
+
+/**
  * AS VENDAS UMA A UMA — 02/10/2026.
  *
  * TRES PERGUNTAS NUMA FERRAMENTA, porque sao a mesma consulta com filtros
@@ -1422,6 +1448,11 @@ export class AnthropicClient implements ILlmClient {
       );
     }
     if (params.gestaoVendasDetalhadas) tools.push(GESTAO_VENDAS_DETALHADAS_TOOL);
+    // SO PARA QUEM VE A LOJA. O faturamento do grupo nao tem versao estreita,
+    // entao a ferramenta nao e oferecida em vez de ser oferecida e recusada.
+    if (params.gestaoPorEmpresa && params.gestaoPorEmpresaDisponivel) {
+      tools.push(GESTAO_POR_EMPRESA_TOOL);
+    }
     // So quando o canal NAO e o da vendedora — as duas usam o mesmo nome.
     if (params.gestaoEpoca && !params.clientesPorEpoca) {
       tools.push(
@@ -2450,6 +2481,31 @@ export class AnthropicClient implements ILlmClient {
             return (
               `Clientes parados:\n${clientes.map((c) => `- ${c.linha}`).join(`\n`)}\n\n` +
               'Repasse os nomes e as datas exatamente como estao.'
+            );
+          }),
+        );
+      } else if (toolUse.name === 'faturamento_por_empresa' && params.gestaoPorEmpresa) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const entrada = toolUse.input as {
+              periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+              de?: string;
+              ate?: string;
+            };
+            const r = await params.gestaoPorEmpresa!({
+              periodo: entrada.periodo,
+              de: entrada.de ? String(entrada.de) : undefined,
+              ate: entrada.ate ? String(entrada.ate) : undefined,
+            });
+            if (r.status === 'INDISPONIVEL') {
+              return 'Esta consulta nao esta disponivel por aqui. Ofereca o numero de uma vendedora, sem mencionar permissao nem limitacao de acesso.';
+            }
+            if (r.linhas.length === 0) {
+              return 'Nenhuma empresa do grupo teve movimento nesse periodo. Diga isso em uma frase, e ofereca outro periodo.';
+            }
+            return (
+              `Faturamento por empresa:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+              'Repasse os nomes e numeros exatamente como estao. Se ela perguntou por UMA empresa, responda so a dela e diga que pode trazer as outras. Nao some as empresas por conta propria.'
             );
           }),
         );

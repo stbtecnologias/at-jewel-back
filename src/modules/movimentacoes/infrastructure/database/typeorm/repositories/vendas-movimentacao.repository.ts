@@ -1,11 +1,20 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+// A REGRA DA RECEITA VEM DO SHARED. A quebra por empresa nasceu em 02/10,
+// quando o fragmento ja existia; as consultas antigas deste arquivo seguem
+// com a condicao escrita a mao, e sao de 25/09.
+import {
+  devolucaoEfetiva,
+  receitaLiquida,
+  vendaEfetiva,
+} from '../../../../../../shared/database/sql/movimentacao-como-venda';
 import type {
   ComparacaoAnual,
   FiltroVendasDetalhadas,
   IVendasMovimentacaoRepository,
   ItemDaVenda,
+  VendasDeUmaEmpresa,
   VendaDetalhada,
   ItemMaisVendido,
   VendedoraPorFamilia,
@@ -140,6 +149,54 @@ export class VendasMovimentacaoRepository
       })),
       total: Number(linhas[0]?.total ?? 0),
     };
+  }
+
+  /**
+   * A QUEBRA POR EMPRESA — 02/10/2026.
+   *
+   * ======================================================================
+   * A COLUNA EXISTIA E NINGUEM OLHAVA.
+   *
+   * Perguntada pelo faturamento da MP Comercio, a agente procurou "MP" na
+   * lista de CLIENTES — porque empresa nao existia para ferramenta nenhuma.
+   * Todo numero que a gestao ve e, ate aqui, a soma dos CNPJs do grupo.
+   * ======================================================================
+   *
+   * A CONTAGEM e so das vendas; a RECEITA abate a devolucao, como em todo o
+   * resto. Empresa que so teve devolucao no recorte aparece com receita
+   * negativa — e foi o que aconteceu de verdade naquele periodo.
+   */
+  async receitaPorEmpresa(janela?: JanelaDeVendas): Promise<VendasDeUmaEmpresa[]> {
+    const params: unknown[] = [];
+    let periodo = '';
+    if (janela) {
+      params.push(janela.de, janela.ate);
+      periodo = `AND m.data_movimentacao BETWEEN $${params.length - 1} AND $${params.length}`;
+    }
+
+    const linhas = await this.ds.query<
+      { empresa: string; vendas: string; receita: string; devolucoes: string }[]
+    >(
+      `
+      SELECT e.nome                                          AS empresa,
+             count(*) FILTER (WHERE ${vendaEfetiva('m')})     AS vendas,
+             ${receitaLiquida('m')}                          AS receita,
+             count(*) FILTER (WHERE ${devolucaoEfetiva('m')}) AS devolucoes
+      FROM movimentacoes m
+      JOIN empresas e ON e.id = m.empresa_id
+      WHERE m.ativo ${periodo}
+      GROUP BY e.nome
+      ORDER BY receita DESC
+      `,
+      params,
+    );
+
+    return linhas.map((l) => ({
+      empresa: l.empresa,
+      vendas: Number(l.vendas),
+      receita: Number(l.receita),
+      devolucoes: Number(l.devolucoes),
+    }));
   }
 
   async resumo(

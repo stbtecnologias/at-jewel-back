@@ -5,6 +5,7 @@ import {
   type FiltroVendasDetalhadas,
   type IVendasMovimentacaoRepository,
   type VendaDetalhada,
+  type VendasDeUmaEmpresa,
   type JanelaDeVendas,
   type ResumoDeVendas,
   type VendedoraNoRanking,
@@ -132,6 +133,28 @@ export class ConsultarVendasUseCase {
       },
       limitar(limite),
     );
+  }
+
+  /**
+   * O faturamento de cada empresa do grupo — 02/10/2026.
+   *
+   * SEM RECORTE E A VIDA INTEIRA de cada uma, que e como a pergunta costuma
+   * vir ("qual o faturamento da MP?").
+   */
+  async porEmpresa(
+    recorte?: RecorteDeVendas,
+    de?: Date,
+    ate?: Date,
+    agora: Date = new Date(),
+  ): Promise<VendasDeUmaEmpresa[]> {
+    const janela =
+      de && ate
+        ? fimDoDia({ de, ate })
+        : recorte
+          ? janelaDe(recorte, agora)
+          : undefined;
+
+    return this.vendas.receitaPorEmpresa(janela);
   }
 
   /** A janela de um periodo dito em datas, para quem pede "de 01/08 a 31/08". */

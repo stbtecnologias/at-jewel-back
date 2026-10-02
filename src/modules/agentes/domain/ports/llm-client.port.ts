@@ -599,6 +599,31 @@ export type GestaoVendasDetalhadasHandler = (input: {
   total?: number;
 }>;
 
+/**
+ * O FATURAMENTO DE CADA EMPRESA DO GRUPO — 02/10/2026.
+ *
+ * A A.T tem oito CNPJs e a venda sai por um deles. Perguntada pela receita da
+ * MP Comercio, a agente procurou "MP" na lista de CLIENTES — empresa nao
+ * existia para ferramenta nenhuma, e todo numero que ela dava era a soma de
+ * todas.
+ *
+ * SEM NOME DE EMPRESA NO PARAMETRO, de proposito: sao oito, e duas com
+ * movimento. Devolver a quebra inteira evita resolver nome — "MP", "a de
+ * metais" e "MP Comercio" chegariam de tres jeitos — e ja responde a
+ * pergunta seguinte, que e sempre "e as outras?".
+ *
+ * INDISPONIVEL e para quem nao enxerga a loja: o faturamento do grupo nao
+ * tem versao estreita.
+ */
+export type GestaoPorEmpresaHandler = (input: {
+  periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+  de?: string;
+  ate?: string;
+}) => Promise<{
+  status: 'OK' | 'INDISPONIVEL';
+  linhas: string[];
+}>;
+
 export type GestaoPanoramaHandler = (
   input: RecorteDeTempo,
 ) => Promise<{ linhas: string[] }>;
@@ -909,6 +934,9 @@ export interface ChatParams {
   clientesPorEpoca?: ClientesPorEpocaHandler;
   gestaoEpoca?: GestaoEpocaHandler;
   gestaoVendasDetalhadas?: GestaoVendasDetalhadasHandler;
+  gestaoPorEmpresa?: GestaoPorEmpresaHandler;
+  /** So quem ve a loja recebe a ferramenta — o grupo nao tem versao estreita. */
+  gestaoPorEmpresaDisponivel?: boolean;
   /** Espelha o `gestaoItensExigeVendedora`: sem `verLoja`, o schema obriga. */
   gestaoEpocaExigeVendedora?: boolean;
   melhoresClientes?: MelhoresClientesHandler;

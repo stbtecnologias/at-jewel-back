@@ -5,6 +5,7 @@ import type { NomeComemorativo } from '../../../shared/tempo/datas-comemorativas
 import type {
   GestaoCarteiraHandler,
   GestaoEpocaHandler,
+  GestaoPorEmpresaHandler,
   GestaoVendasDetalhadasHandler,
   GestaoMelhoresHandler,
   GestaoAgendarHandler,
@@ -214,6 +215,7 @@ export interface FerramentasGestao {
   gestaoVendedoras: GestaoVendedorasHandler;
   gestaoCarteira: GestaoCarteiraHandler;
   gestaoEpoca: GestaoEpocaHandler;
+  gestaoPorEmpresa: GestaoPorEmpresaHandler;
   gestaoVendasDetalhadas: GestaoVendasDetalhadasHandler;
   gestaoMelhores: GestaoMelhoresHandler;
   gestaoFeedbacks: GestaoFeedbacksHandler;
@@ -240,6 +242,7 @@ export interface FerramentasGestao {
    */
   gestaoItensExigeVendedora?: boolean;
   gestaoEpocaExigeVendedora?: boolean;
+  gestaoPorEmpresaDisponivel?: boolean;
 }
 
 /** O que o `montar` precisa saber sobre quem esta do outro lado. */
@@ -375,6 +378,7 @@ export class FerramentasGestaoService {
     return {
       gestaoItensExigeVendedora: !verLoja,
       gestaoEpocaExigeVendedora: !verLoja,
+      gestaoPorEmpresaDisponivel: verLoja,
 
       /**
        * A AGENDA, DE UMA OU DA EQUIPE INTEIRA — 30/09/2026.
@@ -580,6 +584,25 @@ export class FerramentasGestaoService {
           linhas: r.vendas.map(linhaDaVenda),
           total: r.total,
         };
+      },
+
+      /**
+       * "Qual a receita da MP Comercio?", "faturamento por empresa".
+       *
+       * A SEGUNDA BARREIRA: o schema so e oferecido a quem ve a loja, e aqui
+       * se confere de novo. Schema e pedido, nao permissao.
+       */
+      gestaoPorEmpresa: async ({ periodo, de, ate }) => {
+        if (!verLoja) {
+          return { status: "INDISPONIVEL" as const, linhas: [] };
+        }
+        const datas = datasDeRecorte(de, ate);
+        const linhas = await this.consultarVendas.porEmpresa(
+          datas ? undefined : periodo,
+          datas?.de,
+          datas?.ate,
+        );
+        return { status: "OK" as const, linhas: linhas.map(linhaDaEmpresa) };
       },
 
       gestaoEpoca: async ({ vendedora, mes, dataComemorativa }) => {
@@ -2306,4 +2329,25 @@ function linhaDaVenda(v: {
     )
     .join('');
   return partes.join(' · ') + pecas;
+}
+
+/**
+ * Uma empresa do grupo, com o que ela faturou.
+ *
+ * O TICKET SAI DA DIVISAO e nao vem do banco: receita liquida dividida por
+ * vendas, igual ao resumo. Empresa sem venda no recorte nao divide por zero.
+ */
+function linhaDaEmpresa(e: {
+  empresa: string;
+  vendas: number;
+  receita: number;
+  devolucoes: number;
+}): string {
+  const ticket = e.vendas > 0 ? e.receita / e.vendas : 0;
+  const unidade = e.vendas === 1 ? 'venda' : 'vendas';
+  const devolvidas =
+    e.devolucoes > 0
+      ? `, ${e.devolucoes} ${e.devolucoes === 1 ? "devolução" : "devoluções"}`
+      : '';
+  return `${e.empresa}: ${moeda(e.receita)} em ${e.vendas} ${unidade} (ticket ${moeda(ticket)})${devolvidas}`;
 }

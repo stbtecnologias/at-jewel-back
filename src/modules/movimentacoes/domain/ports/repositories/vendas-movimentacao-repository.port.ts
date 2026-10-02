@@ -146,7 +146,34 @@ export interface FiltroVendasDetalhadas {
   documento?: string | null;
 }
 
+/**
+ * O FATURAMENTO DE UMA EMPRESA DO GRUPO — 02/10/2026.
+ *
+ * A A.T tem oito CNPJs cadastrados, e a venda sai por um deles. Ate hoje nada
+ * no sistema olhava essa coluna: todo numero que a gestao ve e a SOMA de
+ * todas as empresas.
+ */
+export interface VendasDeUmaEmpresa {
+  empresa: string;
+  /** Documentos de VENDA. A devolucao nao entra na contagem. */
+  vendas: number;
+  /** Saidas MENOS devolucoes. */
+  receita: number;
+  devolucoes: number;
+}
+
 export interface IVendasMovimentacaoRepository {
+  /**
+   * A quebra por empresa do grupo, do maior faturamento para o menor.
+   *
+   * SEM JANELA E O HISTORICO INTEIRO — "qual o faturamento da MP?" costuma
+   * ser sobre a vida da empresa, e nao sobre este mes.
+   *
+   * SO QUEM TEVE MOVIMENTO APARECE. Listar as oito com zero faria a resposta
+   * parecer um cadastro, e a pergunta e sobre faturamento.
+   */
+  receitaPorEmpresa(janela?: JanelaDeVendas): Promise<VendasDeUmaEmpresa[]>;
+
   /**
    * As vendas do recorte, uma a uma, com cliente, vendedora e PECAS.
    *
