@@ -2161,7 +2161,13 @@ export class AnthropicClient implements ILlmClient {
             }
             return (
               `Equipe no periodo:\n${linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
-              'Repasse os numeros exatamente como estao.'
+              // UMA LINHA POR PESSOA, E NAO UMA FRASE — 02/10/2026.
+              //
+              // Perguntada por quem vendeu mais pecas, ela comprimiu sete
+              // vendedoras em "a Keyciane com 12, seguida da Camila com 10 e da
+              // Faby com 7": o dado estava certo, e a quebra por tipo das outras
+              // seis simplesmente sumiu. Comparacao se le em coluna.
+              'RESPONDA EM LISTA, uma vendedora por linha, numerada, na ordem em que vieram — e com a quebra por tipo entre parenteses em CADA uma. Nao resuma em frase corrida e nao corte as ultimas colocadas. Repasse os numeros exatamente como estao.'
             );
           }),
         );
