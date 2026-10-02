@@ -528,7 +528,7 @@ const GESTAO_METAS_TOOL: Anthropic.Tool = {
 const GESTAO_PANORAMA_TOOL: Anthropic.Tool = {
   name: 'panorama_da_equipe',
   description:
-    'Compara as vendas da equipe num periodo, da maior para a menor. Use quando a pergunta for sobre a equipe e nao sobre uma pessoa — "como foi a semana da equipe", "quem vendeu mais esse mes", "quem esta atras". Quem vendeu no periodo aparece, mesmo tendo saido depois; quem continua na equipe e nao vendeu aparece no fim.',
+    'Compara a equipe num periodo, da maior para a menor, com VENDAS, PECAS e faturamento de cada uma. Use quando a pergunta for sobre a equipe e nao sobre uma pessoa — "como foi a semana da equipe", "quem vendeu mais esse mes", "quem vendeu mais pecas", "quem esta atras". Responde as tres perguntas de uma vez: quem fez mais VENDAS, quem vendeu mais PECAS e quem FATUROU mais podem ser pessoas diferentes. Quem vendeu no periodo aparece, mesmo tendo saido depois; quem continua na equipe e nao vendeu aparece no fim.',
   input_schema: {
     type: 'object',
     properties: {

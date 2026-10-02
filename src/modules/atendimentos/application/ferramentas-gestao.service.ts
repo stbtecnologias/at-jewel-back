@@ -888,9 +888,17 @@ export class FerramentasGestaoService {
         // mais" devolveria o ranking da LOJA para a gerente de um time so.
         const venderam = ranking.filter((r) => alcanca(r.vendedoraId));
 
+        // AS PECAS ENTRAM NA LINHA — 02/10/2026. "Quem vendeu mais pecas em
+        // setembro?" nao tinha resposta: a contagem de pecas so existia por
+        // familia, uma de cada vez, e a gestora recebeu "infelizmente nao
+        // tenho como somar o total de pecas por vendedora".
+        //
+        // SAO PERGUNTAS DIFERENTES, e a linha traz as tres: quem vende uma
+        // alianca de R$ 200 mil lidera o faturamento e pode ser a ultima em
+        // pecas.
         const linhas = venderam.map(
           (r) =>
-            `${r.nome}: ${r.quantidade} ${r.quantidade === 1 ? 'venda' : 'vendas'}, ${moeda(r.valor)}`,
+            `${r.nome}: ${r.quantidade} ${r.quantidade === 1 ? 'venda' : 'vendas'}, ${r.pecas} ${r.pecas === 1 ? 'peça' : 'peças'}, ${moeda(r.valor)}`,
         );
 
         // As que ainda trabalham aqui e nao venderam, no fim.

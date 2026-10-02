@@ -63,8 +63,20 @@ export interface VendedoraNoRanking {
   vendedoraId: string;
   nome: string;
   codigoErp: string | null;
+  /** Documentos de venda. A devolucao nao entra na contagem. */
   quantidade: number;
   valor: number;
+  /**
+   * PECAS vendidas — 02/10/2026.
+   *
+   * "Quem vendeu mais pecas em setembro?" nao tinha resposta: o ranking
+   * contava DOCUMENTOS e dinheiro, e a contagem de pecas so existia por
+   * familia, uma de cada vez. Quem vende uma alianca de R$ 200 mil lidera o
+   * faturamento e pode ser a ultima em pecas — sao perguntas diferentes.
+   *
+   * A DEVOLUCAO ABATE, como na receita: peca que voltou nao foi vendida.
+   */
+  pecas: number;
 }
 
 export interface ItemMaisVendido {

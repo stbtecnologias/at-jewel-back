@@ -264,6 +264,7 @@ export class VendasMovimentacaoRepository
         codigo_erp: string | null;
         quantidade: string;
         valor: string;
+        pecas: string;
       }[]
     >(
       `
@@ -272,9 +273,20 @@ export class VendasMovimentacaoRepository
              v.codigo_erp                                        AS codigo_erp,
              count(*) FILTER (WHERE m.saida)                     AS quantidade,
              COALESCE(sum(m.valor) FILTER (WHERE m.saida), 0)
-               - COALESCE(sum(m.valor) FILTER (WHERE m.entrada), 0) AS valor
+               - COALESCE(sum(m.valor) FILTER (WHERE m.entrada), 0) AS valor,
+             -- AS PECAS, com a devolucao abatendo (02/10/2026). A peca que
+             -- voltou nao foi vendida, pelo mesmo criterio da receita.
+             COALESCE(sum(qi.qtd) FILTER (WHERE m.saida), 0)
+               - COALESCE(sum(qi.qtd) FILTER (WHERE m.entrada), 0) AS pecas
         FROM movimentacoes m
         JOIN vendedoras v ON v.id = m.vendedora_id
+        -- As pecas somadas POR FORA do agrupamento: contar item no mesmo
+        -- GROUP BY multiplicaria a venda por linha de item.
+        LEFT JOIN LATERAL (
+          SELECT COALESCE(sum(i.quantidade), 0) AS qtd
+            FROM movimentacoes_itens i
+           WHERE i.movimentacao_id = m.id AND i.ativo
+        ) qi ON TRUE
        WHERE m.ativo
          AND m.data_movimentacao >= $1
          AND m.data_movimentacao <= $2
@@ -292,6 +304,7 @@ export class VendasMovimentacaoRepository
       codigoErp: l.codigo_erp,
       quantidade: Number(l.quantidade),
       valor: Number(l.valor),
+      pecas: Number(l.pecas),
     }));
   }
 
