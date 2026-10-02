@@ -354,6 +354,48 @@ const MELHORES_TOOL: Anthropic.Tool = {
 // ===========================================================================
 
 /**
+ * AS VENDAS UMA A UMA — 02/10/2026.
+ *
+ * TRES PERGUNTAS NUMA FERRAMENTA, porque sao a mesma consulta com filtros
+ * diferentes: as compras de um cliente, as vendas de uma vendedora num
+ * periodo, as pecas de um documento.
+ *
+ * As PECAS vem junto, sem precisar de uma segunda pergunta — "e o que ela
+ * comprou?" e sempre o que vem depois.
+ */
+const GESTAO_VENDAS_DETALHADAS_TOOL: Anthropic.Tool = {
+  name: 'vendas_detalhadas',
+  description:
+    'Lista as vendas UMA A UMA, com data, documento, cliente, vendedora, valor e AS PECAS de cada uma. Use para "quais as compras da cliente X", "quais vendas a Camila fez em setembro", "quais pecas tinha a venda 1157", "o que o cliente Y comprou". Informe pelo menos UM entre cliente, vendedora e documento — periodo sozinho nao serve. Devolve ate 10 vendas, da mais recente para a mais antiga, e diz quantas existem no total.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      cliente: {
+        type: 'string',
+        description:
+          'Nome do cliente como veio na conversa, ou o CODIGO dele ("00376"). So digitos = codigo.',
+      },
+      vendedora: {
+        type: 'string',
+        description: 'Nome da vendedora, como veio na conversa.',
+      },
+      documento: {
+        type: 'string',
+        description: 'Numero do documento da venda, quando ela citar um ("1157").',
+      },
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
+        description:
+          'Recorte de tempo. Omita para pegar o historico inteiro — "quais as compras da cliente X" e sobre a vida toda dela, nao sobre este mes.',
+      },
+      ...DATAS_LIVRES,
+    },
+    required: [],
+  },
+};
+
+/**
  * QUEM COMPRA NAQUELA EPOCA, pela gestao — 01/10/2026.
  *
  * SEM `vendedora` e a LOJA INTEIRA, e e por isso que existe a segunda versao
@@ -1379,6 +1421,7 @@ export class AnthropicClient implements ILlmClient {
           : GESTAO_ITENS_TOOL,
       );
     }
+    if (params.gestaoVendasDetalhadas) tools.push(GESTAO_VENDAS_DETALHADAS_TOOL);
     // So quando o canal NAO e o da vendedora — as duas usam o mesmo nome.
     if (params.gestaoEpoca && !params.clientesPorEpoca) {
       tools.push(
@@ -2407,6 +2450,61 @@ export class AnthropicClient implements ILlmClient {
             return (
               `Clientes parados:\n${clientes.map((c) => `- ${c.linha}`).join(`\n`)}\n\n` +
               'Repasse os nomes e as datas exatamente como estao.'
+            );
+          }),
+        );
+      } else if (
+        toolUse.name === 'vendas_detalhadas' &&
+        params.gestaoVendasDetalhadas
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const entrada = toolUse.input as {
+              cliente?: string;
+              vendedora?: string;
+              documento?: string;
+              periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+              de?: string;
+              ate?: string;
+            };
+            const r = await params.gestaoVendasDetalhadas!({
+              cliente: entrada.cliente ? String(entrada.cliente) : undefined,
+              vendedora: entrada.vendedora ? String(entrada.vendedora) : undefined,
+              documento: entrada.documento ? String(entrada.documento) : undefined,
+              periodo: entrada.periodo,
+              de: entrada.de ? String(entrada.de) : undefined,
+              ate: entrada.ate ? String(entrada.ate) : undefined,
+            });
+
+            // Faltou DE QUEM ou DE QUAL VENDA. Nao e "nao encontrei": e uma
+            // pergunta que ainda nao fechou.
+            if (r.status === 'EXIGE_RECORTE') {
+              return 'Esta consulta e sempre sobre alguem ou sobre uma venda. Pergunte de qual cliente, de qual vendedora ou de qual documento ela quer, sem mencionar permissao nem limitacao de acesso.';
+            }
+            if (r.status === 'NAO_ENCONTRADA') {
+              return r.sobre === 'cliente'
+                ? 'Nao achei esse cliente. Diga isso e peca o nome de novo, ou o codigo dele.'
+                : 'Nao achei essa vendedora na equipe. Diga isso e pergunte o nome de novo.';
+            }
+            if (r.status === 'AMBIGUA') {
+              const quem = r.sobre === 'cliente' ? 'cliente' : 'vendedora';
+              return (
+                `Ha mais de um(a) ${quem} com esse nome — ${r.nomes?.length ?? 0} ao todo:\n` +
+                `${(r.nomes ?? []).map((n) => `- ${n}`).join('\n')}\n\n` +
+                'Diga quantos sao e pergunte qual deles. Nao escolha por conta propria.'
+              );
+            }
+            if (r.linhas.length === 0) {
+              return 'Nenhuma venda nesse recorte. Diga isso em uma frase, e ofereca outro periodo.';
+            }
+            const quantas = r.total ?? r.linhas.length;
+            const aviso =
+              quantas > r.linhas.length
+                ? ` (as ${r.linhas.length} mais recentes de ${quantas})`
+                : '';
+            return (
+              `Vendas${aviso}:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+              'Repasse datas, nomes, pecas e valores exatamente como estao. Nao some os valores por conta propria — se ela quiser o total, ha ferramenta de resumo.'
             );
           }),
         );

@@ -5,6 +5,7 @@ import type { NomeComemorativo } from '../../../shared/tempo/datas-comemorativas
 import type {
   GestaoCarteiraHandler,
   GestaoEpocaHandler,
+  GestaoVendasDetalhadasHandler,
   GestaoMelhoresHandler,
   GestaoAgendarHandler,
   GestaoCarteiraDoClienteHandler,
@@ -94,6 +95,16 @@ import { WahaAdminClient } from '../../atendimento/infrastructure/whatsapp/waha-
 
 const MAXIMO_CLIENTES_HOMONIMOS = 5;
 /** Feedbacks por resposta. Acima disso a mensagem deixa de ser lida. */
+/**
+ * Quantas VENDAS cabem numa resposta de WhatsApp.
+ *
+ * DEZ. Medido: a vendedora faz 4,9 vendas por mes na media e passa de dez em
+ * 24 dos 264 meses com venda; o cliente compra 2,7 vezes na vida inteira. Dez
+ * cobre a quase totalidade, e o total vem junto para que um recorte grande nao
+ * pareca completo.
+ */
+const MAXIMO_VENDAS_DETALHADAS = 10;
+
 const MAXIMO_FEEDBACKS = 10;
 /** Leads por resposta. Acima disso a mensagem deixa de ser lida. */
 const MAXIMO_LEADS = 15;
@@ -203,6 +214,7 @@ export interface FerramentasGestao {
   gestaoVendedoras: GestaoVendedorasHandler;
   gestaoCarteira: GestaoCarteiraHandler;
   gestaoEpoca: GestaoEpocaHandler;
+  gestaoVendasDetalhadas: GestaoVendasDetalhadasHandler;
   gestaoMelhores: GestaoMelhoresHandler;
   gestaoFeedbacks: GestaoFeedbacksHandler;
   gestaoDiaDaVendedora: GestaoDiaDaVendedoraHandler;
@@ -476,6 +488,100 @@ export class FerramentasGestaoService {
        * silencioso: entregar a clientela da loja a quem nao pode ve-la nao
        * levanta excecao nenhuma.
        */
+      /**
+       * "Quais as compras da cliente 00376?", "as vendas do Marco em setembro",
+       * "quais peças tinha a venda 1157?"
+       *
+       * PELO MENOS UM RECORTE FORTE — cliente, vendedora ou documento. Periodo
+       * sozinho devolveria a loja inteira do mes, que e outra pergunta e tem
+       * ferramenta propria.
+       */
+      gestaoVendasDetalhadas: async ({
+        cliente,
+        vendedora,
+        documento,
+        periodo,
+        de,
+        ate,
+      }) => {
+        const temRecorte = Boolean(
+          cliente?.trim() || vendedora?.trim() || documento?.trim(),
+        );
+        if (!temRecorte) {
+          return { status: 'EXIGE_RECORTE', linhas: [] };
+        }
+
+        // ---- a vendedora, se veio -------------------------------------
+        let vendedoraId: string | null = null;
+        if (vendedora?.trim()) {
+          const r = await this.resolverVendedora.execute(vendedora);
+          if (r.status === 'AMBIGUA') {
+            return { status: 'AMBIGUA', sobre: 'vendedora', linhas: [], nomes: r.nomes };
+          }
+          if (r.status === 'NAO_ENCONTRADA') {
+            return {
+              status: 'NAO_ENCONTRADA',
+              sobre: 'vendedora',
+              linhas: [],
+              nomes: r.sugestoes,
+            };
+          }
+          // Fora da equipe responde como "nao achei" — dizer "voce nao pode ver
+          // a Fulana" confirmaria que a Fulana existe.
+          if (!alcanca(r.id)) {
+            return { status: 'NAO_ENCONTRADA', sobre: 'vendedora', linhas: [] };
+          }
+          vendedoraId = r.id;
+        }
+
+        // ---- o cliente, se veio ---------------------------------------
+        let clienteId: string | null = null;
+        if (cliente?.trim()) {
+          const termo = cliente.trim();
+          // SO DIGITOS E CODIGO. "00376" e um cadastro; "Mariana" e um nome.
+          const achados = /^\d+$/.test(termo)
+            ? [await this.clientes.buscarPorCodigoErp(termo)].filter(
+                (c): c is NonNullable<typeof c> => c !== null,
+              )
+            : await this.clientes.buscarPorNomeParcial(termo, 11);
+
+          if (achados.length === 0) {
+            return { status: 'NAO_ENCONTRADA', sobre: 'cliente', linhas: [] };
+          }
+          if (achados.length > 1) {
+            // A LISTA, E NAO UMA ESCOLHA. Ha 17 clientes chamadas Mariana —
+            // escolher a primeira responderia com confianca sobre a pessoa
+            // errada.
+            return {
+              status: 'AMBIGUA',
+              sobre: 'cliente',
+              linhas: [],
+              nomes: achados.map((c) => `${c.nome} (${c.codigoErp ?? 'sem código'})`),
+            };
+          }
+          clienteId = achados[0].id ?? null;
+        }
+
+        const datas = datasDeRecorte(de, ate);
+        const r = await this.consultarVendas.detalhadas(
+          {
+            clienteId,
+            vendedoraId,
+            documento,
+            recorte: datas ? undefined : periodo,
+            de: datas?.de,
+            ate: datas?.ate,
+          },
+          MAXIMO_VENDAS_DETALHADAS,
+        );
+
+        return {
+          status: 'OK' as const,
+          linhas: r.vendas.map(linhaDaVenda),
+          total: r.total,
+        };
+      },
+
       gestaoEpoca: async ({ vendedora, mes, dataComemorativa }) => {
         if (!verLoja && !vendedora?.trim()) {
           return { status: 'EXIGE_VENDEDORA', linhas: [] };
@@ -2161,4 +2267,43 @@ function linhaDaEpoca(c: {
     ? `, a última em ${c.ultimaCompra.toLocaleDateString('pt-BR')}`
     : '';
   return `${c.nome} — ${c.quantidade} ${compras}${repeticao}, ${moeda(c.valorTotal)}${ultima}`;
+}
+
+/**
+ * Uma venda, com as pecas embaixo.
+ *
+ * AS PECAS NA MESMA RESPOSTA, e nao numa segunda pergunta: sao 1,6 por venda
+ * na media, entao cabem — e "o que ela comprou" e sempre a pergunta seguinte.
+ */
+function linhaDaVenda(v: {
+  documento: string | null;
+  data: Date;
+  cliente: string | null;
+  clienteCodigo: string | null;
+  vendedora: string | null;
+  valor: number;
+  status: string;
+  itens: { quantidade: number; nome: string; valor: number }[];
+}): string {
+  const quem = v.cliente
+    ? v.cliente + (v.clienteCodigo ? ` (${v.clienteCodigo})` : '')
+    : null;
+  const partes = [
+    v.data.toLocaleDateString('pt-BR'),
+    v.documento ? `doc ${v.documento}` : null,
+    quem,
+    v.vendedora,
+    moeda(v.valor),
+    v.status === 'devolvida' ? 'DEVOLVIDA' : null,
+  ].filter(Boolean);
+
+  // A QUANTIDADE E DECIMAL no banco (numeric(x,4)) porque peca a granel
+  // existe. "1x" e o que se fala; "1.0000x" e o que o banco guarda.
+  const pecas = v.itens
+    .map(
+      (i) =>
+        `\n   • ${Number.isInteger(i.quantidade) ? i.quantidade : i.quantidade.toFixed(2)}x ${i.nome} — ${moeda(i.valor)}`,
+    )
+    .join('');
+  return partes.join(' · ') + pecas;
 }

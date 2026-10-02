@@ -101,7 +101,63 @@ export interface ComparacaoAnual {
   receitaFechada: number | null;
 }
 
+/**
+ * UMA VENDA, COM NOME E COM AS PECAS — 02/10/2026.
+ *
+ * Tudo o que esta aqui ja existia espalhado em consultas agregadas. O que nao
+ * existia era a LINHA: quanto a vendedora vendeu, a agente sabia dizer; QUAIS
+ * vendas foram, nao.
+ */
+export interface ItemDaVenda {
+  quantidade: number;
+  nome: string;
+  /** Quantidade x valor unitario. */
+  valor: number;
+}
+
+export interface VendaDetalhada {
+  documento: string | null;
+  data: Date;
+  clienteCodigo: string | null;
+  cliente: string | null;
+  vendedora: string | null;
+  valor: number;
+  /** `concluida` ou `devolvida`. Cancelada nao entra na listagem. */
+  status: string;
+  /**
+   * As pecas da venda, como DADO e nao como texto.
+   *
+   * Formatar no SQL parecia mais curto e saiu errado duas vezes: a quantidade
+   * e `numeric(x,4)` e virava "1.0000x", e o `to_char` de dinheiro usa a
+   * localidade do BANCO — "R$ 69,934.67", com a virgula e o ponto trocados.
+   * Dinheiro e numero se formatam onde ja existe o formatador da casa.
+   */
+  itens: ItemDaVenda[];
+}
+
+/**
+ * O RECORTE. Pelo menos um alem da janela — ver `EXIGE_RECORTE` no handler.
+ */
+export interface FiltroVendasDetalhadas {
+  janela?: JanelaDeVendas;
+  clienteId?: string | null;
+  vendedoraId?: string | null;
+  /** O numero do documento, como a pessoa fala dele. */
+  documento?: string | null;
+}
+
 export interface IVendasMovimentacaoRepository {
+  /**
+   * As vendas do recorte, uma a uma, com cliente, vendedora e PECAS.
+   *
+   * Devolve a amostra E o total: dez de trinta e nove sem o numero soa
+   * completo, e quem le vai embora com a impressao errada.
+   */
+  listarDetalhadas(
+    filtro: FiltroVendasDetalhadas,
+    limite: number,
+  ): Promise<{ vendas: VendaDetalhada[]; total: number }>;
+
   /**
    * O resumo do periodo. Com `vendedoraId`, so o dela — e e assim que a
    * vendedora ve as PROPRIAS vendas, sem enxergar a equipe.

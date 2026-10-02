@@ -39,6 +39,9 @@ describe('ConsultarVendasUseCase', () => {
   beforeEach(() => {
     janelas = [];
     repo = {
+      // A listagem detalhada (02/10) nao e usada por este caso de uso — entra
+      // no duble porque a porta a exige.
+      listarDetalhadas: jest.fn().mockResolvedValue({ vendas: [], total: 0 }),
       resumo: jest.fn(async (j) => {
         janelas.push(j);
         return { ...VAZIO, quantidade: 3, receita: 300, ticketMedio: 100 };

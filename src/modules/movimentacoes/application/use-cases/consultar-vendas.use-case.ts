@@ -2,7 +2,9 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   VENDAS_MOVIMENTACAO_REPOSITORY,
   type ItemMaisVendido,
+  type FiltroVendasDetalhadas,
   type IVendasMovimentacaoRepository,
+  type VendaDetalhada,
   type JanelaDeVendas,
   type ResumoDeVendas,
   type VendedoraNoRanking,
@@ -92,6 +94,44 @@ export class ConsultarVendasUseCase {
       vendedoraId,
     );
     return { linhas, ...janela };
+  }
+
+  /**
+   * AS VENDAS UMA A UMA — 02/10/2026.
+   *
+   * O recorte vem pronto de quem conversa: cliente, vendedora, documento e
+   * janela ja resolvidos. Aqui so se monta a janela quando ela veio como
+   * ATALHO ("setembro", "este mes"); com datas soltas, quem chamou ja passou o
+   * intervalo.
+   *
+   * SEM JANELA E LEGITIMO: "quais as compras da cliente 00376" e sobre a vida
+   * inteira dela, nao sobre um mes.
+   */
+  async detalhadas(
+    filtro: Omit<FiltroVendasDetalhadas, 'janela'> & {
+      recorte?: RecorteDeVendas;
+      de?: Date;
+      ate?: Date;
+    },
+    limite = LIMITE_PADRAO,
+    agora: Date = new Date(),
+  ): Promise<{ vendas: VendaDetalhada[]; total: number }> {
+    const janela =
+      filtro.de && filtro.ate
+        ? fimDoDia({ de: filtro.de, ate: filtro.ate })
+        : filtro.recorte
+          ? janelaDe(filtro.recorte, agora)
+          : undefined;
+
+    return this.vendas.listarDetalhadas(
+      {
+        janela,
+        clienteId: filtro.clienteId,
+        vendedoraId: filtro.vendedoraId,
+        documento: filtro.documento,
+      },
+      limitar(limite),
+    );
   }
 
   /** A janela de um periodo dito em datas, para quem pede "de 01/08 a 31/08". */

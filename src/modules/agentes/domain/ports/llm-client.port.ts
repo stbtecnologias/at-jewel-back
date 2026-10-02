@@ -562,6 +562,43 @@ export type GestaoMelhoresHandler = (input: {
   ultimosMeses?: number;
 }) => Promise<GestaoLeituraResultado & { total?: number }>;
 
+/**
+ * AS VENDAS UMA A UMA — 02/10/2026.
+ *
+ * Pedido do Lucas depois de ver a Anastasia dizer "em setembro o Marco Abreu
+ * fez 2 vendas, R$ 217.520" e, perguntada quem comprou, responder que nao
+ * conseguia puxar. Todas as consultas de venda eram agregadas.
+ *
+ * TRES PERGUNTAS, UM FILTRO CADA: as compras de um cliente, as vendas de uma
+ * vendedora num periodo, as pecas de um documento.
+ *
+ * `EXIGE_RECORTE` nao fala de dado: e a pergunta sem cliente, sem vendedora e
+ * sem documento, que devolveria a loja inteira. Nao e "nao encontrei" — e uma
+ * pergunta incompleta, e dizer o contrario faria soar como dado ausente.
+ *
+ * `sobre` diz de QUEM e a duvida quando o nome nao resolve: ha 17 clientes
+ * chamadas Mariana e o modelo precisa saber se pergunta de qual CLIENTE ou de
+ * qual VENDEDORA.
+ */
+export type GestaoVendasDetalhadasHandler = (input: {
+  cliente?: string;
+  vendedora?: string;
+  documento?: string;
+  periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+  de?: string;
+  ate?: string;
+}) => Promise<{
+  status: 'OK' | 'AMBIGUA' | 'NAO_ENCONTRADA' | 'EXIGE_RECORTE';
+  /** De quem e a ambiguidade. */
+  sobre?: 'cliente' | 'vendedora';
+  /** Um bloco por venda, com as pecas ja embaixo. */
+  linhas: string[];
+  /** Nomes para desambiguar. */
+  nomes?: string[];
+  /** Quantas vendas existem no recorte — o teto so e honesto com o total. */
+  total?: number;
+}>;
+
 export type GestaoPanoramaHandler = (
   input: RecorteDeTempo,
 ) => Promise<{ linhas: string[] }>;
@@ -871,6 +908,7 @@ export interface ChatParams {
   clientesSemComprar?: ClientesSemComprarHandler;
   clientesPorEpoca?: ClientesPorEpocaHandler;
   gestaoEpoca?: GestaoEpocaHandler;
+  gestaoVendasDetalhadas?: GestaoVendasDetalhadasHandler;
   /** Espelha o `gestaoItensExigeVendedora`: sem `verLoja`, o schema obriga. */
   gestaoEpocaExigeVendedora?: boolean;
   melhoresClientes?: MelhoresClientesHandler;

@@ -3,7 +3,10 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import type {
   ComparacaoAnual,
+  FiltroVendasDetalhadas,
   IVendasMovimentacaoRepository,
+  ItemDaVenda,
+  VendaDetalhada,
   ItemMaisVendido,
   VendedoraPorFamilia,
   VendedoraPorFamiliaNoAno,
@@ -36,6 +39,108 @@ export class VendasMovimentacaoRepository
     @InjectDataSource()
     private readonly ds: DataSource,
   ) {}
+
+  /**
+   * AS VENDAS, UMA A UMA — 02/10/2026.
+   *
+   * ======================================================================
+   * A AGENTE SABIA O TOTAL E NAO SABIA QUAIS ERAM.
+   *
+   * "Em setembro o Marco Abreu fez 2 vendas, R$ 217.520" — e, perguntada
+   * quem comprou, nao tinha o que responder. Todas as consultas de venda
+   * eram agregadas; faltava a linha.
+   * ======================================================================
+   *
+   * AS PECAS VEM NA MESMA VARREDURA, por subconsulta. Medido: 1,6 peca por
+   * venda na media, 13 no maximo — listar as pecas de dez vendas da umas
+   * dezesseis linhas. Uma segunda pergunta ("e o que ela comprou?") seria
+   * atrito a cada consulta, para economizar o que cabe.
+   *
+   * CANCELADA FICA DE FORA: nao e compra. A DEVOLUCAO entra, marcada — no
+   * historico de um cliente, ela e informacao e nao ruido.
+   */
+  async listarDetalhadas(
+    filtro: FiltroVendasDetalhadas,
+    limite: number,
+  ): Promise<{ vendas: VendaDetalhada[]; total: number }> {
+    const params: unknown[] = [];
+    const conds: string[] = ['m.ativo'];
+
+    if (filtro.janela) {
+      params.push(filtro.janela.de, filtro.janela.ate);
+      conds.push(`m.data_movimentacao BETWEEN $${params.length - 1} AND $${params.length}`);
+    }
+    if (filtro.clienteId) {
+      params.push(filtro.clienteId);
+      conds.push(`m.cliente_id = $${params.length}`);
+    }
+    if (filtro.vendedoraId) {
+      params.push(filtro.vendedoraId);
+      conds.push(`m.vendedora_id = $${params.length}`);
+    }
+    if (filtro.documento) {
+      // O numero vem como a pessoa fala dele ("1157", "a 1.157"). So digito.
+      params.push(filtro.documento.replace(/\D/g, ''));
+      conds.push(`m.numero = $${params.length}`);
+    }
+    params.push(limite);
+
+    const linhas = await this.ds.query<
+      {
+        documento: string | null;
+        data: Date;
+        cliente_codigo: string | null;
+        cliente: string | null;
+        vendedora: string | null;
+        valor: string;
+        status: string;
+        itens: ItemDaVenda[] | null;
+        total: string;
+      }[]
+    >(
+      `
+      SELECT m.numero                        AS documento,
+             m.data_movimentacao             AS data,
+             c.codigo_erp                    AS cliente_codigo,
+             c.nome                          AS cliente,
+             v.nome                          AS vendedora,
+             m.valor                         AS valor,
+             CASE WHEN m.entrada THEN 'devolvida' ELSE 'concluida' END AS status,
+             -- NUMERO AQUI, TEXTO LA. Ver o comentario em ItemDaVenda.
+             (SELECT jsonb_agg(
+                       jsonb_build_object(
+                         'quantidade', i.quantidade::float,
+                         'nome', COALESCE(NULLIF(p.descricao_etiqueta, ''), p.codigo_erp, 'peça sem descrição'),
+                         'valor', (i.quantidade * i.valor_unitario)::float)
+                       ORDER BY i.quantidade * i.valor_unitario DESC)
+                FROM movimentacoes_itens i
+                LEFT JOIN produtos p ON p.id = i.produto_id
+               WHERE i.movimentacao_id = m.id AND i.ativo) AS itens,
+             count(*) OVER ()                AS total
+      FROM movimentacoes m
+      LEFT JOIN clientes   c ON c.id = m.cliente_id
+      LEFT JOIN vendedoras v ON v.id = m.vendedora_id
+      WHERE ${conds.join(' AND ')}
+      ORDER BY m.data_movimentacao DESC
+      LIMIT $${params.length}
+      `,
+      params,
+    );
+
+    return {
+      vendas: linhas.map((l) => ({
+        documento: l.documento,
+        data: l.data,
+        clienteCodigo: l.cliente_codigo,
+        cliente: l.cliente,
+        vendedora: l.vendedora,
+        valor: Number(l.valor),
+        status: l.status,
+        itens: l.itens ?? [],
+      })),
+      total: Number(linhas[0]?.total ?? 0),
+    };
+  }
 
   async resumo(
     janela: JanelaDeVendas,

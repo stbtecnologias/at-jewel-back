@@ -27,7 +27,12 @@ describe('FerramentasGestaoService', () => {
     buscarPorCodigoErp: jest.Mock;
     buscarPorId: jest.Mock;
   };
-  let clientes: { buscarPorNomeParcial: jest.Mock; buscarPorId: jest.Mock };
+  let clientes: {
+    buscarPorNomeParcial: jest.Mock;
+    buscarPorId: jest.Mock;
+    buscarPorCodigoErp: jest.Mock;
+  };
+  let vendasDetalhadas: jest.Mock;
   let leads: { listarAguardandoGestao: jest.Mock };
   let conversas: { entre: jest.Mock };
   let servico: FerramentasGestaoService;
@@ -71,7 +76,9 @@ describe('FerramentasGestaoService', () => {
     clientes = {
       buscarPorNomeParcial: jest.fn().mockResolvedValue([]),
       buscarPorId: jest.fn().mockResolvedValue(null),
+      buscarPorCodigoErp: jest.fn().mockResolvedValue(null),
     };
+    vendasDetalhadas = jest.fn().mockResolvedValue({ vendas: [], total: 0 });
     leads = { listarAguardandoGestao: jest.fn().mockResolvedValue([]) };
     conversas = { entre: jest.fn().mockResolvedValue([]) };
 
@@ -79,7 +86,10 @@ describe('FerramentasGestaoService', () => {
       resolverVendedora as never,
       // A consulta de venda, que desde 25/09 le a MOVIMENTACAO. Dublada aqui:
       // estes testes descrevem o roteamento das ferramentas, nao o SQL.
-      { itens: jest.fn().mockResolvedValue({ linhas: [] }) } as never,
+      {
+        itens: jest.fn().mockResolvedValue({ linhas: [] }),
+        detalhadas: vendasDetalhadas,
+      } as never,
       // As metricas de atendimento (ANA-08 a 12, 29/09) — dubladas: estes
       // testes descrevem o roteamento das ferramentas, nao o SQL.
       { execute: jest.fn().mockResolvedValue({
@@ -896,6 +906,118 @@ describe('FerramentasGestaoService', () => {
       // dezembros nao e a mesma coisa que duas no mesmo dezembro.
       expect(r.linhas[0]).toContain('em 3 anos diferentes');
       expect(r.linhas[1]).toContain('num ano só');
+    });
+  });
+
+
+  describe('as vendas uma a uma', () => {
+    const VENDA = {
+      documento: '1157',
+      data: new Date(2026, 8, 23),
+      cliente: 'MARIANA MONTENEGRO B MOTA',
+      clienteCodigo: '00376',
+      vendedora: 'FABY LIMA',
+      valor: 149600,
+      status: 'concluida',
+      itens: [
+        { quantidade: 1, nome: 'PIERCING TP 1.39 CTS', valor: 69934.67 },
+        { quantidade: 2, nome: 'ANEL ESM 3.25 CTS', valor: 30732.06 },
+      ],
+    };
+
+    /* ESTE E O TESTE. O resto e contorno. */
+    it('sem cliente, sem vendedora e sem documento, PEDE o recorte — e não consulta', async () => {
+      const r = await servico.montar().gestaoVendasDetalhadas({ periodo: 'MES' });
+
+      expect(r.status).toBe('EXIGE_RECORTE');
+      // Periodo sozinho devolveria a loja inteira do mes, que e outra pergunta.
+      // E a recusa acontece ANTES da consulta: recusar depois deixaria a lista
+      // carregada em memoria, a um `return` de distancia de vazar.
+      expect(vendasDetalhadas).not.toHaveBeenCalled();
+    });
+
+    it('nome de cliente com homônimas devolve a LISTA, e não escolhe', async () => {
+      clientes.buscarPorNomeParcial.mockResolvedValue([
+        { id: 'c-1', nome: 'MARIANA MOTA', codigoErp: '00376' },
+        { id: 'c-2', nome: 'MARIANA ARY', codigoErp: '00377' },
+      ]);
+
+      const r = await servico.montar().gestaoVendasDetalhadas({ cliente: 'Mariana' });
+
+      expect(r.status).toBe('AMBIGUA');
+      expect(r.sobre).toBe('cliente');
+      expect(r.nomes).toHaveLength(2);
+      expect(r.nomes?.[0]).toContain('00376');
+      // Escolher a primeira responderia com confianca sobre a pessoa errada.
+      expect(vendasDetalhadas).not.toHaveBeenCalled();
+    });
+
+    it('só dígitos é CÓDIGO, e vai direto', async () => {
+      clientes.buscarPorCodigoErp.mockResolvedValue({ id: 'c-1', nome: 'MARIANA', codigoErp: '00376' });
+
+      await servico.montar().gestaoVendasDetalhadas({ cliente: '00376' });
+
+      expect(clientes.buscarPorCodigoErp).toHaveBeenCalledWith('00376');
+      expect(clientes.buscarPorNomeParcial).not.toHaveBeenCalled();
+      expect(vendasDetalhadas).toHaveBeenCalledWith(
+        expect.objectContaining({ clienteId: 'c-1' }),
+        expect.any(Number),
+      );
+    });
+
+    it('cliente que não existe não vira lista vazia', async () => {
+      clientes.buscarPorNomeParcial.mockResolvedValue([]);
+
+      const r = await servico.montar().gestaoVendasDetalhadas({ cliente: 'Fulana' });
+
+      expect(r.status).toBe('NAO_ENCONTRADA');
+      expect(r.sobre).toBe('cliente');
+    });
+
+    it('vendedora FORA DA EQUIPE responde como "não achei"', async () => {
+      // Dizer "voce nao pode ver a Fulana" confirmaria que a Fulana existe.
+      const r = await servico
+        .montar({ equipe: ['outra-id'] })
+        .gestaoVendasDetalhadas({ vendedora: 'Marina' });
+
+      expect(r.status).toBe('NAO_ENCONTRADA');
+      expect(r.sobre).toBe('vendedora');
+      expect(vendasDetalhadas).not.toHaveBeenCalled();
+    });
+
+    it('a linha traz as PEÇAS, com quantidade inteira e dinheiro em pt-BR', async () => {
+      vendasDetalhadas.mockResolvedValue({ vendas: [VENDA], total: 7 });
+
+      const r = await servico.montar().gestaoVendasDetalhadas({ documento: '1157' });
+
+      expect(r.status).toBe('OK');
+      expect(r.total).toBe(7);
+      // "1x", e nao "1.0000x" — a quantidade e numeric(x,4) no banco.
+      expect(r.linhas[0]).toContain('1x PIERCING TP 1.39 CTS');
+      expect(r.linhas[0]).toContain('2x ANEL ESM 3.25 CTS');
+      // SEM CENTAVOS, como todo valor deste canal (`moeda` arredonda para o
+      // real). E o ponto de milhar e brasileiro porque a formatacao acontece no
+      // TypeScript — no SQL, o `to_char` usaria a localidade do banco e sairia
+      // 'R$ 69,934.67'.
+      // SEM O "R$ " NA ASSERCAO: o `toLocaleString` separa o simbolo do numero
+      // com ESPACO NAO SEPARAVEL (U+00A0), e a string parece igual no terminal.
+      expect(r.linhas[0]).toContain('69.935');
+      expect(r.linhas[0]).not.toContain('69,934');
+      expect(r.linhas[0]).toContain('00376');
+    });
+
+    it('o TOTAL vem junto — dez de trinta e nove não pode parecer tudo', async () => {
+      clientes.buscarPorCodigoErp.mockResolvedValue({
+        id: 'c-1',
+        nome: 'MARIANA',
+        codigoErp: '00376',
+      });
+      vendasDetalhadas.mockResolvedValue({ vendas: [VENDA], total: 39 });
+
+      const r = await servico.montar().gestaoVendasDetalhadas({ cliente: '00376' });
+
+      expect(r.total).toBe(39);
+      expect(r.linhas).toHaveLength(1);
     });
   });
 
