@@ -36,6 +36,15 @@ export interface IVendasLeituraRepository {
     filtros: FiltroVenda,
     janela: { de: Date; ate: Date },
   ): Promise<SerieMensalVendas>;
+
+  /**
+   * As empresas ATIVAS do grupo — as opcoes do filtro da tela.
+   *
+   * TODAS, inclusive as que nunca venderam: empresa ausente da lista parece
+   * empresa que nao existe, e "a AT HOME vendeu alguma coisa?" so tem
+   * resposta se der para seleciona-la e ver a tela vazia.
+   */
+  empresasDoGrupo(): Promise<{ id: string; nome: string }[]>;
 }
 
 export const VENDAS_LEITURA_REPOSITORY = Symbol('IVendasLeituraRepository');

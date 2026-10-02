@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { ComportamentoDatasUseCase } from './application/use-cases/comportamento-datas.use-case';
 import { DemografiaUseCase } from './application/use-cases/demografia.use-case';
+import { EmpresasDoFiltroUseCase } from './application/use-cases/empresas-do-filtro.use-case';
 import { DistribuicaoOrigemUseCase } from './application/use-cases/distribuicao-origem.use-case';
 import { DistribuicaoPagamentoUseCase } from './application/use-cases/distribuicao-pagamento.use-case';
 import { EstatisticasInventarioUseCase } from './application/use-cases/estatisticas-inventario.use-case';
@@ -27,6 +28,7 @@ import { AnalyticsController } from './infrastructure/http/controllers/analytics
     DistribuicaoPagamentoUseCase,
     EstatisticasInventarioUseCase,
     DistribuicaoOrigemUseCase,
+    EmpresasDoFiltroUseCase,
     DemografiaUseCase,
     ComportamentoDatasUseCase,
     ExportarVendasCsvUseCase,

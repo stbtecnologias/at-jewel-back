@@ -63,8 +63,54 @@ export interface VendedoraNoRanking {
   vendedoraId: string;
   nome: string;
   codigoErp: string | null;
+  /** Documentos de venda. A devolucao nao entra na contagem. */
   quantidade: number;
   valor: number;
+  /**
+   * PECAS vendidas — 02/10/2026.
+   *
+   * "Quem vendeu mais pecas em setembro?" nao tinha resposta: o ranking
+   * contava DOCUMENTOS e dinheiro, e a contagem de pecas so existia por
+   * familia, uma de cada vez. Quem vende uma alianca de R$ 200 mil lidera o
+   * faturamento e pode ser a ultima em pecas — sao perguntas diferentes.
+   *
+   * A DEVOLUCAO NAO ABATE AQUI — mudou em 02/10/2026. Abatendo, a Ylka saia
+   * como "2 vendas, 0 pecas" em agosto: ela vendeu duas pecas, e as duas
+   * pulseiras que voltaram no mes tinham sido vendidas em OUTRO. O liquido
+   * somava dois meses num numero so, e o resultado nao se explicava para quem
+   * lia — a gestao olha e diz que nao faz sentido, com razao.
+   *
+   * O DINHEIRO CONTINUA LIQUIDO, porque e a receita e e ela que fecha com a
+   * tela de Vendas: agosto/2026 da R$ 934.126,50 somando exatamente estas
+   * linhas. As reguas ficam diferentes de proposito, e por isso a devolucao
+   * viaja ao lado, nos tres campos abaixo: muda a regua, nada fica escondido.
+   */
+  pecas: number;
+  /**
+   * As pecas QUEBRADAS POR TIPO, da maior para a menor — 02/10/2026.
+   *
+   * "12 pecas" responde quem vendeu mais; "12 pecas (6 colares, 4 aneis, 2
+   * solitarios)" responde o que ela vende. Era a leitura que a gestora
+   * estava montando a mao, somando familia por familia.
+   */
+  familias: { familia: string; quantidade: number }[];
+  /**
+   * PECAS QUE VOLTARAM no recorte — 02/10/2026.
+   *
+   * Zero na grande maioria: 32 de 268 linhas (vendedora x mes) da base tem
+   * alguma devolucao, e nas outras 236 a linha sai igual ao que era.
+   */
+  devolvidas: number;
+  /**
+   * Quanto voltou em dinheiro — JA DESCONTADO do `valor`.
+   *
+   * E o campo que explica a linha. A Ylka aparece com R$ 33.590 em agosto
+   * tendo vendido R$ 144.050: sem este numero, 77% do mes dela e invisivel e
+   * a leitura vira "vendeu pouco" em vez de "teve devolucao".
+   */
+  valorDevolvido: number;
+  /** As devolvidas por tipo, da maior para a menor. */
+  familiasDevolvidas: { familia: string; quantidade: number }[];
 }
 
 export interface ItemMaisVendido {
@@ -81,7 +127,14 @@ export interface ItemMaisVendido {
 export interface VendedoraPorFamilia {
   vendedoraId: string;
   nome: string;
-  /** Pecas daquela familia, com a devolucao ja abatida. */
+  /**
+   * Pecas daquela familia VENDIDAS no recorte — a devolucao nao abate.
+   *
+   * Abatia ate 02/10/2026, e a lista saia com "KEYCIANE BARBOSA: -1
+   * pingentes": a agente apagou essa linha ao responder, porque ela nao tem
+   * leitura numa pergunta sobre o que foi vendido. "Se e vendas, nao entra
+   * devolucao" — a regra do Lucas no mesmo dia.
+   */
   quantidade: number;
   valor: number;
 }
@@ -101,7 +154,90 @@ export interface ComparacaoAnual {
   receitaFechada: number | null;
 }
 
+/**
+ * UMA VENDA, COM NOME E COM AS PECAS — 02/10/2026.
+ *
+ * Tudo o que esta aqui ja existia espalhado em consultas agregadas. O que nao
+ * existia era a LINHA: quanto a vendedora vendeu, a agente sabia dizer; QUAIS
+ * vendas foram, nao.
+ */
+export interface ItemDaVenda {
+  quantidade: number;
+  nome: string;
+  /** Quantidade x valor unitario. */
+  valor: number;
+}
+
+export interface VendaDetalhada {
+  documento: string | null;
+  data: Date;
+  clienteCodigo: string | null;
+  cliente: string | null;
+  vendedora: string | null;
+  valor: number;
+  /** `concluida` ou `devolvida`. Cancelada nao entra na listagem. */
+  status: string;
+  /**
+   * As pecas da venda, como DADO e nao como texto.
+   *
+   * Formatar no SQL parecia mais curto e saiu errado duas vezes: a quantidade
+   * e `numeric(x,4)` e virava "1.0000x", e o `to_char` de dinheiro usa a
+   * localidade do BANCO — "R$ 69,934.67", com a virgula e o ponto trocados.
+   * Dinheiro e numero se formatam onde ja existe o formatador da casa.
+   */
+  itens: ItemDaVenda[];
+}
+
+/**
+ * O RECORTE. Pelo menos um alem da janela — ver `EXIGE_RECORTE` no handler.
+ */
+export interface FiltroVendasDetalhadas {
+  janela?: JanelaDeVendas;
+  clienteId?: string | null;
+  vendedoraId?: string | null;
+  /** O numero do documento, como a pessoa fala dele. */
+  documento?: string | null;
+}
+
+/**
+ * O FATURAMENTO DE UMA EMPRESA DO GRUPO — 02/10/2026.
+ *
+ * A A.T tem oito CNPJs cadastrados, e a venda sai por um deles. Ate hoje nada
+ * no sistema olhava essa coluna: todo numero que a gestao ve e a SOMA de
+ * todas as empresas.
+ */
+export interface VendasDeUmaEmpresa {
+  empresa: string;
+  /** Documentos de VENDA. A devolucao nao entra na contagem. */
+  vendas: number;
+  /** Saidas MENOS devolucoes. */
+  receita: number;
+  devolucoes: number;
+}
+
 export interface IVendasMovimentacaoRepository {
+  /**
+   * A quebra por empresa do grupo, do maior faturamento para o menor.
+   *
+   * SEM JANELA E O HISTORICO INTEIRO — "qual o faturamento da MP?" costuma
+   * ser sobre a vida da empresa, e nao sobre este mes.
+   *
+   * SO QUEM TEVE MOVIMENTO APARECE. Listar as oito com zero faria a resposta
+   * parecer um cadastro, e a pergunta e sobre faturamento.
+   */
+  receitaPorEmpresa(janela?: JanelaDeVendas): Promise<VendasDeUmaEmpresa[]>;
+
+  /**
+   * As vendas do recorte, uma a uma, com cliente, vendedora e PECAS.
+   *
+   * Devolve a amostra E o total: dez de trinta e nove sem o numero soa
+   * completo, e quem le vai embora com a impressao errada.
+   */
+  listarDetalhadas(
+    filtro: FiltroVendasDetalhadas,
+    limite: number,
+  ): Promise<{ vendas: VendaDetalhada[]; total: number }>;
+
   /**
    * O resumo do periodo. Com `vendedoraId`, so o dela — e e assim que a
    * vendedora ve as PROPRIAS vendas, sem enxergar a equipe.

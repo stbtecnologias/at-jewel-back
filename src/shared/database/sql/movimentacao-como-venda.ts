@@ -127,3 +127,29 @@ export function itemAssinado(mov = 'm', item = 'i'): string {
     ELSE                        (${total})
   END`;
 }
+
+/**
+ * AS EMPRESAS DO GRUPO, para o filtro das telas — 02/10/2026.
+ *
+ * ==========================================================================
+ * TODAS AS ATIVAS, E NAO SO AS QUE VENDERAM — decisao do Lucas.
+ *
+ * Comecou listando so as duas com movimento, e estava errado: a pergunta
+ * "a AT HOME vendeu alguma coisa?" nao tem resposta se a AT HOME nao esta
+ * na lista. Empresa ausente parece empresa que nao existe; empresa
+ * selecionada com a tela vazia RESPONDE — e e o mesmo comportamento do
+ * filtro de empresa da tela de Produtos.
+ *
+ * Hoje seis das oito devolvem tela vazia, e isso e informacao.
+ * ==========================================================================
+ *
+ * A LISTA SAI DO MESMO LUGAR NAS DUAS TELAS. Vendas e Analytics precisam das
+ * MESMAS opcoes — uma empresa que aparece num filtro e nao no outro e a mesma
+ * classe de divergencia que o abatimento da devolucao criou em 25/09.
+ */
+export const EMPRESAS_DO_GRUPO = `
+  SELECT e.id, e.nome
+    FROM empresas e
+   WHERE e.ativo
+   ORDER BY e.nome
+`;

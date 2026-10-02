@@ -31,7 +31,7 @@ export class ResumoVendasUseCase {
   async execute(
     filtros: Pick<
       FiltroVenda,
-      'dataDe' | 'dataAte' | 'vendedoraId' | 'status' | 'formaPagamento'
+      'dataDe' | 'dataAte' | 'vendedoraId' | 'empresaId' | 'status' | 'formaPagamento'
     >,
   ): Promise<ResumoVendasComPeriodo> {
     const resumo = await this.vendaRepo.resumoAgregado(filtros);

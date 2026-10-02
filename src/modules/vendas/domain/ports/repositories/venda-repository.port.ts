@@ -13,6 +13,8 @@ export interface FiltroVenda {
    * `undefined`, que e "sem filtro". Uma lista vazia significaria "nenhum valor
    * serve" e devolveria zero linhas.
    */
+  /** Uma ou mais empresas do grupo. AUSENTE = TODAS, somadas como sempre. */
+  empresaId?: string[];
   vendedoraId?: string[];
   status?: StatusVenda[];
   /** Vendas com ao menos um pagamento em QUALQUER uma destas formas. */
@@ -33,7 +35,7 @@ export interface FiltroVenda {
  */
 export type RecorteVenda = Pick<
   FiltroVenda,
-  'dataDe' | 'dataAte' | 'vendedoraId' | 'status' | 'formaPagamento'
+  'dataDe' | 'dataAte' | 'vendedoraId' | 'empresaId' | 'status' | 'formaPagamento'
 >;
 
 /** Um mes da serie de vendas. `mes` e `YYYY-MM`, no fuso da loja. */

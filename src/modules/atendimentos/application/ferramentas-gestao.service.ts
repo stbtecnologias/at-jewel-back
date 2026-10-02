@@ -5,6 +5,8 @@ import type { NomeComemorativo } from '../../../shared/tempo/datas-comemorativas
 import type {
   GestaoCarteiraHandler,
   GestaoEpocaHandler,
+  GestaoPorEmpresaHandler,
+  GestaoVendasDetalhadasHandler,
   GestaoMelhoresHandler,
   GestaoAgendarHandler,
   GestaoCarteiraDoClienteHandler,
@@ -94,6 +96,16 @@ import { WahaAdminClient } from '../../atendimento/infrastructure/whatsapp/waha-
 
 const MAXIMO_CLIENTES_HOMONIMOS = 5;
 /** Feedbacks por resposta. Acima disso a mensagem deixa de ser lida. */
+/**
+ * Quantas VENDAS cabem numa resposta de WhatsApp.
+ *
+ * DEZ. Medido: a vendedora faz 4,9 vendas por mes na media e passa de dez em
+ * 24 dos 264 meses com venda; o cliente compra 2,7 vezes na vida inteira. Dez
+ * cobre a quase totalidade, e o total vem junto para que um recorte grande nao
+ * pareca completo.
+ */
+const MAXIMO_VENDAS_DETALHADAS = 10;
+
 const MAXIMO_FEEDBACKS = 10;
 /** Leads por resposta. Acima disso a mensagem deixa de ser lida. */
 const MAXIMO_LEADS = 15;
@@ -203,6 +215,8 @@ export interface FerramentasGestao {
   gestaoVendedoras: GestaoVendedorasHandler;
   gestaoCarteira: GestaoCarteiraHandler;
   gestaoEpoca: GestaoEpocaHandler;
+  gestaoPorEmpresa: GestaoPorEmpresaHandler;
+  gestaoVendasDetalhadas: GestaoVendasDetalhadasHandler;
   gestaoMelhores: GestaoMelhoresHandler;
   gestaoFeedbacks: GestaoFeedbacksHandler;
   gestaoDiaDaVendedora: GestaoDiaDaVendedoraHandler;
@@ -228,6 +242,7 @@ export interface FerramentasGestao {
    */
   gestaoItensExigeVendedora?: boolean;
   gestaoEpocaExigeVendedora?: boolean;
+  gestaoPorEmpresaDisponivel?: boolean;
 }
 
 /** O que o `montar` precisa saber sobre quem esta do outro lado. */
@@ -363,6 +378,7 @@ export class FerramentasGestaoService {
     return {
       gestaoItensExigeVendedora: !verLoja,
       gestaoEpocaExigeVendedora: !verLoja,
+      gestaoPorEmpresaDisponivel: verLoja,
 
       /**
        * A AGENDA, DE UMA OU DA EQUIPE INTEIRA — 30/09/2026.
@@ -476,6 +492,119 @@ export class FerramentasGestaoService {
        * silencioso: entregar a clientela da loja a quem nao pode ve-la nao
        * levanta excecao nenhuma.
        */
+      /**
+       * "Quais as compras da cliente 00376?", "as vendas do Marco em setembro",
+       * "quais peças tinha a venda 1157?"
+       *
+       * PELO MENOS UM RECORTE FORTE — cliente, vendedora ou documento. Periodo
+       * sozinho devolveria a loja inteira do mes, que e outra pergunta e tem
+       * ferramenta propria.
+       */
+      gestaoVendasDetalhadas: async ({
+        cliente,
+        vendedora,
+        documento,
+        periodo,
+        de,
+        ate,
+      }) => {
+        const temRecorte = Boolean(
+          cliente?.trim() || vendedora?.trim() || documento?.trim(),
+        );
+        if (!temRecorte) {
+          return { status: 'EXIGE_RECORTE', linhas: [] };
+        }
+
+        // ---- a vendedora, se veio -------------------------------------
+        let vendedoraId: string | null = null;
+        if (vendedora?.trim()) {
+          const r = await this.resolverVendedora.execute(vendedora);
+          if (r.status === 'AMBIGUA') {
+            return { status: 'AMBIGUA', sobre: 'vendedora', linhas: [], nomes: r.nomes };
+          }
+          if (r.status === 'NAO_ENCONTRADA') {
+            return {
+              status: 'NAO_ENCONTRADA',
+              sobre: 'vendedora',
+              linhas: [],
+              nomes: r.sugestoes,
+            };
+          }
+          // Fora da equipe responde como "nao achei" — dizer "voce nao pode ver
+          // a Fulana" confirmaria que a Fulana existe.
+          if (!alcanca(r.id)) {
+            return { status: 'NAO_ENCONTRADA', sobre: 'vendedora', linhas: [] };
+          }
+          vendedoraId = r.id;
+        }
+
+        // ---- o cliente, se veio ---------------------------------------
+        let clienteId: string | null = null;
+        if (cliente?.trim()) {
+          const termo = cliente.trim();
+          // SO DIGITOS E CODIGO. "00376" e um cadastro; "Mariana" e um nome.
+          const achados = /^\d+$/.test(termo)
+            ? [await this.clientes.buscarPorCodigoErp(termo)].filter(
+                (c): c is NonNullable<typeof c> => c !== null,
+              )
+            : await this.clientes.buscarPorNomeParcial(termo, 11);
+
+          if (achados.length === 0) {
+            return { status: 'NAO_ENCONTRADA', sobre: 'cliente', linhas: [] };
+          }
+          if (achados.length > 1) {
+            // A LISTA, E NAO UMA ESCOLHA. Ha 17 clientes chamadas Mariana —
+            // escolher a primeira responderia com confianca sobre a pessoa
+            // errada.
+            return {
+              status: 'AMBIGUA',
+              sobre: 'cliente',
+              linhas: [],
+              nomes: achados.map((c) => `${c.nome} (${c.codigoErp ?? 'sem código'})`),
+            };
+          }
+          clienteId = achados[0].id ?? null;
+        }
+
+        const datas = datasDeRecorte(de, ate);
+        const r = await this.consultarVendas.detalhadas(
+          {
+            clienteId,
+            vendedoraId,
+            documento,
+            recorte: datas ? undefined : periodo,
+            de: datas?.de,
+            ate: datas?.ate,
+          },
+          MAXIMO_VENDAS_DETALHADAS,
+        );
+
+        return {
+          status: 'OK' as const,
+          linhas: r.vendas.map(linhaDaVenda),
+          total: r.total,
+        };
+      },
+
+      /**
+       * "Qual a receita da MP Comercio?", "faturamento por empresa".
+       *
+       * A SEGUNDA BARREIRA: o schema so e oferecido a quem ve a loja, e aqui
+       * se confere de novo. Schema e pedido, nao permissao.
+       */
+      gestaoPorEmpresa: async ({ periodo, de, ate }) => {
+        if (!verLoja) {
+          return { status: "INDISPONIVEL" as const, linhas: [] };
+        }
+        const datas = datasDeRecorte(de, ate);
+        const linhas = await this.consultarVendas.porEmpresa(
+          datas ? undefined : periodo,
+          datas?.de,
+          datas?.ate,
+        );
+        return { status: "OK" as const, linhas: linhas.map(linhaDaEmpresa) };
+      },
+
       gestaoEpoca: async ({ vendedora, mes, dataComemorativa }) => {
         if (!verLoja && !vendedora?.trim()) {
           return { status: 'EXIGE_VENDEDORA', linhas: [] };
@@ -759,9 +888,23 @@ export class FerramentasGestaoService {
         // mais" devolveria o ranking da LOJA para a gerente de um time so.
         const venderam = ranking.filter((r) => alcanca(r.vendedoraId));
 
+        // AS PECAS ENTRAM NA LINHA — 02/10/2026. "Quem vendeu mais pecas em
+        // setembro?" nao tinha resposta: a contagem de pecas so existia por
+        // familia, uma de cada vez, e a gestora recebeu "infelizmente nao
+        // tenho como somar o total de pecas por vendedora".
+        //
+        // SAO PERGUNTAS DIFERENTES, e a linha traz as tres: quem vende uma
+        // alianca de R$ 200 mil lidera o faturamento e pode ser a ultima em
+        // pecas.
+        //
+        // A PECA E A VENDIDA; O DINHEIRO E LIQUIDO — 02/10/2026. Reguas
+        // diferentes de proposito: a receita tem de fechar com a tela de
+        // Vendas, e a peca tem de fazer sentido para quem le. Enquanto a peca
+        // tambem abatia, a Ylka saia como "2 vendas, 0 pecas". A devolucao nao
+        // sumiu — vai no fim da linha, com o que voltou em peca e em dinheiro.
         const linhas = venderam.map(
           (r) =>
-            `${r.nome}: ${r.quantidade} ${r.quantidade === 1 ? 'venda' : 'vendas'}, ${moeda(r.valor)}`,
+            `${r.nome}: ${r.quantidade} ${r.quantidade === 1 ? 'venda' : 'vendas'}, ${r.pecas} ${r.pecas === 1 ? 'peça' : 'peças'}${quebraPorTipo(r.familias)}, ${moeda(r.valor)}${devolucaoDaLinha(r)}`,
         );
 
         // As que ainda trabalham aqui e nao venderam, no fim.
@@ -2161,4 +2304,139 @@ function linhaDaEpoca(c: {
     ? `, a última em ${c.ultimaCompra.toLocaleDateString('pt-BR')}`
     : '';
   return `${c.nome} — ${c.quantidade} ${compras}${repeticao}, ${moeda(c.valorTotal)}${ultima}`;
+}
+
+/**
+ * Uma venda, com as pecas embaixo.
+ *
+ * AS PECAS NA MESMA RESPOSTA, e nao numa segunda pergunta: sao 1,6 por venda
+ * na media, entao cabem — e "o que ela comprou" e sempre a pergunta seguinte.
+ */
+function linhaDaVenda(v: {
+  documento: string | null;
+  data: Date;
+  cliente: string | null;
+  clienteCodigo: string | null;
+  vendedora: string | null;
+  valor: number;
+  status: string;
+  itens: { quantidade: number; nome: string; valor: number }[];
+}): string {
+  const quem = v.cliente
+    ? v.cliente + (v.clienteCodigo ? ` (${v.clienteCodigo})` : '')
+    : null;
+  const partes = [
+    v.data.toLocaleDateString('pt-BR'),
+    v.documento ? `doc ${v.documento}` : null,
+    quem,
+    v.vendedora,
+    moeda(v.valor),
+    v.status === 'devolvida' ? 'DEVOLVIDA' : null,
+  ].filter(Boolean);
+
+  // A QUANTIDADE E DECIMAL no banco (numeric(x,4)) porque peca a granel
+  // existe. "1x" e o que se fala; "1.0000x" e o que o banco guarda.
+  const pecas = v.itens
+    .map(
+      (i) =>
+        `\n   • ${Number.isInteger(i.quantidade) ? i.quantidade : i.quantidade.toFixed(2)}x ${i.nome} — ${moeda(i.valor)}`,
+    )
+    .join('');
+  return partes.join(' · ') + pecas;
+}
+
+/**
+ * Uma empresa do grupo, com o que ela faturou.
+ *
+ * O TICKET SAI DA DIVISAO e nao vem do banco: receita liquida dividida por
+ * vendas, igual ao resumo. Empresa sem venda no recorte nao divide por zero.
+ */
+function linhaDaEmpresa(e: {
+  empresa: string;
+  vendas: number;
+  receita: number;
+  devolucoes: number;
+}): string {
+  const ticket = e.vendas > 0 ? e.receita / e.vendas : 0;
+  const unidade = e.vendas === 1 ? 'venda' : 'vendas';
+  const devolvidas =
+    e.devolucoes > 0
+      ? `, ${e.devolucoes} ${e.devolucoes === 1 ? "devolução" : "devoluções"}`
+      : '';
+  return `${e.empresa}: ${moeda(e.receita)} em ${e.vendas} ${unidade} (ticket ${moeda(ticket)})${devolvidas}`;
+}
+
+/**
+ * A QUEBRA POR TIPO na linha do panorama — 02/10/2026.
+ *
+ * "12 pecas" responde QUEM vendeu mais; "12 pecas (6 colares, 4 aneis, 2
+ * solitarios)" responde O QUE ela vende. Era a leitura que a gestora estava
+ * montando a mao, somando familia por familia.
+ *
+ * TETO DE QUATRO TIPOS, com o resto somado em "e mais N": a linha vai para o
+ * WhatsApp, e uma vendedora com doze tipos viraria um paragrafo. Os quatro
+ * primeiros ja dizem o perfil dela.
+ *
+ * A SOMA DOS TIPOS TEM DE DAR O NUMERO AO LADO, e isso nao e enfeite: foi
+ * assim que a gestao achou o defeito de 02/10 — "6 vendas, 5 pecas" com
+ * quatro tipos somando 6. Quem mexer aqui mantem isso verdadeiro.
+ *
+ * NAO EXISTE MAIS FAMILIA NEGATIVA. Ate 02/10 a quebra era liquida, e a
+ * familia que so tinha devolucao vinha com sinal; o teto escondia justamente
+ * ela, que continuava descontando no total. Hoje a venda e a devolucao vem
+ * em listas separadas do banco, e o negativo deixou de ser representavel.
+ */
+const TETO_DE_TIPOS = 4;
+
+function tiposDaLinha(
+  familias: { familia: string; quantidade: number }[] | undefined,
+): string[] {
+  if (!familias?.length) return [];
+
+  // O QUINTO APARECE QUANDO E O ULTIMO: esconder um tipo para escrever
+  // "e mais 1" ocupa o mesmo espaco na linha e diz menos.
+  const teto =
+    familias.length === TETO_DE_TIPOS + 1 ? TETO_DE_TIPOS + 1 : TETO_DE_TIPOS;
+  const partes = familias
+    .slice(0, teto)
+    .map((f) => pecas(f.quantidade, f.familia));
+  const resto = familias.slice(teto).reduce((s, f) => s + f.quantidade, 0);
+  if (resto > 0) {
+    partes.push(`e mais ${resto}`);
+  }
+  return partes;
+}
+
+function quebraPorTipo(
+  familias: { familia: string; quantidade: number }[] | undefined,
+): string {
+  // SEM QUEBRA, SEM PARENTESES. A quebra e um detalhe da linha; faltar nao pode
+  // derrubar o panorama inteiro, que e a resposta.
+  const partes = tiposDaLinha(familias);
+  return partes.length ? ` (${partes.join(', ')})` : '';
+}
+
+/**
+ * ", 2 devolvidas (2 pulseiras, R$ 110.460)" na linha da vendedora — 02/10.
+ *
+ * SO QUANDO HOUVE: em 236 das 268 linhas (vendedora x mes) da base nao ha
+ * devolucao nenhuma, e ali a linha sai exatamente como era.
+ *
+ * O VALOR ENTRA AQUI porque ele JA SAIU do numero principal. A Ylka aparece
+ * com R$ 33.590 em agosto tendo vendido R$ 144.050: sem este pedaco, 77% do
+ * mes dela e invisivel e a leitura vira "vendeu pouco" em vez de "teve
+ * devolucao" — que e outra conversa inteiramente.
+ */
+function devolucaoDaLinha(r: {
+  devolvidas: number;
+  valorDevolvido: number;
+  familiasDevolvidas?: { familia: string; quantidade: number }[];
+}): string {
+  if (!r.devolvidas) return '';
+  const dentro = [
+    ...tiposDaLinha(r.familiasDevolvidas),
+    moeda(r.valorDevolvido),
+  ];
+  const unidade = r.devolvidas === 1 ? 'devolvida' : 'devolvidas';
+  return `, ${r.devolvidas} ${unidade} (${dentro.join(', ')})`;
 }

@@ -113,11 +113,28 @@ export class VendasController {
       dataAte: filtros.dataAte ? new Date(filtros.dataAte) : undefined,
       clienteId: filtros.clienteId,
       vendedoraId: restrito ?? filtros.vendedoraId,
+      empresaId: filtros.empresaId,
       status: filtros.status,
       formaPagamento: filtros.formaPagamento,
       limit: filtros.limit,
       offset: filtros.offset,
     });
+  }
+
+  /**
+   * AS OPCOES DO FILTRO DE EMPRESA — 02/10/2026.
+   *
+   * Guardada por `vendas:read`, a mesma da tela: pendurar o controle numa
+   * segunda permissao faria a tela carregar e o filtro sumir para quem pode
+   * ver as vendas, que e pior que nao ter o filtro.
+   *
+   * Estatica, declarada antes de GET /:id.
+   */
+  @Get('empresas')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('vendas:read')
+  async empresas() {
+    return this.listar.empresas();
   }
 
   // Rota ESTATICA declarada antes de GET /:id para nao colidir com o
@@ -134,6 +151,7 @@ export class VendasController {
       dataDe: filtros.dataDe ? new Date(filtros.dataDe) : undefined,
       dataAte: filtros.dataAte ? new Date(filtros.dataAte) : undefined,
       vendedoraId: restrito ?? filtros.vendedoraId,
+      empresaId: filtros.empresaId,
       status: filtros.status,
       formaPagamento: filtros.formaPagamento,
     });
@@ -162,6 +180,7 @@ export class VendasController {
       dataDe: filtros.dataDe ? new Date(filtros.dataDe) : undefined,
       dataAte: filtros.dataAte ? new Date(filtros.dataAte) : undefined,
       vendedoraId: restrito ?? filtros.vendedoraId,
+      empresaId: filtros.empresaId,
       status: filtros.status,
       formaPagamento: filtros.formaPagamento,
     });
@@ -182,6 +201,7 @@ export class VendasController {
       dataDe: filtros.dataDe ? new Date(filtros.dataDe) : undefined,
       dataAte: filtros.dataAte ? new Date(filtros.dataAte) : undefined,
       vendedoraId: restrito ?? filtros.vendedoraId,
+      empresaId: filtros.empresaId,
       status: filtros.status,
       formaPagamento: filtros.formaPagamento,
     });

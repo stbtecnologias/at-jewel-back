@@ -41,6 +41,18 @@ export class FiltroVendaDto {
   vendedoraId?: string[];
 
   /**
+   * A EMPRESA DO GRUPO — 02/10/2026.
+   *
+   * AUSENTE = TODAS. O numero que a gestao conhece e a soma dos oito CNPJs,
+   * e mudar o padrao mudaria o significado da tela inteira de uma vez.
+   */
+  @IsOptional()
+  @Transform(({ value }) => listaEntrada(value))
+  @IsArray()
+  @IsUUID(undefined, { each: true })
+  empresaId?: string[];
+
+  /**
    * Aceita MAIS DE UM valor desde 10/09/2026 — pedido do Yerlon na revisao
    * de homologacao. O `listaEntrada` cobre as tres formas de envio; a antiga
    * (`?campo=x`, um valor so) continua valendo, entao o contrato ja publicado

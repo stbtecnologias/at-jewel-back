@@ -125,13 +125,26 @@ const AGENDA_TOOL: Anthropic.Tool = {
  *
  * DUPLICADO NAS TRES de proposito — a descricao de `periodo` e diferente em
  * cada uma (enums diferentes, padroes diferentes), entao so este par e comum.
+ *
+ * UM PERIODO POR CHAMADA — 02/10/2026.
+ *
+ * "Quantos pingentes foram vendidos em agosto e setembro?" teve duas
+ * respostas certas e diferentes na mesma tarde: as 15h52 ela consultou mes a
+ * mes ("2 em agosto, 7 em setembro") e as 16h01 consultou 01/08 a 30/09 de
+ * uma vez ("9 no total, 8 da Camila"). Os numeros batem — 2 + 6 = 8 —, mas a
+ * segunda apaga o que a pergunta procurava: a Camila TRIPLICOU de um mes para
+ * o outro, e isso nao esta em lugar nenhum do "8".
+ *
+ * A instrucao mora aqui, e nao na ferramenta de familia onde o sintoma
+ * apareceu, porque o par `de`/`ate` e o mesmo em doze ferramentas e a escolha
+ * de recorte e a mesma em todas.
  * ==========================================================================
  */
 const DATAS_LIVRES = {
   de: {
     type: 'string' as const,
     description:
-      'Inicio do periodo, AAAA-MM-DD. Use com `ate` quando o recorte pedido nao couber no `periodo`: "ultimos 6 meses", "de janeiro a marco", "agosto", "do dia 10 ate hoje". VOCE calcula as datas a partir da data de hoje, que esta no inicio desta conversa.',
+      'Inicio do periodo, AAAA-MM-DD. Use com `ate` quando o recorte pedido nao couber no `periodo`: "ultimos 6 meses", "de janeiro a marco", "agosto", "do dia 10 ate hoje". VOCE calcula as datas a partir da data de hoje, que esta no inicio desta conversa. SE A PERGUNTA CITAR MAIS DE UM PERIODO ("agosto e setembro", "2024 e 2025"), CHAME A FERRAMENTA UMA VEZ POR PERIODO e responda um de cada vez, em vez de abrir uma janela unica que vai de um ate o outro: a janela unica devolve a SOMA, e a soma apaga a comparacao que a pergunta pediu.',
   },
   ate: {
     type: 'string' as const,
@@ -354,6 +367,74 @@ const MELHORES_TOOL: Anthropic.Tool = {
 // ===========================================================================
 
 /**
+ * O FATURAMENTO DE CADA EMPRESA DO GRUPO — 02/10/2026.
+ *
+ * SEM PARAMETRO DE NOME: devolve a quebra inteira. Sao oito CNPJs e duas com
+ * movimento — resolver "MP", "a de metais" e "MP Comercio" para a mesma
+ * empresa seria trabalho para responder menos.
+ */
+const GESTAO_POR_EMPRESA_TOOL: Anthropic.Tool = {
+  name: 'faturamento_por_empresa',
+  description:
+    'O faturamento de CADA EMPRESA do grupo (os CNPJs: AT JEWEL, MP COMERCIO, AT HOME, AT JEWEL SP e as demais), com numero de vendas e ticket medio. Use para "qual a receita da MP Comercio", "faturamento por empresa", "quanto a filial de SP vendeu", "as vendas da AT HOME". Devolve TODAS as empresas com movimento — leia na lista a que ela perguntou. Sem periodo, e o historico inteiro.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
+        description:
+          'Recorte de tempo. Omita para o historico inteiro — "qual o faturamento da MP" costuma ser sobre a vida da empresa.',
+      },
+      ...DATAS_LIVRES,
+    },
+    required: [],
+  },
+};
+
+/**
+ * AS VENDAS UMA A UMA — 02/10/2026.
+ *
+ * TRES PERGUNTAS NUMA FERRAMENTA, porque sao a mesma consulta com filtros
+ * diferentes: as compras de um cliente, as vendas de uma vendedora num
+ * periodo, as pecas de um documento.
+ *
+ * As PECAS vem junto, sem precisar de uma segunda pergunta — "e o que ela
+ * comprou?" e sempre o que vem depois.
+ */
+const GESTAO_VENDAS_DETALHADAS_TOOL: Anthropic.Tool = {
+  name: 'vendas_detalhadas',
+  description:
+    'Lista as vendas UMA A UMA, com data, documento, cliente, vendedora, valor e AS PECAS de cada uma. Use para "quais as compras da cliente X", "quais vendas a Camila fez em setembro", "quais pecas tinha a venda 1157", "o que o cliente Y comprou". Informe pelo menos UM entre cliente, vendedora e documento — periodo sozinho nao serve. Devolve ate 10 vendas, da mais recente para a mais antiga, e diz quantas existem no total.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      cliente: {
+        type: 'string',
+        description:
+          'Nome do cliente como veio na conversa, ou o CODIGO dele ("00376"). So digitos = codigo.',
+      },
+      vendedora: {
+        type: 'string',
+        description: 'Nome da vendedora, como veio na conversa.',
+      },
+      documento: {
+        type: 'string',
+        description: 'Numero do documento da venda, quando ela citar um ("1157").',
+      },
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
+        description:
+          'Recorte de tempo. Omita para pegar o historico inteiro — "quais as compras da cliente X" e sobre a vida toda dela, nao sobre este mes.',
+      },
+      ...DATAS_LIVRES,
+    },
+    required: [],
+  },
+};
+
+/**
  * QUEM COMPRA NAQUELA EPOCA, pela gestao — 01/10/2026.
  *
  * SEM `vendedora` e a LOJA INTEIRA, e e por isso que existe a segunda versao
@@ -460,7 +541,7 @@ const GESTAO_METAS_TOOL: Anthropic.Tool = {
 const GESTAO_PANORAMA_TOOL: Anthropic.Tool = {
   name: 'panorama_da_equipe',
   description:
-    'Compara as vendas da equipe num periodo, da maior para a menor. Use quando a pergunta for sobre a equipe e nao sobre uma pessoa — "como foi a semana da equipe", "quem vendeu mais esse mes", "quem esta atras". Quem vendeu no periodo aparece, mesmo tendo saido depois; quem continua na equipe e nao vendeu aparece no fim.',
+    'Compara a equipe num periodo, da maior para a menor, com VENDAS, PECAS e faturamento de cada uma. Use quando a pergunta for sobre a equipe e nao sobre uma pessoa — "como foi a semana da equipe", "quem vendeu mais esse mes", "quem vendeu mais pecas", "quem esta atras". Responde as tres perguntas de uma vez: quem fez mais VENDAS, quem vendeu mais PECAS e quem FATUROU mais podem ser pessoas diferentes. Quem vendeu no periodo aparece, mesmo tendo saido depois; quem continua na equipe e nao vendeu aparece no fim.',
   input_schema: {
     type: 'object',
     properties: {
@@ -584,14 +665,14 @@ const GESTAO_ITENS_DA_VENDEDORA_TOOL: Anthropic.Tool = {
 const GESTAO_POR_FAMILIA_TOOL: Anthropic.Tool = {
   name: 'quem_mais_vende',
   description:
-    'O ranking das vendedoras para UM tipo de peca, da que mais vendeu para a que menos vendeu, com quantidade e valor. Use para "quem vende mais brinco", "qual vendedora mais vendeu anel esse ano", "quem e a melhor em colar". Conta PECAS, nao faturamento — e a devolucao ja esta abatida. Para o ranking geral, sem separar tipo, use panorama_da_equipe.',
+    'O ranking das vendedoras para UM tipo de peca, da que mais vendeu para a que menos vendeu, com quantidade e valor. Conta PECAS, nao faturamento — e a devolucao ja esta abatida. Aceita QUALQUER tipo do catalogo, que tem dezenas: alem de brinco, anel, colar e pulseira, existem pingente, piercing, solitario, argolas e tambem decoracao (vaso, vela, livro, bowl). Se o nome nao existir, a resposta traz a lista. NUNCA SOME VARIOS TIPOS A MAO para chegar a um total por vendedora: para isso existe o panorama_da_equipe, que ja conta TODAS as pecas de TODAS as familias numa consulta so.',
   input_schema: {
     type: 'object',
     properties: {
       familia: {
         type: 'string',
         description:
-          'O tipo de peca, como a pessoa falou: "brinco", "anel", "colar", "pulseira". Se o nome nao existir no catalogo, a resposta traz a lista dos que existem — repasse e pergunte qual.',
+          'O tipo de peca, como a pessoa falou. Vale QUALQUER um do catalogo, e os exemplos sao so exemplos: brinco, anel, colar, pulseira, pingente, piercing, solitario, argolas, e tambem decoracao como vaso, vela e livro. Se o nome nao existir, a resposta traz a lista dos que existem — repasse e pergunte qual.',
       },
       periodo: {
         type: 'string',
@@ -1379,6 +1460,12 @@ export class AnthropicClient implements ILlmClient {
           : GESTAO_ITENS_TOOL,
       );
     }
+    if (params.gestaoVendasDetalhadas) tools.push(GESTAO_VENDAS_DETALHADAS_TOOL);
+    // SO PARA QUEM VE A LOJA. O faturamento do grupo nao tem versao estreita,
+    // entao a ferramenta nao e oferecida em vez de ser oferecida e recusada.
+    if (params.gestaoPorEmpresa && params.gestaoPorEmpresaDisponivel) {
+      tools.push(GESTAO_POR_EMPRESA_TOOL);
+    }
     // So quando o canal NAO e o da vendedora — as duas usam o mesmo nome.
     if (params.gestaoEpoca && !params.clientesPorEpoca) {
       tools.push(
@@ -1899,7 +1986,20 @@ export class AnthropicClient implements ILlmClient {
             }
             return (
               `Ranking no periodo:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
-              'A primeira linha e a resposta. Repasse os numeros exatamente como estao.'
+              'A primeira linha e a resposta. Repasse os numeros exatamente como estao. ' +
+              // A RESSALVA QUE A AGENTE INVENTAVA — 02/10/2026. Somando quatro
+              // familias a mao, ela avisou que "isso cobre so essas quatro" e
+              // citou tipos que ela mesma escolheu nao consultar; um deles
+              // ("alianca") nem existe no catalogo. O recorte e de UM tipo, e
+              // dizer isso e diferente de alegar que o resto ficou de fora.
+              'Este ranking e de UM tipo de peca, o que foi pedido. Nao diga que outros tipos "ficaram de fora da conta" nem invente nomes de tipos: se ela quiser o total de pecas por vendedora, some nada — peca o panorama_da_equipe, que ja traz todas as familias.' +
+              // O TRAVESSAO SE LE COMO MENOS — 02/10/2026. Perguntada quantos
+              // pingentes sairam em agosto e setembro, ela respondeu "Em
+              // setembro, 7 — 6 da Camila Brito e 1 da Ylka Franck". O 7 esta
+              // certo e o travessao era de aposto, mas o Lucas leu "7 - 6" e
+              // perguntou o que era. Quem le no WhatsApp nao tem a lista ao
+              // lado para conferir.
+              ' MAIS DE UMA VENDEDORA SE LE EM LISTA, uma por linha, com o numero de cada uma. E nunca separe um total da quebra dele com travessao, porque travessao entre dois numeros se le como subtracao: escreva "7 pingentes: 6 da Camila Brito e 1 da Ylka Franck", nunca "7 — 6 da Camila Brito".'
             );
           }),
         );
@@ -2081,7 +2181,27 @@ export class AnthropicClient implements ILlmClient {
             }
             return (
               `Equipe no periodo:\n${linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
-              'Repasse os numeros exatamente como estao.'
+              // UMA LINHA POR PESSOA, E NAO UMA FRASE — 02/10/2026.
+              //
+              // Perguntada por quem vendeu mais pecas, ela comprimiu sete
+              // vendedoras em "a Keyciane com 12, seguida da Camila com 10 e da
+              // Faby com 7": o dado estava certo, e a quebra por tipo das outras
+              // seis simplesmente sumiu. Comparacao se le em coluna.
+              //
+              // A SEGUNDA VOLTA, no mesmo dia: a instrucao acima dizia "nao
+              // resuma em frase corrida", e mesmo assim a MESMA pergunta teve
+              // duas respostas — 14h54 veio a lista inteira, 15h42 veio
+              // "faturou mais a Faby, com R$ 321.250; mais pecas tambem ela,
+              // com 8; mais vendas a Bianca, com 6". Nao foi desobediencia: a
+              // pergunta era "QUEM teve mais", um superlativo, e responder so
+              // o topo e uma leitura legitima dela. A instrucao brigava com a
+              // pergunta, e a cada vez uma ganhava.
+              //
+              // ENTAO O TEXTO RESOLVE A BRIGA em vez de proibir: diz o que
+              // fazer quando a pergunta e sobre quem lidera — a frase do topo
+              // E a lista, nao uma OU a outra. Instrucao que so proibe deixa o
+              // modelo escolher o que colocar no lugar.
+              'RESPONDA SEMPRE COM A LISTA INTEIRA, uma vendedora por linha, numerada, na ordem em que vieram, com a quebra por tipo entre parenteses em CADA uma. ISSO VALE TAMBEM QUANDO A PERGUNTA E SOBRE QUEM LIDERA ("quem vendeu mais", "quem faturou mais"): ai voce diz numa frase curta quem lidera em cada criterio E LOGO EM SEGUIDA a lista completa. Nunca responda so com o topo, nunca corte as ultimas colocadas, e repasse os numeros exatamente como estao.'
             );
           }),
         );
@@ -2407,6 +2527,86 @@ export class AnthropicClient implements ILlmClient {
             return (
               `Clientes parados:\n${clientes.map((c) => `- ${c.linha}`).join(`\n`)}\n\n` +
               'Repasse os nomes e as datas exatamente como estao.'
+            );
+          }),
+        );
+      } else if (toolUse.name === 'faturamento_por_empresa' && params.gestaoPorEmpresa) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const entrada = toolUse.input as {
+              periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+              de?: string;
+              ate?: string;
+            };
+            const r = await params.gestaoPorEmpresa!({
+              periodo: entrada.periodo,
+              de: entrada.de ? String(entrada.de) : undefined,
+              ate: entrada.ate ? String(entrada.ate) : undefined,
+            });
+            if (r.status === 'INDISPONIVEL') {
+              return 'Esta consulta nao esta disponivel por aqui. Ofereca o numero de uma vendedora, sem mencionar permissao nem limitacao de acesso.';
+            }
+            if (r.linhas.length === 0) {
+              return 'Nenhuma empresa do grupo teve movimento nesse periodo. Diga isso em uma frase, e ofereca outro periodo.';
+            }
+            return (
+              `Faturamento por empresa:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+              'Repasse os nomes e numeros exatamente como estao. Se ela perguntou por UMA empresa, responda so a dela e diga que pode trazer as outras. Nao some as empresas por conta propria.'
+            );
+          }),
+        );
+      } else if (
+        toolUse.name === 'vendas_detalhadas' &&
+        params.gestaoVendasDetalhadas
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const entrada = toolUse.input as {
+              cliente?: string;
+              vendedora?: string;
+              documento?: string;
+              periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+              de?: string;
+              ate?: string;
+            };
+            const r = await params.gestaoVendasDetalhadas!({
+              cliente: entrada.cliente ? String(entrada.cliente) : undefined,
+              vendedora: entrada.vendedora ? String(entrada.vendedora) : undefined,
+              documento: entrada.documento ? String(entrada.documento) : undefined,
+              periodo: entrada.periodo,
+              de: entrada.de ? String(entrada.de) : undefined,
+              ate: entrada.ate ? String(entrada.ate) : undefined,
+            });
+
+            // Faltou DE QUEM ou DE QUAL VENDA. Nao e "nao encontrei": e uma
+            // pergunta que ainda nao fechou.
+            if (r.status === 'EXIGE_RECORTE') {
+              return 'Esta consulta e sempre sobre alguem ou sobre uma venda. Pergunte de qual cliente, de qual vendedora ou de qual documento ela quer, sem mencionar permissao nem limitacao de acesso.';
+            }
+            if (r.status === 'NAO_ENCONTRADA') {
+              return r.sobre === 'cliente'
+                ? 'Nao achei esse cliente. Diga isso e peca o nome de novo, ou o codigo dele.'
+                : 'Nao achei essa vendedora na equipe. Diga isso e pergunte o nome de novo.';
+            }
+            if (r.status === 'AMBIGUA') {
+              const quem = r.sobre === 'cliente' ? 'cliente' : 'vendedora';
+              return (
+                `Ha mais de um(a) ${quem} com esse nome — ${r.nomes?.length ?? 0} ao todo:\n` +
+                `${(r.nomes ?? []).map((n) => `- ${n}`).join('\n')}\n\n` +
+                'Diga quantos sao e pergunte qual deles. Nao escolha por conta propria.'
+              );
+            }
+            if (r.linhas.length === 0) {
+              return 'Nenhuma venda nesse recorte. Diga isso em uma frase, e ofereca outro periodo.';
+            }
+            const quantas = r.total ?? r.linhas.length;
+            const aviso =
+              quantas > r.linhas.length
+                ? ` (as ${r.linhas.length} mais recentes de ${quantas})`
+                : '';
+            return (
+              `Vendas${aviso}:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+              'Repasse datas, nomes, pecas e valores exatamente como estao. Nao some os valores por conta propria — se ela quiser o total, ha ferramenta de resumo.'
             );
           }),
         );
