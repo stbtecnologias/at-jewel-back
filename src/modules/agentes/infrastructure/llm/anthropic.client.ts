@@ -2167,7 +2167,21 @@ export class AnthropicClient implements ILlmClient {
               // vendedoras em "a Keyciane com 12, seguida da Camila com 10 e da
               // Faby com 7": o dado estava certo, e a quebra por tipo das outras
               // seis simplesmente sumiu. Comparacao se le em coluna.
-              'RESPONDA EM LISTA, uma vendedora por linha, numerada, na ordem em que vieram — e com a quebra por tipo entre parenteses em CADA uma. Nao resuma em frase corrida e nao corte as ultimas colocadas. Repasse os numeros exatamente como estao.'
+              //
+              // A SEGUNDA VOLTA, no mesmo dia: a instrucao acima dizia "nao
+              // resuma em frase corrida", e mesmo assim a MESMA pergunta teve
+              // duas respostas — 14h54 veio a lista inteira, 15h42 veio
+              // "faturou mais a Faby, com R$ 321.250; mais pecas tambem ela,
+              // com 8; mais vendas a Bianca, com 6". Nao foi desobediencia: a
+              // pergunta era "QUEM teve mais", um superlativo, e responder so
+              // o topo e uma leitura legitima dela. A instrucao brigava com a
+              // pergunta, e a cada vez uma ganhava.
+              //
+              // ENTAO O TEXTO RESOLVE A BRIGA em vez de proibir: diz o que
+              // fazer quando a pergunta e sobre quem lidera — a frase do topo
+              // E a lista, nao uma OU a outra. Instrucao que so proibe deixa o
+              // modelo escolher o que colocar no lugar.
+              'RESPONDA SEMPRE COM A LISTA INTEIRA, uma vendedora por linha, numerada, na ordem em que vieram, com a quebra por tipo entre parenteses em CADA uma. ISSO VALE TAMBEM QUANDO A PERGUNTA E SOBRE QUEM LIDERA ("quem vendeu mais", "quem faturou mais"): ai voce diz numa frase curta quem lidera em cada criterio E LOGO EM SEGUIDA a lista completa. Nunca responda so com o topo, nunca corte as ultimas colocadas, e repasse os numeros exatamente como estao.'
             );
           }),
         );
