@@ -290,6 +290,11 @@ const SEM_COMPRAR_TOOL: Anthropic.Tool = {
         description:
           'Data no formato AAAA-MM-DD, quando ela der uma data ou um mes ("desde julho", "desde 10/03"). Mais especifico que os outros dois.',
       },
+      a_partir_de: {
+        type: 'integer',
+        description:
+          'Quantos clientes PULAR, para continuar uma lista ja comecada. Omita na primeira vez. Quando a resposta disser "estes sao o 1o ao 20o de 97", peca os proximos com 20; depois 40, e assim ate acabar.',
+      },
     },
   },
 };
@@ -838,7 +843,7 @@ const CANCELAR_LEMBRETE_TOOL: Anthropic.Tool = {
 const GESTAO_CARTEIRA_TOOL: Anthropic.Tool = {
   name: 'carteira_de_vendedora',
   description:
-    'Lista os clientes DA CARTEIRA de uma vendedora que estao ha tempo sem comprar, do mais parado para o menos, e diz QUANTOS existem no total. Use para "quem esta parado na carteira do Thiago", "quem a Marina deveria procurar". Inclui quem nunca comprou. A lista vem CURTA de proposito — se houver mais, diga o total e ofereca refinar ou procurar um cliente especifico.',
+    'Lista os clientes DA CARTEIRA de uma vendedora que estao ha tempo sem comprar, do mais parado para o menos, e diz QUANTOS existem no total. Use para "quem esta parado na carteira do Thiago", "quem a Marina deveria procurar". Inclui quem nunca comprou. Vem ate 20 por vez: havendo mais, continue com `a_partir_de` ate acabar a lista.',
   input_schema: {
     type: 'object',
     properties: {
@@ -849,6 +854,11 @@ const GESTAO_CARTEIRA_TOOL: Anthropic.Tool = {
       meses: {
         type: 'integer',
         description: 'Quantos meses sem comprar. Omita para usar 6.',
+      },
+      a_partir_de: {
+        type: 'integer',
+        description:
+          'Quantos clientes PULAR, para continuar uma lista ja comecada. Omita na primeira vez. Quando a resposta disser "estes sao o 1o ao 20o de 97", peca os proximos com 20; depois 40, e assim ate acabar.',
       },
     },
     required: ['vendedora'],
@@ -1690,11 +1700,17 @@ export class AnthropicClient implements ILlmClient {
       ) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as { vendedora?: string; meses?: number };
+            const e = toolUse.input as {
+              vendedora?: string;
+              meses?: number;
+              a_partir_de?: number;
+            };
             return textoDaLeituraDeGestao(
               await params.gestaoCarteira!({
                 vendedora: String(e.vendedora ?? '').slice(0, 80),
                 meses: Number(e.meses) > 0 ? Number(e.meses) : undefined,
+                aPartirDe:
+                  Number(e.a_partir_de) > 0 ? Number(e.a_partir_de) : 0,
               }),
               'cliente parado',
             );
@@ -2512,20 +2528,35 @@ export class AnthropicClient implements ILlmClient {
               meses?: number;
               dias?: number;
               desde?: string;
+              a_partir_de?: number;
             };
             // NENHUM TRATAMENTO DE PADRAO AQUI — `dataDeCorte` decide, e e um
             // lugar so. Dois defaults em dois arquivos divergem na primeira
             // mudanca de um lado.
-            const { clientes } = await params.clientesSemComprar!({
+            const pagina = await params.clientesSemComprar!({
               meses: Number(entrada.meses) || undefined,
               dias: Number(entrada.dias) || undefined,
               desde: entrada.desde ? String(entrada.desde) : undefined,
+              aPartirDe:
+                Number(entrada.a_partir_de) > 0
+                  ? Number(entrada.a_partir_de)
+                  : 0,
             });
-            if (clientes.length === 0) {
-              return 'Nenhum cliente da carteira dela esta parado nesse periodo. Diga isso em uma frase.';
+            if (pagina.clientes.length === 0) {
+              // PEDIU A CONTINUACAO DE UMA LISTA QUE ACABOU — e isso nao e
+              // "nenhum cliente parado". Dizer que nao ha ninguem depois de
+              // ter listado vinte contradiz a propria resposta anterior.
+              return pagina.aPartirDe
+                ? 'A lista acabou: nao ha mais clientes parados depois dos que voce ja mostrou. Diga isso em uma frase.'
+                : 'Nenhum cliente da carteira dela esta parado nesse periodo. Diga isso em uma frase.';
             }
             return (
-              `Clientes parados:\n${clientes.map((c) => `- ${c.linha}`).join(`\n`)}\n\n` +
+              `Clientes parados:\n${pagina.clientes.map((c) => `- ${c.linha}`).join(`\n`)}\n\n` +
+              faixaDaLista(
+                pagina.aPartirDe ?? 0,
+                pagina.clientes.length,
+                pagina.total,
+              ) +
               'Repasse os nomes e as datas exatamente como estao.'
             );
           }),
@@ -3302,6 +3333,41 @@ function textoDoFunil(r: GestaoLeituraResultado & { total?: number }): string {
   );
 }
 
+/**
+ * "estes sao o 21o ao 40o de 97" — a frase que faz a lista longa andar.
+ *
+ * NASCEU DE UMA CONVERSA REAL, em 05/10/2026. A gestora pediu quem estava
+ * parado na carteira da Keyciane; eram 97, a ferramenta devolvia dez e nao
+ * havia como pedir o resto. A agente respondeu "nao consigo avancar por
+ * aqui" — verdade, e inutil.
+ *
+ * O NUMERO SOZINHO NAO BASTA. Dizer "97 no total" ja existia e nao resolvia:
+ * faltava dizer ONDE a lista parou e COMO continuar. Por isso o texto traz
+ * os tres: a faixa, quantos faltam, e o valor exato do proximo pedido.
+ *
+ * QUANDO ACABA, DIZ QUE ACABOU. Sem isso a agente ofereceria "os proximos"
+ * de uma lista que terminou, e quem le pediria por nada.
+ */
+function faixaDaLista(
+  pulados: number,
+  mostrados: number,
+  total?: number,
+): string {
+  if (typeof total !== 'number' || total <= mostrados + pulados) {
+    return pulados > 0
+      ? 'ESTES SAO OS ULTIMOS — a lista acabou. Diga isso ao entregar.\n\n'
+      : '';
+  }
+  const primeiro = pulados + 1;
+  const ultimo = pulados + mostrados;
+  return (
+    `SAO ${total} NO TOTAL, e estes sao do ${primeiro}o ao ${ultimo}o. ` +
+    `FALTAM ${total - ultimo}. DIGA a faixa e o total na resposta, e PERGUNTE ` +
+    'se quer a continuacao — se disser que sim, chame a ferramenta de novo ' +
+    `com a_partir_de = ${ultimo}. Nunca deixe parecer que a lista acabou.\n\n`
+  );
+}
+
 function textoDaLeituraDeGestao(
   r: GestaoLeituraResultado,
   substantivo: string,
@@ -3322,20 +3388,18 @@ function textoDaLeituraDeGestao(
     return `${r.vendedora} nao tem nenhum(a) ${substantivo} nesse recorte. Diga isso em uma frase, sem inventar numero.`;
   }
 
-  // O TETO PRECISA SER DITO. Mostrar dez de trezentos sem falar dos trezentos
-  // faz a resposta parecer completa — e quem le vai embora com o numero
-  // errado na cabeca.
+  // O TETO PRECISA SER DITO. Mostrar vinte de noventa e sete sem falar dos
+  // noventa e sete faz a resposta parecer completa — e quem le vai embora
+  // com o numero errado na cabeca.
+  //
+  // E DESDE 05/10/2026 ELE VEM COM A SAIDA: a faixa, quantos faltam e o
+  // valor do proximo pedido. Ver `faixaDaLista`.
   const total = (r as { total?: number }).total;
-  const truncou = typeof total === 'number' && total > r.linhas.length;
+  const pulados = (r as { aPartirDe?: number }).aPartirDe ?? 0;
 
   return (
     `${r.vendedora}:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
-    (truncou
-      ? `SAO ${total} NO TOTAL — estes sao os ${r.linhas.length} primeiros. ` +
-        'DIGA o total na resposta e ofereca ajudar a filtrar: perguntar se ' +
-        'procuram algum cliente especifico, ou se querem outro recorte de ' +
-        'periodo. Nunca deixe parecer que a lista e completa.\n\n'
-      : '') +
+    faixaDaLista(pulados, r.linhas.length, total) +
     'Repasse os nomes, horarios e numeros exatamente como estao.'
   );
 }

@@ -404,12 +404,17 @@ export class FerramentasVendedoraService {
         };
       },
 
-      clientesSemComprar: async ({ meses, dias, desde }) => {
+      clientesSemComprar: async ({ meses, dias, desde, aPartirDe }) => {
         // A FRASE VIRA DATA AQUI, e nao no SQL — 01/10/2026. "Ha 45 dias",
         // "desde julho" e "ha 6 meses" sao a mesma pergunta com tres roupas.
-        const { clientes, total } = await this.carteira.semComprar(
+        //
+        // O `aPartirDe` chegou em 05/10 pelo canal da GESTAO, e vale aqui pelo
+        // mesmo motivo: a carteira de uma vendedora tambem passa de vinte, e
+        // ela tambem precisa alcancar o resto da propria lista.
+        const { clientes, total, deslocamento } = await this.carteira.semComprar(
           codigoErp,
           dataDeCorte({ meses, dias, desde }),
+          aPartirDe,
         );
         return {
           clientes: clientes.map((c) => ({
@@ -418,6 +423,7 @@ export class FerramentasVendedoraService {
               : `${c.nome} — nunca comprou`,
           })),
           total,
+          aPartirDe: deslocamento ?? 0,
         };
       },
 

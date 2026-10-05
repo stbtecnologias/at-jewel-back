@@ -462,24 +462,39 @@ export class FerramentasGestaoService {
           );
         }),
 
-      gestaoCarteira: async ({ vendedora, meses }) => {
+      /**
+       * A CARTEIRA PARADA, EM PAGINAS DE VINTE — 05/10/2026.
+       *
+       * A gestora pediu quem esta parado na carteira da Keyciane. Eram 97, a
+       * ferramenta devolvia dez, e nao havia como chegar ao decimo primeiro:
+       * a agente respondeu "nao consigo avancar por aqui", que era verdade e
+       * nao servia. Lista de trabalho se trabalha inteira.
+       *
+       * O `aPartirDe` e quantos PULAR, e nao o numero da pagina: o modelo le
+       * "ja te mandei 20 de 97" e pede os proximos com 20. Pedir pagina 2
+       * obrigaria ele a saber o tamanho da pagina, que e detalhe nosso.
+       */
+      gestaoCarteira: async ({ vendedora, meses, aPartirDe }) => {
         // A carteira e por CODIGO DO ERP, e nao por id. Vendedora sem codigo
         // simplesmente nao tem carteira — o use case devolve vazio.
         let total = 0;
+        let pulados = 0;
         const r = await this.comVendedora(equipe, vendedora, async (_id, codigoErp) => {
           // A data de corte vem pronta desde 01/10 — ver `dataDeCorte`.
           const pagina = await this.carteira.semComprar(
             codigoErp,
             dataDeCorte({ meses }),
+            aPartirDe,
           );
           total = pagina.total;
+          pulados = pagina.deslocamento ?? 0;
           return pagina.clientes.map((c) =>
             c.ultimaCompra
               ? `${c.nome} — última compra em ${c.ultimaCompra.toLocaleDateString('pt-BR')}, ${c.quantidade} ${c.quantidade === 1 ? 'compra' : 'compras'} no total`
               : `${c.nome} — nunca comprou`,
           );
         });
-        return { ...r, total };
+        return { ...r, total, aPartirDe: pulados };
       },
 
       /**

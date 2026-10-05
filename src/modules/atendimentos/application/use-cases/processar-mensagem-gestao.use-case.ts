@@ -164,7 +164,18 @@ export class ProcessarMensagemGestaoUseCase {
       const { texto } = await this.llm.chatComFerramentas({
         model: modeloDeIa(this.config, 'ANTHROPIC_MODEL_GESTAO', 'claude-opus-4-8'),
         system,
-        maxTokens: 700,
+        // O TETO SUBIU DE 700 PARA 1500 — 05/10/2026.
+        //
+        // Setecentos foi escolhido quando a resposta mais longa era um
+        // panorama de poucas linhas. Hoje a agente lista vinte clientes com
+        // nome e data (cerca de 450 tokens), e a quebra por tipo engordou a
+        // linha de cada vendedora. Uma lista de vinte ja raspava o teto.
+        //
+        // E O CORTE E SILENCIOSO: o cliente do LLM so reclama de
+        // `stop_reason` quando a resposta vem SEM TEXTO. Resposta truncada
+        // no meio do decimo quinto nome chega inteira do ponto de vista do
+        // codigo, e vira "a agente esqueceu o resto" para quem le.
+        maxTokens: 1500,
         mensagens: [...historico, { role: 'user', content: pergunta }],
         // Mesmo motivo do canal da vendedora: WhatsApp nao renderiza grafico.
         graficos: false,

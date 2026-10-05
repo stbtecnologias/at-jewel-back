@@ -255,8 +255,10 @@ export interface ClienteDaCarteiraLlm {
 }
 
 export interface ConsultarCarteiraLlmResultado {
-  /** A AMOSTRA — no maximo dez. Carteira grande nao cabe em mensagem. */
+  /** A PAGINA — no maximo vinte. Carteira grande nao cabe em mensagem. */
   clientes: ClienteDaCarteiraLlm[];
+  /** Quantos foram pulados para montar esta pagina. Zero na primeira. */
+  aPartirDe?: number;
   /**
    * QUANTOS atendem ao criterio, e nao quantos vieram na amostra.
    *
@@ -279,6 +281,14 @@ export type ClientesSemComprarHandler = (input: {
   dias?: number;
   /** `AAAA-MM-DD`. Vence os outros dois: e a forma mais especifica. */
   desde?: string;
+  /**
+   * Quantos PULAR — a continuacao da lista, desde 05/10/2026.
+   *
+   * Nao e "numero da pagina": e quantos ja foram mostrados. O modelo le
+   * "estes sao o 1o ao 20o de 97" e pede os proximos com 20, sem precisar
+   * saber o tamanho da pagina, que e detalhe nosso.
+   */
+  aPartirDe?: number;
 }) => Promise<ConsultarCarteiraLlmResultado>;
 
 /**
@@ -527,7 +537,17 @@ export type GestaoCarteiraHandler = (input: {
   vendedora: string;
   /** Meses sem comprar. Default 6. */
   meses?: number;
-}) => Promise<GestaoLeituraResultado & { total?: number }>;
+  /**
+   * Quantos PULAR — a continuacao da lista, desde 05/10/2026.
+   *
+   * Nao e "numero da pagina": e quantos ja foram mostrados. O modelo le
+   * "estes sao o 1o ao 20o de 97" e pede os proximos com 20, sem precisar
+   * saber o tamanho da pagina, que e detalhe nosso.
+   */
+  aPartirDe?: number;
+}) => Promise<
+  GestaoLeituraResultado & { total?: number; aPartirDe?: number }
+>;
 
 /**
  * QUEM COMPRA NAQUELA EPOCA, pela gestao — 01/10/2026.
