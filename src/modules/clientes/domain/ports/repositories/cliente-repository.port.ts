@@ -165,6 +165,13 @@ export interface IClienteRepository {
     vendedoraCodigoErp: string,
     desde: Date,
     limite: number,
+    /**
+     * Quantos pular — a pagina 2 em diante.
+     *
+     * A ORDENACAO TEM DE SER ESTAVEL para isto valer: ver o desempate por
+     * nome na implementacao. Com empate solto, paginar repete e pula.
+     */
+    deslocamento?: number,
   ): Promise<ClienteDaCarteira[]>;
 
   /**

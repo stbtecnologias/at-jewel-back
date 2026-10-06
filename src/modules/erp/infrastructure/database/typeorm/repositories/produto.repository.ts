@@ -156,22 +156,65 @@ export class ProdutoRepository implements IProdutoRepository {
     //
     // Palavras de ate dois caracteres saem ("de", "do", "e"): elas casam com
     // quase tudo e so estragariam o filtro.
-    for (const [i, palavra] of palavrasDaBusca(filtros.busca).entries()) {
-      const chave = `busca${i}`;
-      const termo = `%${palavra}%`;
+    //
+    // ======================================================================
+    // ... E O CODIGO VALE SOZINHO — 06/10/2026.
+    //
+    // A gestora escreveu "An24084 me da a descricao desse produto". O AND
+    // exigia que "descricao" tambem aparecesse em algum campo; nao aparece
+    // em nenhum, e a consulta voltou VAZIA. A peca existe, esta ativa e vale
+    // R$ 37.900 — e a Anastasia respondeu "pode ser que o codigo esteja um
+    // pouco diferente", inventando uma explicacao para um defeito nosso.
+    //
+    // Mesma familia do "Rafaela Santos" de 02/10: o defeito mais caro e o
+    // que responde com CONFIANCA, porque quem pergunta desiste ali.
+    //
+    // O OR NAO AFROUXA NADA: casa por igualdade exata, e so com palavra que
+    // tem letra E digito (ver `codigosNaBusca`). Medido na base antes de
+    // entrar — "brinco de esmeralda", "anel ouro", "colar safira" e
+    // "pulseira diamante" devolvem exatamente o mesmo de antes.
+    // ======================================================================
+    const palavras = palavrasDaBusca(filtros.busca);
+    const codigos = codigosNaBusca(filtros.busca);
+
+    if (palavras.length > 0 || codigos.length > 0) {
       qb.andWhere(
         // Os parenteses importam: sem eles o OR vazaria e anularia os
         // filtros de categoria/familia/ativo acima.
-        new Brackets((b) =>
-          b
-            .where(`p.descricao_etiqueta ILIKE :${chave}`, { [chave]: termo })
-            .orWhere(`p.categoria ILIKE :${chave}`, { [chave]: termo })
-            .orWhere(`p.familia ILIKE :${chave}`, { [chave]: termo })
-            .orWhere(`p.colecao ILIKE :${chave}`, { [chave]: termo })
-            .orWhere(`p.tipo_pedra ILIKE :${chave}`, { [chave]: termo })
-            .orWhere(`p.cor ILIKE :${chave}`, { [chave]: termo })
-            .orWhere(`p.codigo_erp ILIKE :${chave}`, { [chave]: termo }),
-        ),
+        new Brackets((raiz) => {
+          if (palavras.length > 0) {
+            raiz.where(
+              new Brackets((todas) => {
+                for (const [i, palavra] of palavras.entries()) {
+                  const chave = `busca${i}`;
+                  const termo = `%${palavra}%`;
+                  todas.andWhere(
+                    new Brackets((b) =>
+                      b
+                        .where(`p.descricao_etiqueta ILIKE :${chave}`, { [chave]: termo })
+                        .orWhere(`p.categoria ILIKE :${chave}`, { [chave]: termo })
+                        .orWhere(`p.familia ILIKE :${chave}`, { [chave]: termo })
+                        .orWhere(`p.colecao ILIKE :${chave}`, { [chave]: termo })
+                        .orWhere(`p.tipo_pedra ILIKE :${chave}`, { [chave]: termo })
+                        .orWhere(`p.cor ILIKE :${chave}`, { [chave]: termo })
+                        .orWhere(`p.codigo_erp ILIKE :${chave}`, { [chave]: termo }),
+                    ),
+                  );
+                }
+              }),
+            );
+          } else {
+            // So codigo na busca: a parte das palavras nao pode casar nada,
+            // senao o OR abaixo traria o catalogo inteiro.
+            raiz.where('1 = 0');
+          }
+
+          if (codigos.length > 0) {
+            raiz.orWhere(`upper(p.codigo_erp) = ANY(:codigosDaBusca)`, {
+              codigosDaBusca: codigos,
+            });
+          }
+        }),
       );
     }
 
@@ -479,6 +522,45 @@ function palavrasDaBusca(busca: string | undefined): string[] {
     .split(/\s+/)
     .filter((p) => p.length > 2)
     .slice(0, 4);
+}
+
+/**
+ * As palavras da busca que PARECEM UM CODIGO do ERP — 06/10/2026.
+ *
+ * ==========================================================================
+ * LETRA **E** DIGITO, e e essa conjuncao que faz a regra funcionar.
+ *
+ * A primeira versao desta correcao tratava qualquer palavra como candidata a
+ * codigo, e poluia a busca mais comum da casa: existem produtos cadastrados
+ * com `codigo_erp` igual a ANEL, COLAR, BRINCO, PINGENTE e PULSEIRA (cinco
+ * de cada). Procurar "anel ouro" passava a trazer, junto, a peca cujo codigo
+ * e literalmente ANEL.
+ *
+ * Exigir digito mata isso pela raiz, e nao por lista de excecoes: ANEL so
+ * tem letra, 1.54 so tem numero, AN24084 e CO24022 tem os dois.
+ *
+ * A PONTUACAO DAS BORDAS SAI antes de comparar. "tem o CO24022?" chegava com
+ * a interrogacao grudada, e a igualdade falhava — o usuario escreve pergunta,
+ * nao consulta.
+ *
+ * E ESTAS NAO PASSAM PELO CORTE DAS QUATRO PALAVRAS. Em "qual a descricao
+ * completa daquele anel bonito An24084" o codigo e a SETIMA palavra longa, e
+ * `palavrasDaBusca` para na quarta. Quem cita um codigo quer aquela peca,
+ * esteja ela no comeco ou no fim da frase.
+ *
+ * Devolve em CAIXA ALTA porque a comparacao e `upper(codigo_erp) = ANY(...)`.
+ * ==========================================================================
+ */
+export function codigosNaBusca(busca: string | undefined): string[] {
+  return (busca ?? '')
+    .trim()
+    .split(/\s+/)
+    .map((p) => p.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ''))
+    .filter(
+      (p) => p.length >= 3 && /\p{L}/u.test(p) && /\p{N}/u.test(p),
+    )
+    .slice(0, 4)
+    .map((p) => p.toUpperCase());
 }
 
 /** A linha do alerta como sai do banco: com o total da janela pendurado. */

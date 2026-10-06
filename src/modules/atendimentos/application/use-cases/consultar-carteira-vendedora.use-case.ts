@@ -12,18 +12,22 @@ import {
   type NomeComemorativo,
 } from '../../../../shared/tempo/datas-comemorativas';
 
-/** Teto de resultados. Lista longa nao ajuda numa conversa de WhatsApp. */
 /**
  * Quantos clientes cabem numa resposta.
  *
- * DEZ, e o numero e a coisa toda. Carteira de mil clientes nao cabe em
- * mensagem de WhatsApp, e listar tudo nao ajuda ninguem — vira parede de
- * texto que ninguem le. Dez da uma amostra util e deixa espaco para a
- * pergunta seguinte: "procurando alguem especifico?".
+ * VINTE, desde 05/10/2026 — eram dez. O numero velho servia para uma pergunta
+ * diferente: "me da uma ideia de quem esta parado". A gestora fez a outra —
+ * "quem esta parado na carteira da Keyciane" — e queria TRABALHAR a lista: 97
+ * clientes parados, dez por vez e sem como avancar. A agente respondeu a
+ * verdade, "nao consigo chegar ao 11o", e a verdade nao servia.
+ *
+ * ENTAO A MUDANCA REAL NAO E O NUMERO, E O `deslocamento`: dez ou vinte, sem
+ * paginar a lista longa continua inalcancavel. Vinte e o tamanho que cabe numa
+ * mensagem sem virar parede — cinco pedidos cobrem os 97.
  *
  * O teto SO funciona acompanhado do total. Ver `contarInativosDaCarteira`.
  */
-const MAXIMO = 10;
+const MAXIMO = 20;
 
 /**
  * A carteira da vendedora: quem esta parado e quem mais compra.
@@ -45,6 +49,13 @@ export interface PaginaDaCarteira {
   clientes: ClienteDaCarteira[];
   /** Quantos atendem ao criterio — nao quantos vieram na amostra. */
   total: number;
+  /**
+   * Quantos foram pulados para montar esta pagina.
+   *
+   * VOLTA JUNTO para quem formata poder dizer "21 a 40 de 97" sem recalcular
+   * — e sem depender de lembrar o que pediu.
+   */
+  deslocamento?: number;
 }
 
 /**
@@ -100,14 +111,24 @@ export class ConsultarCarteiraVendedoraUseCase {
   async semComprar(
     vendedoraCodigoErp: string | null,
     desde: Date,
+    /**
+     * Quantos pular. Zero e a primeira pagina.
+     *
+     * NEGATIVO VIRA ZERO, e nao erro: quem preenche este campo e um modelo de
+     * linguagem a partir de "me manda os proximos". Um -5 que chegasse ao SQL
+     * seria erro de banco no meio de uma conversa; virar a primeira pagina e
+     * o pior que pode acontecer, e e inofensivo.
+     */
+    deslocamento = 0,
   ): Promise<PaginaDaCarteira> {
     if (!vendedoraCodigoErp) return { clientes: [], total: 0 };
 
+    const pular = Math.max(0, Math.trunc(deslocamento));
     const [clientes, total] = await Promise.all([
-      this.clientes.inativosDaCarteira(vendedoraCodigoErp, desde, MAXIMO),
+      this.clientes.inativosDaCarteira(vendedoraCodigoErp, desde, MAXIMO, pular),
       this.clientes.contarInativosDaCarteira(vendedoraCodigoErp, desde),
     ]);
-    return { clientes, total };
+    return { clientes, total, deslocamento: pular };
   }
 
   /**

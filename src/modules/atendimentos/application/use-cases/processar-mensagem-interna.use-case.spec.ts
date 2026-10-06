@@ -196,9 +196,19 @@ describe('ProcessarMensagemInternaUseCase', () => {
       await params().clientesSemComprar!({ meses: 6 });
       await params().melhoresClientes!({ categoria: 'Anel' });
 
-      // O segundo argumento virou DATA em 01/10/2026 — aqui o que se prova e
-      // que o CODIGO e sempre o da vendedora identificada pelo telefone.
-      expect(carteira.semComprar).toHaveBeenCalledWith('SEED-VD01', expect.any(Date));
+      // O segundo argumento virou DATA em 01/10/2026 e o terceiro e o
+      // deslocamento da pagina, de 05/10 — aqui o que se prova e que o
+      // CODIGO e sempre o da vendedora identificada pelo telefone.
+      //
+      // O terceiro vem `undefined` porque esta chamada nao pediu pagina
+      // nenhuma, e e o use case quem traduz isso para zero. Deixar o
+      // argumento de fora da assercao esconderia um dia em que ele passasse
+      // a vir preenchido de outro lugar.
+      expect(carteira.semComprar).toHaveBeenCalledWith(
+        'SEED-VD01',
+        expect.any(Date),
+        undefined,
+      );
       expect(carteira.maioresCompradores).toHaveBeenCalledWith('SEED-VD01', {
         categoria: 'Anel',
         ultimosMeses: undefined,

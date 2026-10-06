@@ -277,6 +277,7 @@ export class ClienteRepository implements IClienteRepository {
     vendedoraCodigoErp: string,
     desde: Date,
     limite: number,
+    deslocamento = 0,
   ): Promise<ClienteDaCarteira[]> {
     // LEFT JOIN, e nao INNER: quem NUNCA comprou tambem e resposta para
     // "quem esta parado". Com INNER ele sumiria justamente por estar mais
@@ -305,10 +306,16 @@ export class ClienteRepository implements IClienteRepository {
       GROUP BY c.id, c.nome
       HAVING MAX(v.data_movimentacao) IS NULL
           OR MAX(v.data_movimentacao) < $2
-      ORDER BY MAX(v.data_movimentacao) ASC NULLS FIRST
-      LIMIT $3
+      -- O DESEMPATE NAO E ENFEITE — 05/10/2026. Quem nunca comprou tem
+      -- MAX(data) IS NULL, e sao DEZENAS com a mesma chave de ordenacao.
+      -- Sem um segundo criterio o Postgres pode devolver essas linhas em
+      -- ordem diferente a cada consulta, e com OFFSET isso faz a pagina 2
+      -- repetir nomes da 1 e pular outros — sem erro nenhum, so uma lista
+      -- errada. c.nome e estavel e e a ordem em que a pessoa le.
+      ORDER BY MAX(v.data_movimentacao) ASC NULLS FIRST, c.nome ASC
+      LIMIT $3 OFFSET $4
       `,
-      [vendedoraCodigoErp, desde, limite],
+      [vendedoraCodigoErp, desde, limite, deslocamento],
     );
 
     return rows.map((r) => ({
