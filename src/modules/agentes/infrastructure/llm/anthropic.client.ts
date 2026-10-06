@@ -195,7 +195,8 @@ const PRODUTOS_TOOL: Anthropic.Tool = {
       busca: {
         type: 'string',
         description:
-          'O que procurar, nas palavras dela: nome da peca, categoria, familia, colecao, pedra, cor ou codigo do ERP. Ex.: "esmeralda", "alianca ouro 18k", "SEED-P0002".',
+          'O que procurar, nas palavras dela: nome da peca, categoria, familia, colecao, pedra, cor ou codigo do ERP. Ex.: "esmeralda", "alianca ouro 18k", "SEED-P0002".' +
+          'Se ela citar um CODIGO ("An24084", "o CO24022"), mande SO o codigo neste campo — nao repita a frase dela em volta.',
       },
     },
     required: ['busca'],
@@ -219,7 +220,8 @@ const GESTAO_PRODUTOS_TOOL: Anthropic.Tool = {
       busca: {
         type: 'string',
         description:
-          'O que procurar: nome da peca, categoria, familia, colecao, pedra, cor ou codigo do ERP.',
+          'O que procurar: nome da peca, categoria, familia, colecao, pedra, cor ou codigo do ERP.' +
+          'Se ela citar um CODIGO ("An24084", "o CO24022"), mande SO o codigo neste campo — nao repita a frase dela em volta.',
       },
     },
     required: ['busca'],
