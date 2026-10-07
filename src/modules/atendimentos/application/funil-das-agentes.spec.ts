@@ -7,6 +7,14 @@ import type {
 } from '../domain/ports/repositories/atendimento-repository.port';
 
 /**
+ * A Conexa nestes testes nunca tem a foto — e o caso comum: das 320 joias
+ * com saldo, 55 tem foto. Quem testa roteamento nao testa imagem.
+ */
+const SEM_FOTOS = {
+  buscar: async () => ({ fotos: [], tinhamUrl: 0, cortadas: 0 }),
+} as never;
+
+/**
  * O FUNIL PELAS DUAS AGENTES — 21/09/2026.
  *
  * ==========================================================================
@@ -197,6 +205,7 @@ describe('o funil pela gestao (Anastasia)', () => {
       { itens: jest.fn().mockResolvedValue({ linhas: [] }) } as never,
       // A consulta de catalogo da GESTAO, com quantidade — dublada.
       { execute: jest.fn().mockResolvedValue([]) } as never,
+      SEM_FOTOS,
       { execute: jest.fn() } as never,
       { vendas: jest.fn(), metas: jest.fn() } as never,
       { semComprar: jest.fn(), maioresCompradores: jest.fn() } as never,

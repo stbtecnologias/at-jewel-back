@@ -165,6 +165,11 @@ export interface ConsultarProdutosLlmInput {
   precoAte?: unknown;
   /** Quantas pular — a continuacao da lista. Ver `faixaDaLista`. */
   aPartirDe?: number;
+  /**
+   * Mandar as fotos junto? Decisao do Lucas em 07/10: a foto VEM, e so nao
+   * vem quando ela pedir so o texto. Entao o padrao e `true`.
+   */
+  comFoto?: boolean;
 }
 
 export interface ProdutoLlm {
@@ -198,6 +203,10 @@ export interface ConsultarProdutosLlmResultado {
   faixa?: { de?: number; ate?: number };
   /** Quantas foram puladas antes desta pagina. */
   pulados?: number;
+  /** As fotos que EXISTEM, ja baixadas. Vazio e o caso comum na joia. */
+  fotos?: FotoDeProdutoLlm[];
+  /** Quantas pecas da lista tinham URL de foto cadastrada. */
+  tinhamFoto?: number;
 }
 
 export type ConsultarProdutosHandler = (
@@ -717,6 +726,7 @@ export type GestaoProdutosHandler = (input: {
   precoDe?: unknown;
   precoAte?: unknown;
   aPartirDe?: number;
+  comFoto?: boolean;
 }) => Promise<{
   produtos: { linha: string }[];
   /** Ver `ConsultarProdutosLlmResultado` — amostra e total andam juntos. */
@@ -727,6 +737,8 @@ export type GestaoProdutosHandler = (input: {
   foraDaCategoria: number;
   faixa?: { de?: number; ate?: number };
   pulados?: number;
+  fotos?: FotoDeProdutoLlm[];
+  tinhamFoto?: number;
 }>;
 
 /**
@@ -1085,6 +1097,26 @@ export interface ChatResultado {
 
 export interface ChatComFerramentasResultado extends ChatResultado {
   grafico?: GraficoDinamico;
+  /**
+   * As fotos das pecas que a busca encontrou, JA BAIXADAS — 07/10/2026.
+   *
+   * Mesmo desenho do `grafico`: a ferramenta produz um artefato que nao cabe
+   * no texto, e ele viaja por fora do dialogo ate quem sabe envia-lo.
+   *
+   * Vem com bytes, e nao com URL: a origem e HTTP e o envio exige base64 —
+   * e, mais importante, metade das URLs responde 404. Quem baixou ja sabe
+   * quais existem; mandar a URL adiante empurraria essa descoberta para
+   * depois da resposta.
+   */
+  fotos?: FotoDeProdutoLlm[];
+}
+
+/** Uma foto pronta para enviar, com a legenda que acompanha a peca. */
+export interface FotoDeProdutoLlm {
+  codigo: string;
+  legenda: string;
+  conteudo: Buffer;
+  mime: string;
 }
 
 // Porta que abstrai o provedor de LLM (implementada via @anthropic-ai/sdk na

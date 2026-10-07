@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { categoriaDaBusca } from '../../../shared/catalogo/categorias';
 import { faixaDePreco } from '../../../shared/catalogo/faixa-de-preco';
+import { FotosDeProdutoService } from './fotos-de-produto.service';
 import { diasDeCalendario } from '../../../shared/tempo/dias-de-calendario';
 import { dataDeCorte, datasDeRecorte } from '../../../shared/tempo/recorte-de-datas';
 import type { NomeComemorativo } from '../../../shared/tempo/datas-comemorativas';
@@ -350,6 +351,7 @@ export class FerramentasGestaoService {
     private readonly conexoes: ConexoesService,
     private readonly waha: WahaAdminClient,
     private readonly listarProdutos: ListarProdutosUseCase,
+    private readonly fotosDeProduto: FotosDeProdutoService,
     private readonly agenda: ConsultarAgendaVendedoraUseCase,
     private readonly desempenho: ConsultarDesempenhoVendedoraUseCase,
     private readonly carteira: ConsultarCarteiraVendedoraUseCase,
@@ -704,6 +706,7 @@ export class FerramentasGestaoService {
         precoDe,
         precoAte,
         aPartirDe,
+        comFoto,
       }) => {
         // Mesma regra do canal da vendedora, e pelas mesmas decisoes de 07/10:
         // so o disponivel (salvo quando ela PEDE o indisponivel), padrao joia,
@@ -743,6 +746,22 @@ export class FerramentasGestaoService {
               })
             : Promise.resolve(total),
         ]);
+        // As fotos sao baixadas ANTES de o modelo escrever — so quem baixou
+        // sabe quais das URLs respondem (metade da joia nao responde), e a
+        // agente precisa do numero para nao prometer o que nao vai mandar.
+        const { fotos, tinhamUrl } =
+          comFoto !== false
+            ? await this.fotosDeProduto.buscar(
+                achados.map((p) => ({
+                  codigo: p.codigoErp ?? '',
+                  url: p.fotoUrl ?? null,
+                  legenda:
+                    `${p.descricaoEtiqueta ?? `${p.categoria} ${p.familia}`}` +
+                    `${p.codigoErp ? ` — ${p.codigoErp}` : ''}`,
+                })),
+              )
+            : { fotos: [], tinhamUrl: 0 };
+
         return {
           total,
           semEstoque: Math.max(0, noCatalogo - comSaldo),
@@ -751,6 +770,8 @@ export class FerramentasGestaoService {
           foraDaCategoria: Math.max(0, semRecorte - total),
           faixa,
           pulados,
+          fotos,
+          tinhamFoto: tinhamUrl,
           produtos: achados.map((p) => ({
             linha:
               `${p.descricaoEtiqueta ?? `${p.categoria} ${p.familia}`}` +

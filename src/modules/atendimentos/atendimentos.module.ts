@@ -20,6 +20,7 @@ import { ConsultarAgendaVendedoraUseCase } from './application/use-cases/consult
 import { ConsultarDesempenhoVendedoraUseCase } from './application/use-cases/consultar-desempenho-vendedora.use-case';
 import { AgendarContatoVendedoraUseCase } from './application/use-cases/agendar-contato-vendedora.use-case';
 import { ConsultarCarteiraVendedoraUseCase } from './application/use-cases/consultar-carteira-vendedora.use-case';
+import { FotosDeProdutoService } from './application/fotos-de-produto.service';
 import { ConsultarProdutosVendedoraUseCase } from './application/use-cases/consultar-produtos-vendedora.use-case';
 import { DispararPendenciasUseCase } from './application/use-cases/disparar-pendencias.use-case';
 import { ProcessarMensagemGestaoUseCase } from './application/use-cases/processar-mensagem-gestao.use-case';
@@ -138,6 +139,7 @@ import { AnalisarTomUseCase } from '../atendimento/application/analisar-tom.use-
     DispararPendenciasUseCase,
     ConsultarAgendaVendedoraUseCase,
     ConsultarDesempenhoVendedoraUseCase,
+    FotosDeProdutoService,
     ConsultarProdutosVendedoraUseCase,
     ConsultarCarteiraVendedoraUseCase,
     AgendarContatoVendedoraUseCase,

@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { FotoDeProduto } from '../fotos-de-produto.service';
 import { BuscarAdminPorTelefoneUseCase } from '../../../auth/application/use-cases/buscar-admin-por-telefone.use-case';
 import type { AgenteDaCasa } from '../../../atendimento/domain/agente-da-casa';
 import { WHATSAPP_GATEWAY } from '../../../atendimento/domain/ports/injection-tokens';
@@ -107,6 +108,16 @@ export interface MensagemDoCanal {
 export interface RespostaDoCanal {
   resposta: string | null;
   motivo: string;
+  /**
+   * As fotos das pecas, JA BAIXADAS, para irem depois do texto — 07/10/2026.
+   *
+   * Quem envia e o webhook, nao o use case: o envio e a unica coisa que
+   * precisa do chat de destino, e o canal ja resolve isso para o texto.
+   *
+   * Vem vazio quase sempre, e isso e o esperado: das 546 pecas com saldo,
+   * 196 tem foto; na joia, 55 de 320.
+   */
+  fotos?: FotoDeProduto[];
 }
 
 /**

@@ -311,3 +311,63 @@ describe('textoDeProdutos — mostrar menos do que veio quebra a página', () =>
     expect(texto).toContain('a_partir_de = 10');
   });
 });
+
+/**
+ * ==========================================================================
+ * A FOTO É EXCEÇÃO, E A AGENTE PRECISA SABER DISSO ANTES DE PROMETER.
+ *
+ * Medido em 07/10, baixando as 546 peças com saldo: 196 têm foto (36%), e na
+ * joia são 55 de 320 (17%). A peça barata é a que menos tem — e a tabela por
+ * faixa de preço começa justamente por ela.
+ *
+ * Por isso o texto diz QUANTAS vão, e não "as fotos seguem".
+ * ==========================================================================
+ */
+describe('textoDeProdutos — as fotos que vão junto', () => {
+  it('diz quantas fotos vão e de quais peças', () => {
+    const texto = textoDeProdutos(
+      {
+        produtos: [peca(1), peca(2), peca(3)],
+        total: 3,
+        semEstoque: 0,
+        foraDaCategoria: 0,
+        fotos: [{ codigo: 'AN22083' }, { codigo: 'AN25190' }],
+        tinhamFoto: 2,
+      },
+      FECHO,
+    );
+
+    expect(texto).toContain('VOU MANDAR 2 foto');
+    expect(texto).toContain('AN22083, AN25190');
+    // Não pode descrever o que não viu.
+    expect(texto).toContain('NAO');
+  });
+
+  /* ESTE É O TESTE. O resto é contorno. */
+  it('quando nenhuma tem foto, manda NÃO prometer', () => {
+    const texto = textoDeProdutos(
+      {
+        produtos: [peca(1), peca(2)],
+        total: 2,
+        semEstoque: 0,
+        foraDaCategoria: 0,
+        fotos: [],
+        tinhamFoto: 0,
+      },
+      FECHO,
+    );
+
+    expect(texto).toContain('NENHUMA peca desta lista tem foto');
+    expect(texto).toContain('NAO');
+  });
+
+  /** Quando ela pediu só o texto, não há conversa sobre foto nenhuma. */
+  it('sem pedir foto, o texto não fala de foto', () => {
+    const texto = textoDeProdutos(
+      { produtos: [peca(1)], total: 1, semEstoque: 0, foraDaCategoria: 0 },
+      FECHO,
+    );
+
+    expect(texto).not.toContain('foto');
+  });
+});

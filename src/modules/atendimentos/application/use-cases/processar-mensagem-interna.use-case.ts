@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { FotoDeProduto } from '../fotos-de-produto.service';
 import { ConfigService } from '@nestjs/config';
 import { limparEHigienizar } from '../../../../shared/http/sanitize/sanitize-text.transform';
 import { ELENA_INTERNA_SYSTEM } from '../../../agentes/application/personas';
@@ -67,6 +68,8 @@ export interface RespostaInterna {
     | 'conversa'
     | 'audio_nao_entendido'
     | 'falha_agente';
+  /** Ver `RespostaDoCanal.fotos` — vao depois do texto, quando existirem. */
+  fotos?: FotoDeProduto[];
 }
 
 /**
@@ -194,7 +197,7 @@ export class ProcessarMensagemInternaUseCase {
     await this.registrarConsultaRestrita(vendedoraId, pergunta);
 
     try {
-      const { texto } = await this.llm.chatComFerramentas({
+      const { texto, fotos } = await this.llm.chatComFerramentas({
         model: modeloDeIa(this.config, 'ANTHROPIC_MODEL_INTERNO', 'claude-opus-4-8'),
         system,
         // O TETO SUBIU DE 700 PARA 1500 — 05/10/2026.
@@ -252,6 +255,8 @@ export class ProcessarMensagemInternaUseCase {
       return {
         resposta: texto,
         motivo: relatoRegistrado ? 'relato_registrado' : 'conversa',
+        // Ver `RespostaDoCanal.fotos`: vao junto, depois do texto.
+        fotos,
       };
     } catch (err) {
       this.logger.error(

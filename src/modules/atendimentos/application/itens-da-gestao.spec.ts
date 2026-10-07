@@ -1,6 +1,14 @@
 import { FerramentasGestaoService, moeda } from './ferramentas-gestao.service';
 
 /**
+ * A Conexa nestes testes nunca tem a foto — e o caso comum: das 320 joias
+ * com saldo, 55 tem foto. Quem testa roteamento nao testa imagem.
+ */
+const SEM_FOTOS = {
+  buscar: async () => ({ fotos: [], tinhamUrl: 0, cortadas: 0 }),
+} as never;
+
+/**
  * O ESCOPO ESTREITO DA GESTAO — 28/09/2026.
  *
  * ==========================================================================
@@ -96,6 +104,7 @@ describe('itens_mais_vendidos e o escopo de quem pergunta', () => {
       { vendedoraDaSessao: (s: string) => s.replace(/^vend-/, "") } as never,
       { listarSessoes: jest.fn().mockResolvedValue([]) } as never,
       listarProdutos as never,
+      SEM_FOTOS,
       { execute: jest.fn() } as never,
       { vendas: jest.fn(), metas: jest.fn() } as never,
       { semComprar: jest.fn(), maioresCompradores: jest.fn() } as never,
@@ -240,6 +249,7 @@ describe('consultar_produtos da gestao e a quantidade', () => {
       { listarSessoes: jest.fn().mockResolvedValue([]) } as never,
       { itens: jest.fn() } as never,
       listarProdutos as never,
+      SEM_FOTOS,
       { execute: jest.fn() } as never,
       { vendas: jest.fn(), metas: jest.fn() } as never,
       { semComprar: jest.fn(), maioresCompradores: jest.fn() } as never,
@@ -395,6 +405,7 @@ describe('o recorte de equipe nas ferramentas de gestao', () => {
       { vendedoraDaSessao: (s: string) => s.replace(/^vend-/, "") } as never,
       { listarSessoes: jest.fn().mockResolvedValue([]) } as never,
       { execute: jest.fn().mockResolvedValue([]) } as never,
+      SEM_FOTOS,
       { execute: jest.fn().mockResolvedValue([]) } as never,
       desempenho as never,
       { semComprar: jest.fn(), maioresCompradores: jest.fn() } as never,
@@ -708,6 +719,7 @@ describe('o periodo livre nas ferramentas de venda', () => {
       { vendedoraDaSessao: (s: string) => s.replace(/^vend-/, "") } as never,
       { listarSessoes: jest.fn().mockResolvedValue([]) } as never,
       { execute: jest.fn().mockResolvedValue([]) } as never,
+      SEM_FOTOS,
       { execute: jest.fn().mockResolvedValue([]) } as never,
       { vendas: jest.fn(), metas: jest.fn() } as never,
       { semComprar: jest.fn(), maioresCompradores: jest.fn() } as never,
@@ -861,6 +873,7 @@ describe('o ranking por tipo de peça', () => {
       { vendedoraDaSessao: (s: string) => s.replace(/^vend-/, "") } as never,
       { listarSessoes: jest.fn().mockResolvedValue([]) } as never,
       listarProdutos as never,
+      SEM_FOTOS,
       { execute: jest.fn() } as never,
       { vendas: jest.fn(), metas: jest.fn() } as never,
       { semComprar: jest.fn(), maioresCompradores: jest.fn() } as never,

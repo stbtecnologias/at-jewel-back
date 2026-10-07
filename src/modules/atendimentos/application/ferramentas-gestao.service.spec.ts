@@ -1,6 +1,14 @@
 import { FerramentasGestaoService } from './ferramentas-gestao.service';
 
 /**
+ * A Conexa nestes testes nunca tem a foto — e o caso comum: das 320 joias
+ * com saldo, 55 tem foto. Quem testa roteamento nao testa imagem.
+ */
+const SEM_FOTOS = {
+  buscar: async () => ({ fotos: [], tinhamUrl: 0, cortadas: 0 }),
+} as never;
+
+/**
  * As ferramentas da gestao.
  *
  * O QUE ESTE ARQUIVO PROTEGE, acima de tudo: o TETO NAO PODE SER SILENCIOSO.
@@ -126,6 +134,7 @@ describe('FerramentasGestaoService', () => {
       waha as never,
       // A consulta de catalogo da GESTAO, com quantidade — dublada.
       { execute: jest.fn().mockResolvedValue([]) } as never,
+      SEM_FOTOS,
       agenda as never,
       desempenho as never,
       carteira as never,

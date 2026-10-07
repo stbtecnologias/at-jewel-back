@@ -11,6 +11,7 @@ import type {
   ChatParams,
   GestaoLeituraResultado,
   ChatResultado,
+  FotoDeProdutoLlm,
   GraficoDinamico,
   ILlmClient,
   PeriodoAgendaLlm,
@@ -1626,6 +1627,9 @@ export class AnthropicClient implements ILlmClient {
     };
 
     let grafico: GraficoDinamico | undefined;
+    // As fotos das pecas, se a busca encontrou alguma. Mesmo desenho do
+    // grafico: artefato que nao cabe no dialogo e viaja por fora.
+    let fotos: FotoDeProdutoLlm[] | undefined;
     const conversa: Anthropic.MessageParam[] = [...apiMessages];
     let resp = first;
 
@@ -1634,13 +1638,16 @@ export class AnthropicClient implements ILlmClient {
         (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
       );
       if (pedidos.length === 0) {
-        return { texto: this.extrairTexto(resp), tokens, grafico };
+        return { texto: this.extrairTexto(resp), tokens, grafico, fotos };
       }
 
       const rodada = await this.despachar(pedidos, params, tetos);
       // O grafico e um so por turno: o ultimo pedido vence, e nao ha
       // acumulo — a tela mostra um.
       grafico = rodada.grafico ?? grafico;
+      // A ULTIMA BUSCA VENCE, como no grafico: se ela refinou a pergunta, as
+      // fotos que vao junto sao as da lista que ela acabou de receber.
+      fotos = rodada.fotos ?? fotos;
 
       // ====================================================================
       // O TETO NAO DESCARTA PEDIDO EM SILENCIO — foi esse o defeito.
@@ -1704,10 +1711,12 @@ export class AnthropicClient implements ILlmClient {
   ): Promise<{
     toolResults: Anthropic.ToolResultBlockParam[];
     grafico?: GraficoDinamico;
+    fotos?: FotoDeProdutoLlm[];
   }> {
     // Processa cada tool_use, acumulando o resultado (grafico) e os
     // tool_result que voltam ao modelo na volta seguinte.
     let grafico: GraficoDinamico | undefined;
+    let fotos: FotoDeProdutoLlm[] | undefined;
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
 
     for (const toolUse of toolUses) {
@@ -2857,7 +2866,7 @@ export class AnthropicClient implements ILlmClient {
         : r,
     );
 
-    return { toolResults: resultadosSeguros, grafico };
+    return { toolResults: resultadosSeguros, grafico, fotos };
   }
 
 
@@ -3486,6 +3495,8 @@ export function textoDeProdutos(
     foraDaCategoria?: number;
     faixa?: { de?: number; ate?: number };
     pulados?: number;
+    fotos?: { codigo: string }[];
+    tinhamFoto?: number;
   },
   fecho: string,
 ): string {
@@ -3565,6 +3576,27 @@ export function textoDeProdutos(
 
   for (const frase of escondidas) {
     partes.push(`Fora da lista: ${frase}.`);
+  }
+
+  // A FOTO E EXCECAO, E O TEXTO TEM DE DIZER ISSO — 07/10/2026.
+  //
+  // Baixadas as 546 pecas com saldo, uma a uma: 196 tem foto (36%), e na
+  // JOIA sao 55 de 320 (17%). Prometer "mando as fotos" e quebrar a palavra
+  // em oito de cada dez pecas.
+  if (r.fotos && r.fotos.length > 0) {
+    const codigos = r.fotos.map((f) => f.codigo).filter(Boolean);
+    partes.push(
+      `VOU MANDAR ${r.fotos.length} foto(s) logo apos o seu texto` +
+        `${codigos.length ? ` — de ${codigos.join(', ')}` : ''}. Diga que a ` +
+        'foto vem junto SO dessas; as outras nao tem foto cadastrada. NAO ' +
+        'descreva a imagem, voce nao a viu.',
+    );
+  } else if (r.produtos.length > 0 && r.fotos) {
+    partes.push(
+      'NENHUMA peca desta lista tem foto disponivel — a maioria do catalogo ' +
+        'nao tem. Se ela pediu foto, diga isso com todas as letras e NAO ' +
+        'prometa mandar depois.',
+    );
   }
 
   partes.push(fecho);

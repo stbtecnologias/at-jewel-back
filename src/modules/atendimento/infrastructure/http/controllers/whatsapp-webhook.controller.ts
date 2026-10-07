@@ -195,6 +195,34 @@ export class WhatsappWebhookController {
       // receber, de um numero que ela nao procurou, a resposta de uma conversa
       // que ela abriu noutro lugar.
       await this.whatsapp.enviarTexto(de, resultado.resposta, agente);
+
+      // ======================================================================
+      // E ENTAO AS FOTOS, UMA MENSAGEM POR PECA — 07/10/2026.
+      //
+      // Vem DEPOIS do texto de proposito: o texto e a resposta, a foto e o
+      // complemento. Se a imagem falhar no envio, a pessoa ja tem o que
+      // perguntou — por isso cada uma vai no seu `try`, e nenhuma derruba a
+      // resposta que ja saiu.
+      //
+      // Quase sempre a lista vem vazia, e isso e o esperado: das 546 pecas
+      // com saldo, 196 tem foto na Conexa; na joia, 55 de 320. Quem baixou
+      // ja filtrou as que nao existem — aqui so chega imagem de verdade.
+      // ======================================================================
+      for (const foto of resultado.fotos ?? []) {
+        try {
+          await this.whatsapp.enviarImagem(
+            de,
+            foto.conteudo,
+            foto.mime,
+            foto.legenda,
+            agente,
+          );
+        } catch (err) {
+          this.logger.warn(
+            `Foto de ${foto.codigo} nao foi enviada: ${String(err)}`,
+          );
+        }
+      }
       // Fora de producao, devolve a resposta gerada para facilitar debug do
       // webhook (atras do token; e a mensagem da propria agente, nao PII).
       const debug =

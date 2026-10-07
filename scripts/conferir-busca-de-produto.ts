@@ -22,6 +22,7 @@ import 'dotenv/config';
 import { DataSource } from 'typeorm';
 import { ProdutoOrmEntity } from '../src/modules/erp/infrastructure/database/typeorm/entities/produto.orm-entity';
 import { ProdutoRepository } from '../src/modules/erp/infrastructure/database/typeorm/repositories/produto.repository';
+import { FotosDeProdutoService } from '../src/modules/atendimentos/application/fotos-de-produto.service';
 
 const verde = (s: string) => `\x1b[32m${s}\x1b[0m`;
 const vermelho = (s: string) => `\x1b[31m${s}\x1b[0m`;
@@ -205,6 +206,50 @@ async function main() {
     'e na mesma ordem da lista inteira',
     ids.join() === inteiro.map((p) => p.id).join(),
     ids.length === inteiro.length ? 'idênticas' : 'tamanhos diferentes',
+  );
+
+  // AS FOTOS, CONTRA A CONEXA DE VERDADE. O serviço é o mesmo que o canal
+  // usa; o que se mede aqui é quanta foto existe, que é o que decide se a
+  // resposta da agente sai com imagem ou com desculpa.
+  console.log('\nAs fotos, pela Conexa');
+  const fotos = new FotosDeProdutoService();
+  const comSaldo = await repo.findAll({
+    ativo: true,
+    apenasDisponiveis: true,
+    categoriaSugerida: 'JEWEL',
+    precoAte: 20000,
+    limit: 10,
+  });
+  const r = await fotos.buscar(
+    comSaldo.map((p) => ({
+      codigo: p.codigoErp ?? '',
+      url: p.fotoUrl ?? null,
+      legenda: p.descricaoEtiqueta ?? '',
+    })),
+  );
+  conferir(
+    'a tabela até 20 mil, como a gestora pede',
+    r.fotos.every((f) => f.conteudo.length > 0),
+    `${comSaldo.length} peças, ${r.tinhamUrl} com URL, ${r.fotos.length} com foto de verdade`,
+  );
+
+  // As três do relatório que a Cida imprime: estas TÊM foto, e são a prova
+  // de que o caminho funciona quando o cadastro existe.
+  const doRelatorio = await repo.findAll({ busca: 'AN22083 AN22150 AN25190', ativo: true, limit: 5 });
+  const r2 = await fotos.buscar(
+    doRelatorio.map((p) => ({
+      codigo: p.codigoErp ?? '',
+      url: p.fotoUrl ?? null,
+      legenda: p.descricaoEtiqueta ?? '',
+    })),
+  );
+  conferir(
+    'as três do relatório do Safira',
+    r2.fotos.length === doRelatorio.length && doRelatorio.length === 3,
+    `${r2.fotos.length} de ${doRelatorio.length} vieram` +
+      (r2.fotos.length
+        ? ` (${r2.fotos.map((f) => (f.conteudo.length / 1024).toFixed(0) + ' KB').join(', ')})`
+        : ''),
   );
 
   await ds.destroy();

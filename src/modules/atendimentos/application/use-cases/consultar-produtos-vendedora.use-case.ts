@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { categoriaDaBusca } from '../../../../shared/catalogo/categorias';
 import {
+  FotosDeProdutoService,
+  type FotoDeProduto,
+} from '../fotos-de-produto.service';
+import {
   faixaDePreco,
   type Faixa,
 } from '../../../../shared/catalogo/faixa-de-preco';
@@ -56,6 +60,8 @@ export interface ProdutoParaVendedora {
   precoVenda: number;
   /** Tem saldo na loja? O QUANTO nao sai daqui. */
   disponivel: boolean;
+  /** Onde a foto MORARIA. Ter URL nao e ter foto — ver `FotosDeProdutoService`. */
+  fotoUrl: string | null;
 }
 
 /**
@@ -80,6 +86,10 @@ export interface ResultadoDeProdutos {
   faixa: Faixa;
   /** Quantas foram puladas antes desta pagina. */
   pulados: number;
+  /** As fotos que existem de verdade, ja baixadas. */
+  fotos: FotoDeProduto[];
+  /** Quantas da lista tinham URL cadastrada — nem toda URL vira foto. */
+  tinhamFoto: number;
 }
 
 /** O que a pergunta pode recortar. Objeto, e nao argumentos soltos: sao cinco. */
@@ -92,6 +102,8 @@ export interface OpcoesDeBusca {
   precoAte?: unknown;
   /** A pagina seguinte: quantas pular. */
   aPartirDe?: number;
+  /** A foto vem junto, salvo quando ela pede so o texto. Padrao: vem. */
+  comFoto?: boolean;
 }
 
 /**
@@ -103,7 +115,10 @@ export interface OpcoesDeBusca {
  */
 @Injectable()
 export class ConsultarProdutosVendedoraUseCase {
-  constructor(private readonly listar: ListarProdutosUseCase) {}
+  constructor(
+    private readonly listar: ListarProdutosUseCase,
+    private readonly fotos: FotosDeProdutoService,
+  ) {}
 
   /**
    * `incluirSemEstoque` e a excecao que a gestao pediu em 07/10: a lista e so
@@ -119,6 +134,7 @@ export class ConsultarProdutosVendedoraUseCase {
     opcoes: OpcoesDeBusca = {},
   ): Promise<ResultadoDeProdutos> {
     const incluirSemEstoque = opcoes.incluirSemEstoque === true;
+    const comFoto = opcoes.comFoto !== false;
     const categoria = categoriaDaBusca(opcoes.categoria);
     const faixa = faixaDePreco(opcoes.precoDe, opcoes.precoAte);
     const pulados = Math.max(0, Math.trunc(opcoes.aPartirDe ?? 0));
@@ -167,7 +183,22 @@ export class ConsultarProdutosVendedoraUseCase {
       // O saldo vem da tabela `estoque` (ver `saldo-do-produto.ts`), e vira
       // um SIM ou NAO aqui — o numero nao atravessa esta fronteira.
       disponivel: p.estoqueAtual > 0,
+      fotoUrl: p.fotoUrl ?? null,
     }));
+
+    // AS FOTOS SAO BAIXADAS AQUI, antes de o modelo escrever — e nao depois.
+    // So quem baixou sabe quais das URLs respondem de verdade (metade da
+    // joia nao responde), e a agente precisa desse numero para nao prometer
+    // o que nao vai mandar.
+    const { fotos, tinhamUrl } = comFoto
+      ? await this.fotos.buscar(
+          linhas.map((l) => ({
+            codigo: l.codigo ?? '',
+            url: l.fotoUrl,
+            legenda: `${l.descricao}${l.codigo ? ` — ${l.codigo}` : ''}`,
+          })),
+        )
+      : { fotos: [], tinhamUrl: 0 };
 
     return {
       produtos: linhas,
@@ -178,6 +209,8 @@ export class ConsultarProdutosVendedoraUseCase {
       foraDaCategoria: Math.max(0, semRecorte - total),
       faixa,
       pulados,
+      fotos,
+      tinhamFoto: tinhamUrl,
     };
   }
 }
