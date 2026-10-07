@@ -30,12 +30,15 @@ const MARINA = {
 describe('itens_mais_vendidos e o escopo de quem pergunta', () => {
   let resolverVendedora: { execute: jest.Mock };
   let consultarVendas: { itens: jest.Mock };
-  let listarProdutos: { execute: jest.Mock };
+  let listarProdutos: { execute: jest.Mock; contar: jest.Mock };
   let servico: FerramentasGestaoService;
 
   beforeEach(() => {
     resolverVendedora = { execute: jest.fn().mockResolvedValue(MARINA) };
     listarProdutos = {
+      // AMOSTRA + TOTAL desde 07/10: a tool conta duas vezes (com e sem o
+      // filtro de saldo), para poder dizer quantas ficaram de fora.
+      contar: jest.fn().mockResolvedValue(1),
       execute: jest.fn().mockResolvedValue([
         {
           descricaoEtiqueta: 'Anel solitário',
@@ -188,7 +191,7 @@ describe('itens_mais_vendidos e o escopo de quem pergunta', () => {
  * ==========================================================================
  */
 describe('consultar_produtos da gestao e a quantidade', () => {
-  let listarProdutos: { execute: jest.Mock };
+  let listarProdutos: { execute: jest.Mock; contar: jest.Mock };
   let servico: FerramentasGestaoService;
 
   const comEstoque = (estoqueAtual: number) => {
@@ -205,7 +208,7 @@ describe('consultar_produtos da gestao e a quantidade', () => {
   };
 
   beforeEach(() => {
-    listarProdutos = { execute: jest.fn() };
+    listarProdutos = { execute: jest.fn(), contar: jest.fn().mockResolvedValue(0) };
     servico = new FerramentasGestaoService(
       { execute: jest.fn() } as never,
       // Metricas de atendimento (ANA-08 a 12, 29/09) — dubladas.
@@ -806,7 +809,7 @@ describe('o ranking por tipo de peça', () => {
     porFamiliaEntre: jest.Mock;
     porFamiliaNoMes: jest.Mock;
   };
-  let listarProdutos: { execute: jest.Mock; familias: jest.Mock };
+  let listarProdutos: { execute: jest.Mock; familias: jest.Mock; contar: jest.Mock };
   let servico: FerramentasGestaoService;
 
   beforeEach(() => {
@@ -819,6 +822,9 @@ describe('o ranking por tipo de peça', () => {
       ]),
     };
     listarProdutos = {
+      // AMOSTRA + TOTAL desde 07/10: a tool conta duas vezes (com e sem o
+      // filtro de saldo), para poder dizer quantas ficaram de fora.
+      contar: jest.fn().mockResolvedValue(1),
       execute: jest.fn().mockResolvedValue([]),
       familias: jest.fn().mockResolvedValue(['BRINCO', 'ANEL', 'PULSEIRA']),
     };

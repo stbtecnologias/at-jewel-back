@@ -687,15 +687,25 @@ export class FerramentasGestaoService {
       // `ListarProdutosUseCase` ja e o somatorio de la desde 17/09, e nao a
       // coluna `produtos.estoque_atual`, que esta zerada na base inteira.
       gestaoProdutos: async ({ busca, incluirSemEstoque }) => {
-        const achados = await this.listarProdutos.execute({
+        // Mesma regra do canal da vendedora, e pela mesma decisao de 07/10: so
+        // o disponivel, salvo quando ela PEDE o indisponivel. E com AMOSTRA +
+        // TOTAL, porque o teto sozinho vira resposta errada — ver
+        // `ConsultarProdutosVendedoraUseCase`.
+        const filtro = {
           busca,
           ativo: true,
-          // Mesma regra do canal da vendedora, e pela mesma decisao de
-          // 07/10: so o disponivel, salvo quando ela PEDE o indisponivel.
           apenasDisponiveis: !incluirSemEstoque,
-          limit: 6,
-        });
+        };
+        const [achados, total, noCatalogo] = await Promise.all([
+          this.listarProdutos.execute({ ...filtro, limit: 6 }),
+          this.listarProdutos.contar(filtro),
+          incluirSemEstoque
+            ? Promise.resolve(0)
+            : this.listarProdutos.contar({ ...filtro, apenasDisponiveis: false }),
+        ]);
         return {
+          total,
+          semEstoque: incluirSemEstoque ? 0 : Math.max(0, noCatalogo - total),
           produtos: achados.map((p) => ({
             linha:
               `${p.descricaoEtiqueta ?? `${p.categoria} ${p.familia}`}` +

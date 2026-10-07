@@ -115,6 +115,13 @@ export interface IProdutoRepository {
   /** Identidade no ERP — imutavel, ao contrario do `codigo_erp`. */
   findByIdErp(idErp: string): Promise<Produto | null>;
   findAll(filtros: FiltroProduto): Promise<Produto[]>;
+  /**
+   * Quantas o mesmo filtro acha, sem o teto do `limit`.
+   *
+   * O teto so e honesto acompanhado do total — ver o comentario na
+   * implementacao, e a mesma licao da carteira em 21/08/2026.
+   */
+  contar(filtros: FiltroProduto): Promise<number>;
   findById(id: string): Promise<Produto | null>;
   save(produto: Produto): Promise<Produto>;
   /**

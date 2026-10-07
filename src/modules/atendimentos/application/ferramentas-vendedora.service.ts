@@ -392,7 +392,9 @@ export class FerramentasVendedoraService {
       consultarProdutos: async ({ busca, incluirSemEstoque }) => {
         const achados = await this.produtos.execute(busca, incluirSemEstoque);
         return {
-          produtos: achados.map((p) => ({
+          total: achados.total,
+          semEstoque: achados.semEstoque,
+          produtos: achados.produtos.map((p) => ({
             // DISPONIVEL, E NAO QUANTOS — 25/09/2026. Ver
             // `ProdutoParaVendedora`: o numero nao chega ate aqui.
             linha:

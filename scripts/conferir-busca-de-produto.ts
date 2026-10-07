@@ -96,6 +96,23 @@ async function main() {
     `${disponiveis.filter((p) => p.estoqueAtual <= 0).length} zeradas`,
   );
 
+  // AS DUAS PERGUNTAS QUE ERRARAM EM 07/10, agora com os números em volta.
+  console.log('\nO que a agente passa a ouvir');
+  for (const termo of ['esmeralda', 'brinco de diamante']) {
+    const comSaldo = await repo.contar({
+      busca: termo,
+      ativo: true,
+      apenasDisponiveis: true,
+    });
+    const noCatalogo = await repo.contar({ busca: termo, ativo: true });
+    conferir(
+      `"${termo}"`,
+      noCatalogo >= comSaldo,
+      `${comSaldo} disponíveis, ${noCatalogo - comSaldo} sem estoque ` +
+        `(${noCatalogo} no catálogo)`,
+    );
+  }
+
   await ds.destroy();
   console.log(falhou ? vermelho('\nAlguma coisa falhou.\n') : verde('\nTudo certo.\n'));
   process.exit(falhou ? 1 : 0);

@@ -2401,17 +2401,11 @@ export class AnthropicClient implements ILlmClient {
               busca?: string;
               incluir_sem_estoque?: boolean;
             };
-            const { produtos } = await params.gestaoProdutos!({
+            const r = await params.gestaoProdutos!({
               busca: String(entrada.busca ?? '').slice(0, 120),
               incluirSemEstoque: entrada.incluir_sem_estoque === true,
             });
-            if (produtos.length === 0) {
-              return 'Nenhuma peca encontrada com esse termo. Diga isso e pergunte se quer procurar de outro jeito.';
-            }
-            return (
-              `Pecas encontradas:\n${produtos.map((p) => `- ${p.linha}`).join('\n')}\n\n` +
-              'Repasse os numeros exatamente como estao.'
-            );
+            return textoDeProdutos(r, 'Repasse os numeros exatamente como estao.');
           }),
         );
       } else if (
@@ -2424,19 +2418,16 @@ export class AnthropicClient implements ILlmClient {
               busca?: string;
               incluir_sem_estoque?: boolean;
             };
-            const { produtos } = await params.consultarProdutos!({
+            const r = await params.consultarProdutos!({
               busca: String(entrada.busca ?? '').slice(0, 120),
               // `=== true` e nao truthy: o modelo as vezes manda a string
               // "false", que e truthy em JavaScript e ligaria o filtro ao
               // contrario do que ele pediu.
               incluirSemEstoque: entrada.incluir_sem_estoque === true,
             });
-            if (produtos.length === 0) {
-              return 'Nenhuma peca encontrada com esse termo. Diga isso a ela e pergunte se quer procurar de outro jeito.';
-            }
-            return (
-              `Pecas encontradas:\n${produtos.map((p) => `- ${p.linha}`).join('\n')}\n\n` +
-              'Repasse os precos e quantidades exatamente como estao. Se ela pedir custo ou margem, diga que voce nao consegue ver isso.'
+            return textoDeProdutos(
+              r,
+              'Repasse os precos exatamente como estao. Se ela pedir custo ou margem, diga que voce nao consegue ver isso.',
             );
           }),
         );
@@ -3387,6 +3378,69 @@ function faixaDaLista(
     'se quer a continuacao — se disser que sim, chame a ferramenta de novo ' +
     `com a_partir_de = ${ultimo}. Nunca deixe parecer que a lista acabou.\n\n`
   );
+}
+
+/**
+ * O QUE A AGENTE OUVE DEPOIS DE UMA BUSCA DE PRODUTO — 07/10/2026.
+ *
+ * ==========================================================================
+ * DUAS RESPOSTAS ERRADAS DO MESMO DIA, no primeiro teste do filtro de saldo.
+ *
+ *   — "tem alguma esmeralda sem estoque?"
+ *   — "Nenhuma esmeralda esta sem estoque — todas as SEIS pecas que aparecem
+ *      no catalogo estao disponiveis."     (sao 112; 9 com saldo)
+ *
+ *   — "brinco de diamante"
+ *   — "Nao achei nenhum brinco de diamante em estoque."   (existem 22)
+ *
+ * Nos dois casos o modelo nao tinha como acertar: recebeu a lista JA CORTADA
+ * e nenhum numero em volta dela. Um teto sem total vira resposta confiante e
+ * errada — a mesma licao da carteira em 21/08, e da faixa da lista em 05/10.
+ *
+ * Entao o texto carrega os tres: as pecas, QUANTAS existem no recorte, e
+ * QUANTAS ficaram de fora por nao ter saldo. Com isso ela responde certo
+ * mesmo quando nao pensou em ligar o `incluir_sem_estoque`.
+ * ==========================================================================
+ */
+export function textoDeProdutos(
+  r: { produtos: { linha: string }[]; total: number; semEstoque: number },
+  fecho: string,
+): string {
+  if (r.produtos.length === 0) {
+    if (r.semEstoque > 0) {
+      return (
+        `Nenhuma peca DISPONIVEL com esse termo — mas EXISTEM ${r.semEstoque} no ` +
+        'catalogo, todas SEM ESTOQUE. NAO diga que nao encontrou nada, porque ' +
+        `encontrou: diga que sao ${r.semEstoque} e que nenhuma tem estoque, e ` +
+        'pergunte se ela quer ve-las assim mesmo — se quiser, chame a ' +
+        'ferramenta de novo com incluir_sem_estoque.'
+      );
+    }
+    return 'Nenhuma peca encontrada com esse termo. Diga isso e pergunte se quer procurar de outro jeito.';
+  }
+
+  const partes = [
+    `Pecas encontradas:\n${r.produtos.map((p) => `- ${p.linha}`).join('\n')}`,
+  ];
+
+  if (r.total > r.produtos.length) {
+    partes.push(
+      `SAO ${r.total} NO TOTAL com esse termo, e estas sao as ` +
+        `${r.produtos.length} primeiras. DIGA o total na resposta — nunca ` +
+        'apresente estas como se fossem todas que existem.',
+    );
+  }
+
+  if (r.semEstoque > 0) {
+    partes.push(
+      `Outras ${r.semEstoque} existem no catalogo mas estao SEM ESTOQUE e nao ` +
+        'entraram na lista. Se ela perguntar por peca sem estoque, ou quiser ' +
+        'ver essas, chame a ferramenta de novo com incluir_sem_estoque.',
+    );
+  }
+
+  partes.push(fecho);
+  return partes.join('\n\n');
 }
 
 function textoDaLeituraDeGestao(

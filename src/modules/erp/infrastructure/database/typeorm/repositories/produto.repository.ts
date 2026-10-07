@@ -138,6 +138,35 @@ export class ProdutoRepository implements IProdutoRepository {
   }
 
   async findAll(filtros: FiltroProduto): Promise<Produto[]> {
+    const qb = this.montarConsulta(filtros);
+    qb.orderBy('p.criado_em', 'DESC');
+    if (filtros.limit) qb.take(filtros.limit);
+
+    return this.comSaldo(await qb.getMany());
+  }
+
+  /**
+   * QUANTAS SAO DE VERDADE, sem o teto da lista — 07/10/2026.
+   *
+   * Nasceu de um teste do Lucas no mesmo dia. Ele perguntou "tem alguma
+   * esmeralda sem estoque?" e a Anastasia respondeu:
+   *
+   *   "Nenhuma esmeralda esta sem estoque — todas as SEIS pecas que aparecem
+   *    no catalogo estao disponiveis."
+   *
+   * Sao 112 no catalogo, 9 com saldo. O modelo recebeu as seis do teto e
+   * raciocinou sobre elas como se fossem o catalogo inteiro — do mesmo jeito
+   * que a carteira fazia antes de 21/08, quando passou a devolver AMOSTRA +
+   * TOTAL. Teto sem total vira resposta confiante e errada.
+   *
+   * A MESMA consulta do `findAll`, sem `take` e sem ordem: nao da para contar
+   * por uma regra e listar por outra.
+   */
+  async contar(filtros: FiltroProduto): Promise<number> {
+    return this.montarConsulta(filtros).getCount();
+  }
+
+  private montarConsulta(filtros: FiltroProduto) {
     const qb = this.repo.createQueryBuilder('p');
 
     if (filtros.categoria !== undefined) {
@@ -233,10 +262,7 @@ export class ProdutoRepository implements IProdutoRepository {
       qb.andWhere(comSaldoEm('p'));
     }
 
-    qb.orderBy('p.criado_em', 'DESC');
-    if (filtros.limit) qb.take(filtros.limit);
-
-    return this.comSaldo(await qb.getMany());
+    return qb;
   }
 
   async findById(id: string): Promise<Produto | null> {

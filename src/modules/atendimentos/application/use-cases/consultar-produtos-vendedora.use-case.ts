@@ -41,6 +41,20 @@ export interface ProdutoParaVendedora {
 }
 
 /**
+ * A amostra e o tamanho real do achado.
+ *
+ * `total` e quantas o filtro acha de verdade; `produtos` sao as primeiras.
+ * `semEstoque` e quantas EXISTEM no catalogo e ficaram de fora por nao ter
+ * saldo — sem esse numero, "nao achei nenhuma" e mentira quando o que houve
+ * foi "achei 22, todas zeradas".
+ */
+export interface ResultadoDeProdutos {
+  produtos: ProdutoParaVendedora[];
+  total: number;
+  semEstoque: number;
+}
+
+/**
  * Consulta de catalogo pela vendedora, no canal interno.
  *
  * Esta e a unica ferramenta do canal que NAO e restrita a ela: catalogo e da
@@ -55,19 +69,32 @@ export class ConsultarProdutosVendedoraUseCase {
    * `incluirSemEstoque` e a excecao que a gestao pediu em 07/10: a lista e so
    * do que da para vender, A NAO SER que ela pergunte pelo indisponivel. Quem
    * decide e a pergunta dela, nao o sistema.
+   *
+   * E volta AMOSTRA + TOTAL, nunca um array solto — a licao da carteira em
+   * 21/08/2026, reaprendida no mesmo dia: sem o total, o modelo trata as seis
+   * do teto como se fossem o catalogo.
    */
   async execute(
     busca: string,
     incluirSemEstoque = false,
-  ): Promise<ProdutoParaVendedora[]> {
-    const produtos = await this.listar.execute({
+  ): Promise<ResultadoDeProdutos> {
+    const filtro = {
       busca,
       ativo: true,
       apenasDisponiveis: !incluirSemEstoque,
-      limit: MAXIMO,
-    });
+    };
 
-    return produtos.map((p) => ({
+    const [produtos, total, noCatalogo] = await Promise.all([
+      this.listar.execute({ ...filtro, limit: MAXIMO }),
+      this.listar.contar(filtro),
+      // Quantas existem IGNORANDO o saldo. So faz sentido perguntar quando o
+      // filtro esta ligado: com ele desligado, e a mesma conta.
+      incluirSemEstoque
+        ? Promise.resolve(0)
+        : this.listar.contar({ ...filtro, apenasDisponiveis: false }),
+    ]);
+
+    const linhas = produtos.map((p) => ({
       descricao: p.descricaoEtiqueta ?? `${p.categoria} ${p.familia}`,
       categoria: p.categoria,
       familia: p.familia,
@@ -77,5 +104,11 @@ export class ConsultarProdutosVendedoraUseCase {
       // um SIM ou NAO aqui — o numero nao atravessa esta fronteira.
       disponivel: p.estoqueAtual > 0,
     }));
+
+    return {
+      produtos: linhas,
+      total,
+      semEstoque: incluirSemEstoque ? 0 : Math.max(0, noCatalogo - total),
+    };
   }
 }

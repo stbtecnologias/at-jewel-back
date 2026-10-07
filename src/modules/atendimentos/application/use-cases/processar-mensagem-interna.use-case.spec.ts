@@ -49,18 +49,24 @@ describe('ProcessarMensagemInternaUseCase', () => {
       metas: jest.fn().mockResolvedValue([]),
     };
     produtos = {
-      execute: jest.fn().mockResolvedValue([
-        {
-          descricao: 'Brinco Vintage Esmeralda',
-          categoria: 'Brinco',
-          familia: 'Ouro Branco',
-          codigo: 'SEED-P0002',
-          precoVenda: 7490.37,
-          // DISPONIVEL, e nao quantos — 25/09/2026. O numero deixou de existir
-          // no tipo, entao nao ha como ele vazar para o modelo.
-          disponivel: true,
-        },
-      ]),
+      // AMOSTRA + TOTAL desde 07/10 — ver `ResultadoDeProdutos`. Um array
+      // solto fazia o modelo tratar as seis do teto como o catalogo inteiro.
+      execute: jest.fn().mockResolvedValue({
+        total: 1,
+        semEstoque: 0,
+        produtos: [
+          {
+            descricao: 'Brinco Vintage Esmeralda',
+            categoria: 'Brinco',
+            familia: 'Ouro Branco',
+            codigo: 'SEED-P0002',
+            precoVenda: 7490.37,
+            // DISPONIVEL, e nao quantos — 25/09/2026. O numero deixou de
+            // existir no tipo, entao nao ha como ele vazar para o modelo.
+            disponivel: true,
+          },
+        ],
+      }),
     };
     carteira = {
       // Desde 21/08 a carteira devolve AMOSTRA + TOTAL, e nao um array solto:

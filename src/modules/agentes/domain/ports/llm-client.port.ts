@@ -161,6 +161,15 @@ export interface ProdutoLlm {
 
 export interface ConsultarProdutosLlmResultado {
   produtos: ProdutoLlm[];
+  /** Quantas o filtro acha de verdade — `produtos` e so o comeco da lista. */
+  total: number;
+  /**
+   * Quantas EXISTEM no catalogo e ficaram de fora por nao ter saldo.
+   *
+   * E o numero que impede a resposta confiante e errada: sem ele, "nao achei
+   * nenhum brinco de diamante" sai no lugar de "achei 22, nenhuma em estoque".
+   */
+  semEstoque: number;
 }
 
 export type ConsultarProdutosHandler = (
@@ -674,7 +683,12 @@ export type GestaoProdutosHandler = (input: {
   busca: string;
   /** Ver `ConsultarProdutosLlmInput.incluirSemEstoque` — mesma regra. */
   incluirSemEstoque?: boolean;
-}) => Promise<{ produtos: { linha: string }[] }>;
+}) => Promise<{
+  produtos: { linha: string }[];
+  /** Ver `ConsultarProdutosLlmResultado` — amostra e total andam juntos. */
+  total: number;
+  semEstoque: number;
+}>;
 
 /**
  * O que mais saiu, por valor.

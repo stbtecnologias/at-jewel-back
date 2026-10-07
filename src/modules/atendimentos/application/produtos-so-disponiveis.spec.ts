@@ -28,6 +28,7 @@ function listarQueAnota() {
         filtros.push(f);
         return [];
       },
+      contar: async () => 0,
     },
   };
 }
@@ -98,5 +99,63 @@ describe('o padrão é só o disponível — canal da gestão', () => {
     });
 
     expect(listar.filtros[0]).toMatchObject({ apenasDisponiveis: false });
+  });
+});
+
+/**
+ * ==========================================================================
+ * AMOSTRA + TOTAL, E O QUE FICOU DE FORA — 07/10/2026.
+ *
+ * O `semEstoque` é uma SUBTRAÇÃO entre duas contagens: quantas existem no
+ * catálogo e quantas têm saldo. Trocar a ordem dá um número negativo, e um
+ * negativo aqui vira "outras -103 estão sem estoque" na boca da agente.
+ * ==========================================================================
+ */
+describe('o número do que ficou de fora', () => {
+  /** 9 com saldo, 112 no catálogo — os números reais da esmeralda. */
+  function listarComDoisTotais() {
+    return {
+      execute: async () => [],
+      contar: async (f: { apenasDisponiveis?: boolean }) =>
+        f.apenasDisponiveis ? 9 : 112,
+    };
+  }
+
+  it('conta as que o filtro deixou de fora', async () => {
+    const uc = new ConsultarProdutosVendedoraUseCase(
+      listarComDoisTotais() as never,
+    );
+
+    const r = await uc.execute('esmeralda');
+
+    expect(r.total).toBe(9);
+    expect(r.semEstoque).toBe(103);
+  });
+
+  it('com o indisponível ligado, não há o que ficar de fora', async () => {
+    const uc = new ConsultarProdutosVendedoraUseCase(
+      listarComDoisTotais() as never,
+    );
+
+    const r = await uc.execute('esmeralda', true);
+
+    expect(r.semEstoque).toBe(0);
+  });
+
+  /**
+   * Defesa contra a leitura suja: se a contagem sem filtro vier MENOR que a
+   * com filtro — corrida, cache, qualquer coisa —, o resultado não pode ser
+   * negativo.
+   */
+  it('nunca devolve número negativo', async () => {
+    const uc = new ConsultarProdutosVendedoraUseCase({
+      execute: async () => [],
+      contar: async (f: { apenasDisponiveis?: boolean }) =>
+        f.apenasDisponiveis ? 50 : 10,
+    } as never);
+
+    const r = await uc.execute('esmeralda');
+
+    expect(r.semEstoque).toBe(0);
   });
 });
