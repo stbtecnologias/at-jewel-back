@@ -132,3 +132,78 @@ describe('textoDeProdutos — quando a lista já inclui as zeradas', () => {
     expect(texto).toContain('Nenhuma peca encontrada');
   });
 });
+
+/**
+ * ==========================================================================
+ * O RECORTE DE CATEGORIA ESCONDE PEÇA — e precisa dizer que escondeu.
+ *
+ * Mesmo risco do teto e do filtro de saldo, terceira vez no mesmo dia: com o
+ * padrão JEWEL, perguntar por "vaso" acha zero joias — e seria falso dizer
+ * que não existe vaso. Existem, em HOME.
+ * ==========================================================================
+ */
+describe('textoDeProdutos — o que a categoria deixou de fora', () => {
+  /* ESTE É O TESTE. O resto é contorno. */
+  it('lista vazia por causa da categoria NÃO diz que não encontrou', () => {
+    const texto = textoDeProdutos(
+      {
+        produtos: [],
+        total: 0,
+        semEstoque: 0,
+        categoria: 'JEWEL',
+        foraDaCategoria: 14,
+      },
+      FECHO,
+    );
+
+    expect(texto).toContain('14');
+    expect(texto).toContain('OUTRAS categorias');
+    expect(texto).toContain('categoria = TODAS');
+    expect(texto).not.toContain('Nenhuma peca encontrada');
+  });
+
+  it('diz em que categoria a lista está', () => {
+    const texto = textoDeProdutos(
+      {
+        produtos: [peca(1), peca(2)],
+        total: 2,
+        semEstoque: 0,
+        categoria: 'JEWEL',
+        foraDaCategoria: 7,
+      },
+      FECHO,
+    );
+
+    expect(texto).toContain('recortada em JOIA');
+    expect(texto).toContain('7 existem em OUTRAS categorias');
+  });
+
+  it('sem recorte, não fala de categoria nenhuma', () => {
+    const texto = textoDeProdutos(
+      { produtos: [peca(1)], total: 1, semEstoque: 0, foraDaCategoria: 0 },
+      FECHO,
+    );
+
+    expect(texto).not.toContain('recortada');
+    expect(texto).not.toContain('TODAS');
+  });
+
+  /** Os dois recortes juntos: a resposta tem de citar os dois caminhos. */
+  it('estoque e categoria escondendo ao mesmo tempo', () => {
+    const texto = textoDeProdutos(
+      {
+        produtos: [],
+        total: 0,
+        semEstoque: 103,
+        categoria: 'JEWEL',
+        foraDaCategoria: 7,
+      },
+      FECHO,
+    );
+
+    expect(texto).toContain('103');
+    expect(texto).toContain('7');
+    expect(texto).toContain('incluir_sem_estoque');
+    expect(texto).toContain('categoria = TODAS');
+  });
+});

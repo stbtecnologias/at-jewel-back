@@ -167,3 +167,69 @@ describe('findAll — só o disponível, menos quando o código é exato', () =>
     expect(raiz.filhos.some((f) => TEM_SALDO.test(f.condicao))).toBe(true);
   });
 });
+
+/**
+ * ==========================================================================
+ * A CATEGORIA ENTRA PELO MESMO LUGAR QUE O SALDO — 07/10/2026.
+ *
+ * E tem de entrar, porque esconde peça do mesmo jeito. Com o padrão JEWEL no
+ * topo da consulta, "me dá a descrição do C795VES" — um cilindro, categoria
+ * HOME — voltaria vazio, e a agente diria que o código não existe. É o
+ * AN24084 de novo, com outra coluna.
+ * ==========================================================================
+ */
+describe('findAll — a categoria sugerida também passa por fora do código', () => {
+  const TEM_CATEGORIA = /categoriaSugerida/;
+
+  it('recorta por categoria numa busca por palavras', async () => {
+    const { repo, raiz } = repositorioFalso();
+
+    await repo.findAll({
+      busca: 'anel de esmeralda',
+      ativo: true,
+      categoriaSugerida: 'JEWEL',
+    });
+
+    expect(todas(raiz).some((c) => TEM_CATEGORIA.test(c))).toBe(true);
+  });
+
+  /* ESTE É O TESTE. O resto é contorno. */
+  it('o ramo do CÓDIGO não carrega o recorte de categoria', async () => {
+    const { repo, raiz } = repositorioFalso();
+
+    await repo.findAll({
+      busca: 'me dá a descrição do C795VES',
+      ativo: true,
+      categoriaSugerida: 'JEWEL',
+      apenasDisponiveis: true,
+    });
+
+    const grupo = grupoMaisFundoCom(raiz, TEM_CATEGORIA);
+    expect(todas(grupo).some((c) => TEM_CATEGORIA.test(c))).toBe(true);
+    expect(todas(grupo).some((c) => TEM_CODIGO.test(c))).toBe(false);
+  });
+
+  it('não fica no nível de cima quando há busca', async () => {
+    const { repo, raiz } = repositorioFalso();
+
+    await repo.findAll({
+      busca: 'C795VES',
+      ativo: true,
+      categoriaSugerida: 'JEWEL',
+    });
+
+    expect(raiz.filhos.filter((f) => TEM_CATEGORIA.test(f.condicao))).toHaveLength(0);
+  });
+
+  /**
+   * O filtro DURO da tela de Produtos é outro campo (`categoria`) e continua
+   * no topo: ali a pessoa escolheu num seletor, e nada deve furar isso.
+   */
+  it('o filtro duro da tela continua valendo para a consulta inteira', async () => {
+    const { repo, raiz } = repositorioFalso();
+
+    await repo.findAll({ busca: 'C795VES', ativo: true, categoria: 'HOME' });
+
+    expect(raiz.filhos.some((f) => /p\.categoria = :categoria\b/.test(f.condicao))).toBe(true);
+  });
+});

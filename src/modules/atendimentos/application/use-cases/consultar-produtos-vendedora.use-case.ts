@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { categoriaDaBusca } from '../../../../shared/catalogo/categorias';
 import { ListarProdutosUseCase } from '../../../produtos/application/use-cases/listar-produtos.use-case';
 
 /** Teto de resultados. Lista longa nao ajuda ninguem numa conversa de WhatsApp. */
@@ -54,6 +55,17 @@ export interface ResultadoDeProdutos {
   semEstoque: number;
   /** A lista JA traz as zeradas? Muda o que a agente tem de dizer. */
   incluiuSemEstoque: boolean;
+  /** Em que categoria a lista esta. `undefined` = sem recorte. */
+  categoria?: string;
+  /** Quantas casam com o termo e ficaram FORA por causa da categoria. */
+  foraDaCategoria: number;
+}
+
+/** O que a pergunta pode recortar. Objeto, e nao argumentos soltos: faixa de preco e pagina entram aqui em seguida. */
+export interface OpcoesDeBusca {
+  incluirSemEstoque?: boolean;
+  /** Vinda da pergunta; passa por `categoriaDaBusca` antes de virar filtro. */
+  categoria?: string;
 }
 
 /**
@@ -78,12 +90,15 @@ export class ConsultarProdutosVendedoraUseCase {
    */
   async execute(
     busca: string,
-    incluirSemEstoque = false,
+    opcoes: OpcoesDeBusca = {},
   ): Promise<ResultadoDeProdutos> {
+    const incluirSemEstoque = opcoes.incluirSemEstoque === true;
+    const categoria = categoriaDaBusca(opcoes.categoria);
     const filtro = {
       busca,
       ativo: true,
       apenasDisponiveis: !incluirSemEstoque,
+      categoriaSugerida: categoria,
     };
 
     // AS DUAS CONTAGENS SEMPRE, e isto foi corrigido no segundo teste de
@@ -101,9 +116,17 @@ export class ConsultarProdutosVendedoraUseCase {
       this.listar.contar(filtro),
       this.listar.contar({ ...filtro, apenasDisponiveis: true }),
     ]);
-    const noCatalogo = incluirSemEstoque
-      ? total
-      : await this.listar.contar({ ...filtro, apenasDisponiveis: false });
+    const [noCatalogo, semRecorte] = await Promise.all([
+      incluirSemEstoque
+        ? Promise.resolve(total)
+        : this.listar.contar({ ...filtro, apenasDisponiveis: false }),
+      // QUANTAS A CATEGORIA ESCONDEU. Sem este numero, o padrao JEWEL some
+      // uma decoracao sem dizer que sumiu — e seria o mesmo erro do teto sem
+      // total, so que com outro nome.
+      categoria
+        ? this.listar.contar({ ...filtro, categoriaSugerida: undefined })
+        : Promise.resolve(total),
+    ]);
 
     const linhas = produtos.map((p) => ({
       descricao: p.descricaoEtiqueta ?? `${p.categoria} ${p.familia}`,
@@ -121,6 +144,8 @@ export class ConsultarProdutosVendedoraUseCase {
       total,
       semEstoque: Math.max(0, noCatalogo - comSaldo),
       incluiuSemEstoque: incluirSemEstoque,
+      categoria,
+      foraDaCategoria: Math.max(0, semRecorte - total),
     };
   }
 }

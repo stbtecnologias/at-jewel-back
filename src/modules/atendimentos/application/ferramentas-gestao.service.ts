@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { categoriaDaBusca } from '../../../shared/catalogo/categorias';
 import { diasDeCalendario } from '../../../shared/tempo/dias-de-calendario';
 import { dataDeCorte, datasDeRecorte } from '../../../shared/tempo/recorte-de-datas';
 import type { NomeComemorativo } from '../../../shared/tempo/datas-comemorativas';
@@ -686,34 +687,43 @@ export class FerramentasGestaoService {
       // O SALDO VEM DA TABELA `estoque` — o `estoqueAtual` do
       // `ListarProdutosUseCase` ja e o somatorio de la desde 17/09, e nao a
       // coluna `produtos.estoque_atual`, que esta zerada na base inteira.
-      gestaoProdutos: async ({ busca, incluirSemEstoque }) => {
-        // Mesma regra do canal da vendedora, e pela mesma decisao de 07/10: so
-        // o disponivel, salvo quando ela PEDE o indisponivel. E com AMOSTRA +
-        // TOTAL, porque o teto sozinho vira resposta errada — ver
-        // `ConsultarProdutosVendedoraUseCase`.
+      gestaoProdutos: async ({ busca, incluirSemEstoque, categoria }) => {
+        // Mesma regra do canal da vendedora, e pelas mesmas decisoes de 07/10:
+        // so o disponivel (salvo quando ela PEDE o indisponivel), padrao joia,
+        // e sempre AMOSTRA + TOTAL — o teto sozinho vira resposta errada. Ver
+        // `ConsultarProdutosVendedoraUseCase`, que explica cada numero.
+        const daPergunta = categoriaDaBusca(categoria);
         const filtro = {
           busca,
           ativo: true,
           apenasDisponiveis: !incluirSemEstoque,
+          categoriaSugerida: daPergunta,
         };
         const [achados, total, comSaldo] = await Promise.all([
           this.listarProdutos.execute({ ...filtro, limit: 6 }),
           this.listarProdutos.contar(filtro),
           this.listarProdutos.contar({ ...filtro, apenasDisponiveis: true }),
         ]);
-        // Ver `ConsultarProdutosVendedoraUseCase`: as zeradas sao contadas
-        // mesmo quando a lista ja as inclui — e a pergunta que mais precisa
-        // do numero e justamente "tem alguma sem estoque?".
-        const noCatalogo = incluirSemEstoque
-          ? total
-          : await this.listarProdutos.contar({
-              ...filtro,
-              apenasDisponiveis: false,
-            });
+        const [noCatalogo, semRecorte] = await Promise.all([
+          incluirSemEstoque
+            ? Promise.resolve(total)
+            : this.listarProdutos.contar({
+                ...filtro,
+                apenasDisponiveis: false,
+              }),
+          daPergunta
+            ? this.listarProdutos.contar({
+                ...filtro,
+                categoriaSugerida: undefined,
+              })
+            : Promise.resolve(total),
+        ]);
         return {
           total,
           semEstoque: Math.max(0, noCatalogo - comSaldo),
           incluiuSemEstoque: incluirSemEstoque === true,
+          categoria: daPergunta,
+          foraDaCategoria: Math.max(0, semRecorte - total),
           produtos: achados.map((p) => ({
             linha:
               `${p.descricaoEtiqueta ?? `${p.categoria} ${p.familia}`}` +

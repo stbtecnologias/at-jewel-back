@@ -152,6 +152,11 @@ export interface ConsultarProdutosLlmInput {
    * ou sem saldo, e sem precisar deste campo.
    */
   incluirSemEstoque?: boolean;
+  /**
+   * A categoria vinda da PERGUNTA. Vazio significa o padrao — joia —, e nao
+   * "sem filtro": ver `categoriaDaBusca`.
+   */
+  categoria?: string;
 }
 
 export interface ProdutoLlm {
@@ -177,6 +182,10 @@ export interface ConsultarProdutosLlmResultado {
    * FORA; com ela aberta, e quantas das que estao ali nao tem saldo.
    */
   incluiuSemEstoque: boolean;
+  /** Em que categoria a lista esta. Vazio = sem recorte (TODAS). */
+  categoria?: string;
+  /** Quantas casam com o termo e ficaram de fora POR CAUSA da categoria. */
+  foraDaCategoria: number;
 }
 
 export type ConsultarProdutosHandler = (
@@ -690,12 +699,16 @@ export type GestaoProdutosHandler = (input: {
   busca: string;
   /** Ver `ConsultarProdutosLlmInput.incluirSemEstoque` — mesma regra. */
   incluirSemEstoque?: boolean;
+  /** Ver `ConsultarProdutosLlmInput.categoria` — mesma regra. */
+  categoria?: string;
 }) => Promise<{
   produtos: { linha: string }[];
   /** Ver `ConsultarProdutosLlmResultado` — amostra e total andam juntos. */
   total: number;
   semEstoque: number;
   incluiuSemEstoque: boolean;
+  categoria?: string;
+  foraDaCategoria: number;
 }>;
 
 /**

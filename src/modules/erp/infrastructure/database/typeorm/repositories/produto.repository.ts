@@ -225,6 +225,11 @@ export class ProdutoRepository implements IProdutoRepository {
                 if (filtros.apenasDisponiveis) {
                   todas.andWhere(comSaldoEm('p'));
                 }
+                if (filtros.categoriaSugerida) {
+                  todas.andWhere('p.categoria = :categoriaSugerida', {
+                    categoriaSugerida: filtros.categoriaSugerida,
+                  });
+                }
                 for (const [i, palavra] of palavras.entries()) {
                   const chave = `busca${i}`;
                   const termo = `%${palavra}%`;
@@ -256,10 +261,15 @@ export class ProdutoRepository implements IProdutoRepository {
           }
         }),
       );
-    } else if (filtros.apenasDisponiveis) {
+    } else {
       // Sem texto nenhum — a listagem do painel, ou a tool sem termo. Nao ha
-      // ramo de codigo para preservar, entao o filtro e direto.
-      qb.andWhere(comSaldoEm('p'));
+      // ramo de codigo para preservar, entao os filtros sao diretos.
+      if (filtros.apenasDisponiveis) qb.andWhere(comSaldoEm('p'));
+      if (filtros.categoriaSugerida) {
+        qb.andWhere('p.categoria = :categoriaSugerida', {
+          categoriaSugerida: filtros.categoriaSugerida,
+        });
+      }
     }
 
     return qb;

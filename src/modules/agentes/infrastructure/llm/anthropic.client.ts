@@ -1,5 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { Injectable, Logger } from '@nestjs/common';
+import {
+  CATEGORIAS,
+  categoriaEmPalavras,
+} from '../../../../shared/catalogo/categorias';
 import { ConfigService } from '@nestjs/config';
 import type {
   ChatComFerramentasResultado,
@@ -203,6 +207,12 @@ const PRODUTOS_TOOL: Anthropic.Tool = {
         description:
           'SO quando ela pedir o que NAO esta disponivel: "tem alguma sem estoque", "me mostra as indisponiveis tambem", "e as que acabaram". NAO mande nas demais perguntas — sem este campo a busca ja traz so o que a loja tem para vender. Codigo exato ("An24084") sempre acha a peca, com estoque ou sem, e nao precisa deste campo.',
       },
+      categoria: {
+        type: 'string',
+        enum: [...CATEGORIAS, 'TODAS'],
+        description:
+          'O PADRAO E JOIA (JEWEL): nao mande nada em pergunta comum de peca. Mande HOME quando a pergunta for de DECORACAO — vaso, copo, bandeja, bowl, cinzeiro, abajur, castical, porta-joia. Mande a categoria que ela citar quando citar uma. Mande TODAS quando ela quiser ver tudo junto ("de qualquer categoria", "me mostra tudo"). Codigo exato acha a peca em qualquer categoria e nao precisa deste campo.',
+      },
     },
     required: ['busca'],
   },
@@ -232,6 +242,12 @@ const GESTAO_PRODUTOS_TOOL: Anthropic.Tool = {
         type: 'boolean',
         description:
           'SO quando perguntarem pelo que NAO esta disponivel: "tem alguma sem estoque", "me mostra as indisponiveis tambem", "quais pecas zeraram". NAO mande nas demais perguntas — sem este campo a busca ja traz so o que tem estoque. Codigo exato ("An24084") sempre acha a peca, com estoque ou sem, e nao precisa deste campo.',
+      },
+      categoria: {
+        type: 'string',
+        enum: [...CATEGORIAS, 'TODAS'],
+        description:
+          'O PADRAO E JOIA (JEWEL): nao mande nada em pergunta comum de peca. Mande HOME quando a pergunta for de DECORACAO — vaso, copo, bandeja, bowl, cinzeiro, abajur, castical, porta-joia. Mande a categoria que ela citar quando citar uma. Mande TODAS quando ela quiser ver tudo junto ("de qualquer categoria", "me mostra tudo"). Codigo exato acha a peca em qualquer categoria e nao precisa deste campo.',
       },
     },
     required: ['busca'],
@@ -2400,10 +2416,12 @@ export class AnthropicClient implements ILlmClient {
             const entrada = toolUse.input as {
               busca?: string;
               incluir_sem_estoque?: boolean;
+              categoria?: string;
             };
             const r = await params.gestaoProdutos!({
               busca: String(entrada.busca ?? '').slice(0, 120),
               incluirSemEstoque: entrada.incluir_sem_estoque === true,
+              categoria: entrada.categoria,
             });
             return textoDeProdutos(r, 'Repasse os numeros exatamente como estao.');
           }),
@@ -2417,8 +2435,10 @@ export class AnthropicClient implements ILlmClient {
             const entrada = toolUse.input as {
               busca?: string;
               incluir_sem_estoque?: boolean;
+              categoria?: string;
             };
             const r = await params.consultarProdutos!({
+              categoria: entrada.categoria,
               busca: String(entrada.busca ?? '').slice(0, 120),
               // `=== true` e nao truthy: o modelo as vezes manda a string
               // "false", que e truthy em JavaScript e ligaria o filtro ao
@@ -3408,17 +3428,37 @@ export function textoDeProdutos(
     total: number;
     semEstoque: number;
     incluiuSemEstoque?: boolean;
+    categoria?: string;
+    foraDaCategoria?: number;
   },
   fecho: string,
 ): string {
+  const foraDaCategoria = r.foraDaCategoria ?? 0;
+
+  // O QUE EXISTE E NAO ESTA NA LISTA, em uma frase por motivo. Os dois
+  // recortes escondem peca do mesmo jeito: o saldo e a categoria.
+  const escondidas: string[] = [];
+  if (r.semEstoque > 0 && !r.incluiuSemEstoque) {
+    escondidas.push(
+      `${r.semEstoque} existem mas estao SEM ESTOQUE — para ve-las, chame a ` +
+        'ferramenta de novo com incluir_sem_estoque',
+    );
+  }
+  if (foraDaCategoria > 0 && r.categoria) {
+    escondidas.push(
+      `${foraDaCategoria} existem em OUTRAS categorias, fora de ` +
+        `${categoriaEmPalavras(r.categoria)} — para ve-las, chame de novo com ` +
+        'categoria = TODAS, ou com a categoria certa',
+    );
+  }
+
   if (r.produtos.length === 0) {
-    if (r.semEstoque > 0 && !r.incluiuSemEstoque) {
+    if (escondidas.length > 0) {
       return (
-        `Nenhuma peca DISPONIVEL com esse termo — mas EXISTEM ${r.semEstoque} no ` +
-        'catalogo, todas SEM ESTOQUE. NAO diga que nao encontrou nada, porque ' +
-        `encontrou: diga que sao ${r.semEstoque} e que nenhuma tem estoque, e ` +
-        'pergunte se ela quer ve-las assim mesmo — se quiser, chame a ' +
-        'ferramenta de novo com incluir_sem_estoque.'
+        'Nenhuma peca com esse termo DENTRO do recorte da busca — mas o ' +
+        `catalogo TEM pecas que casam: ${escondidas.join('; e ')}. NAO diga ` +
+        'que nao encontrou nada, porque encontrou: diga o que existe e ' +
+        'pergunte o que ela quer ver.'
       );
     }
     return 'Nenhuma peca encontrada com esse termo. Diga isso e pergunte se quer procurar de outro jeito.';
@@ -3427,6 +3467,12 @@ export function textoDeProdutos(
   const partes = [
     `Pecas encontradas:\n${r.produtos.map((p) => `- ${p.linha}`).join('\n')}`,
   ];
+
+  if (r.categoria) {
+    partes.push(
+      `A lista esta recortada em ${categoriaEmPalavras(r.categoria)}.`,
+    );
+  }
 
   if (r.total > r.produtos.length) {
     partes.push(
@@ -3451,12 +3497,10 @@ export function textoDeProdutos(
         'QUANTAS estao sem estoque, responda com esse numero — nao diga que ' +
         'nao da para saber.',
     );
-  } else if (r.semEstoque > 0) {
-    partes.push(
-      `Outras ${r.semEstoque} existem no catalogo mas estao SEM ESTOQUE e nao ` +
-        'entraram na lista. Se ela perguntar por peca sem estoque, ou quiser ' +
-        'ver essas, chame a ferramenta de novo com incluir_sem_estoque.',
-    );
+  }
+
+  for (const frase of escondidas) {
+    partes.push(`Fora da lista: ${frase}.`);
   }
 
   partes.push(fecho);

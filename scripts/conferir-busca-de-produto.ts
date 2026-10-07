@@ -113,6 +113,41 @@ async function main() {
     );
   }
 
+  console.log('\nO padrão joia, e o que ele esconde');
+  for (const termo of ['esmeralda', 'anel', 'vaso']) {
+    const joia = await repo.contar({
+      busca: termo,
+      ativo: true,
+      apenasDisponiveis: true,
+      categoriaSugerida: 'JEWEL',
+    });
+    const tudo = await repo.contar({
+      busca: termo,
+      ativo: true,
+      apenasDisponiveis: true,
+    });
+    conferir(
+      `"${termo}" com saldo`,
+      tudo >= joia,
+      `${joia} joias, ${tudo - joia} em outras categorias`,
+    );
+  }
+
+  // Um cilindro de decoração, para provar que o código exato fura o padrão.
+  const porCodigo = await repo.findAll({
+    busca: 'me dá a descrição do C795VES',
+    ativo: true,
+    apenasDisponiveis: true,
+    categoriaSugerida: 'JEWEL',
+    limit: 10,
+  });
+  const cilindro = porCodigo.find((p) => p.codigoErp === 'C795VES');
+  conferir(
+    'código de peça HOME com o padrão JEWEL ligado',
+    cilindro !== undefined,
+    cilindro ? `achou ${cilindro.codigoErp} (${cilindro.categoria})` : 'NÃO achou',
+  );
+
   await ds.destroy();
   console.log(falhou ? vermelho('\nAlguma coisa falhou.\n') : verde('\nTudo certo.\n'));
   process.exit(falhou ? 1 : 0);

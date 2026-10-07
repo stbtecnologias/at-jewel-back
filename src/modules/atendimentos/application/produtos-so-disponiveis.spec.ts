@@ -60,7 +60,7 @@ describe('o padrão é só o disponível — canal da vendedora', () => {
     const listar = listarQueAnota();
     const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never);
 
-    await uc.execute('anel de esmeralda', true);
+    await uc.execute('anel de esmeralda', { incluirSemEstoque: true });
 
     expect(listar.filtros[0]).toMatchObject({ apenasDisponiveis: false });
   });
@@ -145,7 +145,7 @@ describe('o número do que ficou de fora', () => {
       listarComDoisTotais() as never,
     );
 
-    const r = await uc.execute('esmeralda', true);
+    const r = await uc.execute('esmeralda', { incluirSemEstoque: true });
 
     expect(r.total).toBe(112);
     expect(r.semEstoque).toBe(103);
@@ -167,5 +167,73 @@ describe('o número do que ficou de fora', () => {
     const r = await uc.execute('esmeralda');
 
     expect(r.semEstoque).toBe(0);
+  });
+});
+
+/**
+ * ==========================================================================
+ * O PADRÃO JOIA, E O NÚMERO DO QUE ELE ESCONDE — 07/10/2026.
+ *
+ * O recorte por categoria tem o mesmo risco do teto: sumir com peça sem
+ * dizer que sumiu. Por isso ele vem acompanhado do `foraDaCategoria`.
+ * ==========================================================================
+ */
+describe('a categoria da pergunta', () => {
+  /** Os números reais da esmeralda: 9 com saldo, 2 delas JEWEL. */
+  function listarPorCategoria() {
+    const filtros: Record<string, unknown>[] = [];
+    return {
+      filtros,
+      uso: {
+        execute: async (f: Record<string, unknown>) => {
+          filtros.push(f);
+          return [];
+        },
+        contar: async (f: { categoriaSugerida?: string }) =>
+          f.categoriaSugerida ? 2 : 9,
+      },
+    };
+  }
+
+  it('sem pedir nada, a consulta vai recortada em joia', async () => {
+    const listar = listarPorCategoria();
+    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never);
+
+    const r = await uc.execute('esmeralda');
+
+    expect(listar.filtros[0]).toMatchObject({ categoriaSugerida: 'JEWEL' });
+    expect(r.categoria).toBe('JEWEL');
+  });
+
+  /* ESTE É O TESTE. O resto é contorno. */
+  it('conta quantas a categoria escondeu', async () => {
+    const listar = listarPorCategoria();
+    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never);
+
+    const r = await uc.execute('esmeralda');
+
+    // 9 casam com o termo, 2 são joia: 7 ficaram de fora — as peças de casa.
+    expect(r.total).toBe(2);
+    expect(r.foraDaCategoria).toBe(7);
+  });
+
+  it('TODAS desliga o recorte, e aí não há o que esconder', async () => {
+    const listar = listarPorCategoria();
+    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never);
+
+    const r = await uc.execute('esmeralda', { categoria: 'TODAS' });
+
+    expect(listar.filtros[0].categoriaSugerida).toBeUndefined();
+    expect(r.categoria).toBeUndefined();
+    expect(r.foraDaCategoria).toBe(0);
+  });
+
+  it('a categoria pedida chega ao filtro', async () => {
+    const listar = listarPorCategoria();
+    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never);
+
+    await uc.execute('vaso', { categoria: 'HOME' });
+
+    expect(listar.filtros[0]).toMatchObject({ categoriaSugerida: 'HOME' });
   });
 });

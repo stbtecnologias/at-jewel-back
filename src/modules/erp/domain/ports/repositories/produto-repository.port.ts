@@ -17,6 +17,17 @@ export interface FiltroProduto {
    */
   apenasDisponiveis?: boolean;
   /**
+   * A CATEGORIA QUE A PERGUNTA SUGERE — e que o codigo exato ignora.
+   *
+   * Irma do `apenasDisponiveis`, e pelo mesmo motivo: entra dentro do ramo
+   * das palavras, nao no topo. Quem digita `AN24084` quer aquela peca, mesmo
+   * que ela seja HOME e a pergunta parecesse de joia.
+   *
+   * Diferente do `categoria` acima, que e o filtro DURO da tela de Produtos:
+   * ali a pessoa escolheu a categoria num seletor, e nada deve furar isso.
+   */
+  categoriaSugerida?: string;
+  /**
    * Texto livre. Varre descricao, categoria, familia, colecao, pedra, cor e
    * codigo do ERP — as colunas por onde uma pessoa procura uma joia.
    *

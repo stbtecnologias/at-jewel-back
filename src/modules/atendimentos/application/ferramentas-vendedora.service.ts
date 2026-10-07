@@ -389,12 +389,17 @@ export class FerramentasVendedoraService {
         };
       },
 
-      consultarProdutos: async ({ busca, incluirSemEstoque }) => {
-        const achados = await this.produtos.execute(busca, incluirSemEstoque);
+      consultarProdutos: async ({ busca, incluirSemEstoque, categoria }) => {
+        const achados = await this.produtos.execute(busca, {
+          incluirSemEstoque,
+          categoria,
+        });
         return {
           total: achados.total,
           semEstoque: achados.semEstoque,
           incluiuSemEstoque: achados.incluiuSemEstoque,
+          categoria: achados.categoria,
+          foraDaCategoria: achados.foraDaCategoria,
           produtos: achados.produtos.map((p) => ({
             // DISPONIVEL, E NAO QUANTOS — 25/09/2026. Ver
             // `ProdutoParaVendedora`: o numero nao chega ate aqui.
