@@ -696,16 +696,24 @@ export class FerramentasGestaoService {
           ativo: true,
           apenasDisponiveis: !incluirSemEstoque,
         };
-        const [achados, total, noCatalogo] = await Promise.all([
+        const [achados, total, comSaldo] = await Promise.all([
           this.listarProdutos.execute({ ...filtro, limit: 6 }),
           this.listarProdutos.contar(filtro),
-          incluirSemEstoque
-            ? Promise.resolve(0)
-            : this.listarProdutos.contar({ ...filtro, apenasDisponiveis: false }),
+          this.listarProdutos.contar({ ...filtro, apenasDisponiveis: true }),
         ]);
+        // Ver `ConsultarProdutosVendedoraUseCase`: as zeradas sao contadas
+        // mesmo quando a lista ja as inclui — e a pergunta que mais precisa
+        // do numero e justamente "tem alguma sem estoque?".
+        const noCatalogo = incluirSemEstoque
+          ? total
+          : await this.listarProdutos.contar({
+              ...filtro,
+              apenasDisponiveis: false,
+            });
         return {
           total,
-          semEstoque: incluirSemEstoque ? 0 : Math.max(0, noCatalogo - total),
+          semEstoque: Math.max(0, noCatalogo - comSaldo),
+          incluiuSemEstoque: incluirSemEstoque === true,
           produtos: achados.map((p) => ({
             linha:
               `${p.descricaoEtiqueta ?? `${p.categoria} ${p.familia}`}` +

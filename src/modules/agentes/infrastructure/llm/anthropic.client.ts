@@ -3403,11 +3403,16 @@ function faixaDaLista(
  * ==========================================================================
  */
 export function textoDeProdutos(
-  r: { produtos: { linha: string }[]; total: number; semEstoque: number },
+  r: {
+    produtos: { linha: string }[];
+    total: number;
+    semEstoque: number;
+    incluiuSemEstoque?: boolean;
+  },
   fecho: string,
 ): string {
   if (r.produtos.length === 0) {
-    if (r.semEstoque > 0) {
+    if (r.semEstoque > 0 && !r.incluiuSemEstoque) {
       return (
         `Nenhuma peca DISPONIVEL com esse termo — mas EXISTEM ${r.semEstoque} no ` +
         'catalogo, todas SEM ESTOQUE. NAO diga que nao encontrou nada, porque ' +
@@ -3431,7 +3436,22 @@ export function textoDeProdutos(
     );
   }
 
-  if (r.semEstoque > 0) {
+  if (r.semEstoque > 0 && r.incluiuSemEstoque) {
+    // A LISTA JA VEM ABERTA, e o numero muda de significado: nao e o que
+    // ficou de fora, e quantas das que casam com o termo estao zeradas.
+    //
+    // Corrigido no segundo teste de 07/10. Ela respondeu "as 6 primeiras
+    // estao todas com estoque, mas sao 112 no total — nao da para afirmar
+    // que nenhuma zerou", para uma pergunta que era exatamente essa. Sao
+    // 103 zeradas, e ela nao tinha esse numero.
+    partes.push(
+      `DESTAS ${r.total}, ${r.semEstoque} estao SEM ESTOQUE e ` +
+        `${Math.max(0, r.total - r.semEstoque)} tem saldo. A lista acima JA ` +
+        'INCLUI as zeradas, e cada linha diz qual e qual. Se ela perguntou ' +
+        'QUANTAS estao sem estoque, responda com esse numero — nao diga que ' +
+        'nao da para saber.',
+    );
+  } else if (r.semEstoque > 0) {
     partes.push(
       `Outras ${r.semEstoque} existem no catalogo mas estao SEM ESTOQUE e nao ` +
         'entraram na lista. Se ela perguntar por peca sem estoque, ou quiser ' +

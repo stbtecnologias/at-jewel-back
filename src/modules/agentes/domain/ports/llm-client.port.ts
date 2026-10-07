@@ -170,6 +170,13 @@ export interface ConsultarProdutosLlmResultado {
    * nenhum brinco de diamante" sai no lugar de "achei 22, nenhuma em estoque".
    */
   semEstoque: number;
+  /**
+   * A lista JA traz as zeradas?
+   *
+   * Muda a frase inteira: com a lista filtrada, `semEstoque` e o que ficou de
+   * FORA; com ela aberta, e quantas das que estao ali nao tem saldo.
+   */
+  incluiuSemEstoque: boolean;
 }
 
 export type ConsultarProdutosHandler = (
@@ -688,6 +695,7 @@ export type GestaoProdutosHandler = (input: {
   /** Ver `ConsultarProdutosLlmResultado` — amostra e total andam juntos. */
   total: number;
   semEstoque: number;
+  incluiuSemEstoque: boolean;
 }>;
 
 /**

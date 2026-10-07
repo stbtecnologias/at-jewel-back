@@ -394,6 +394,7 @@ export class FerramentasVendedoraService {
         return {
           total: achados.total,
           semEstoque: achados.semEstoque,
+          incluiuSemEstoque: achados.incluiuSemEstoque,
           produtos: achados.produtos.map((p) => ({
             // DISPONIVEL, E NAO QUANTOS — 25/09/2026. Ver
             // `ProdutoParaVendedora`: o numero nao chega ate aqui.

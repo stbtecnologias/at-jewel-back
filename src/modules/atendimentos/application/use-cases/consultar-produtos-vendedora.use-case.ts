@@ -52,6 +52,8 @@ export interface ResultadoDeProdutos {
   produtos: ProdutoParaVendedora[];
   total: number;
   semEstoque: number;
+  /** A lista JA traz as zeradas? Muda o que a agente tem de dizer. */
+  incluiuSemEstoque: boolean;
 }
 
 /**
@@ -84,15 +86,24 @@ export class ConsultarProdutosVendedoraUseCase {
       apenasDisponiveis: !incluirSemEstoque,
     };
 
-    const [produtos, total, noCatalogo] = await Promise.all([
+    // AS DUAS CONTAGENS SEMPRE, e isto foi corrigido no segundo teste de
+    // 07/10. Zerar o `semEstoque` quando ela PEDE o indisponivel parecia
+    // obvio — nao ha o que "ficar de fora" — e deixou a agente sem o numero
+    // justamente na pergunta que era sobre ele:
+    //
+    //   — "tem alguma esmeralda sem estoque?"
+    //   — "As 6 primeiras que apareceram estao todas com estoque, mas sao 112
+    //      no total — nao da para afirmar que nenhuma zerou so por essas."
+    //
+    // Sao 103 zeradas. Ela tinha as 112 e nao tinha o 103.
+    const [produtos, total, comSaldo] = await Promise.all([
       this.listar.execute({ ...filtro, limit: MAXIMO }),
       this.listar.contar(filtro),
-      // Quantas existem IGNORANDO o saldo. So faz sentido perguntar quando o
-      // filtro esta ligado: com ele desligado, e a mesma conta.
-      incluirSemEstoque
-        ? Promise.resolve(0)
-        : this.listar.contar({ ...filtro, apenasDisponiveis: false }),
+      this.listar.contar({ ...filtro, apenasDisponiveis: true }),
     ]);
+    const noCatalogo = incluirSemEstoque
+      ? total
+      : await this.listar.contar({ ...filtro, apenasDisponiveis: false });
 
     const linhas = produtos.map((p) => ({
       descricao: p.descricaoEtiqueta ?? `${p.categoria} ${p.familia}`,
@@ -108,7 +119,8 @@ export class ConsultarProdutosVendedoraUseCase {
     return {
       produtos: linhas,
       total,
-      semEstoque: incluirSemEstoque ? 0 : Math.max(0, noCatalogo - total),
+      semEstoque: Math.max(0, noCatalogo - comSaldo),
+      incluiuSemEstoque: incluirSemEstoque,
     };
   }
 }

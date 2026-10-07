@@ -132,14 +132,24 @@ describe('o número do que ficou de fora', () => {
     expect(r.semEstoque).toBe(103);
   });
 
-  it('com o indisponível ligado, não há o que ficar de fora', async () => {
+  /**
+   * ESTE É O TESTE DA SEGUNDA RODADA, 07/10.
+   *
+   * Zerar o `semEstoque` quando ela pede o indisponível parecia óbvio — "não
+   * ficou nada de fora" — e tirava o número justamente da pergunta que era
+   * sobre ele: *"tem alguma esmeralda sem estoque?"*. A agente respondeu que
+   * não dava para afirmar. São 103.
+   */
+  it('com o indisponível ligado, o número das zeradas continua vindo', async () => {
     const uc = new ConsultarProdutosVendedoraUseCase(
       listarComDoisTotais() as never,
     );
 
     const r = await uc.execute('esmeralda', true);
 
-    expect(r.semEstoque).toBe(0);
+    expect(r.total).toBe(112);
+    expect(r.semEstoque).toBe(103);
+    expect(r.incluiuSemEstoque).toBe(true);
   });
 
   /**

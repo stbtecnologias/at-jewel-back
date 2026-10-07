@@ -90,3 +90,45 @@ describe('textoDeProdutos — o que a agente ouve depois da busca', () => {
     expect(texto).not.toContain('incluir_sem_estoque');
   });
 });
+
+/**
+ * ==========================================================================
+ * A SEGUNDA RODADA DO MESMO TESTE, 07/10 — com a lista JÁ aberta.
+ *
+ *   — "tem alguma esmeralda sem estoque?"
+ *   — "As 6 primeiras que apareceram estão todas com estoque, mas são 112
+ *      peças no total — não dá para afirmar que nenhuma zerou só por essas."
+ *
+ * Ela ligou o `incluir_sem_estoque` (certo), recebeu as 112 (certo) e não
+ * recebeu o 103 (errado) — porque o contador era zerado quando a lista vinha
+ * aberta. O número que faltava é o único que respondia a pergunta.
+ * ==========================================================================
+ */
+describe('textoDeProdutos — quando a lista já inclui as zeradas', () => {
+  /* ESTE É O TESTE. O resto é contorno. */
+  it('diz quantas das achadas estão sem estoque', () => {
+    const texto = textoDeProdutos(
+      {
+        produtos: [1, 2, 3, 4, 5, 6].map(peca),
+        total: 112,
+        semEstoque: 103,
+        incluiuSemEstoque: true,
+      },
+      FECHO,
+    );
+
+    expect(texto).toContain('DESTAS 112, 103 estao SEM ESTOQUE');
+    expect(texto).toContain('9 tem saldo');
+    // E não pode mandar ligar de novo o que já está ligado.
+    expect(texto).not.toContain('chame a ferramenta de novo com incluir_sem_estoque');
+  });
+
+  it('não repete a oferta de abrir a lista que já está aberta', () => {
+    const texto = textoDeProdutos(
+      { produtos: [], total: 0, semEstoque: 5, incluiuSemEstoque: true },
+      FECHO,
+    );
+
+    expect(texto).toContain('Nenhuma peca encontrada');
+  });
+});
