@@ -267,3 +267,52 @@ describe('FotosDeProdutoService — quais têm foto', () => {
     expect(r.comFoto.map((p) => p.codigo)).toEqual(['A', 'C']);
   });
 });
+
+/**
+ * ==========================================================================
+ * "SE A LISTA TEM 10 ITENS COM FOTO NÃO FAZ SENTIDO TRAZER APENAS 5."
+ *
+ * Lucas, 07/10/2026, olhando a resposta da tabela filtrada. O teto de cinco
+ * nasceu certo — uma busca comum não pode virar dez mensagens de 156 KB —,
+ * mas aplicado a uma lista que ela FILTROU por foto ele contraria o próprio
+ * pedido: ali todas têm, e é para vê-las que ela pediu.
+ *
+ * O teto passou a depender do pedido, e é só isso que estes dois testes
+ * guardam — um para cada lado.
+ * ==========================================================================
+ */
+describe('FotosDeProdutoService — quantas imagens vão', () => {
+  let servico: FotosDeProdutoService;
+  const original = global.fetch;
+
+  beforeEach(() => {
+    servico = new FotosDeProdutoService();
+    const mapa: Record<string, Resposta> = {};
+    for (let i = 1; i <= 12; i += 1) mapa[`http://conexa/P${i}.png`] = imagem();
+    global.fetch = conexaQueResponde(mapa);
+  });
+
+  afterEach(() => {
+    global.fetch = original;
+  });
+
+  const doze = Array.from({ length: 12 }, (_, i) => ({
+    codigo: `P${i + 1}`,
+    url: `http://conexa/P${i + 1}.png`,
+    legenda: `Peça ${i + 1}`,
+  }));
+
+  it('busca comum: cinco, para não virar enxurrada', async () => {
+    const r = await servico.buscar(doze);
+
+    expect(r.fotos).toHaveLength(5);
+    expect(r.cortadas).toBe(7);
+  });
+
+  /* ESTE É O TESTE. O resto é contorno. */
+  it('quando ela PEDIU as com foto: a página inteira', async () => {
+    const r = await servico.buscar(doze, true);
+
+    expect(r.fotos).toHaveLength(10);
+  });
+});

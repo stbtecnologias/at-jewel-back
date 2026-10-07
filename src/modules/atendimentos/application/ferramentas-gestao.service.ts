@@ -758,6 +758,8 @@ export class FerramentasGestaoService {
                 `${p.descricaoEtiqueta ?? `${p.categoria} ${p.familia}`}` +
                 `${p.codigoErp ? ` — ${p.codigoErp}` : ''}`,
             })),
+            // Ela filtrou por foto: a pagina inteira vai com imagem.
+            true,
           );
           return {
             total: todas.length,

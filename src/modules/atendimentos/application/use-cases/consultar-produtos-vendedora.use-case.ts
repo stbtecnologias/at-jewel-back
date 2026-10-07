@@ -300,12 +300,15 @@ export class ConsultarProdutosVendedoraUseCase {
       fotoUrl: p.fotoUrl ?? null,
     }));
 
+    // `true`: ela FILTROU por foto, então a página inteira vai com imagem —
+    // ver `TETO_QUANDO_ELA_PEDIU`.
     const { fotos } = await this.fotos.buscar(
       linhas.map((l) => ({
         codigo: l.codigo ?? '',
         url: l.fotoUrl,
         legenda: `${l.descricao}${l.codigo ? ` — ${l.codigo}` : ''}`,
       })),
+      true,
     );
 
     return {

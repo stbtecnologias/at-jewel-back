@@ -41,13 +41,19 @@ export interface PedidoDeFoto {
 }
 
 /**
- * Teto de imagens por resposta.
+ * Teto de imagens por resposta, e ele DEPENDE DO PEDIDO — 07/10/2026.
  *
- * Dez fotos de 156 KB viram dez mensagens no WhatsApp de quem só queria uma
- * tabela. Cinco é o que cabe sem virar enxurrada — e, quando o teto corta, o
- * texto DIZ que cortou: a lição do dia inteiro.
+ * Cinco numa busca comum: dez fotos de 156 KB viram dez mensagens no
+ * WhatsApp de quem só queria uma tabela.
+ *
+ * Mas quando ela pede *"as que tiverem foto"*, cortar pela metade contraria
+ * o próprio pedido — a lista inteira tem foto, e é para vê-las que ela
+ * filtrou. Aí o teto é o da página.
+ *
+ * Pergunta do Lucas que descobriu isso: *"pq as 5 primeiras?"*.
  */
 const TETO_DE_FOTOS = 5;
+const TETO_QUANDO_ELA_PEDIU = 10;
 
 /** Acima disto a imagem não vale a espera nem o tráfego. */
 const SEGUNDOS_DE_ESPERA = 8;
@@ -89,13 +95,17 @@ export class FotosDeProdutoService {
    * separa "a Conexa não respondeu" de "ninguém fotografou", e as duas coisas
    * viram item diferente na lista do integrador.
    */
-  async buscar(pedidos: PedidoDeFoto[]): Promise<{
+  async buscar(
+    pedidos: PedidoDeFoto[],
+    elaPediuAsFotos = false,
+  ): Promise<{
     fotos: FotoDeProduto[];
     tinhamUrl: number;
     cortadas: number;
   }> {
     const comUrl = pedidos.filter((p) => !!p.url);
-    const fila = comUrl.slice(0, TETO_DE_FOTOS);
+    const teto = elaPediuAsFotos ? TETO_QUANDO_ELA_PEDIU : TETO_DE_FOTOS;
+    const fila = comUrl.slice(0, teto);
     const cortadas = comUrl.length - fila.length;
 
     const achadas: FotoDeProduto[] = [];
