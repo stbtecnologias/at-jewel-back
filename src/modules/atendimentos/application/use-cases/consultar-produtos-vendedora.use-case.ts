@@ -9,12 +9,18 @@ import { ListarProdutosUseCase } from '../../../produtos/application/use-cases/l
 /**
  * Teto de resultados, e agora com como pedir o resto.
  *
- * SUBIU DE 6 PARA 20 EM 07/10, igual a carteira. Seis era pouco demais para
- * uma tabela de preco — e, sem paginacao, era um teto do qual nao se saia:
- * "a busca so me devolve essas 6 primeiras de cada vez" foi o que a agente
- * respondeu quando pedi as tres que faltavam.
+ * 6 ATE 07/10, DEPOIS 20, E ENTAO 10 — NO MESMO DIA, e as duas mudancas
+ * tiveram motivo medido.
+ *
+ * Seis era pouco para uma tabela de preco, e era um teto do qual nao se saia.
+ * Mas com vinte a agente fez pior: anunciou "aqui os 20 primeiros" e listou
+ * DEZ. E isso nao e estetica — a continuacao e `a_partir_de = 20`, entao as
+ * pecas 11 a 20 desapareceriam entre uma pagina e outra, sem ninguem ver.
+ *
+ * Dez e o tamanho que ela ja escolheu sozinha para uma lista de WhatsApp. O
+ * texto do despacho manda listar TODAS, e o teto garante que "todas" caiba.
  */
-const MAXIMO = 20;
+const MAXIMO = 10;
 
 /**
  * O que a vendedora ve de um produto.

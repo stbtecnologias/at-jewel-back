@@ -3521,7 +3521,11 @@ export function textoDeProdutos(
   }
 
   const partes = [
-    `Pecas encontradas:\n${r.produtos.map((p) => `- ${p.linha}`).join('\n')}`,
+    `Pecas encontradas (${r.produtos.length} nesta lista — LISTE TODAS ELAS ` +
+      'na sua resposta; mostrar menos do que veio faz a continuacao pular ' +
+      `pecas sem ninguem perceber):\n${r.produtos
+        .map((p) => `- ${p.linha}`)
+        .join('\n')}`,
   ];
 
   const recortes: string[] = [];

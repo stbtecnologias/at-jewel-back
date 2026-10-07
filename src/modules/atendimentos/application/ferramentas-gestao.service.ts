@@ -107,13 +107,13 @@ const MAXIMO_CLIENTES_HOMONIMOS = 5;
  * pareca completo.
  */
 /**
- * Teto da lista de produtos — 6 ate 07/10/2026.
+ * Teto da lista de produtos — ver `ConsultarProdutosVendedoraUseCase`, que
+ * conta a historia dos tres valores no mesmo dia: 6, depois 20, depois 10.
  *
- * Seis era pouco para uma tabela de preco, e era um teto do qual nao se
- * saia: "a busca so me devolve essas 6 primeiras de cada vez". Subiu para 20,
- * igual a carteira, e agora com `a_partir_de` para pedir o resto.
+ * O que fixou em 10: com 20, a agente anunciava vinte e listava dez, e a
+ * continuacao pularia as dez do meio.
  */
-const TETO_DE_PRODUTOS = 20;
+const TETO_DE_PRODUTOS = 10;
 
 const MAXIMO_VENDAS_DETALHADAS = 10;
 

@@ -281,13 +281,13 @@ describe('a faixa de preço e a continuação da lista', () => {
     expect(r.pulados).toBe(20);
   });
 
-  it('o teto da lista é 20, e não 6', async () => {
+  it('o teto da lista é 10 — nem 6, nem 20', async () => {
     const listar = listarQueAnota2();
     const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never);
 
     await uc.execute('colar');
 
-    expect(listar.filtros[0]).toMatchObject({ limit: 20 });
+    expect(listar.filtros[0]).toMatchObject({ limit: 10 });
   });
 
   it('página negativa não anda para trás', async () => {

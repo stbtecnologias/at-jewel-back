@@ -185,7 +185,9 @@ describe('textoDeProdutos — o que a categoria deixou de fora', () => {
     );
 
     expect(texto).not.toContain('recortada');
-    expect(texto).not.toContain('TODAS');
+    // `TODAS` sozinho passou a aparecer no cabecalho da lista ("LISTE TODAS"),
+    // entao o que se guarda aqui e a OFERTA de trocar de categoria.
+    expect(texto).not.toContain('categoria = TODAS');
   });
 
   /** Os dois recortes juntos: a resposta tem de citar os dois caminhos. */
@@ -260,5 +262,52 @@ describe('textoDeProdutos — a continuação da lista', () => {
 
     expect(texto).toContain('recortada em JOIA');
     expect(texto).toContain('20.000');
+  });
+});
+
+/**
+ * ==========================================================================
+ * "AQUI OS 20 PRIMEIROS" — E LISTOU DEZ. 07/10/2026, pelo WhatsApp.
+ *
+ * A ferramenta devolveu vinte peças; a agente anunciou vinte e escreveu dez.
+ * Parece estética, e não é: a continuação que ela ofereceu é
+ * `a_partir_de = 20`, então as peças 11 a 20 desapareceriam entre uma página
+ * e outra — sem erro, sem aviso, sem ninguém ver.
+ *
+ * O teto caiu para dez (o tamanho que ela já escolhia sozinha), e o texto
+ * passou a dizer quantas vieram e a mandar listar todas. As duas coisas:
+ * uma para caber, outra para cobrar.
+ * ==========================================================================
+ */
+describe('textoDeProdutos — mostrar menos do que veio quebra a página', () => {
+  /* ESTE É O TESTE. O resto é contorno. */
+  it('diz quantas vieram e manda listar todas', () => {
+    const texto = textoDeProdutos(
+      {
+        produtos: [1, 2, 3].map(peca),
+        total: 91,
+        semEstoque: 0,
+        foraDaCategoria: 0,
+      },
+      FECHO,
+    );
+
+    expect(texto).toContain('3 nesta lista');
+    expect(texto).toContain('LISTE TODAS');
+  });
+
+  it('a continuação pedida bate com o que veio', () => {
+    const texto = textoDeProdutos(
+      {
+        produtos: Array.from({ length: 10 }, (_, i) => peca(i)),
+        total: 91,
+        semEstoque: 0,
+        foraDaCategoria: 0,
+      },
+      FECHO,
+    );
+
+    expect(texto).toContain('10 nesta lista');
+    expect(texto).toContain('a_partir_de = 10');
   });
 });
