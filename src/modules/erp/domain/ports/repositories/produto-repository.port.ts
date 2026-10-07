@@ -28,6 +28,26 @@ export interface FiltroProduto {
    */
   categoriaSugerida?: string;
   /**
+   * A FAIXA DE PRECO DA PERGUNTA, sobre `valor_venda`.
+   *
+   * Irmas do `categoriaSugerida`: entram no ramo das palavras, e o codigo
+   * exato passa por fora. Quem digita um codigo quer AQUELA peca, mesmo que
+   * ela custe mais do que a faixa que ele acabou de citar.
+   *
+   * A faixa nao e fixa — decisao do Lucas em 07/10: e o valor que ela disser.
+   */
+  precoDe?: number;
+  precoAte?: number;
+  /**
+   * Quantas PULAR antes de comecar a lista — a pagina seguinte.
+   *
+   * SO FUNCIONA COM ORDEM ESTAVEL, e e por isso que a ordenacao do `findAll`
+   * tem desempate por `id`. Sem o desempate, duas pecas empatadas trocam de
+   * lugar entre uma pagina e outra: uma repete e outra some, sem erro nenhum.
+   * Mesma armadilha da carteira em 05/10.
+   */
+  deslocamento?: number;
+  /**
    * Texto livre. Varre descricao, categoria, familia, colecao, pedra, cor e
    * codigo do ERP — as colunas por onde uma pessoa procura uma joia.
    *

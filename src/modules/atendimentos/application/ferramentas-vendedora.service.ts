@@ -389,10 +389,20 @@ export class FerramentasVendedoraService {
         };
       },
 
-      consultarProdutos: async ({ busca, incluirSemEstoque, categoria }) => {
+      consultarProdutos: async ({
+        busca,
+        incluirSemEstoque,
+        categoria,
+        precoDe,
+        precoAte,
+        aPartirDe,
+      }) => {
         const achados = await this.produtos.execute(busca, {
           incluirSemEstoque,
           categoria,
+          precoDe,
+          precoAte,
+          aPartirDe,
         });
         return {
           total: achados.total,
@@ -400,6 +410,8 @@ export class FerramentasVendedoraService {
           incluiuSemEstoque: achados.incluiuSemEstoque,
           categoria: achados.categoria,
           foraDaCategoria: achados.foraDaCategoria,
+          faixa: achados.faixa,
+          pulados: achados.pulados,
           produtos: achados.produtos.map((p) => ({
             // DISPONIVEL, E NAO QUANTOS — 25/09/2026. Ver
             // `ProdutoParaVendedora`: o numero nao chega ate aqui.

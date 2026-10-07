@@ -148,6 +148,65 @@ async function main() {
     cilindro ? `achou ${cilindro.codigoErp} (${cilindro.categoria})` : 'NÃO achou',
   );
 
+  console.log('\nA tabela de preço que a gestora pediu');
+  const ate20 = await repo.contar({
+    ativo: true,
+    apenasDisponiveis: true,
+    precoAte: 20000,
+  });
+  const faixa = await repo.findAll({
+    ativo: true,
+    apenasDisponiveis: true,
+    precoDe: 5000,
+    precoAte: 20000,
+    limit: 500,
+  });
+  conferir(
+    'com saldo até 20 mil',
+    ate20 > 0,
+    `${ate20} peças (307 na medição de 07/10)`,
+  );
+  conferir(
+    'faixa de 5 a 20 mil, e a ordem é do mais barato',
+    faixa.every((p) => p.valorVenda >= 5000 && p.valorVenda <= 20000) &&
+      faixa.every(
+        (p, i) => i === 0 || faixa[i - 1].valorVenda <= p.valorVenda,
+      ),
+    `${faixa.length} peças, de ${faixa[0]?.valorVenda} a ${faixa[faixa.length - 1]?.valorVenda}`,
+  );
+
+  // A PÁGINA 2 É A PÁGINA 2 — a armadilha de 05/10, agora com preço, onde o
+  // empate é regra e não exceção.
+  console.log('\nPaginando sem repetir nem pular');
+  const pagina = (deslocamento: number) =>
+    repo.findAll({
+      ativo: true,
+      apenasDisponiveis: true,
+      precoAte: 20000,
+      limit: 20,
+      deslocamento,
+    });
+  const p1 = await pagina(0);
+  const p2 = await pagina(20);
+  const p3 = await pagina(40);
+  const ids = [...p1, ...p2, ...p3].map((p) => p.id);
+  const inteiro = await repo.findAll({
+    ativo: true,
+    apenasDisponiveis: true,
+    precoAte: 20000,
+    limit: 60,
+  });
+  conferir(
+    'três páginas de 20 sem repetir',
+    new Set(ids).size === ids.length,
+    `${ids.length} peças, ${new Set(ids).size} distintas`,
+  );
+  conferir(
+    'e na mesma ordem da lista inteira',
+    ids.join() === inteiro.map((p) => p.id).join(),
+    ids.length === inteiro.length ? 'idênticas' : 'tamanhos diferentes',
+  );
+
   await ds.destroy();
   console.log(falhou ? vermelho('\nAlguma coisa falhou.\n') : verde('\nTudo certo.\n'));
   process.exit(falhou ? 1 : 0);

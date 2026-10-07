@@ -207,3 +207,58 @@ describe('textoDeProdutos — o que a categoria deixou de fora', () => {
     expect(texto).toContain('categoria = TODAS');
   });
 });
+
+/**
+ * A faixa da lista é a mesma da carteira, de 05/10 — agora que os produtos
+ * também têm `a_partir_de`. O teste guarda o que ela precisa dizer: onde a
+ * lista parou, quantas faltam, e o valor exato do próximo pedido.
+ */
+describe('textoDeProdutos — a continuação da lista', () => {
+  it('diz a faixa e como pedir o resto', () => {
+    const texto = textoDeProdutos(
+      {
+        produtos: Array.from({ length: 20 }, (_, i) => peca(i)),
+        total: 97,
+        semEstoque: 0,
+        foraDaCategoria: 0,
+      },
+      FECHO,
+    );
+
+    expect(texto).toContain('97');
+    expect(texto).toContain('a_partir_de = 20');
+  });
+
+  it('na última página, avisa que acabou', () => {
+    const texto = textoDeProdutos(
+      {
+        produtos: [peca(1), peca(2), peca(3)],
+        total: 9,
+        semEstoque: 0,
+        foraDaCategoria: 0,
+        pulados: 6,
+      },
+      FECHO,
+    );
+
+    expect(texto).toContain('ULTIMOS');
+    expect(texto).not.toContain('a_partir_de =');
+  });
+
+  it('diz a faixa de preço aplicada', () => {
+    const texto = textoDeProdutos(
+      {
+        produtos: [peca(1)],
+        total: 1,
+        semEstoque: 0,
+        foraDaCategoria: 0,
+        categoria: 'JEWEL',
+        faixa: { ate: 20000 },
+      },
+      FECHO,
+    );
+
+    expect(texto).toContain('recortada em JOIA');
+    expect(texto).toContain('20.000');
+  });
+});

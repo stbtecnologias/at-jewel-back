@@ -4,6 +4,7 @@ import {
   CATEGORIAS,
   categoriaEmPalavras,
 } from '../../../../shared/catalogo/categorias';
+import { faixaEmPalavras } from '../../../../shared/catalogo/faixa-de-preco';
 import { ConfigService } from '@nestjs/config';
 import type {
   ChatComFerramentasResultado,
@@ -213,6 +214,21 @@ const PRODUTOS_TOOL: Anthropic.Tool = {
         description:
           'O PADRAO E JOIA (JEWEL): nao mande nada em pergunta comum de peca. Mande HOME quando a pergunta for de DECORACAO — vaso, copo, bandeja, bowl, cinzeiro, abajur, castical, porta-joia. Mande a categoria que ela citar quando citar uma. Mande TODAS quando ela quiser ver tudo junto ("de qualquer categoria", "me mostra tudo"). Codigo exato acha a peca em qualquer categoria e nao precisa deste campo.',
       },
+      preco_de: {
+        type: 'number',
+        description:
+          'Piso de preco em reais. "acima de 10 mil" -> 10000. Omita quando ela nao citar piso.',
+      },
+      preco_ate: {
+        type: 'number',
+        description:
+          'Teto de preco em reais, e vale QUALQUER valor que ela disser: "ate 20 mil" -> 20000, "ate 75.985,25" -> 75985.25. Use sempre que ela citar um limite de preco. Com faixa, a lista vem do mais barato para o mais caro.',
+      },
+      a_partir_de: {
+        type: 'integer',
+        description:
+          'Quantas pecas PULAR, para continuar uma lista ja comecada. Omita na primeira vez. Quando a resposta disser "estes sao o 1o ao 20o de 97", peca os proximos com 20; depois 40, e assim ate acabar.',
+      },
     },
     required: ['busca'],
   },
@@ -248,6 +264,21 @@ const GESTAO_PRODUTOS_TOOL: Anthropic.Tool = {
         enum: [...CATEGORIAS, 'TODAS'],
         description:
           'O PADRAO E JOIA (JEWEL): nao mande nada em pergunta comum de peca. Mande HOME quando a pergunta for de DECORACAO — vaso, copo, bandeja, bowl, cinzeiro, abajur, castical, porta-joia. Mande a categoria que ela citar quando citar uma. Mande TODAS quando ela quiser ver tudo junto ("de qualquer categoria", "me mostra tudo"). Codigo exato acha a peca em qualquer categoria e nao precisa deste campo.',
+      },
+      preco_de: {
+        type: 'number',
+        description:
+          'Piso de preco em reais. "acima de 10 mil" -> 10000. Omita quando ela nao citar piso.',
+      },
+      preco_ate: {
+        type: 'number',
+        description:
+          'Teto de preco em reais, e vale QUALQUER valor que ela disser: "ate 20 mil" -> 20000, "ate 75.985,25" -> 75985.25. Use sempre que ela citar um limite de preco. Com faixa, a lista vem do mais barato para o mais caro.',
+      },
+      a_partir_de: {
+        type: 'integer',
+        description:
+          'Quantas pecas PULAR, para continuar uma lista ja comecada. Omita na primeira vez. Quando a resposta disser "estes sao o 1o ao 20o de 97", peca os proximos com 20; depois 40, e assim ate acabar.',
       },
     },
     required: ['busca'],
@@ -2413,15 +2444,14 @@ export class AnthropicClient implements ILlmClient {
       ) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
-            const entrada = toolUse.input as {
-              busca?: string;
-              incluir_sem_estoque?: boolean;
-              categoria?: string;
-            };
+            const entrada = toolUse.input as RecorteDeProduto;
             const r = await params.gestaoProdutos!({
               busca: String(entrada.busca ?? '').slice(0, 120),
               incluirSemEstoque: entrada.incluir_sem_estoque === true,
               categoria: entrada.categoria,
+              precoDe: entrada.preco_de,
+              precoAte: entrada.preco_ate,
+              aPartirDe: Number(entrada.a_partir_de) || 0,
             });
             return textoDeProdutos(r, 'Repasse os numeros exatamente como estao.');
           }),
@@ -2432,11 +2462,7 @@ export class AnthropicClient implements ILlmClient {
       ) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
-            const entrada = toolUse.input as {
-              busca?: string;
-              incluir_sem_estoque?: boolean;
-              categoria?: string;
-            };
+            const entrada = toolUse.input as RecorteDeProduto;
             const r = await params.consultarProdutos!({
               categoria: entrada.categoria,
               busca: String(entrada.busca ?? '').slice(0, 120),
@@ -2444,6 +2470,9 @@ export class AnthropicClient implements ILlmClient {
               // "false", que e truthy em JavaScript e ligaria o filtro ao
               // contrario do que ele pediu.
               incluirSemEstoque: entrada.incluir_sem_estoque === true,
+              precoDe: entrada.preco_de,
+              precoAte: entrada.preco_ate,
+              aPartirDe: Number(entrada.a_partir_de) || 0,
             });
             return textoDeProdutos(
               r,
@@ -3422,6 +3451,19 @@ function faixaDaLista(
  * mesmo quando nao pensou em ligar o `incluir_sem_estoque`.
  * ==========================================================================
  */
+/**
+ * O recorte como o MODELO manda — nomes em snake_case e valores que podem
+ * vir como texto. A correcao fica em `faixaDePreco` e `categoriaDaBusca`.
+ */
+type RecorteDeProduto = {
+  busca?: string;
+  incluir_sem_estoque?: boolean;
+  categoria?: string;
+  preco_de?: unknown;
+  preco_ate?: unknown;
+  a_partir_de?: unknown;
+};
+
 export function textoDeProdutos(
   r: {
     produtos: { linha: string }[];
@@ -3430,6 +3472,8 @@ export function textoDeProdutos(
     incluiuSemEstoque?: boolean;
     categoria?: string;
     foraDaCategoria?: number;
+    faixa?: { de?: number; ate?: number };
+    pulados?: number;
   },
   fecho: string,
 ): string {
@@ -3468,19 +3512,23 @@ export function textoDeProdutos(
     `Pecas encontradas:\n${r.produtos.map((p) => `- ${p.linha}`).join('\n')}`,
   ];
 
-  if (r.categoria) {
-    partes.push(
-      `A lista esta recortada em ${categoriaEmPalavras(r.categoria)}.`,
-    );
+  const recortes: string[] = [];
+  if (r.categoria) recortes.push(categoriaEmPalavras(r.categoria));
+  const rotuloDaFaixa = r.faixa ? faixaEmPalavras(r.faixa) : '';
+  if (rotuloDaFaixa) recortes.push(rotuloDaFaixa);
+  if (recortes.length > 0) {
+    partes.push(`A lista esta recortada em ${recortes.join(', ')}.`);
   }
 
-  if (r.total > r.produtos.length) {
-    partes.push(
-      `SAO ${r.total} NO TOTAL com esse termo, e estas sao as ` +
-        `${r.produtos.length} primeiras. DIGA o total na resposta — nunca ` +
-        'apresente estas como se fossem todas que existem.',
-    );
-  }
+  // A MESMA FAIXA DA CARTEIRA, de 05/10 — e agora os produtos tambem tem como
+  // continuar. Ela diz onde a lista parou, quantas faltam e o valor exato do
+  // proximo `a_partir_de`; quando acaba, diz que acabou.
+  const faixaDaPagina = faixaDaLista(
+    r.pulados ?? 0,
+    r.produtos.length,
+    r.total,
+  ).trim();
+  if (faixaDaPagina) partes.push(faixaDaPagina);
 
   if (r.semEstoque > 0 && r.incluiuSemEstoque) {
     // A LISTA JA VEM ABERTA, e o numero muda de significado: nao e o que

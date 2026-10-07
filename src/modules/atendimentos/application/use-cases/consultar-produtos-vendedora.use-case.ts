@@ -1,9 +1,20 @@
 import { Injectable } from '@nestjs/common';
 import { categoriaDaBusca } from '../../../../shared/catalogo/categorias';
+import {
+  faixaDePreco,
+  type Faixa,
+} from '../../../../shared/catalogo/faixa-de-preco';
 import { ListarProdutosUseCase } from '../../../produtos/application/use-cases/listar-produtos.use-case';
 
-/** Teto de resultados. Lista longa nao ajuda ninguem numa conversa de WhatsApp. */
-const MAXIMO = 6;
+/**
+ * Teto de resultados, e agora com como pedir o resto.
+ *
+ * SUBIU DE 6 PARA 20 EM 07/10, igual a carteira. Seis era pouco demais para
+ * uma tabela de preco — e, sem paginacao, era um teto do qual nao se saia:
+ * "a busca so me devolve essas 6 primeiras de cada vez" foi o que a agente
+ * respondeu quando pedi as tres que faltavam.
+ */
+const MAXIMO = 20;
 
 /**
  * O que a vendedora ve de um produto.
@@ -59,13 +70,22 @@ export interface ResultadoDeProdutos {
   categoria?: string;
   /** Quantas casam com o termo e ficaram FORA por causa da categoria. */
   foraDaCategoria: number;
+  /** A faixa de preco efetivamente aplicada, ja lida e corrigida. */
+  faixa: Faixa;
+  /** Quantas foram puladas antes desta pagina. */
+  pulados: number;
 }
 
-/** O que a pergunta pode recortar. Objeto, e nao argumentos soltos: faixa de preco e pagina entram aqui em seguida. */
+/** O que a pergunta pode recortar. Objeto, e nao argumentos soltos: sao cinco. */
 export interface OpcoesDeBusca {
   incluirSemEstoque?: boolean;
   /** Vinda da pergunta; passa por `categoriaDaBusca` antes de virar filtro. */
   categoria?: string;
+  /** Vindos da pergunta; passam por `faixaDePreco` — podem ser texto. */
+  precoDe?: unknown;
+  precoAte?: unknown;
+  /** A pagina seguinte: quantas pular. */
+  aPartirDe?: number;
 }
 
 /**
@@ -94,11 +114,15 @@ export class ConsultarProdutosVendedoraUseCase {
   ): Promise<ResultadoDeProdutos> {
     const incluirSemEstoque = opcoes.incluirSemEstoque === true;
     const categoria = categoriaDaBusca(opcoes.categoria);
+    const faixa = faixaDePreco(opcoes.precoDe, opcoes.precoAte);
+    const pulados = Math.max(0, Math.trunc(opcoes.aPartirDe ?? 0));
     const filtro = {
       busca,
       ativo: true,
       apenasDisponiveis: !incluirSemEstoque,
       categoriaSugerida: categoria,
+      precoDe: faixa.de,
+      precoAte: faixa.ate,
     };
 
     // AS DUAS CONTAGENS SEMPRE, e isto foi corrigido no segundo teste de
@@ -112,7 +136,7 @@ export class ConsultarProdutosVendedoraUseCase {
     //
     // Sao 103 zeradas. Ela tinha as 112 e nao tinha o 103.
     const [produtos, total, comSaldo] = await Promise.all([
-      this.listar.execute({ ...filtro, limit: MAXIMO }),
+      this.listar.execute({ ...filtro, limit: MAXIMO, deslocamento: pulados }),
       this.listar.contar(filtro),
       this.listar.contar({ ...filtro, apenasDisponiveis: true }),
     ]);
@@ -146,6 +170,8 @@ export class ConsultarProdutosVendedoraUseCase {
       incluiuSemEstoque: incluirSemEstoque,
       categoria,
       foraDaCategoria: Math.max(0, semRecorte - total),
+      faixa,
+      pulados,
     };
   }
 }

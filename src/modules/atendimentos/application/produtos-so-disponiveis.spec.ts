@@ -237,3 +237,65 @@ describe('a categoria da pergunta', () => {
     expect(listar.filtros[0]).toMatchObject({ categoriaSugerida: 'HOME' });
   });
 });
+
+/**
+ * ==========================================================================
+ * A FAIXA E A PÁGINA — 07/10/2026.
+ *
+ * *"Quer que eu traga as 3 restantes?" — "A busca só me devolve essas 6
+ * primeiras de cada vez."* Era verdade, e inútil.
+ * ==========================================================================
+ */
+describe('a faixa de preço e a continuação da lista', () => {
+  function listarQueAnota2() {
+    const filtros: Record<string, unknown>[] = [];
+    return {
+      filtros,
+      uso: {
+        execute: async (f: Record<string, unknown>) => {
+          filtros.push(f);
+          return [];
+        },
+        contar: async () => 0,
+      },
+    };
+  }
+
+  it('a faixa chega ao filtro, lida do texto', async () => {
+    const listar = listarQueAnota2();
+    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never);
+
+    await uc.execute('colar', { precoAte: '20.000' });
+
+    expect(listar.filtros[0]).toMatchObject({ precoAte: 20000 });
+  });
+
+  /* ESTE É O TESTE. O resto é contorno. */
+  it('a página seguinte vira deslocamento', async () => {
+    const listar = listarQueAnota2();
+    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never);
+
+    const r = await uc.execute('colar', { aPartirDe: 20 });
+
+    expect(listar.filtros[0]).toMatchObject({ deslocamento: 20 });
+    expect(r.pulados).toBe(20);
+  });
+
+  it('o teto da lista é 20, e não 6', async () => {
+    const listar = listarQueAnota2();
+    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never);
+
+    await uc.execute('colar');
+
+    expect(listar.filtros[0]).toMatchObject({ limit: 20 });
+  });
+
+  it('página negativa não anda para trás', async () => {
+    const listar = listarQueAnota2();
+    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never);
+
+    const r = await uc.execute('colar', { aPartirDe: -10 });
+
+    expect(r.pulados).toBe(0);
+  });
+});

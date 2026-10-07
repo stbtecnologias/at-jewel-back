@@ -34,8 +34,12 @@ type No = { condicao: string; filhos: No[] };
  * condição entrou. `Brackets` vira um nó com filhos — que é exatamente o que
  * precisa ser verificado.
  */
+/** A ordenação e o salto, que não são condições mas decidem a página. */
+type Leitura = { ordem: string[]; pulou: number };
+
 function construtorQueAnota() {
   const raiz: No = { condicao: 'RAIZ', filhos: [] };
+  const leitura: Leitura = { ordem: [], pulou: 0 };
 
   const construir = (no: No) => {
     const anotar = (condicao: unknown) => {
@@ -48,27 +52,36 @@ function construtorQueAnota() {
       }
       return qb;
     };
+    const ordenar = (coluna: string, sentido = 'ASC') => {
+      leitura.ordem.push(`${coluna} ${sentido}`);
+      return qb;
+    };
     const qb = {
       where: anotar,
       andWhere: anotar,
       orWhere: anotar,
-      orderBy: () => qb,
+      orderBy: ordenar,
+      addOrderBy: ordenar,
+      skip: (n: number) => {
+        leitura.pulou = n;
+        return qb;
+      },
       take: () => qb,
       getMany: async () => [],
     };
     return qb;
   };
 
-  return { qb: construir(raiz), raiz };
+  return { qb: construir(raiz), raiz, leitura };
 }
 
 function repositorioFalso() {
-  const { qb, raiz } = construtorQueAnota();
+  const { qb, raiz, leitura } = construtorQueAnota();
   const repo = new ProdutoRepository({
     createQueryBuilder: () => qb,
     manager: { query: async () => [] },
   } as never);
-  return { repo, raiz };
+  return { repo, raiz, leitura };
 }
 
 const TEM_SALDO = /HAVING SUM\(quantidade\) > 0/;
@@ -231,5 +244,90 @@ describe('findAll — a categoria sugerida também passa por fora do código', (
     await repo.findAll({ busca: 'C795VES', ativo: true, categoria: 'HOME' });
 
     expect(raiz.filhos.some((f) => /p\.categoria = :categoria\b/.test(f.condicao))).toBe(true);
+  });
+});
+
+/**
+ * ==========================================================================
+ * A FAIXA DE PREÇO E A PÁGINA 2 — 07/10/2026.
+ *
+ * "Quero puxar uma tabela de peças até 20 mil reais" — a gestora, em 07/10,
+ * e a Anastasia respondeu que não conseguia. E depois, pedindo as três que
+ * faltavam de nove: *"a busca só me devolve essas 6 primeiras de cada vez"*.
+ *
+ * O desempate da ordenação é o que faz a página 2 ser a página 2. Sem ele,
+ * duas peças do mesmo preço podem trocar de lugar entre uma consulta e
+ * outra: uma repete e outra desaparece — sem erro nenhum. Foi o conserto da
+ * carteira em 05/10, e aqui a faixa de preço torna o empate COMUM, porque
+ * preço repetido é regra no catálogo, não exceção.
+ * ==========================================================================
+ */
+describe('findAll — faixa de preço e paginação', () => {
+  const TEM_PRECO = /valor_venda/;
+
+  it('filtra pela faixa numa busca por palavras', async () => {
+    const { repo, raiz } = repositorioFalso();
+
+    await repo.findAll({ busca: 'colar', ativo: true, precoAte: 20000 });
+
+    expect(todas(raiz).some((c) => TEM_PRECO.test(c))).toBe(true);
+  });
+
+  /* ESTE É O TESTE. O resto é contorno. */
+  it('o ramo do CÓDIGO não carrega a faixa de preço', async () => {
+    const { repo, raiz } = repositorioFalso();
+
+    // A peça custa R$ 37.900 e a faixa pedida vai até 20 mil. Quem digita o
+    // código quer AQUELA peça, e não "aquela peça se couber no orçamento".
+    await repo.findAll({
+      busca: 'quanto custa o AN24084',
+      ativo: true,
+      precoAte: 20000,
+    });
+
+    const grupo = grupoMaisFundoCom(raiz, TEM_PRECO);
+    expect(todas(grupo).some((c) => TEM_PRECO.test(c))).toBe(true);
+    expect(todas(grupo).some((c) => TEM_CODIGO.test(c))).toBe(false);
+  });
+
+  it('o desempate por id está sempre lá', async () => {
+    const { repo, leitura } = repositorioFalso();
+
+    await repo.findAll({ busca: 'colar', ativo: true, deslocamento: 20 });
+
+    expect(leitura.ordem[leitura.ordem.length - 1]).toBe('p.id ASC');
+  });
+
+  it('com faixa de preço, a lista vem do mais barato', async () => {
+    const { repo, leitura } = repositorioFalso();
+
+    await repo.findAll({ busca: 'colar', ativo: true, precoAte: 20000 });
+
+    expect(leitura.ordem[0]).toBe('p.valor_venda ASC');
+    expect(leitura.ordem[1]).toBe('p.id ASC');
+  });
+
+  it('sem faixa, segue a entrada mais recente primeiro', async () => {
+    const { repo, leitura } = repositorioFalso();
+
+    await repo.findAll({ busca: 'colar', ativo: true });
+
+    expect(leitura.ordem[0]).toBe('p.criado_em DESC');
+  });
+
+  it('o salto da página chega inteiro', async () => {
+    const { repo, leitura } = repositorioFalso();
+
+    await repo.findAll({ busca: 'colar', ativo: true, deslocamento: 20 });
+
+    expect(leitura.pulou).toBe(20);
+  });
+
+  it('salto negativo ou quebrado não vira salto', async () => {
+    const { repo, leitura } = repositorioFalso();
+
+    await repo.findAll({ busca: 'colar', ativo: true, deslocamento: -5 });
+
+    expect(leitura.pulou).toBe(0);
   });
 });

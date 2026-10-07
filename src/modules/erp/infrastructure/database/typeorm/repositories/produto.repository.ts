@@ -139,7 +139,24 @@ export class ProdutoRepository implements IProdutoRepository {
 
   async findAll(filtros: FiltroProduto): Promise<Produto[]> {
     const qb = this.montarConsulta(filtros);
-    qb.orderBy('p.criado_em', 'DESC');
+
+    // ORDEM DE PERGUNTA DE PRECO E O PRECO. Quem pede "pecas ate 20 mil" quer
+    // uma tabela, e tabela de preco se le do mais barato para o mais caro —
+    // e o mesmo formato do relatorio do Safira que a gestao usa hoje. Sem
+    // faixa, segue valendo a entrada mais recente primeiro.
+    const porPreco =
+      filtros.precoDe !== undefined || filtros.precoAte !== undefined;
+    if (porPreco) qb.orderBy('p.valor_venda', 'ASC');
+    else qb.orderBy('p.criado_em', 'DESC');
+
+    // O DESEMPATE NAO E ZELO — e o que faz a pagina 2 ser a pagina 2. Com
+    // duas pecas do mesmo preco e sem segundo criterio, o Postgres pode
+    // devolve-las em ordem diferente a cada consulta: uma repete na pagina
+    // seguinte e outra desaparece, sem erro nenhum. Foi o conserto da
+    // carteira em 05/10, e `id` e unico por definicao.
+    qb.addOrderBy('p.id', 'ASC');
+
+    if (filtros.deslocamento) qb.skip(Math.max(0, Math.trunc(filtros.deslocamento)));
     if (filtros.limit) qb.take(filtros.limit);
 
     return this.comSaldo(await qb.getMany());
@@ -230,6 +247,16 @@ export class ProdutoRepository implements IProdutoRepository {
                     categoriaSugerida: filtros.categoriaSugerida,
                   });
                 }
+                if (filtros.precoDe !== undefined) {
+                  todas.andWhere('p.valor_venda >= :precoDe', {
+                    precoDe: filtros.precoDe,
+                  });
+                }
+                if (filtros.precoAte !== undefined) {
+                  todas.andWhere('p.valor_venda <= :precoAte', {
+                    precoAte: filtros.precoAte,
+                  });
+                }
                 for (const [i, palavra] of palavras.entries()) {
                   const chave = `busca${i}`;
                   const termo = `%${palavra}%`;
@@ -268,6 +295,14 @@ export class ProdutoRepository implements IProdutoRepository {
       if (filtros.categoriaSugerida) {
         qb.andWhere('p.categoria = :categoriaSugerida', {
           categoriaSugerida: filtros.categoriaSugerida,
+        });
+      }
+      if (filtros.precoDe !== undefined) {
+        qb.andWhere('p.valor_venda >= :precoDe', { precoDe: filtros.precoDe });
+      }
+      if (filtros.precoAte !== undefined) {
+        qb.andWhere('p.valor_venda <= :precoAte', {
+          precoAte: filtros.precoAte,
         });
       }
     }

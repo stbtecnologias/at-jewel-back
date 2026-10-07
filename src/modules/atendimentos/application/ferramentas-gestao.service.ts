@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { categoriaDaBusca } from '../../../shared/catalogo/categorias';
+import { faixaDePreco } from '../../../shared/catalogo/faixa-de-preco';
 import { diasDeCalendario } from '../../../shared/tempo/dias-de-calendario';
 import { dataDeCorte, datasDeRecorte } from '../../../shared/tempo/recorte-de-datas';
 import type { NomeComemorativo } from '../../../shared/tempo/datas-comemorativas';
@@ -105,6 +106,15 @@ const MAXIMO_CLIENTES_HOMONIMOS = 5;
  * cobre a quase totalidade, e o total vem junto para que um recorte grande nao
  * pareca completo.
  */
+/**
+ * Teto da lista de produtos — 6 ate 07/10/2026.
+ *
+ * Seis era pouco para uma tabela de preco, e era um teto do qual nao se
+ * saia: "a busca so me devolve essas 6 primeiras de cada vez". Subiu para 20,
+ * igual a carteira, e agora com `a_partir_de` para pedir o resto.
+ */
+const TETO_DE_PRODUTOS = 20;
+
 const MAXIMO_VENDAS_DETALHADAS = 10;
 
 const MAXIMO_FEEDBACKS = 10;
@@ -687,20 +697,35 @@ export class FerramentasGestaoService {
       // O SALDO VEM DA TABELA `estoque` — o `estoqueAtual` do
       // `ListarProdutosUseCase` ja e o somatorio de la desde 17/09, e nao a
       // coluna `produtos.estoque_atual`, que esta zerada na base inteira.
-      gestaoProdutos: async ({ busca, incluirSemEstoque, categoria }) => {
+      gestaoProdutos: async ({
+        busca,
+        incluirSemEstoque,
+        categoria,
+        precoDe,
+        precoAte,
+        aPartirDe,
+      }) => {
         // Mesma regra do canal da vendedora, e pelas mesmas decisoes de 07/10:
         // so o disponivel (salvo quando ela PEDE o indisponivel), padrao joia,
         // e sempre AMOSTRA + TOTAL — o teto sozinho vira resposta errada. Ver
         // `ConsultarProdutosVendedoraUseCase`, que explica cada numero.
         const daPergunta = categoriaDaBusca(categoria);
+        const faixa = faixaDePreco(precoDe, precoAte);
+        const pulados = Math.max(0, Math.trunc(aPartirDe ?? 0));
         const filtro = {
           busca,
           ativo: true,
           apenasDisponiveis: !incluirSemEstoque,
           categoriaSugerida: daPergunta,
+          precoDe: faixa.de,
+          precoAte: faixa.ate,
         };
         const [achados, total, comSaldo] = await Promise.all([
-          this.listarProdutos.execute({ ...filtro, limit: 6 }),
+          this.listarProdutos.execute({
+            ...filtro,
+            limit: TETO_DE_PRODUTOS,
+            deslocamento: pulados,
+          }),
           this.listarProdutos.contar(filtro),
           this.listarProdutos.contar({ ...filtro, apenasDisponiveis: true }),
         ]);
@@ -724,6 +749,8 @@ export class FerramentasGestaoService {
           incluiuSemEstoque: incluirSemEstoque === true,
           categoria: daPergunta,
           foraDaCategoria: Math.max(0, semRecorte - total),
+          faixa,
+          pulados,
           produtos: achados.map((p) => ({
             linha:
               `${p.descricaoEtiqueta ?? `${p.categoria} ${p.familia}`}` +

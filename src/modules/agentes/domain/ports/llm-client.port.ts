@@ -157,6 +157,14 @@ export interface ConsultarProdutosLlmInput {
    * "sem filtro": ver `categoriaDaBusca`.
    */
   categoria?: string;
+  /**
+   * A faixa de preco da pergunta. `unknown` porque o modelo manda texto: a
+   * leitura e a correcao ficam em `faixaDePreco`.
+   */
+  precoDe?: unknown;
+  precoAte?: unknown;
+  /** Quantas pular — a continuacao da lista. Ver `faixaDaLista`. */
+  aPartirDe?: number;
 }
 
 export interface ProdutoLlm {
@@ -186,6 +194,10 @@ export interface ConsultarProdutosLlmResultado {
   categoria?: string;
   /** Quantas casam com o termo e ficaram de fora POR CAUSA da categoria. */
   foraDaCategoria: number;
+  /** A faixa de preco aplicada, ja lida e corrigida. */
+  faixa?: { de?: number; ate?: number };
+  /** Quantas foram puladas antes desta pagina. */
+  pulados?: number;
 }
 
 export type ConsultarProdutosHandler = (
@@ -701,6 +713,10 @@ export type GestaoProdutosHandler = (input: {
   incluirSemEstoque?: boolean;
   /** Ver `ConsultarProdutosLlmInput.categoria` — mesma regra. */
   categoria?: string;
+  /** Ver `ConsultarProdutosLlmInput` — a faixa e a pagina, mesmas regras. */
+  precoDe?: unknown;
+  precoAte?: unknown;
+  aPartirDe?: number;
 }) => Promise<{
   produtos: { linha: string }[];
   /** Ver `ConsultarProdutosLlmResultado` — amostra e total andam juntos. */
@@ -709,6 +725,8 @@ export type GestaoProdutosHandler = (input: {
   incluiuSemEstoque: boolean;
   categoria?: string;
   foraDaCategoria: number;
+  faixa?: { de?: number; ate?: number };
+  pulados?: number;
 }>;
 
 /**
