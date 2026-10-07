@@ -19,6 +19,10 @@ import type { IAtendimentoRepository } from '../../domain/ports/repositories/ate
 import { RegistrarEventoUseCase } from '../../../agente-eventos/application/use-cases/registrar-evento.use-case';
 import { assuntosRestritosEm } from '../assunto-restrito';
 import { FerramentasVendedoraService } from '../ferramentas-vendedora.service';
+import { FerramentasGestaoService } from '../ferramentas-gestao.service';
+import { PermissionsService } from '../../../auth/application/permissions.service';
+import { EscopoVendasService } from '../../../vendas/application/escopo-vendas.service';
+import { PERMISSAO_GESTAO } from '../../../auth/application/use-cases/buscar-admin-por-telefone.use-case';
 import { MemoriaConversaService } from '../memoria-conversa.service';
 import { modeloDeIa } from '../../../../shared/config/modelo-de-ia';
 
@@ -39,6 +43,17 @@ export interface MensagemInterna {
   /** Vazio quando a vendedora mandou audio puro — ver `audio`. */
   texto: string;
   audio?: AudioInterno;
+  /**
+   * QUEM TAMBEM GERENCIA — 07/10/2026.
+   *
+   * Preenchido quando a MESMA pessoa tem login de gestao alem do cadastro
+   * de vendedora. A Nathalia e o caso: gerente de vendas e vendedora, com
+   * um numero so — o da Helena.
+   *
+   * `undefined` e o estado de quase todo mundo, e nada muda: a Helena
+   * continua entregando so as ferramentas da vendedora.
+   */
+  gestao?: { usuarioId: string; role: string };
 }
 
 export interface RespostaInterna {
@@ -90,6 +105,12 @@ export class ProcessarMensagemInternaUseCase {
   constructor(
     private readonly identificarVendedora: BuscarVendedoraPorWhatsappUseCase,
     private readonly ferramentas: FerramentasVendedoraService,
+    // AS DE GESTAO, para quem acumula os dois papeis — 07/10/2026. E o
+    // MESMO servico que a Anastasia usa: o escopo sai do contexto, nao de
+    // uma copia das regras aqui.
+    private readonly ferramentasGestao: FerramentasGestaoService,
+    private readonly permissoes: PermissionsService,
+    private readonly escopoVendas: EscopoVendasService,
     @Inject(ATENDIMENTO_REPOSITORY)
     private readonly atendimentos: IAtendimentoRepository,
     @Inject(CLIENTE_REPOSITORY)
@@ -195,6 +216,24 @@ export class ProcessarMensagemInternaUseCase {
         // AS FERRAMENTAS VEM DO SERVICO — o MESMO que a Elena do painel usa.
         // Aqui fica so o que e proprio do WhatsApp: quem esta falando (por
         // closure, do telefone resolvido), a memoria e a ausencia de grafico.
+        // ================================================================
+        // QUEM TAMBEM GERENCIA RECEBE OS DOIS CONJUNTOS — 07/10/2026.
+        //
+        // A Nathalia e gerente de vendas E vendedora, com um numero so: o
+        // da Helena. Antes disto, metade do trabalho dela nao tinha canal
+        // — ela via a propria carteira e nao via a equipe.
+        //
+        // A ORDEM NAO ARBITRA NADA. Onde os dois conjuntos usam o MESMO
+        // nome de ferramenta — `consultar_produtos` e `clientes_por_epoca`
+        // —, quem decide e o cliente do LLM, que declara a versao da
+        // vendedora quando as duas chaves estao presentes. Ver os
+        // `!params.consultarProdutos` em `anthropic.client.ts`.
+        //
+        // E O ESCOPO CONTINUA O DA GESTAO: equipe, `verLoja` e
+        // `verQuantidade` saem do papel dela, pelo MESMO servico que a
+        // Anastasia usa. Nenhuma regra e reescrita aqui.
+        // ================================================================
+        ...(await this.ferramentasDeGestao(msg.gestao, primeiroNome)),
         ...this.ferramentas.montar({
           vendedoraId,
           codigoErp,
@@ -328,6 +367,43 @@ export class ProcessarMensagemInternaUseCase {
    * Sem cobranca aberta, a frase diz isso — para ele nao chamar a ferramenta a
    * toa e acabar registrando relato de um contato que ninguem pediu.
    */
+  /**
+   * As ferramentas de gestao de quem acumula os dois papeis.
+   *
+   * `{}` PARA QUASE TODO MUNDO, e e o caminho que nao custa nada: sem
+   * `gestao` nao ha consulta de permissao nenhuma, e a Helena fica
+   * exatamente como era.
+   *
+   * A PERMISSAO E CONFERIDA DE NOVO AQUI. O roteador ja sabe que a pessoa
+   * tem login de gestao, mas "ter login" nao e "poder usar a agente" —
+   * quem decide isso e `PERMISSAO_GESTAO`, a mesma chave da Anastasia. Uma
+   * barreira a mais no lugar onde o conjunto e montado.
+   */
+  private async ferramentasDeGestao(
+    gestao: MensagemInterna['gestao'],
+    nome: string,
+  ): Promise<Record<string, unknown>> {
+    if (!gestao) return {};
+
+    const podeGerir = await this.permissoes.possui(
+      gestao.role,
+      PERMISSAO_GESTAO,
+    );
+    if (!podeGerir) return {};
+
+    return this.ferramentasGestao.montar({
+      solicitante: nome,
+      // O FATURAMENTO DA LOJA NAO ENTRA PELA HELENA. Quem o enxerga e
+      // desviado para a Anastasia no roteador, entao aqui isto e sempre
+      // falso — escrito explicito para nao depender daquele desvio.
+      verLoja: false,
+      verQuantidade: await this.permissoes.possui(gestao.role, 'estoque:quantidade'),
+      // AS VENDEDORAS QUE ELA ALCANCA, do MESMO servico que a tela de
+      // Vendas usa: uma regra, tres portas.
+      equipe: await this.escopoVendas.equipeDoUsuario(gestao.usuarioId),
+    }) as unknown as Record<string, unknown>;
+  }
+
   private async montarContextoPendencia(vendedoraId: string): Promise<string> {
     const pendencia = await this.atendimentos.buscarCobrancaAguardando(vendedoraId);
     if (!pendencia) {

@@ -109,6 +109,11 @@ describe('ProcessarMensagemInternaUseCase', () => {
     useCase = new ProcessarMensagemInternaUseCase(
       identificar as never,
       ferramentas,
+      // AS DE GESTAO — 07/10/2026. Dubladas: estes testes descrevem o canal
+      // da vendedora, e sem `gestao` na mensagem nada disto e tocado.
+      { montar: jest.fn(() => ({})) } as never,
+      { possui: jest.fn().mockResolvedValue(false) } as never,
+      { equipeDoUsuario: jest.fn().mockResolvedValue(null) } as never,
       atendimentos as never,
       clientes as never,
       llm as never,

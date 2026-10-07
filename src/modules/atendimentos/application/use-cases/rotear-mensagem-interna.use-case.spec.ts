@@ -365,7 +365,22 @@ describe('RotearMensagemInternaUseCase', () => {
     });
   });
 
-  it('vendedora vai para a Elena, e a gestao nem e consultada', async () => {
+  /**
+   * ======================================================================
+   * A GESTAO PASSOU A SER CONSULTADA TAMBEM — 07/10/2026.
+   *
+   * Ate aqui a pergunta de gestao so era feita quando a de vendedora
+   * falhava, e o teste guardava essa ordem. A regra mudou por decisao do
+   * Lucas: a Nathalia e gerente de vendas E vendedora, com UM numero — o da
+   * Helena. Parando na primeira resposta, metade do trabalho dela ficava
+   * sem canal.
+   *
+   * O QUE O TESTE GUARDA AGORA e o que nao pode mudar: a vendedora continua
+   * sendo atendida pela Helena, e nao pela gestao. Acumular ferramentas e
+   * uma coisa; trocar de canal e outra, e essa continua proibida.
+   * ======================================================================
+   */
+  it('vendedora vai para a Elena, mesmo tendo login de gestao', async () => {
     identificarVendedora.execute.mockResolvedValue(VENDEDORA);
 
     const r = await useCase.execute({
@@ -375,8 +390,6 @@ describe('RotearMensagemInternaUseCase', () => {
 
     expect(r.resposta).toBe('da elena');
     expect(canalGestao.execute).not.toHaveBeenCalled();
-    // A ordem importa: nem chega a perguntar se ela e admin.
-    expect(identificarAdmin.execute).not.toHaveBeenCalled();
   });
 
   it('quem e VENDEDORA e tambem tem login continua na Elena', async () => {
@@ -531,14 +544,18 @@ describe('RotearMensagemInternaUseCase', () => {
   });
 
   it('a catraca da aprovacao nao inverte a ordem: vendedora continua primeiro', async () => {
-    // Sem nada pendente, nenhum lookup de admin acontece antes do de vendedora
-    // — e o que impede vendedora com login de cair no canal amplo.
+    // Sem nada pendente, "aprovo" de vendedora nao vira aprovacao de
+    // catalogo — e o que impede vendedora com login de cair no canal amplo.
+    //
+    // A CONSULTA DE ADMIN DEIXOU DE SER PROIBIDA aqui em 07/10/2026: ela
+    // passou a acontecer sempre, para quem acumula os dois papeis receber
+    // os dois conjuntos. O que o teste guarda e o DESTINO, que nao mudou.
     identificarVendedora.execute.mockResolvedValue(VENDEDORA);
 
     await useCase.execute({ de: '558586467241@c.us', texto: 'aprovo' });
 
-    expect(identificarAdmin.execute).not.toHaveBeenCalled();
     expect(canalCatalogo.aprovacao).not.toHaveBeenCalled();
+    expect(canalVendedora.execute).toHaveBeenCalled();
   });
 
   it('o codigo da peca precede os agentes, e nao vira pergunta de vendas', async () => {
@@ -714,7 +731,7 @@ describe('RotearMensagemInternaUseCase', () => {
       expect(canalCatalogo.intencao).not.toHaveBeenCalled();
     });
 
-    it('a VENDEDORA que fala de foto continua na Elena — a ordem nao muda', async () => {
+    it('a VENDEDORA que fala de foto continua na Elena', async () => {
       identificarVendedora.execute.mockResolvedValue(VENDEDORA);
       canalCatalogo.falaDeMandarFoto.mockReturnValue(true);
 
@@ -725,7 +742,6 @@ describe('RotearMensagemInternaUseCase', () => {
 
       expect(r.resposta).toBe('da elena');
       expect(canalCatalogo.intencao).not.toHaveBeenCalled();
-      expect(identificarAdmin.execute).not.toHaveBeenCalled();
     });
 
     it('com a conversa aberta, o "Ok" e recibo e NAO chega na Anastasia', async () => {
