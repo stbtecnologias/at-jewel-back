@@ -14,6 +14,20 @@ import {
   type AudioInterno,
 } from './processar-mensagem-interna.use-case';
 import { ProcessarMensagemGestaoUseCase } from './processar-mensagem-gestao.use-case';
+
+/**
+ * A chave que separa os dois canais da casa — 07/10/2026.
+ *
+ * NAO E "SER GESTAO", e ver a LOJA. A mesma chave que guarda o modulo de
+ * Analytics no painel e que decide, na Anastasia, se as ferramentas podem
+ * falar do faturamento do grupo. Quem a tem pertence ao canal da Anastasia;
+ * quem gerencia um time sem ve-la e atendido pela Helena.
+ *
+ * Uma chave so, e nao uma lista de papeis: mexer nas permissoes de um papel
+ * passa a mudar o roteamento junto, sem ninguem precisar lembrar deste
+ * arquivo.
+ */
+const PERMISSAO_LOJA = 'analytics:read';
 import { MemoriaDeGrupoService } from '../memoria-de-grupo.service';
 import { RecepcionarUseCase } from './recepcionar.use-case';
 import {
@@ -381,8 +395,21 @@ export class RotearMensagemInternaUseCase {
     const vendedora = gestaoPrimeiro
       ? null
       : await this.identificarVendedora.execute(telefone);
+
+    // ===================================================================
+    // NA HELENA, AS DUAS PERGUNTAS SAO FEITAS — 07/10/2026.
+    //
+    // Ate hoje a de gestao so era feita quando a de vendedora falhava, e
+    // isso bastava enquanto cada pessoa fosse uma coisa so. A Nathalia e
+    // as duas: gerente de vendas E vendedora, com UM numero — o da
+    // Helena. Parando na primeira resposta, metade do trabalho dela nao
+    // tinha canal.
+    //
+    // O CUSTO E UM LOOKUP POR HASH indexado, e so no canal da Helena:
+    // quem escreve para a Anastasia continua resolvido numa consulta so.
+    // ===================================================================
     const admin =
-      gestaoPrimeiro ?? (vendedora ? null : await this.identificarAdmin.execute(telefone));
+      gestaoPrimeiro ?? (await this.identificarAdmin.execute(telefone));
 
     // QUEM CUIDA DO CATALOGO E DA CASA, e ate 03/09/2026 caia na TRIAGEM: o
     // estoquista escrevia qualquer coisa que nao fosse "aprovo" e a Anastasia
@@ -416,8 +443,36 @@ export class RotearMensagemInternaUseCase {
     if (separadas && naAnastasia && !admin) {
       return this.desviar('ELENA', vendedora?.nome ?? doCatalogo?.nome ?? '');
     }
-    if (separadas && !naAnastasia && admin) {
-      return this.desviar('ANASTASIA', admin.nome ?? '');
+
+    // ===================================================================
+    // NA HELENA, SO E DESVIADO QUEM VE A LOJA — 07/10/2026.
+    //
+    // A Anastasia e o canal de quem enxerga a loja em dinheiro. Quem
+    // gerencia um time e nao ve a loja (GERENTE_VENDAS) nao tem o que ir
+    // buscar la: as ferramentas dela sao as mesmas de que a Helena passa
+    // a dispor, ja recortadas pela equipe.
+    //
+    // E DESVIAR CUSTAVA O CANAL INTEIRO: a gerente que so tem o numero da
+    // Helena ouvia "me chama no outro numero" apontando para um numero
+    // que ninguem deu a ela. Sem canal, e sem saber por que.
+    //
+    // QUEM VE A LOJA CONTINUA SENDO DESVIADO, e isso e de proposito: o
+    // faturamento do grupo e assunto da Anastasia, e a Helena nao tem — e
+    // nao deve ter — ferramenta que fale dele.
+    //
+    // MAS VENDEDORA NUNCA E DESVIADA, e esta linha custou um teste: quem
+    // tem cadastro de vendedora e atendida aqui SEMPRE, acumulando a
+    // gestao se tiver. Sem o `!vendedora`, uma vendedora que tambem fosse
+    // ADMIN seria mandada para a Anastasia e perderia a propria carteira
+    // — o canal dela trocado por outro, sem ninguem decidir isso.
+    // ===================================================================
+    const desviavel = separadas && !naAnastasia && admin !== null && !vendedora;
+    const veLoja =
+      desviavel &&
+      (await this.identificarAdmin.execute(telefone, PERMISSAO_LOJA)) !== null;
+
+    if (desviavel && veLoja) {
+      return this.desviar('ANASTASIA', admin!.nome ?? '');
     }
 
     let texto =
@@ -612,7 +667,17 @@ export class RotearMensagemInternaUseCase {
       // O canal da vendedora identifica DE NOVO por dentro. Nao e desperdicio:
       // e o que mantem aquele use case seguro se um dia for chamado de outro
       // lugar. A consulta e um lookup por hash indexado.
-      return this.canalVendedora.execute({ de: msg.de, texto });
+      //
+      // O `gestao` VAI JUNTO quando a MESMA pessoa tambem gerencia — e o
+      // caso da Nathalia, gerente de vendas e vendedora com um numero so.
+      // Vazio para quase todo mundo, e ai nada muda.
+      return this.canalVendedora.execute({
+        de: msg.de,
+        texto,
+        ...(admin
+          ? { gestao: { usuarioId: admin.id, role: admin.role } }
+          : {}),
+      });
     }
 
     // O ID vai junto: e a chave da memoria de conversa dele. Telefone nao
