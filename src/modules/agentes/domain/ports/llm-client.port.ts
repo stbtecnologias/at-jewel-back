@@ -170,6 +170,8 @@ export interface ConsultarProdutosLlmInput {
    * vem quando ela pedir so o texto. Entao o padrao e `true`.
    */
   comFoto?: boolean;
+  /** So as que TEM foto conferida — muda a lista, nao so o anexo. */
+  soComFoto?: boolean;
 }
 
 export interface ProdutoLlm {
@@ -207,6 +209,10 @@ export interface ConsultarProdutosLlmResultado {
   fotos?: FotoDeProdutoLlm[];
   /** Quantas pecas da lista tinham URL de foto cadastrada. */
   tinhamFoto?: number;
+  /** A lista inteira e so de pecas com foto conferida? */
+  soComFoto?: boolean;
+  /** Candidatas que ficaram sem conferir por causa do teto. */
+  naoConferidas?: number;
 }
 
 export type ConsultarProdutosHandler = (
@@ -727,6 +733,7 @@ export type GestaoProdutosHandler = (input: {
   precoAte?: unknown;
   aPartirDe?: number;
   comFoto?: boolean;
+  soComFoto?: boolean;
 }) => Promise<{
   produtos: { linha: string }[];
   /** Ver `ConsultarProdutosLlmResultado` — amostra e total andam juntos. */
@@ -739,6 +746,8 @@ export type GestaoProdutosHandler = (input: {
   pulados?: number;
   fotos?: FotoDeProdutoLlm[];
   tinhamFoto?: number;
+  soComFoto?: boolean;
+  naoConferidas?: number;
 }>;
 
 /**

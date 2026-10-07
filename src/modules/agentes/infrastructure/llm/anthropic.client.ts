@@ -236,6 +236,11 @@ const PRODUTOS_TOOL: Anthropic.Tool = {
         description:
           'A FOTO VAI JUNTO POR PADRAO — nao mande este campo em pergunta comum. Mande false SO quando ela pedir sem foto: "so o texto", "sem as fotos", "nao precisa de imagem". ATENCAO: a maioria das pecas NAO tem foto cadastrada, entao a resposta da ferramenta diz quantas foram de verdade — fale desse numero, nao prometa foto de peca que nao tem.',
       },
+      so_com_foto: {
+        type: 'boolean',
+        description:
+          'SO AS PECAS QUE TEM FOTO. Mande true quando ela pedir a lista FILTRADA por isso: "as que tiverem foto", "so as que tem imagem", "monta a tabela com as que tem foto". E diferente de com_foto: aquele diz se a imagem acompanha; este MUDA A LISTA, deixando de fora as pecas sem foto. A conferencia e feita peca a peca na hora, entao a resposta demora alguns segundos a mais.',
+      },
     },
     // BUSCA DEIXOU DE SER OBRIGATORIA EM 07/10/2026. "Me monta uma tabela de
     // pecas ate 20 mil" nao tem termo nenhum: o modelo era obrigado a
@@ -297,6 +302,11 @@ const GESTAO_PRODUTOS_TOOL: Anthropic.Tool = {
         type: 'boolean',
         description:
           'A FOTO VAI JUNTO POR PADRAO — nao mande este campo em pergunta comum. Mande false SO quando ela pedir sem foto: "so o texto", "sem as fotos", "nao precisa de imagem". ATENCAO: a maioria das pecas NAO tem foto cadastrada, entao a resposta da ferramenta diz quantas foram de verdade — fale desse numero, nao prometa foto de peca que nao tem.',
+      },
+      so_com_foto: {
+        type: 'boolean',
+        description:
+          'SO AS PECAS QUE TEM FOTO. Mande true quando ela pedir a lista FILTRADA por isso: "as que tiverem foto", "so as que tem imagem", "monta a tabela com as que tem foto". E diferente de com_foto: aquele diz se a imagem acompanha; este MUDA A LISTA, deixando de fora as pecas sem foto. A conferencia e feita peca a peca na hora, entao a resposta demora alguns segundos a mais.',
       },
     },
     // BUSCA DEIXOU DE SER OBRIGATORIA EM 07/10/2026. "Me monta uma tabela de
@@ -2484,6 +2494,7 @@ export class AnthropicClient implements ILlmClient {
               precoAte: entrada.preco_ate,
               aPartirDe: Number(entrada.a_partir_de) || 0,
               comFoto: entrada.com_foto !== false,
+              soComFoto: entrada.so_com_foto === true,
             });
             fotos = r.fotos ?? fotos;
             return textoDeProdutos(r, 'Repasse os numeros exatamente como estao.');
@@ -2507,6 +2518,7 @@ export class AnthropicClient implements ILlmClient {
               precoAte: entrada.preco_ate,
               aPartirDe: Number(entrada.a_partir_de) || 0,
               comFoto: entrada.com_foto !== false,
+              soComFoto: entrada.so_com_foto === true,
             });
             fotos = r.fotos ?? fotos;
             return textoDeProdutos(
@@ -3498,6 +3510,7 @@ type RecorteDeProduto = {
   preco_ate?: unknown;
   a_partir_de?: unknown;
   com_foto?: boolean;
+  so_com_foto?: boolean;
 };
 
 export function textoDeProdutos(
@@ -3512,6 +3525,8 @@ export function textoDeProdutos(
     pulados?: number;
     fotos?: { codigo: string }[];
     tinhamFoto?: number;
+    soComFoto?: boolean;
+    naoConferidas?: number;
   },
   fecho: string,
 ): string {
@@ -3598,6 +3613,22 @@ export function textoDeProdutos(
   // Baixadas as 546 pecas com saldo, uma a uma: 196 tem foto (36%), e na
   // JOIA sao 55 de 320 (17%). Prometer "mando as fotos" e quebrar a palavra
   // em oito de cada dez pecas.
+  // A LISTA FILTRADA POR FOTO E OUTRA CONVERSA: aqui nao existe "peca sem
+  // foto nesta lista", porque todas tem. O que precisa ser dito e de onde
+  // elas sairam — senao "41 pecas" parece o catalogo, e sao 41 DE 169
+  // conferidas.
+  if (r.soComFoto) {
+    partes.push(
+      `Esta lista ja esta FILTRADA: so pecas com foto CONFERIDA na hora. ` +
+        `Sao ${r.total} com foto, de ${r.tinhamFoto ?? 0} candidatas que tinham ` +
+        'imagem cadastrada. Diga que a lista e so das que tem foto.' +
+        (r.naoConferidas
+          ? ` Outras ${r.naoConferidas} nao deu tempo de conferir — avise que ` +
+            'pode haver mais.'
+          : ''),
+    );
+  }
+
   if (r.fotos && r.fotos.length > 0) {
     const codigos = r.fotos.map((f) => f.codigo).filter(Boolean);
     partes.push(
@@ -3606,7 +3637,7 @@ export function textoDeProdutos(
         'foto vem junto SO dessas; as outras nao tem foto cadastrada. NAO ' +
         'descreva a imagem, voce nao a viu.',
     );
-  } else if (r.produtos.length > 0 && r.fotos) {
+  } else if (r.produtos.length > 0 && r.fotos && !r.soComFoto) {
     partes.push(
       'NENHUMA peca desta lista tem foto disponivel — a maioria do catalogo ' +
         'nao tem. Se ela pediu foto, diga isso com todas as letras e NAO ' +

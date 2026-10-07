@@ -55,9 +55,32 @@ const SEGUNDOS_DE_ESPERA = 8;
 /** Quantas baixar ao mesmo tempo. */
 const EM_PARALELO = 4;
 
+/** Quantas CONFERIR ao mesmo tempo. Só cabeçalho, então cabe mais. */
+const CONFERINDO_EM_PARALELO = 8;
+
+/**
+ * Teto de peças conferidas numa pergunta.
+ *
+ * "Peças até 50 mil que tenham foto" tem 169 candidatas com URL, e conferir
+ * todas leva 4,3s. O teto existe para a pergunta mais aberta não virar uma
+ * espera de meio minuto — e, quando ele corta, quem chama DIZ que cortou.
+ */
+const TETO_DE_CONFERENCIA = 250;
+
+/**
+ * Por quanto tempo a resposta da Conexa vale.
+ *
+ * Foto nova é cadastro, não é evento de minuto — e sem memória a mesma
+ * pergunta repetida conferiria as mesmas 169 URLs de novo, de graça.
+ */
+const VALIDADE_DA_CONFERENCIA_MS = 6 * 60 * 60 * 1000;
+
 @Injectable()
 export class FotosDeProdutoService {
   private readonly logger = new Logger(FotosDeProdutoService.name);
+
+  /** O que a Conexa já respondeu: `url -> existe?`, com validade. */
+  private readonly conhecidas = new Map<string, { existe: boolean; em: number }>();
 
   /**
    * Devolve só as fotos que EXISTEM de verdade, na ordem dos pedidos.
@@ -97,6 +120,73 @@ export class FotosDeProdutoService {
     );
 
     return { fotos: achadas, tinhamUrl: comUrl.length, cortadas };
+  }
+
+  /**
+   * QUAIS DELAS TÊM FOTO DE VERDADE — 07/10/2026.
+   *
+   * Nasceu do pedido do Lucas: *"monta uma tabela de peças até 50 mil, as que
+   * tiverem fotos"*. A agente não tinha como atender: a existência da foto
+   * não está no banco, está na Conexa.
+   *
+   * CONFERE COM `HEAD`, e é isso que torna o filtro viável: o servidor
+   * responde status e tipo sem mandar a imagem. Medido em 07/10 — das 200
+   * joias com saldo até 50 mil, 169 têm URL e **41 têm foto**; conferir as
+   * 169 leva 4,3s, e não os 26 MB que o GET traria.
+   */
+  async quaisTemFoto(
+    pedidos: PedidoDeFoto[],
+  ): Promise<{ comFoto: PedidoDeFoto[]; conferidas: number; cortadas: number }> {
+    const comUrl = pedidos.filter((p) => !!p.url);
+    const fila = comUrl.slice(0, TETO_DE_CONFERENCIA);
+    const cortadas = comUrl.length - fila.length;
+
+    const pendentes = [...fila];
+    const achados = new Set<string>();
+    const trabalhador = async () => {
+      for (;;) {
+        const pedido = pendentes.shift();
+        if (!pedido) return;
+        if (await this.existe(pedido.url!)) achados.add(pedido.codigo);
+      }
+    };
+    await Promise.all(
+      Array.from(
+        { length: Math.min(CONFERINDO_EM_PARALELO, fila.length) },
+        trabalhador,
+      ),
+    );
+
+    return {
+      // A ORDEM DA LISTA, de novo: quem conferiu em paralelo nao decide a
+      // ordem da tabela — o preco decide.
+      comFoto: fila.filter((p) => achados.has(p.codigo)),
+      conferidas: fila.length,
+      cortadas,
+    };
+  }
+
+  /** A Conexa tem essa imagem? Só o cabeçalho, e com memória de seis horas. */
+  private async existe(url: string): Promise<boolean> {
+    const lembrada = this.conhecidas.get(url);
+    if (lembrada && Date.now() - lembrada.em < VALIDADE_DA_CONFERENCIA_MS) {
+      return lembrada.existe;
+    }
+    let existe = false;
+    try {
+      const resp = await fetch(url, {
+        method: 'HEAD',
+        signal: AbortSignal.timeout(SEGUNDOS_DE_ESPERA * 1000),
+      });
+      const mime = resp.headers.get('content-type') ?? '';
+      existe = resp.ok && mime.startsWith('image/');
+    } catch {
+      // Rede ruim nao e "nao tem foto" — mas tambem nao pode travar a
+      // resposta. Vale como "nao" NESTA pergunta, e nao fica lembrado.
+      return false;
+    }
+    this.conhecidas.set(url, { existe, em: Date.now() });
+    return existe;
   }
 
   private async uma(pedido: PedidoDeFoto): Promise<FotoDeProduto | null> {

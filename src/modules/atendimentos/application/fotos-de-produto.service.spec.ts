@@ -165,3 +165,105 @@ describe('FotosDeProdutoService', () => {
     expect(r.fotos[0].legenda).toBe('Peça AN1');
   });
 });
+
+/**
+ * ==========================================================================
+ * "MONTA UMA TABELA ATÉ 50 MIL, AS QUE TIVEREM FOTOS" — 07/10/2026.
+ *
+ * A agente respondeu com as dez primeiras POR PREÇO e avisou que nenhuma
+ * tinha foto. Fez o que dava: a existência da foto não está no banco.
+ *
+ * Confere por `HEAD`, e é isso que torna o filtro possível — o servidor
+ * responde status e tipo sem mandar a imagem. Medido: das 200 joias com
+ * saldo até 50 mil, 169 têm URL e **41 têm foto**; conferir as 169 leva
+ * 4,3s, contra os 26 MB que o GET traria.
+ * ==========================================================================
+ */
+describe('FotosDeProdutoService — quais têm foto', () => {
+  let servico: FotosDeProdutoService;
+  const original = global.fetch;
+
+  beforeEach(() => {
+    servico = new FotosDeProdutoService();
+  });
+
+  afterEach(() => {
+    global.fetch = original;
+  });
+
+  const pedido = (codigo: string, url: string | null = `http://conexa/${codigo}.png`) => ({
+    codigo,
+    url,
+    legenda: codigo,
+  });
+
+  /* ESTE É O TESTE. O resto é contorno. */
+  it('separa quem tem foto de quem só tem URL', async () => {
+    global.fetch = conexaQueResponde({
+      'http://conexa/TEM.png': imagem(),
+      'http://conexa/NAO.png': naoAchou,
+    });
+
+    const r = await servico.quaisTemFoto([
+      pedido('TEM'),
+      pedido('NAO'),
+      pedido('SEM_URL', null),
+    ]);
+
+    expect(r.comFoto.map((p) => p.codigo)).toEqual(['TEM']);
+    expect(r.conferidas).toBe(2);
+  });
+
+  it('confere pelo cabeçalho, sem baixar a imagem', async () => {
+    const fetchFalso = conexaQueResponde({ 'http://conexa/A.png': imagem() });
+    global.fetch = fetchFalso;
+
+    await servico.quaisTemFoto([pedido('A')]);
+
+    expect(fetchFalso).toHaveBeenCalledWith(
+      'http://conexa/A.png',
+      expect.objectContaining({ method: 'HEAD' }),
+    );
+  });
+
+  /**
+   * Foto nova é cadastro, não é evento de minuto. Sem memória, cada "me traz
+   * a continuação" conferiria as mesmas 169 URLs de novo — medido: 3,9s na
+   * primeira pergunta, 0,5s na segunda.
+   */
+  it('lembra o que a Conexa já respondeu', async () => {
+    const fetchFalso = conexaQueResponde({ 'http://conexa/A.png': imagem() });
+    global.fetch = fetchFalso;
+
+    await servico.quaisTemFoto([pedido('A')]);
+    await servico.quaisTemFoto([pedido('A')]);
+
+    expect(fetchFalso).toHaveBeenCalledTimes(1);
+  });
+
+  /** Rede caída não pode virar "essa peça não tem foto" para sempre. */
+  it('erro de rede não entra na memória', async () => {
+    let tentativas = 0;
+    global.fetch = jest.fn(async () => {
+      tentativas += 1;
+      throw new Error('ECONNRESET');
+    }) as never;
+
+    await servico.quaisTemFoto([pedido('A')]);
+    await servico.quaisTemFoto([pedido('A')]);
+
+    expect(tentativas).toBe(2);
+  });
+
+  it('a ordem da lista é a ordem do preço, não a de quem respondeu antes', async () => {
+    global.fetch = conexaQueResponde({
+      'http://conexa/A.png': imagem(),
+      'http://conexa/B.png': naoAchou,
+      'http://conexa/C.png': imagem(),
+    });
+
+    const r = await servico.quaisTemFoto([pedido('A'), pedido('B'), pedido('C')]);
+
+    expect(r.comFoto.map((p) => p.codigo)).toEqual(['A', 'C']);
+  });
+});

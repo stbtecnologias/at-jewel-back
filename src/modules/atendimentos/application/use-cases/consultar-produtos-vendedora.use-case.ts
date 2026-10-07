@@ -27,6 +27,14 @@ import { ListarProdutosUseCase } from '../../../produtos/application/use-cases/l
 const MAXIMO = 10;
 
 /**
+ * Quantas pecas conferir na Conexa quando ela pede so as que tem foto.
+ *
+ * O servico tem o proprio teto (250); este e o do SQL, e existe para a
+ * pergunta mais aberta nao arrastar o catalogo inteiro para a memoria.
+ */
+const TETO_DE_CANDIDATAS = 250;
+
+/**
  * O que a vendedora ve de um produto.
  *
  * REPARE NO QUE NAO EXISTE AQUI: `valorCusto`, `margemPercentual` — e, desde
@@ -90,9 +98,13 @@ export interface ResultadoDeProdutos {
   fotos: FotoDeProduto[];
   /** Quantas da lista tinham URL cadastrada — nem toda URL vira foto. */
   tinhamFoto: number;
+  /** A lista inteira e so de pecas COM foto conferida? */
+  soComFoto?: boolean;
+  /** Candidatas que ficaram sem conferir por causa do teto. */
+  naoConferidas?: number;
 }
 
-/** O que a pergunta pode recortar. Objeto, e nao argumentos soltos: sao cinco. */
+/** O que a pergunta pode recortar. Objeto, e nao argumentos soltos: sao seis. */
 export interface OpcoesDeBusca {
   incluirSemEstoque?: boolean;
   /** Vinda da pergunta; passa por `categoriaDaBusca` antes de virar filtro. */
@@ -104,6 +116,11 @@ export interface OpcoesDeBusca {
   aPartirDe?: number;
   /** A foto vem junto, salvo quando ela pede so o texto. Padrao: vem. */
   comFoto?: boolean;
+  /**
+   * So as pecas que TEM foto de verdade — conferida na Conexa, e nao
+   * presumida pela URL. Muda a LISTA, e nao so o anexo.
+   */
+  soComFoto?: boolean;
 }
 
 /**
@@ -157,6 +174,22 @@ export class ConsultarProdutosVendedoraUseCase {
     //      no total — nao da para afirmar que nenhuma zerou so por essas."
     //
     // Sao 103 zeradas. Ela tinha as 112 e nao tinha o 103.
+    // ======================================================================
+    // "MONTA UMA TABELA ATE 50 MIL, AS QUE TIVEREM FOTOS" — 07/10/2026.
+    //
+    // A existencia da foto NAO esta no banco: esta na Conexa. Entao o filtro
+    // tem duas etapas — o SQL tira quem nem URL tem, e o `HEAD` diz quais
+    // URLs respondem. E so depois disso da para paginar, porque a pagina e
+    // da lista JA conferida: paginar antes mostraria "10 primeiras" de uma
+    // lista onde nove nao tem foto.
+    //
+    // Medido: das 200 joias com saldo ate 50 mil, 169 tem URL e 41 tem foto;
+    // conferir as 169 leva 4,3s, com memoria de seis horas por URL.
+    // ======================================================================
+    if (opcoes.soComFoto) {
+      return this.soAsQueTemFoto(filtro, pulados, categoria, faixa);
+    }
+
     const [produtos, total, comSaldo] = await Promise.all([
       this.listar.execute({ ...filtro, limit: MAXIMO, deslocamento: pulados }),
       this.listar.contar(filtro),
@@ -211,6 +244,86 @@ export class ConsultarProdutosVendedoraUseCase {
       pulados,
       fotos,
       tinhamFoto: tinhamUrl,
+    };
+  }
+
+  /**
+   * A lista de quem TEM foto, conferida peça a peça na Conexa.
+   *
+   * A paginação é da lista JÁ conferida — e tem de ser. Paginar antes traria
+   * "as 10 primeiras" de um conjunto onde nove não têm foto, que foi
+   * exatamente a resposta que a agente deu em 07/10 quando o filtro ainda
+   * não existia.
+   */
+  private async soAsQueTemFoto(
+    filtro: {
+      busca: string;
+      ativo: boolean;
+      apenasDisponiveis: boolean;
+      categoriaSugerida?: string;
+      precoDe?: number;
+      precoAte?: number;
+    },
+    pulados: number,
+    categoria: string | undefined,
+    faixa: Faixa,
+  ): Promise<ResultadoDeProdutos> {
+    const candidatas = await this.listar.execute({
+      ...filtro,
+      comFotoCadastrada: true,
+      limit: TETO_DE_CANDIDATAS,
+    });
+
+    const { comFoto: confirmadas, cortadas } = await this.fotos.quaisTemFoto(
+      candidatas.map((p) => ({
+        codigo: p.codigoErp ?? p.id ?? '',
+        url: p.fotoUrl ?? null,
+        legenda: '',
+      })),
+    );
+
+    const porCodigo = new Map(
+      candidatas.map((p) => [p.codigoErp ?? p.id ?? '', p]),
+    );
+    const todas = confirmadas
+      .map((c) => porCodigo.get(c.codigo))
+      .filter((p): p is NonNullable<typeof p> => !!p);
+    const pagina = todas.slice(pulados, pulados + MAXIMO);
+
+    const linhas = pagina.map((p) => ({
+      descricao: p.descricaoEtiqueta ?? `${p.categoria} ${p.familia}`,
+      categoria: p.categoria,
+      familia: p.familia,
+      codigo: p.codigoErp,
+      precoVenda: p.valorVenda,
+      disponivel: p.estoqueAtual > 0,
+      fotoUrl: p.fotoUrl ?? null,
+    }));
+
+    const { fotos } = await this.fotos.buscar(
+      linhas.map((l) => ({
+        codigo: l.codigo ?? '',
+        url: l.fotoUrl,
+        legenda: `${l.descricao}${l.codigo ? ` — ${l.codigo}` : ''}`,
+      })),
+    );
+
+    return {
+      produtos: linhas,
+      total: todas.length,
+      // Aqui `semEstoque` não é o que o saldo escondeu, e sim o que a FOTO
+      // escondeu: candidatas com URL que a Conexa não respondeu. O texto do
+      // despacho trata os dois casos separados — ver `soComFoto`.
+      semEstoque: 0,
+      incluiuSemEstoque: false,
+      categoria,
+      foraDaCategoria: 0,
+      faixa,
+      pulados,
+      fotos,
+      tinhamFoto: candidatas.length,
+      soComFoto: true,
+      naoConferidas: cortadas,
     };
   }
 }

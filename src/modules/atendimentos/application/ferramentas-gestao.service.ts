@@ -707,6 +707,7 @@ export class FerramentasGestaoService {
         precoAte,
         aPartirDe,
         comFoto,
+        soComFoto,
       }) => {
         // Mesma regra do canal da vendedora, e pelas mesmas decisoes de 07/10:
         // so o disponivel (salvo quando ela PEDE o indisponivel), padrao joia,
@@ -723,6 +724,63 @@ export class FerramentasGestaoService {
           precoDe: faixa.de,
           precoAte: faixa.ate,
         };
+        // "AS QUE TIVEREM FOTOS" — 07/10/2026, pedido do Lucas no WhatsApp.
+        //
+        // A foto nao esta no banco, esta na Conexa: o SQL tira quem nem URL
+        // tem, o `HEAD` diz quais respondem, e so entao da para paginar — a
+        // pagina e da lista JA conferida. Ver o gemeo em
+        // `ConsultarProdutosVendedoraUseCase.soAsQueTemFoto`.
+        if (soComFoto) {
+          const candidatas = await this.listarProdutos.execute({
+            ...filtro,
+            comFotoCadastrada: true,
+            limit: 250,
+          });
+          const conferencia = await this.fotosDeProduto.quaisTemFoto(
+            candidatas.map((p) => ({
+              codigo: p.codigoErp ?? p.id ?? '',
+              url: p.fotoUrl ?? null,
+              legenda: '',
+            })),
+          );
+          const porCodigo = new Map(
+            candidatas.map((p) => [p.codigoErp ?? p.id ?? '', p]),
+          );
+          const todas = conferencia.comFoto
+            .map((c) => porCodigo.get(c.codigo))
+            .filter((p): p is NonNullable<typeof p> => !!p);
+          const pagina = todas.slice(pulados, pulados + TETO_DE_PRODUTOS);
+          const comImagem = await this.fotosDeProduto.buscar(
+            pagina.map((p) => ({
+              codigo: p.codigoErp ?? '',
+              url: p.fotoUrl ?? null,
+              legenda:
+                `${p.descricaoEtiqueta ?? `${p.categoria} ${p.familia}`}` +
+                `${p.codigoErp ? ` — ${p.codigoErp}` : ''}`,
+            })),
+          );
+          return {
+            total: todas.length,
+            semEstoque: 0,
+            incluiuSemEstoque: false,
+            categoria: daPergunta,
+            foraDaCategoria: 0,
+            faixa,
+            pulados,
+            fotos: comImagem.fotos,
+            tinhamFoto: candidatas.length,
+            soComFoto: true,
+            naoConferidas: conferencia.cortadas,
+            produtos: pagina.map((p) => ({
+              linha:
+                `${p.descricaoEtiqueta ?? `${p.categoria} ${p.familia}`}` +
+                `${p.codigoErp ? ` — código ${p.codigoErp}` : ''}: ` +
+                `${moeda(p.valorVenda)}, ` +
+                `${saldoEmPalavras(p.estoqueAtual, verQuantidade)}`,
+            })),
+          };
+        }
+
         const [achados, total, comSaldo] = await Promise.all([
           this.listarProdutos.execute({
             ...filtro,

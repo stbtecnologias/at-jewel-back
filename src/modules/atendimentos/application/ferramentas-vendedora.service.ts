@@ -397,6 +397,7 @@ export class FerramentasVendedoraService {
         precoAte,
         aPartirDe,
         comFoto,
+        soComFoto,
       }) => {
         const achados = await this.produtos.execute(busca, {
           incluirSemEstoque,
@@ -405,6 +406,7 @@ export class FerramentasVendedoraService {
           precoAte,
           aPartirDe,
           comFoto,
+          soComFoto,
         });
         return {
           total: achados.total,
@@ -416,6 +418,8 @@ export class FerramentasVendedoraService {
           pulados: achados.pulados,
           fotos: achados.fotos,
           tinhamFoto: achados.tinhamFoto,
+          soComFoto: achados.soComFoto,
+          naoConferidas: achados.naoConferidas,
           produtos: achados.produtos.map((p) => ({
             // DISPONIVEL, E NAO QUANTOS — 25/09/2026. Ver
             // `ProdutoParaVendedora`: o numero nao chega ate aqui.

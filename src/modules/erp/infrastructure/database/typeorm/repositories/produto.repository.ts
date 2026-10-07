@@ -257,6 +257,11 @@ export class ProdutoRepository implements IProdutoRepository {
                     precoAte: filtros.precoAte,
                   });
                 }
+                if (filtros.comFotoCadastrada) {
+                  todas.andWhere(
+                    "p.foto_url IS NOT NULL AND p.foto_url <> ''",
+                  );
+                }
                 for (const [i, palavra] of palavras.entries()) {
                   const chave = `busca${i}`;
                   const termo = `%${palavra}%`;
@@ -304,6 +309,9 @@ export class ProdutoRepository implements IProdutoRepository {
         qb.andWhere('p.valor_venda <= :precoAte', {
           precoAte: filtros.precoAte,
         });
+      }
+      if (filtros.comFotoCadastrada) {
+        qb.andWhere("p.foto_url IS NOT NULL AND p.foto_url <> ''");
       }
     }
 

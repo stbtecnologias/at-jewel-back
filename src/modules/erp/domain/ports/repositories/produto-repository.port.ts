@@ -48,6 +48,14 @@ export interface FiltroProduto {
    */
   deslocamento?: number;
   /**
+   * So as pecas que TEM URL de foto cadastrada.
+   *
+   * E o primeiro corte do "me mostra as que tem foto": tira em SQL, de graca,
+   * as que nem URL tem. O segundo corte — quais URLs respondem de verdade —
+   * nao cabe aqui, porque a resposta mora na Conexa: ver `quaisTemFoto`.
+   */
+  comFotoCadastrada?: boolean;
+  /**
    * Texto livre. Varre descricao, categoria, familia, colecao, pedra, cor e
    * codigo do ERP — as colunas por onde uma pessoa procura uma joia.
    *
