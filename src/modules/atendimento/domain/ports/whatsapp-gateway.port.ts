@@ -98,8 +98,12 @@ export interface IWhatsappGateway {
    * Quem nao e LID volta como veio. Falha de consulta tambem devolve a entrada
    * original: o efeito e o remetente nao ser reconhecido, que e o lado seguro
    * de errar num canal com default-deny.
+   *
+   * O `agente` DIZ POR ONDE A MENSAGEM CHEGOU, e nao e opcional por capricho
+   * — o mapa de LIDs e POR CONTA. Perguntar a conta errada devolve 404, e um
+   * 404 aqui vira silencio no canal. Ver o bloco em `WahaGateway`.
    */
-  resolverRemetente(de: string): Promise<string>;
+  resolverRemetente(de: string, agente?: AgenteDaCasa): Promise<string>;
 
   /**
    * Baixa um arquivo de midia que o provedor ja descriptografou.

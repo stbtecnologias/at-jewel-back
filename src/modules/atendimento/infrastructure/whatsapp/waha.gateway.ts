@@ -157,16 +157,13 @@ export class WahaGateway implements IWhatsappGateway {
   }
 
   /**
-   * @see SessoesDaCasaService — a traducao de LID e CONSULTA, entao pergunta
-   * pela sessao da Anastasia, a que sempre existe. O LID e do contato, nao do
-   * numero da casa: a resposta e a mesma pelos dois.
+   * @param agente a sessao POR ONDE a mensagem chegou. Ver o bloco abaixo.
    */
-  async resolverRemetente(de: string): Promise<string> {
+  async resolverRemetente(de: string, agente?: AgenteDaCasa): Promise<string> {
     if (!de.endsWith('@lid')) return de;
 
     const baseUrl = this.config.get<string>('WAHA_BASE_URL');
     const apiKey = this.config.get<string>('WAHA_API_KEY');
-    const session = this.sessoes.anastasia;
 
     if (!baseUrl || !apiKey) {
       this.logger.warn(
@@ -175,27 +172,75 @@ export class WahaGateway implements IWhatsappGateway {
       return de;
     }
 
+    // ====================================================================
+    // A SESSAO DE ORIGEM VEM PRIMEIRO — 07/10/2026.
+    //
+    // Ate hoje isto perguntava SEMPRE pela sessao da Anastasia, com a
+    // justificativa de que "o LID e do contato, nao do numero da casa: a
+    // resposta e a mesma pelos dois". A premissa estava errada: o mapa de
+    // LIDs e POR CONTA, e so tem quem aquela conta ja viu.
+    //
+    // O CUSTO FOI SILENCIO. A Nathalia escreveu para a Helena (a Elena do
+    // codigo) e nao recebeu nada: o LID dela nunca tinha passado pela conta
+    // da Anastasia, o WAHA devolveu 404, a funcao devolveu o proprio LID, e
+    // o LID nao casa com telefone nenhum no cadastro — remetente nao
+    // reconhecido, e o canal e default-deny. O Lucas, no mesmo teste, foi
+    // respondido: ele fala com a Anastasia, entao o LID dele estava la.
+    //
+    // AS OUTRAS SESSOES CONTINUAM SENDO TENTADAS, em segundo lugar: um LID
+    // que a conta de origem ainda nao viu pode estar na irma, e uma chamada
+    // a mais so acontece quando a primeira falhou. O contrario — desistir na
+    // primeira — trocaria um silencio por outro.
+    // ====================================================================
+    const preferida = this.sessoes.sessaoDe(agente ?? 'ANASTASIA');
+    const sessoes = [
+      preferida,
+      ...this.sessoes.todas.filter((s) => s !== preferida),
+    ];
+
+    for (const session of sessoes) {
+      const telefone = await this.perguntarLid(baseUrl, apiKey, session, de);
+      if (telefone) return telefone;
+    }
+
+    // NAO E DEBUG: este aviso e a unica pista de um canal que emudeceu, e
+    // quem investiga nem sempre alcanca o container. So o formato e a
+    // contagem — nunca o LID, que identifica a pessoa.
+    this.logger.warn(
+      `LID nao resolvido em nenhuma das ${sessoes.length} sessao(oes) da casa — ` +
+        'o remetente nao sera reconhecido.',
+    );
+    return de;
+  }
+
+  /** Uma pergunta ao mapa de LIDs de UMA sessao. `null` = esta nao sabe. */
+  private async perguntarLid(
+    baseUrl: string,
+    apiKey: string,
+    session: string,
+    lid: string,
+  ): Promise<string | null> {
     const url =
       `${baseUrl.replace(/\/$/, '')}/api/${encodeURIComponent(session)}` +
-      `/lids/${encodeURIComponent(de)}`;
+      `/lids/${encodeURIComponent(lid)}`;
 
     try {
       const resp = await fetch(url, { headers: { 'X-Api-Key': apiKey } });
       if (!resp.ok) {
         this.logger.warn(
-          `WAHA lids retornou ${resp.status} — LID nao resolvido.`,
+          `WAHA lids na sessao "${session}" retornou ${resp.status}.`,
         );
-        return de;
+        return null;
       }
       const dados = (await resp.json()) as { pn?: string };
-      return dados.pn ?? de;
+      return dados.pn ?? null;
     } catch (err) {
       // Nunca derruba o webhook: sem traducao o remetente so nao e
       // reconhecido, e o canal e default-deny de qualquer forma.
       this.logger.warn(
-        `Falha ao resolver LID: ${err instanceof Error ? err.message : err}`,
+        `Falha ao resolver LID na sessao "${session}": ${err instanceof Error ? err.message : err}`,
       );
-      return de;
+      return null;
     }
   }
 

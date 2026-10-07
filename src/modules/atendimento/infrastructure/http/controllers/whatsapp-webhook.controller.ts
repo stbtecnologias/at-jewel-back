@@ -96,7 +96,13 @@ export class WhatsappWebhookController {
     // sempre um identificador com telefone dentro. Ver `resolverRemetente`.
     //
     // Chat de GRUPO (`@g.us`) passa intacto: nao e lid e nao ha o que traduzir.
-    const de = await this.whatsapp.resolverRemetente(msg.de);
+    //
+    // O AGENTE VAI JUNTO desde 07/10/2026, e e o conserto de um canal mudo:
+    // o mapa de LIDs e por conta, entao a traducao tem de perguntar a conta
+    // POR ONDE a mensagem chegou. Ele ja estava calculado acima e nao era
+    // passado — e quem escrevia para a Helena sem nunca ter falado com a
+    // Anastasia simplesmente nao era reconhecido.
+    const de = await this.whatsapp.resolverRemetente(msg.de, agente);
 
     // ======================================================================
     // "FUI EU A MENCIONADA?" E PERGUNTA DE TRANSPORTE — 30/09/2026.
