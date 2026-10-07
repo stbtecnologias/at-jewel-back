@@ -331,3 +331,36 @@ describe('findAll — faixa de preço e paginação', () => {
     expect(leitura.pulou).toBe(0);
   });
 });
+
+/**
+ * ==========================================================================
+ * SEM TERMO NENHUM — 07/10/2026, e este foi o defeito que calou a resposta.
+ *
+ * "Me monta uma tabela de peças até 20 mil" não tem termo de busca. Com
+ * `busca` obrigatória na ferramenta, o modelo era forçado a inventar um —
+ * "peças", "joia" — que não casa com coluna nenhuma, e a lista voltava vazia.
+ * A agente então respondia "a busca genérica não trouxe resultado, me diz um
+ * tipo de peça": uma pergunta legítima virando pedido de desculpa.
+ *
+ * O recorte sozinho — preço, categoria, estoque — já é uma pergunta.
+ * ==========================================================================
+ */
+describe('findAll — a pergunta que é só recorte', () => {
+  it('filtra por preço sem termo nenhum', async () => {
+    const { repo, raiz } = repositorioFalso();
+
+    await repo.findAll({ ativo: true, apenasDisponiveis: true, precoAte: 20000 });
+
+    const noTopo = raiz.filhos.map((f) => f.condicao);
+    expect(noTopo.some((c) => /valor_venda <= :precoAte/.test(c))).toBe(true);
+    expect(noTopo.some((c) => /HAVING SUM\(quantidade\) > 0/.test(c))).toBe(true);
+  });
+
+  it('e a ordem continua sendo a do preço', async () => {
+    const { repo, leitura } = repositorioFalso();
+
+    await repo.findAll({ ativo: true, precoDe: 5000, precoAte: 20000 });
+
+    expect(leitura.ordem[0]).toBe('p.valor_venda ASC');
+  });
+});

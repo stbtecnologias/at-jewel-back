@@ -193,7 +193,7 @@ const METAS_TOOL: Anthropic.Tool = {
 const PRODUTOS_TOOL: Anthropic.Tool = {
   name: 'consultar_produtos',
   description:
-    'Procura pecas no catalogo e devolve descricao, preco de venda e SE A PECA ESTA DISPONIVEL (disponivel/indisponivel). POR PADRAO SO TRAZ O QUE TEM EM ESTOQUE — e o que ela pode oferecer ao cliente hoje. NAO ha quantidade: se perguntarem quantas tem, diga que voce ve apenas se a peca esta disponivel. Use quando ela perguntar sobre produto — "quanto custa o brinco de esmeralda", "tem alianca de ouro 18k", "quantos pingentes de zirconia temos". Devolve no maximo seis pecas. Voce nao tem acesso a custo nem margem: se ela perguntar isso, diga que nao consegue ver.',
+    'Procura pecas no catalogo e devolve descricao, preco de venda e SE A PECA ESTA DISPONIVEL (disponivel/indisponivel). Pode ser chamada SEM termo de busca, so com os recortes — e assim que se monta uma tabela por faixa de preco. POR PADRAO SO TRAZ O QUE TEM EM ESTOQUE — e o que ela pode oferecer ao cliente hoje. NAO ha quantidade: se perguntarem quantas tem, diga que voce ve apenas se a peca esta disponivel. Use quando ela perguntar sobre produto — "quanto custa o brinco de esmeralda", "tem alianca de ouro 18k", "quantos pingentes de zirconia temos". Devolve no maximo seis pecas. Voce nao tem acesso a custo nem margem: se ela perguntar isso, diga que nao consegue ver.',
   input_schema: {
     type: 'object',
     properties: {
@@ -201,7 +201,8 @@ const PRODUTOS_TOOL: Anthropic.Tool = {
         type: 'string',
         description:
           'O que procurar, nas palavras dela: nome da peca, categoria, familia, colecao, pedra, cor ou codigo do ERP. Ex.: "esmeralda", "alianca ouro 18k", "SEED-P0002".' +
-          'Se ela citar um CODIGO ("An24084", "o CO24022"), mande SO o codigo neste campo — nao repita a frase dela em volta.',
+          'Se ela citar um CODIGO ("An24084", "o CO24022"), mande SO o codigo neste campo — nao repita a frase dela em volta.' +
+          'OMITA este campo quando a pergunta nao tiver termo — "uma tabela de pecas ate 20 mil", "o que temos em estoque", "as mais caras". NAO invente palavra generica como "peca" ou "joia": isso nao casa com nada e devolve lista vazia.',
       },
       incluir_sem_estoque: {
         type: 'boolean',
@@ -230,7 +231,12 @@ const PRODUTOS_TOOL: Anthropic.Tool = {
           'Quantas pecas PULAR, para continuar uma lista ja comecada. Omita na primeira vez. Quando a resposta disser "estes sao o 1o ao 20o de 97", peca os proximos com 20; depois 40, e assim ate acabar.',
       },
     },
-    required: ['busca'],
+    // BUSCA DEIXOU DE SER OBRIGATORIA EM 07/10/2026. "Me monta uma tabela de
+    // pecas ate 20 mil" nao tem termo nenhum: o modelo era obrigado a
+    // inventar um ("pecas", "joia"), que nao casa com campo nenhum, e a
+    // consulta voltava vazia. O recorte sozinho — preco, categoria, estoque —
+    // ja e uma pergunta legitima.
+    required: [],
   },
 };
 
@@ -244,7 +250,7 @@ const PRODUTOS_TOOL: Anthropic.Tool = {
 const GESTAO_PRODUTOS_TOOL: Anthropic.Tool = {
   name: 'consultar_produtos',
   description:
-    'Procura pecas no catalogo e devolve descricao, preco de venda e QUANTIDADE em estoque. POR PADRAO SO TRAZ O QUE TEM EM ESTOQUE. Use quando perguntarem sobre produto — "quanto custa o brinco de esmeralda", "quantos aneis de diamante temos", "tem o CO25413".',
+    'Procura pecas no catalogo e devolve descricao, preco de venda e QUANTIDADE em estoque. Pode ser chamada SEM termo de busca, so com os recortes — e assim que se monta uma tabela por faixa de preco. POR PADRAO SO TRAZ O QUE TEM EM ESTOQUE. Use quando perguntarem sobre produto — "quanto custa o brinco de esmeralda", "quantos aneis de diamante temos", "tem o CO25413".',
   input_schema: {
     type: 'object',
     properties: {
@@ -252,7 +258,8 @@ const GESTAO_PRODUTOS_TOOL: Anthropic.Tool = {
         type: 'string',
         description:
           'O que procurar: nome da peca, categoria, familia, colecao, pedra, cor ou codigo do ERP.' +
-          'Se ela citar um CODIGO ("An24084", "o CO24022"), mande SO o codigo neste campo — nao repita a frase dela em volta.',
+          'Se ela citar um CODIGO ("An24084", "o CO24022"), mande SO o codigo neste campo — nao repita a frase dela em volta.' +
+          'OMITA este campo quando a pergunta nao tiver termo — "uma tabela de pecas ate 20 mil", "o que temos em estoque", "as mais caras". NAO invente palavra generica como "peca" ou "joia": isso nao casa com nada e devolve lista vazia.',
       },
       incluir_sem_estoque: {
         type: 'boolean',
@@ -281,7 +288,12 @@ const GESTAO_PRODUTOS_TOOL: Anthropic.Tool = {
           'Quantas pecas PULAR, para continuar uma lista ja comecada. Omita na primeira vez. Quando a resposta disser "estes sao o 1o ao 20o de 97", peca os proximos com 20; depois 40, e assim ate acabar.',
       },
     },
-    required: ['busca'],
+    // BUSCA DEIXOU DE SER OBRIGATORIA EM 07/10/2026. "Me monta uma tabela de
+    // pecas ate 20 mil" nao tem termo nenhum: o modelo era obrigado a
+    // inventar um ("pecas", "joia"), que nao casa com campo nenhum, e a
+    // consulta voltava vazia. O recorte sozinho — preco, categoria, estoque —
+    // ja e uma pergunta legitima.
+    required: [],
   },
 };
 
