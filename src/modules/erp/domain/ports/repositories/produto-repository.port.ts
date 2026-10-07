@@ -5,6 +5,18 @@ export interface FiltroProduto {
   familia?: string;
   ativo?: boolean;
   /**
+   * SO O QUE DA PARA VENDER HOJE — saldo somado maior que zero.
+   *
+   * Decisao do Lucas em 07/10/2026, vinda da reuniao de 06/10: "a consulta
+   * retorna milhares de itens sem estoque". Sao 7.196 ativos para 546 com
+   * saldo — sem este filtro, nove de cada dez respostas sao peca que nao
+   * existe na loja.
+   *
+   * O CODIGO EXATO IGNORA ESTE FILTRO, de proposito: quem digita `AN24084`
+   * quer aquela peca, com ou sem estoque. Ver `findAll`.
+   */
+  apenasDisponiveis?: boolean;
+  /**
    * Texto livre. Varre descricao, categoria, familia, colecao, pedra, cor e
    * codigo do ERP — as colunas por onde uma pessoa procura uma joia.
    *

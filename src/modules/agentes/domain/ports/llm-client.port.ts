@@ -144,6 +144,14 @@ export type ConsultarMetasHandler = () => Promise<ConsultarMetasLlmResultado>;
 // nao ha o que revelar mesmo sob instrucao no meio da conversa.
 export interface ConsultarProdutosLlmInput {
   busca: string;
+  /**
+   * So quando ela PEDE o que nao tem em estoque. Sem isto, a consulta
+   * devolve apenas o disponivel — decisao do Lucas em 07/10/2026.
+   *
+   * O codigo exato passa por fora dos dois jeitos: `An24084` acha a peca com
+   * ou sem saldo, e sem precisar deste campo.
+   */
+  incluirSemEstoque?: boolean;
 }
 
 export interface ProdutoLlm {
@@ -664,6 +672,8 @@ export type GestaoPanoramaHandler = (
  */
 export type GestaoProdutosHandler = (input: {
   busca: string;
+  /** Ver `ConsultarProdutosLlmInput.incluirSemEstoque` — mesma regra. */
+  incluirSemEstoque?: boolean;
 }) => Promise<{ produtos: { linha: string }[] }>;
 
 /**

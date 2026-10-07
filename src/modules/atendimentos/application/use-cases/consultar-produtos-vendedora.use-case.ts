@@ -51,10 +51,19 @@ export interface ProdutoParaVendedora {
 export class ConsultarProdutosVendedoraUseCase {
   constructor(private readonly listar: ListarProdutosUseCase) {}
 
-  async execute(busca: string): Promise<ProdutoParaVendedora[]> {
+  /**
+   * `incluirSemEstoque` e a excecao que a gestao pediu em 07/10: a lista e so
+   * do que da para vender, A NAO SER que ela pergunte pelo indisponivel. Quem
+   * decide e a pergunta dela, nao o sistema.
+   */
+  async execute(
+    busca: string,
+    incluirSemEstoque = false,
+  ): Promise<ProdutoParaVendedora[]> {
     const produtos = await this.listar.execute({
       busca,
       ativo: true,
+      apenasDisponiveis: !incluirSemEstoque,
       limit: MAXIMO,
     });
 

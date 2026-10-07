@@ -184,7 +184,9 @@ describe('ProcessarMensagemInternaUseCase', () => {
 
       const r = await params().consultarProdutos!({ busca: 'brinco' });
 
-      expect(produtos.execute).toHaveBeenCalledWith('brinco');
+      // O segundo argumento e o `incluirSemEstoque` de 07/10: sem ela pedir,
+      // nao vem nada — e a consulta sai so com o disponivel.
+      expect(produtos.execute).toHaveBeenCalledWith('brinco', undefined);
       const linha = r.produtos[0].linha;
       expect(linha).toContain('7.490,37');
       expect(linha).toContain('disponível');

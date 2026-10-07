@@ -389,8 +389,8 @@ export class FerramentasVendedoraService {
         };
       },
 
-      consultarProdutos: async ({ busca }) => {
-        const achados = await this.produtos.execute(busca);
+      consultarProdutos: async ({ busca, incluirSemEstoque }) => {
+        const achados = await this.produtos.execute(busca, incluirSemEstoque);
         return {
           produtos: achados.map((p) => ({
             // DISPONIVEL, E NAO QUANTOS — 25/09/2026. Ver

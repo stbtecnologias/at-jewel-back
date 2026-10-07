@@ -188,7 +188,7 @@ const METAS_TOOL: Anthropic.Tool = {
 const PRODUTOS_TOOL: Anthropic.Tool = {
   name: 'consultar_produtos',
   description:
-    'Procura pecas no catalogo e devolve descricao, preco de venda e SE A PECA ESTA DISPONIVEL (disponivel/indisponivel). NAO ha quantidade: se perguntarem quantas tem, diga que voce ve apenas se a peca esta disponivel. Use quando ela perguntar sobre produto — "quanto custa o brinco de esmeralda", "tem alianca de ouro 18k", "quantos pingentes de zirconia temos". Devolve no maximo seis pecas. Voce nao tem acesso a custo nem margem: se ela perguntar isso, diga que nao consegue ver.',
+    'Procura pecas no catalogo e devolve descricao, preco de venda e SE A PECA ESTA DISPONIVEL (disponivel/indisponivel). POR PADRAO SO TRAZ O QUE TEM EM ESTOQUE — e o que ela pode oferecer ao cliente hoje. NAO ha quantidade: se perguntarem quantas tem, diga que voce ve apenas se a peca esta disponivel. Use quando ela perguntar sobre produto — "quanto custa o brinco de esmeralda", "tem alianca de ouro 18k", "quantos pingentes de zirconia temos". Devolve no maximo seis pecas. Voce nao tem acesso a custo nem margem: se ela perguntar isso, diga que nao consegue ver.',
   input_schema: {
     type: 'object',
     properties: {
@@ -197,6 +197,11 @@ const PRODUTOS_TOOL: Anthropic.Tool = {
         description:
           'O que procurar, nas palavras dela: nome da peca, categoria, familia, colecao, pedra, cor ou codigo do ERP. Ex.: "esmeralda", "alianca ouro 18k", "SEED-P0002".' +
           'Se ela citar um CODIGO ("An24084", "o CO24022"), mande SO o codigo neste campo — nao repita a frase dela em volta.',
+      },
+      incluir_sem_estoque: {
+        type: 'boolean',
+        description:
+          'SO quando ela pedir o que NAO esta disponivel: "tem alguma sem estoque", "me mostra as indisponiveis tambem", "e as que acabaram". NAO mande nas demais perguntas — sem este campo a busca ja traz so o que a loja tem para vender. Codigo exato ("An24084") sempre acha a peca, com estoque ou sem, e nao precisa deste campo.',
       },
     },
     required: ['busca'],
@@ -213,7 +218,7 @@ const PRODUTOS_TOOL: Anthropic.Tool = {
 const GESTAO_PRODUTOS_TOOL: Anthropic.Tool = {
   name: 'consultar_produtos',
   description:
-    'Procura pecas no catalogo e devolve descricao, preco de venda e QUANTIDADE em estoque. Use quando perguntarem sobre produto — "quanto custa o brinco de esmeralda", "quantos aneis de diamante temos", "tem o CO25413".',
+    'Procura pecas no catalogo e devolve descricao, preco de venda e QUANTIDADE em estoque. POR PADRAO SO TRAZ O QUE TEM EM ESTOQUE. Use quando perguntarem sobre produto — "quanto custa o brinco de esmeralda", "quantos aneis de diamante temos", "tem o CO25413".',
   input_schema: {
     type: 'object',
     properties: {
@@ -222,6 +227,11 @@ const GESTAO_PRODUTOS_TOOL: Anthropic.Tool = {
         description:
           'O que procurar: nome da peca, categoria, familia, colecao, pedra, cor ou codigo do ERP.' +
           'Se ela citar um CODIGO ("An24084", "o CO24022"), mande SO o codigo neste campo — nao repita a frase dela em volta.',
+      },
+      incluir_sem_estoque: {
+        type: 'boolean',
+        description:
+          'SO quando perguntarem pelo que NAO esta disponivel: "tem alguma sem estoque", "me mostra as indisponiveis tambem", "quais pecas zeraram". NAO mande nas demais perguntas — sem este campo a busca ja traz so o que tem estoque. Codigo exato ("An24084") sempre acha a peca, com estoque ou sem, e nao precisa deste campo.',
       },
     },
     required: ['busca'],
@@ -2387,10 +2397,13 @@ export class AnthropicClient implements ILlmClient {
       ) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
+            const entrada = toolUse.input as {
+              busca?: string;
+              incluir_sem_estoque?: boolean;
+            };
             const { produtos } = await params.gestaoProdutos!({
-              busca: String(
-                (toolUse.input as { busca?: string }).busca ?? '',
-              ).slice(0, 120),
+              busca: String(entrada.busca ?? '').slice(0, 120),
+              incluirSemEstoque: entrada.incluir_sem_estoque === true,
             });
             if (produtos.length === 0) {
               return 'Nenhuma peca encontrada com esse termo. Diga isso e pergunte se quer procurar de outro jeito.';
@@ -2407,10 +2420,16 @@ export class AnthropicClient implements ILlmClient {
       ) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
+            const entrada = toolUse.input as {
+              busca?: string;
+              incluir_sem_estoque?: boolean;
+            };
             const { produtos } = await params.consultarProdutos!({
-              busca: String(
-                (toolUse.input as { busca?: string }).busca ?? '',
-              ).slice(0, 120),
+              busca: String(entrada.busca ?? '').slice(0, 120),
+              // `=== true` e nao truthy: o modelo as vezes manda a string
+              // "false", que e truthy em JavaScript e ligaria o filtro ao
+              // contrario do que ele pediu.
+              incluirSemEstoque: entrada.incluir_sem_estoque === true,
             });
             if (produtos.length === 0) {
               return 'Nenhuma peca encontrada com esse termo. Diga isso a ela e pergunte se quer procurar de outro jeito.';

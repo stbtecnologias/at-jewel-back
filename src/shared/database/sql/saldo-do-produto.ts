@@ -42,3 +42,22 @@ export const SALDO_POR_PRODUTO = `(
 export function saldoDe(alias: string): string {
   return `COALESCE(${alias}.saldo, 0)`;
 }
+
+/**
+ * A PEÇA QUE DÁ PARA VENDER HOJE — 07/10/2026.
+ *
+ * Para quem filtra sem ter o `LEFT JOIN` à mão, como o `QueryBuilder` do
+ * `findAll`. `alias` é o da tabela `produtos`.
+ *
+ * SOMA, e não "existe linha positiva": 111 peças têm linha em mais de uma
+ * empresa, e `EXISTS (... quantidade > 0)` traria de volta a peça que está
+ * +1 aqui e -1 ali. É a MESMA definição de saldo do resto do arquivo, e
+ * precisa continuar sendo — senão a tela diz um número e a busca outro.
+ *
+ * Medido na base em 07/10: 7.196 produtos ativos, 546 com saldo.
+ */
+export function comSaldoEm(alias: string): string {
+  return `${alias}.id IN (
+    SELECT produto_id FROM estoque GROUP BY produto_id HAVING SUM(quantidade) > 0
+  )`;
+}

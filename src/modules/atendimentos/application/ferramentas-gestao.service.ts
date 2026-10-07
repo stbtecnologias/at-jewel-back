@@ -686,10 +686,13 @@ export class FerramentasGestaoService {
       // O SALDO VEM DA TABELA `estoque` — o `estoqueAtual` do
       // `ListarProdutosUseCase` ja e o somatorio de la desde 17/09, e nao a
       // coluna `produtos.estoque_atual`, que esta zerada na base inteira.
-      gestaoProdutos: async ({ busca }) => {
+      gestaoProdutos: async ({ busca, incluirSemEstoque }) => {
         const achados = await this.listarProdutos.execute({
           busca,
           ativo: true,
+          // Mesma regra do canal da vendedora, e pela mesma decisao de
+          // 07/10: so o disponivel, salvo quando ela PEDE o indisponivel.
+          apenasDisponiveis: !incluirSemEstoque,
           limit: 6,
         });
         return {

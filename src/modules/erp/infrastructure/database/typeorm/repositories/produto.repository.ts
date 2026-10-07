@@ -15,6 +15,7 @@ import {
 } from '../../../../domain/ports/repositories/produto-repository.port';
 import {
   SALDO_POR_PRODUTO,
+  comSaldoEm,
   saldoDe,
 } from '../../../../../../shared/database/sql/saldo-do-produto';
 import { ProdutoOrmEntity } from '../entities/produto.orm-entity';
@@ -185,6 +186,16 @@ export class ProdutoRepository implements IProdutoRepository {
           if (palavras.length > 0) {
             raiz.where(
               new Brackets((todas) => {
+                // AQUI DENTRO, E NAO LA EM CIMA — 07/10/2026.
+                //
+                // O filtro de saldo mora no ramo das PALAVRAS para que o ramo
+                // do CODIGO, logo abaixo no mesmo OR, passe por fora dele.
+                // "Me da a descricao do An24084" tem que achar a peca mesmo
+                // sem estoque; "anel de esmeralda" nao pode trazer o que a
+                // loja nao tem.
+                if (filtros.apenasDisponiveis) {
+                  todas.andWhere(comSaldoEm('p'));
+                }
                 for (const [i, palavra] of palavras.entries()) {
                   const chave = `busca${i}`;
                   const termo = `%${palavra}%`;
@@ -216,6 +227,10 @@ export class ProdutoRepository implements IProdutoRepository {
           }
         }),
       );
+    } else if (filtros.apenasDisponiveis) {
+      // Sem texto nenhum — a listagem do painel, ou a tool sem termo. Nao ha
+      // ramo de codigo para preservar, entao o filtro e direto.
+      qb.andWhere(comSaldoEm('p'));
     }
 
     qb.orderBy('p.criado_em', 'DESC');
