@@ -213,3 +213,153 @@ describe('o laço de ferramentas', () => {
     expect(r.tokens).toBe(10 + 10 + 5);
   });
 });
+
+/**
+ * ==========================================================================
+ * A FOTO QUE A AGENTE ANUNCIOU E NUNCA CHEGOU — 07/10/2026.
+ *
+ * Pelo WhatsApp:
+ *
+ *   "me mostra o AN22083"
+ *   "Anel solitário diamantes 0.30 cts, ouro branco 18K — código AN22083:
+ *    R$ 8.900, disponível. Segue a foto."
+ *
+ * E a foto não veio. O handler tinha baixado a imagem (78 KB, conferido
+ * contra a Conexa), o texto do despacho já mandava anunciá-la — mas o
+ * cliente do LLM largava a lista no caminho, e o webhook recebia vazio.
+ *
+ * A SUÍTE INTEIRA PASSOU COM O DEFEITO NO LUGAR: 2.118 testes, e nenhum
+ * cobria a travessia do artefato. Cada ponta funcionava sozinha; o que não
+ * existia era o teste da ponte — o mesmo buraco do laço de 29/09, que é por
+ * isso que este teste mora aqui.
+ * ==========================================================================
+ */
+describe('o artefato que a ferramenta produz', () => {
+  let cliente: AnthropicClient;
+  let create: jest.Mock;
+
+  const pedeProdutos = () => ({
+    content: [
+      { type: 'text', text: 'Vou olhar.' },
+      {
+        type: 'tool_use',
+        id: 'tp',
+        name: 'consultar_produtos',
+        input: { busca: 'AN22083' },
+      },
+    ],
+    usage: { output_tokens: 10 },
+    stop_reason: 'tool_use',
+  });
+
+  const responde = (texto: string) => ({
+    content: [{ type: 'text', text: texto }],
+    usage: { output_tokens: 5 },
+    stop_reason: 'end_turn',
+  });
+
+  const umaFoto = {
+    codigo: 'AN22083',
+    legenda: 'ANEL SOLITARIO — AN22083',
+    conteudo: Buffer.from('PNG'),
+    mime: 'image/png',
+  };
+
+  const achado = {
+    produtos: [{ linha: 'ANEL SOLITARIO — AN22083: R$ 8.900, 1 em estoque' }],
+    total: 1,
+    semEstoque: 0,
+    incluiuSemEstoque: false,
+    foraDaCategoria: 0,
+    fotos: [umaFoto],
+    tinhamFoto: 1,
+  };
+
+  beforeEach(() => {
+    cliente = new AnthropicClient({ get: () => 'chave-de-teste' } as never);
+    create = jest.fn();
+    (cliente as unknown as { client: unknown }).client = {
+      messages: { create },
+    };
+  });
+
+  const base = () =>
+    ({
+      model: 'claude-sonnet-5',
+      maxTokens: 2048,
+      system: 'voce e a Anastasia',
+      mensagens: [{ role: 'user', content: 'me mostra o AN22083' }],
+    }) as unknown as ChatParams;
+
+  /* ESTE É O TESTE. O resto é contorno. */
+  it('a foto achada pela ferramenta da GESTÃO sai do turno', async () => {
+    create
+      .mockResolvedValueOnce(pedeProdutos())
+      .mockResolvedValueOnce(responde('Segue a foto.'));
+
+    const r = await cliente.chatComFerramentas({
+      ...base(),
+      gestaoProdutos: jest.fn().mockResolvedValue(achado),
+    });
+
+    expect(r.fotos).toHaveLength(1);
+    expect(r.fotos?.[0].codigo).toBe('AN22083');
+  });
+
+  it('e a da VENDEDORA também — são dois handlers com o mesmo nome', async () => {
+    create
+      .mockResolvedValueOnce(pedeProdutos())
+      .mockResolvedValueOnce(responde('Segue a foto.'));
+
+    const r = await cliente.chatComFerramentas({
+      ...base(),
+      consultarProdutos: jest.fn().mockResolvedValue(achado),
+    });
+
+    expect(r.fotos).toHaveLength(1);
+  });
+
+  /** Sem foto nenhuma, o turno não inventa um artefato vazio. */
+  it('busca sem foto não leva nada junto', async () => {
+    create
+      .mockResolvedValueOnce(pedeProdutos())
+      .mockResolvedValueOnce(responde('Nenhuma tem foto.'));
+
+    const r = await cliente.chatComFerramentas({
+      ...base(),
+      gestaoProdutos: jest
+        .fn()
+        .mockResolvedValue({ ...achado, fotos: [], tinhamFoto: 0 }),
+    });
+
+    expect(r.fotos).toHaveLength(0);
+  });
+
+  /**
+   * Ela pediu "sem foto": o campo tem de chegar ao handler como `false`.
+   * Sem isto, o serviço baixa imagem que ninguém vai mandar.
+   */
+  it('o pedido de "só o texto" chega ao handler', async () => {
+    const handler = jest.fn().mockResolvedValue({ ...achado, fotos: [] });
+    create
+      .mockResolvedValueOnce({
+        content: [
+          {
+            type: 'tool_use',
+            id: 'tp',
+            name: 'consultar_produtos',
+            input: { busca: 'AN22083', com_foto: false },
+          },
+        ],
+        usage: { output_tokens: 10 },
+        stop_reason: 'tool_use',
+      })
+      .mockResolvedValueOnce(responde('Sem foto.'));
+
+    await cliente.chatComFerramentas({ ...base(), gestaoProdutos: handler });
+
+    expect(handler).toHaveBeenCalledWith(
+      expect.objectContaining({ comFoto: false }),
+    );
+  });
+});

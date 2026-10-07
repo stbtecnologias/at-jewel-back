@@ -231,6 +231,11 @@ const PRODUTOS_TOOL: Anthropic.Tool = {
         description:
           'Quantas pecas PULAR, para continuar uma lista ja comecada. Omita na primeira vez. Quando a resposta disser "estes sao o 1o ao 20o de 97", peca os proximos com 20; depois 40, e assim ate acabar.',
       },
+      com_foto: {
+        type: 'boolean',
+        description:
+          'A FOTO VAI JUNTO POR PADRAO — nao mande este campo em pergunta comum. Mande false SO quando ela pedir sem foto: "so o texto", "sem as fotos", "nao precisa de imagem". ATENCAO: a maioria das pecas NAO tem foto cadastrada, entao a resposta da ferramenta diz quantas foram de verdade — fale desse numero, nao prometa foto de peca que nao tem.',
+      },
     },
     // BUSCA DEIXOU DE SER OBRIGATORIA EM 07/10/2026. "Me monta uma tabela de
     // pecas ate 20 mil" nao tem termo nenhum: o modelo era obrigado a
@@ -287,6 +292,11 @@ const GESTAO_PRODUTOS_TOOL: Anthropic.Tool = {
         type: 'integer',
         description:
           'Quantas pecas PULAR, para continuar uma lista ja comecada. Omita na primeira vez. Quando a resposta disser "estes sao o 1o ao 20o de 97", peca os proximos com 20; depois 40, e assim ate acabar.',
+      },
+      com_foto: {
+        type: 'boolean',
+        description:
+          'A FOTO VAI JUNTO POR PADRAO — nao mande este campo em pergunta comum. Mande false SO quando ela pedir sem foto: "so o texto", "sem as fotos", "nao precisa de imagem". ATENCAO: a maioria das pecas NAO tem foto cadastrada, entao a resposta da ferramenta diz quantas foram de verdade — fale desse numero, nao prometa foto de peca que nao tem.',
       },
     },
     // BUSCA DEIXOU DE SER OBRIGATORIA EM 07/10/2026. "Me monta uma tabela de
@@ -2473,7 +2483,9 @@ export class AnthropicClient implements ILlmClient {
               precoDe: entrada.preco_de,
               precoAte: entrada.preco_ate,
               aPartirDe: Number(entrada.a_partir_de) || 0,
+              comFoto: entrada.com_foto !== false,
             });
+            fotos = r.fotos ?? fotos;
             return textoDeProdutos(r, 'Repasse os numeros exatamente como estao.');
           }),
         );
@@ -2494,7 +2506,9 @@ export class AnthropicClient implements ILlmClient {
               precoDe: entrada.preco_de,
               precoAte: entrada.preco_ate,
               aPartirDe: Number(entrada.a_partir_de) || 0,
+              comFoto: entrada.com_foto !== false,
             });
+            fotos = r.fotos ?? fotos;
             return textoDeProdutos(
               r,
               'Repasse os precos exatamente como estao. Se ela pedir custo ou margem, diga que voce nao consegue ver isso.',
@@ -3483,6 +3497,7 @@ type RecorteDeProduto = {
   preco_de?: unknown;
   preco_ate?: unknown;
   a_partir_de?: unknown;
+  com_foto?: boolean;
 };
 
 export function textoDeProdutos(
