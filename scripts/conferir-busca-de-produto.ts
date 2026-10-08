@@ -208,6 +208,65 @@ async function main() {
     ids.length === inteiro.length ? 'idênticas' : 'tamanhos diferentes',
   );
 
+  // O DICIONÁRIO — RF6 e RF7, 08/10/2026. O número ao lado é o que a base
+  // devolvia ANTES de a sigla entrar, e por isso o "de" fica no rótulo: se
+  // alguém desfizer a expansão, a conta volta para ele e isto falha.
+  console.log('\nA palavra dela, a sigla do catálogo');
+  for (const [termo, antes, esperado] of [
+    ['diamante', 0, 268],
+    ['brinco de diamante', 0, 74],
+    ['esmeralda', 9, 45],
+    ['ouro amarelo', 0, 164],
+    ['ouro branco', 5, 193],
+    ['riviera', 2, 23],
+    ['safira', 0, 8],
+    ['topázio', 0, 7],
+    ['tanzanita', 0, 6],
+  ] as const) {
+    const achadas = await repo.contar({
+      busca: termo,
+      ativo: true,
+      apenasDisponiveis: true,
+    });
+    conferir(
+      `"${termo}"`,
+      achadas === esperado,
+      `${achadas} com saldo — de ${antes} para ${esperado} na medição de 08/10`,
+    );
+  }
+
+  // A FRONTEIRA DE PALAVRA, que é o que separa a correção do estrago. Como
+  // substring, `ON` casaria 4.682 peças (cONjunto, cONcha, ONÇA) e `OR`
+  // casaria 1.025 (cOR, flOR, cORação). Este é o teste que falha EM SILÊNCIO
+  // se alguém trocar o `~*` por ILIKE: a busca não quebra, só devolve o
+  // catálogo inteiro.
+  for (const [termo, teto] of [
+    ['ouro negro', 100],
+    ['ouro rosé', 300],
+  ] as const) {
+    const achadas = await repo.contar({ busca: termo, ativo: true });
+    conferir(
+      `"${termo}" não traz o catálogo inteiro`,
+      achadas > 0 && achadas < teto,
+      `${achadas} no catálogo (abaixo de ${teto}; por substring seriam milhares)`,
+    );
+  }
+
+  // "quilate" sozinho casa quase tudo, e é justamente por isso que ele entra:
+  // num E, palavra que casa tudo é inofensiva, mas palavra que não casa NADA
+  // zera a busca inteira. Sem a tradução, isto devolvia zero.
+  const comQuilate = await repo.contar({
+    busca: 'anel 2 quilates',
+    ativo: true,
+    apenasDisponiveis: true,
+    categoriaSugerida: 'JEWEL',
+  });
+  conferir(
+    '"anel 2 quilates" não zera a busca',
+    comQuilate > 0,
+    `${comQuilate} anéis com quilatagem e saldo`,
+  );
+
   // AS FOTOS, CONTRA A CONEXA DE VERDADE. O serviço é o mesmo que o canal
   // usa; o que se mede aqui é quanta foto existe, que é o que decide se a
   // resposta da agente sai com imagem ou com desculpa.
