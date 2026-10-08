@@ -1014,8 +1014,17 @@ export type GestaoCompararAnteriorHandler = (input: {
 }) => Promise<GestaoLeituraResultado>;
 
 export type GestaoFunilHandler = (input: {
-  /** Nome (ou parte). Ausente = a loja inteira. */
+  /** Nome (ou parte). Ausente = a equipe inteira de quem pergunta. */
   vendedora?: string;
+  /**
+   * So os atendimentos nesta etapa — 08/10/2026.
+   *
+   * Responde "quem esta SO em negociacao", que era a pergunta da gestao que
+   * o agregado nao alcancava.
+   */
+  etapa?: string;
+  /** Um dia so, `AAAA-MM-DD`, pela data de ABERTURA do atendimento. */
+  dia?: string;
 }) => Promise<GestaoLeituraResultado & { total?: number }>;
 
 export type GestaoFeedbacksHandler = (input: {

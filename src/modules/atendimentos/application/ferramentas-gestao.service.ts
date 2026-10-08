@@ -65,7 +65,9 @@ import { ResolverVendedoraPorNomeUseCase } from './use-cases/resolver-vendedora-
 import { ConsultarAuditoriaUseCase } from './use-cases/consultar-auditoria.use-case';
 import { ConsultarLinhaDoTempoUseCase } from './use-cases/consultar-linha-do-tempo.use-case';
 import type {
+  AtendimentoAuditoria,
   ContagemPorEtapa,
+  EtapaAtendimento,
   PontoDaLinha,
 } from '../domain/ports/repositories/atendimento-repository.port';
 import { EncaminharLeadUseCase } from './use-cases/encaminhar-lead.use-case';
@@ -121,6 +123,15 @@ const MAXIMO_VENDAS_DETALHADAS = 10;
 const MAXIMO_FEEDBACKS = 10;
 /** Leads por resposta. Acima disso a mensagem deixa de ser lida. */
 const MAXIMO_LEADS = 15;
+
+/**
+ * Clientes NOMEADOS por resposta do funil — 08/10/2026.
+ *
+ * Vinte, e nao os quinze da Helena: aqui a lista e da EQUIPE, e sete carteiras
+ * somadas passam de uma. Acima disso a mensagem de WhatsApp deixa de ser lida,
+ * e o despacho DIZ quantos ficaram de fora.
+ */
+const TETO_FUNIL_NOMEADO = 20;
 
 /**
  * O status como uma pessoa fala. DISPONIVEL nao entra: ela e o normal, e
@@ -1912,13 +1923,31 @@ export class FerramentasGestaoService {
         return { status: 'OK', linhas };
       },
 
-      gestaoFunil: async ({ vendedora }) => {
+      gestaoFunil: async ({ vendedora, etapa, dia }) => {
+        // O RECORTE VIAJA JUNTO — 08/10/2026. Por ETAPA responde "quem esta SO
+        // em negociacao"; por DIA, "o que abriu hoje". Os dois ja existiam no
+        // `FiltroAuditoria`; o que faltava era a ferramenta oferece-los.
+        const valida = etapaAberta(etapa);
+        const recorte = {
+          ...(valida ? { etapa: valida } : {}),
+          ...oDiaInteiro(dia),
+        };
+
         if (vendedora && vendedora.trim()) {
           return this.comVendedora(equipe, vendedora, async (id) => {
-            const r = await this.auditoria.resumo({
-              apenasAbertos: true,
-              vendedoraId: id,
-            });
+            const [r, lista] = await Promise.all([
+              this.auditoria.resumo({
+                apenasAbertos: true,
+                vendedoraId: id,
+                ...recorte,
+              }),
+              this.auditoria.listar({
+                apenasAbertos: true,
+                vendedoraId: id,
+                ...recorte,
+                limit: TETO_FUNIL_NOMEADO,
+              }),
+            ]);
             const dela = r.vendedoras[0];
             if (!dela) return [];
             const linhas = [fraseDoFunil(dela.total, dela.porEtapa)];
@@ -1929,13 +1958,16 @@ export class FerramentasGestaoService {
                   : `${dela.aguardandoRelato} deles estao esperando o relato dela`,
               );
             }
-            return linhas;
+            return [...linhas, ...nomesDoFunil(lista, false)];
           });
         }
 
         // A LOJA — OU A EQUIPE. Uma linha do todo, e depois uma por vendedora:
         // e a leitura que a gestao faz, primeiro o tamanho, depois de quem e.
-        const r = await this.auditoria.resumo({ apenasAbertos: true });
+        const r = await this.auditoria.resumo({
+          apenasAbertos: true,
+          ...recorte,
+        });
 
         // ================================================================
         // O RECORTE E APLICADO DEPOIS DA CONSULTA, e aqui isso e correto —
@@ -1980,7 +2012,52 @@ export class FerramentasGestaoService {
                 : ''),
           );
         }
-        return { status: 'OK', linhas };
+
+        // ================================================================
+        // OS NOMES, UMA CONSULTA POR VENDEDORA — 08/10/2026.
+        //
+        // E a diferenca em relacao a contagem logo acima, que busca tudo e
+        // filtra depois. Ali o comentario explica por que aquilo e aceitavel:
+        // o que vem e contagem por pessoa, e nao ha agregado da loja para
+        // vazar.
+        //
+        // AQUI VEM NOME DE CLIENTE, e isso muda a conta. Buscar a loja
+        // inteira e descartar depois faria nomes de outra equipe passarem
+        // pela memoria — nao voltam na resposta, mas SAO LIDOS. Perguntar
+        // por vendedora deixa a regra ESTRUTURAL: o que esta fora do escopo
+        // nao e sequer consultado, e continua certo sozinho no dia em que
+        // nascer uma segunda equipe (SP, o RF12).
+        //
+        // O CUSTO E BAIXO E MEDIDO: a equipe tem 7 ativas, e cada consulta e
+        // indexada. Para quem alcanca TODO MUNDO (`equipe === null`, o caso
+        // do ADMIN) uma consulta so continua valendo — nao ha escopo para
+        // proteger.
+        // ================================================================
+        const comNome = daEquipe.filter((v) => v.total > 0);
+        const paginas = await Promise.all(
+          equipe === null
+            ? [
+                this.auditoria.listar({
+                  apenasAbertos: true,
+                  ...recorte,
+                  limit: TETO_FUNIL_NOMEADO,
+                }),
+              ]
+            : comNome.map((v) =>
+                this.auditoria.listar({
+                  apenasAbertos: true,
+                  vendedoraId: v.vendedoraId,
+                  ...recorte,
+                  limit: TETO_FUNIL_NOMEADO,
+                }),
+              ),
+        );
+        const juntas = {
+          itens: paginas.flatMap((p) => p.itens).slice(0, TETO_FUNIL_NOMEADO),
+          total: paginas.reduce((s, p) => s + p.total, 0),
+        };
+
+        return { status: 'OK', linhas: [...linhas, ...nomesDoFunil(juntas, true)] };
       },
 
     };
@@ -2244,6 +2321,105 @@ export function moeda(v: number): string {
  * diria da equipe um numero que e do todo — e ele seria PLAUSIVEL, que e o
  * pior tipo de numero errado.
  */
+/**
+ * A ETAPA QUE O MODELO ESCREVEU, validada — 08/10/2026.
+ *
+ * ==========================================================================
+ * VALOR INVENTADO VIRA "SEM RECORTE", E NAO ZERO LINHAS.
+ *
+ * E a mesma regra do `categoriaDaBusca` e pelo mesmo motivo: o modelo as
+ * vezes escreve "NEGOCIACAO", "em negociacao" ou "ABERTO" neste campo.
+ * Filtrar por um valor que nao existe devolveria ZERO — e zero e
+ * indistinguivel de "nao ha ninguem nessa etapa", que e uma resposta
+ * confiante e errada.
+ *
+ * Sem recorte, a agente devolve o funil inteiro e a gestao ve que a etapa
+ * pedida nao esta ali. Erra menos, e o engano aparece.
+ *
+ * CONCLUIDO e NAO_AVANCOU ficam de fora de proposito: as duas SAO o
+ * desfecho, e o funil aqui e `apenasAbertos`. Aceita-las criaria um recorte
+ * que sempre devolve vazio.
+ * ==========================================================================
+ */
+function etapaAberta(etapa?: string): EtapaAtendimento | undefined {
+  const abertas: readonly EtapaAtendimento[] = [
+    'PRIMEIRO_CONTATO',
+    'EM_NEGOCIACAO',
+    'REMARCADO',
+    'SEM_CONTATO',
+  ];
+  const limpa = (etapa ?? '').trim().toUpperCase();
+  return abertas.find((e) => e === limpa);
+}
+
+/**
+ * UM DIA INTEIRO, e nao o instante da meia-noite — 08/10/2026.
+ *
+ * ==========================================================================
+ * O `ate` DA AUDITORIA COMPARA `aberto_em <= $N`, E `aberto_em` E TIMESTAMP.
+ *
+ * Passar o dia nas duas pontas pelo `datasDeRecorte` daria `de` e `ate` as
+ * 00:00:00 — e o filtro pegaria so o atendimento aberto exatamente na
+ * virada. "O que abriu hoje" voltaria vazio, e vazio aqui e indistinguivel
+ * de "nao abriu nada hoje": um numero errado que ninguem confere.
+ *
+ * O `datasDeRecorte` continua sendo quem VALIDA (ele recusa "2026-02-31",
+ * que o `new Date` normalizaria em silencio para 3 de marco). So o fim do
+ * dia e empurrado depois.
+ * ==========================================================================
+ */
+function oDiaInteiro(dia?: string): { de: Date; ate: Date } | Record<string, never> {
+  if (!dia) return {};
+  const janela = datasDeRecorte(dia, dia);
+  if (!janela) return {};
+  const ate = new Date(janela.ate);
+  ate.setHours(23, 59, 59, 999);
+  return { de: janela.de, ate };
+}
+
+/**
+ * As linhas de QUEM SAO, para a gestao — 08/10/2026.
+ *
+ * Nasceu do mesmo teste em producao que consertou a Helena: a agente sabia
+ * QUANTOS estavam em negociacao e mandava olhar no painel para saber QUEM.
+ *
+ * `comVendedora` decide se o nome da vendedora entra: na lista da equipe ele
+ * e o ponto da pergunta do Lucas ("saber quem e a vendedora"); na carteira de
+ * uma pessoa so, repetir o mesmo nome em vinte linhas e ruido.
+ *
+ * O TETO SE ANUNCIA. Vinte de cinquenta parecem os cinquenta, e ai a gestao
+ * cobra metade do time achando que viu o todo.
+ */
+function nomesDoFunil(
+  pagina: { itens: AtendimentoAuditoria[]; total: number },
+  comVendedora: boolean,
+): string[] {
+  if (pagina.itens.length === 0) return [];
+
+  const linhas = pagina.itens.map((a) => {
+    const desde = a.abertoEm.toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+    });
+    const quem = comVendedora ? ` — ${a.vendedoraNome}` : '';
+    const espera = a.aguardandoRelato ? ' — ESPERANDO O RELATO DELA' : '';
+    return `${a.clienteNome}${quem} (${rotuloEtapa(a.etapa)}, desde ${desde})${espera}`;
+  });
+
+  const cortou = pagina.total - pagina.itens.length;
+  return [
+    'QUEM SAO:',
+    ...linhas,
+    ...(cortou > 0
+      ? [
+          `Sao ${pagina.total} no total e esta lista traz ${pagina.itens.length}: ` +
+            'DIGA isso e ofereca o resto.',
+        ]
+      : []),
+    'Quando perguntarem QUEM, responda com estes nomes — NAO mande olhar no painel.',
+  ];
+}
+
 function somarEtapas(porEtapa: ContagemPorEtapa[]): ContagemPorEtapa {
   return porEtapa.reduce<ContagemPorEtapa>(
     (soma, atual) => {

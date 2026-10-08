@@ -309,7 +309,9 @@ describe('o funil pela gestao (Anastasia)', () => {
   beforeEach(() => {
     resolverVendedora = { execute: jest.fn().mockResolvedValue(MARINA) };
     auditoria = {
-      listar: jest.fn(),
+      // O funil passou a LISTAR os nomes em 08/10, então o padrão é uma
+      // página vazia — quem quiser nomes põe os itens no próprio teste.
+      listar: jest.fn().mockResolvedValue({ itens: [], total: 0 }),
       detalhe: jest.fn(),
       resumo: jest.fn(),
     };
@@ -434,5 +436,193 @@ describe('o funil pela gestao (Anastasia)', () => {
     const r = await montar().gestaoFunil({});
 
     expect(r).toEqual({ status: 'OK', linhas: [] });
+  });
+
+  /**
+   * ========================================================================
+   * QUEM SÃO, POR ETAPA E POR DIA — 08/10/2026, pedido do Lucas.
+   *
+   * Do mesmo teste em produção que consertou a Helena: a agente sabia
+   * QUANTOS estavam em negociação e mandava olhar no painel para saber QUEM.
+   * Aqui a Anastasia precisa de uma coisa que a Helena não precisava — **de
+   * qual vendedora** cada cliente é.
+   * ========================================================================
+   */
+  describe('quem são, e os recortes', () => {
+    const emCurso = (nome: string, vendedora: string, etapa = 'EM_NEGOCIACAO') => ({
+      clienteNome: nome,
+      vendedoraNome: vendedora,
+      etapa,
+      abertoEm: new Date('2026-10-03T10:00:00-03:00'),
+      aguardandoRelato: false,
+      proximoContatoEm: null,
+    });
+
+    /* ESTE É O TESTE. O resto é contorno. */
+    it('a lista da equipe traz o nome da VENDEDORA em cada linha', async () => {
+      auditoria.resumo.mockResolvedValue({
+        total: 2,
+        porEtapa: etapas({ EM_NEGOCIACAO: 2 }),
+        vendedoras: [
+          linha('Marina', 'vd-1', { EM_NEGOCIACAO: 1 }, 0),
+          linha('Beatriz', 'vd-2', { EM_NEGOCIACAO: 1 }, 0),
+        ],
+      });
+      auditoria.listar.mockResolvedValue({
+        itens: [emCurso('Carla Oliveira', 'Marina')],
+        total: 1,
+      });
+
+      const r = await montar().gestaoFunil({});
+
+      expect(r.linhas).toContain('QUEM SAO:');
+      expect(r.linhas.some((l) => l.includes('Carla Oliveira') && l.includes('Marina'))).toBe(true);
+    });
+
+    /**
+     * UMA CONSULTA POR VENDEDORA, e é o ponto da mudança. A contagem acima
+     * busca tudo e filtra depois — aceitável, porque é contagem por pessoa.
+     * Aqui vem NOME DE CLIENTE: buscar a loja e descartar depois faria nomes
+     * de outra equipe serem LIDOS. Perguntar por vendedora deixa a regra
+     * estrutural, e ela continua certa sozinha quando nascer a segunda
+     * equipe (SP, o RF12).
+     */
+    it('com equipe recortada, consulta vendedora por vendedora', async () => {
+      auditoria.resumo.mockResolvedValue({
+        total: 2,
+        porEtapa: etapas({ EM_NEGOCIACAO: 2 }),
+        vendedoras: [
+          linha('Marina', 'vd-1', { EM_NEGOCIACAO: 1 }, 0),
+          linha('Beatriz', 'vd-2', { EM_NEGOCIACAO: 1 }, 0),
+        ],
+      });
+
+      await servico.montar({ equipe: ['vd-1', 'vd-2'] }).gestaoFunil({});
+
+      // Duas chamadas, uma por pessoa — e NENHUMA sem `vendedoraId`.
+      expect(auditoria.listar).toHaveBeenCalledTimes(2);
+      for (const chamada of auditoria.listar.mock.calls) {
+        expect(chamada[0].vendedoraId).toBeDefined();
+      }
+    });
+
+    /** Quem alcança todo mundo não tem escopo a proteger: uma consulta só. */
+    it('sem recorte de equipe, uma consulta só', async () => {
+      auditoria.resumo.mockResolvedValue({
+        total: 1,
+        porEtapa: etapas({ EM_NEGOCIACAO: 1 }),
+        vendedoras: [linha('Marina', 'vd-1', { EM_NEGOCIACAO: 1 }, 0)],
+      });
+
+      await montar().gestaoFunil({});
+
+      expect(auditoria.listar).toHaveBeenCalledTimes(1);
+      expect(auditoria.listar.mock.calls[0][0].vendedoraId).toBeUndefined();
+    });
+
+    it('a etapa pedida vira recorte, nas duas consultas', async () => {
+      auditoria.resumo.mockResolvedValue({
+        total: 1,
+        porEtapa: etapas({ EM_NEGOCIACAO: 1 }),
+        vendedoras: [linha('Marina', 'vd-1', { EM_NEGOCIACAO: 1 }, 0)],
+      });
+
+      await montar().gestaoFunil({ etapa: 'EM_NEGOCIACAO' });
+
+      expect(auditoria.resumo).toHaveBeenCalledWith(
+        expect.objectContaining({ etapa: 'EM_NEGOCIACAO' }),
+      );
+      expect(auditoria.listar).toHaveBeenCalledWith(
+        expect.objectContaining({ etapa: 'EM_NEGOCIACAO' }),
+      );
+    });
+
+    /**
+     * VALOR INVENTADO VIRA "SEM RECORTE", e não zero linhas — a mesma regra
+     * do `categoriaDaBusca`. O modelo escreve "NEGOCIACAO" ou "ABERTO"
+     * nesse campo, e filtrar por um valor inexistente devolveria vazio, que
+     * é indistinguível de "não há ninguém nessa etapa".
+     */
+    it('etapa inventada é ignorada, e não filtra por nada', async () => {
+      auditoria.resumo.mockResolvedValue({
+        total: 1,
+        porEtapa: etapas({ EM_NEGOCIACAO: 1 }),
+        vendedoras: [linha('Marina', 'vd-1', { EM_NEGOCIACAO: 1 }, 0)],
+      });
+
+      await montar().gestaoFunil({ etapa: 'ABERTO' });
+
+      expect(auditoria.resumo).toHaveBeenCalledWith({ apenasAbertos: true });
+    });
+
+    /** CONCLUIDO é desfecho: aceitá-la criaria um recorte sempre vazio. */
+    it('etapa de desfecho também é ignorada', async () => {
+      auditoria.resumo.mockResolvedValue({
+        total: 1,
+        porEtapa: etapas({ EM_NEGOCIACAO: 1 }),
+        vendedoras: [linha('Marina', 'vd-1', { EM_NEGOCIACAO: 1 }, 0)],
+      });
+
+      await montar().gestaoFunil({ etapa: 'CONCLUIDO' });
+
+      expect(auditoria.resumo).toHaveBeenCalledWith({ apenasAbertos: true });
+    });
+
+    /**
+     * O DIA INTEIRO, e não o instante da meia-noite. O `ate` da auditoria
+     * compara `aberto_em <= $N`, e `aberto_em` é timestamp: com as duas
+     * pontas às 00:00 o filtro pegaria só a virada, e "o que abriu hoje"
+     * voltaria vazio — indistinguível de "não abriu nada".
+     */
+    it('o dia pedido vira a janela inteira', async () => {
+      auditoria.resumo.mockResolvedValue({
+        total: 1,
+        porEtapa: etapas({ EM_NEGOCIACAO: 1 }),
+        vendedoras: [linha('Marina', 'vd-1', { EM_NEGOCIACAO: 1 }, 0)],
+      });
+
+      await montar().gestaoFunil({ dia: '2026-10-08' });
+
+      const recorte = auditoria.resumo.mock.calls[0][0] as {
+        de: Date;
+        ate: Date;
+      };
+      expect(recorte.de.getHours()).toBe(0);
+      expect(recorte.ate.getHours()).toBe(23);
+      expect(recorte.ate.getMinutes()).toBe(59);
+      expect(recorte.de.getDate()).toBe(recorte.ate.getDate());
+    });
+
+    /** Data impossível não vira janela plausível — ver `datasDeRecorte`. */
+    it('dia impossível é ignorado, e não inventa janela', async () => {
+      auditoria.resumo.mockResolvedValue({
+        total: 1,
+        porEtapa: etapas({ EM_NEGOCIACAO: 1 }),
+        vendedoras: [linha('Marina', 'vd-1', { EM_NEGOCIACAO: 1 }, 0)],
+      });
+
+      await montar().gestaoFunil({ dia: '2026-02-31' });
+
+      expect(auditoria.resumo).toHaveBeenCalledWith({ apenasAbertos: true });
+    });
+
+    /** O TETO SE ANUNCIA: vinte de cinquenta parecem os cinquenta. */
+    it('lista cortada diz quantos ficaram de fora', async () => {
+      auditoria.resumo.mockResolvedValue({
+        total: 50,
+        porEtapa: etapas({ EM_NEGOCIACAO: 50 }),
+        vendedoras: [linha('Marina', 'vd-1', { EM_NEGOCIACAO: 50 }, 0)],
+      });
+      auditoria.listar.mockResolvedValue({
+        itens: Array.from({ length: 20 }, (_, i) =>
+          emCurso(`Cliente ${i}`, 'Marina'),
+        ),
+        total: 50,
+      });
+
+      const r = await montar().gestaoFunil({});
+
+      expect(r.linhas.some((l) => l.includes('50 no total') && l.includes('20'))).toBe(true);
+    });
   });
 });

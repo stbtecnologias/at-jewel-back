@@ -1277,14 +1277,28 @@ const GESTAO_COMPARAR_ANTERIOR_TOOL: Anthropic.Tool = {
 const GESTAO_FUNIL_TOOL: Anthropic.Tool = {
   name: 'funil_de_atendimentos',
   description:
-    'Como estao os atendimentos EM CURSO agora, por etapa: em negociacao, remarcado, sem conseguir falar, primeiro contato. SEM "vendedora", traz a loja inteira mais uma linha por vendedora. COM "vendedora", traz so a carteira dela. Use quando perguntarem "como esta o funil", "quantos clientes em negociacao", "o que esta parado", "como esta a carteira da Marina", "quantos atendimentos abertos temos". E o estado de AGORA, nao um periodo — nao diga "hoje" nem "esta semana" ao repassar. Nao traz venda nem valor: para dinheiro use as ferramentas de vendas.',
+    'Como estao os atendimentos EM CURSO agora, por etapa: em negociacao, remarcado, sem conseguir falar, primeiro contato. SEM "vendedora", traz a equipe inteira mais uma linha por vendedora. COM "vendedora", traz so a carteira dela. ' +
+    'E TRAZ QUEM SAO — nome do cliente, de qual VENDEDORA, em que etapa, desde quando e quem espera o relato dela. Quando perguntarem QUEM ("quem esta em negociacao?", "quais clientes a Marina tem parados?"), responda com os nomes: eles vem aqui. ' +
+    'Use para "como esta o funil", "quantos clientes em negociacao", "o que esta parado", "como esta a carteira da Marina", "quantos atendimentos abertos temos". ' +
+    'O recorte por ETAPA responde "quem esta SO em negociacao"; o por DIA responde "o que abriu hoje". Sem etapa e sem dia e o estado de AGORA, e ai nao diga "hoje" nem "esta semana" ao repassar. Nao traz venda, valor nem telefone: para dinheiro use as ferramentas de vendas.',
   input_schema: {
     type: 'object',
     properties: {
       vendedora: {
         type: 'string',
         description:
-          'Nome da vendedora, como falado. OMITA para a loja inteira — nao invente um nome quando a pergunta for geral.',
+          'Nome da vendedora, como falado. OMITA para a equipe inteira — nao invente um nome quando a pergunta for geral.',
+      },
+      etapa: {
+        type: 'string',
+        enum: ['EM_NEGOCIACAO', 'REMARCADO', 'SEM_CONTATO', 'PRIMEIRO_CONTATO'],
+        description:
+          'So os atendimentos nesta etapa. Use quando a pergunta nomear uma ("quem esta em negociacao", "quem nao conseguiu falar"). OMITA para todas as etapas.',
+      },
+      dia: {
+        type: 'string',
+        description:
+          'Um dia so, em AAAA-MM-DD, calculado a partir da data de hoje informada no system prompt. Use para "o que abriu hoje", "os de ontem". Filtra pela data de ABERTURA do atendimento — omita para o estado de agora, sem recorte de tempo.',
       },
     },
   },
