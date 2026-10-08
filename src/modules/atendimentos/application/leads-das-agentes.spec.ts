@@ -525,6 +525,9 @@ describe('o panorama de leads da gestao (Anastasia)', () => {
       expect.any(Number),
       // A gestao le o historico inteiro — ver o teste da baixa logo abaixo.
       false,
+      // O recorte de 08/10: VAZIO quando ela não pede status nem dia, e é o
+      // que mantém o comportamento de antes para a pergunta geral.
+      {},
     );
     expect(r.status).toBe('OK');
     expect(r.vendedora).toBe('Marina Albuquerque');
@@ -598,6 +601,116 @@ describe('o panorama de leads da gestao (Anastasia)', () => {
     const r = await montar().gestaoPanoramaLeads({});
 
     expect(r).toEqual({ status: 'OK', linhas: [] });
+  });
+
+  /**
+   * ========================================================================
+   * POR STATUS E POR DIA — 08/10/2026, pedido do Lucas.
+   *
+   * *"saber quem é a vendedora, em negociação... que está apenas em Leads...
+   * por status ou dia"*. O `apenasAbertos` responde "em aberto ou tudo", que
+   * é a pergunta da VENDEDORA; a gestão quer nomear UM status ("quem ela não
+   * encostou ainda") e um DIA.
+   *
+   * E o ciclo de vida já existia: a migração 60 criou `status_vendedora`
+   * com `VIROU_CLIENTE`, o carimbo e um índice parcial da fila aberta —
+   * nascida de uma pergunta do próprio Lucas em 22/09. O que faltava era a
+   * gestão **ver**.
+   * ========================================================================
+   */
+  describe('os recortes da gestão', () => {
+    /* ESTE É O TESTE: "quem está apenas em Leads, sem ninguém ter encostado". */
+    it('o status pedido viaja para o repositório', async () => {
+      leads.listarPorVendedora.mockResolvedValue([lead('Aslan')]);
+
+      await montar().gestaoPanoramaLeads({
+        vendedora: 'marina',
+        status: 'NOVO',
+      });
+
+      expect(leads.listarPorVendedora).toHaveBeenCalledWith(
+        'SEED-VD01',
+        expect.any(Number),
+        false,
+        { status: 'NOVO' },
+      );
+    });
+
+    /**
+     * OS QUATRO VALEM, inclusive os de baixa — e é a diferença em relação à
+     * fila da vendedora, que esconde o resolvido. A gestão pergunta "quantos
+     * viraram cliente" de propósito.
+     */
+    it('status de baixa também vale para a gestão', async () => {
+      leads.listarPorVendedora.mockResolvedValue([lead('Aslan')]);
+
+      await montar().gestaoPanoramaLeads({
+        vendedora: 'marina',
+        status: 'VIROU_CLIENTE',
+      });
+
+      expect(leads.listarPorVendedora).toHaveBeenCalledWith(
+        'SEED-VD01',
+        expect.any(Number),
+        false,
+        { status: 'VIROU_CLIENTE' },
+      );
+    });
+
+    /**
+     * VALOR INVENTADO VIRA SEM RECORTE, nunca filtro por valor inexistente —
+     * a mesma regra da etapa do funil e do `categoriaDaBusca`. Filtrar por
+     * "ABERTO" devolveria vazio, indistinguível de "ela não tem lead nenhum".
+     */
+    it('status inventado é ignorado', async () => {
+      leads.listarPorVendedora.mockResolvedValue([lead('Aslan')]);
+
+      await montar().gestaoPanoramaLeads({
+        vendedora: 'marina',
+        status: 'ABERTO',
+      });
+
+      expect(leads.listarPorVendedora).toHaveBeenCalledWith(
+        'SEED-VD01',
+        expect.any(Number),
+        false,
+        {},
+      );
+    });
+
+    /** O dia filtra QUANDO O LEAD ENTROU — "fica o registro de quando entrou". */
+    it('o dia vira a janela inteira', async () => {
+      leads.listarPorVendedora.mockResolvedValue([lead('Aslan')]);
+
+      await montar().gestaoPanoramaLeads({
+        vendedora: 'marina',
+        dia: '2026-10-08',
+      });
+
+      const recorte = leads.listarPorVendedora.mock.calls[0][3] as {
+        de: Date;
+        ate: Date;
+      };
+      expect(recorte.de.getHours()).toBe(0);
+      expect(recorte.ate.getHours()).toBe(23);
+      expect(recorte.de.getDate()).toBe(recorte.ate.getDate());
+    });
+
+    it('dia impossível é ignorado, e não inventa janela', async () => {
+      leads.listarPorVendedora.mockResolvedValue([lead('Aslan')]);
+
+      await montar().gestaoPanoramaLeads({
+        vendedora: 'marina',
+        dia: '2026-02-31',
+      });
+
+      expect(leads.listarPorVendedora).toHaveBeenCalledWith(
+        'SEED-VD01',
+        expect.any(Number),
+        false,
+        {},
+      );
+    });
   });
 });
 

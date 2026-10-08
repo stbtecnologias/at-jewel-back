@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, IsNull, Repository } from 'typeorm';
+import { Between, In, IsNull, Repository } from 'typeorm';
 import {
   STATUS_LEAD_EM_ABERTO,
   type AtualizarLeadInput,
@@ -163,6 +163,7 @@ export class LeadRepository implements ILeadRepository {
     vendedoraCodigo: string,
     limite: number,
     apenasAbertos = true,
+    recorte?: { status?: StatusLeadVendedora; de?: Date; ate?: Date },
   ): Promise<Lead[]> {
     const rows = await this.repo.find({
       where: {
@@ -177,8 +178,18 @@ export class LeadRepository implements ILeadRepository {
         // (Na pratica a migracao 60 nao deixou nenhum NULL para tras — mas a
         // consulta nao deveria depender disso.)
         // ================================================================
-        ...(apenasAbertos
-          ? { statusVendedora: In([...STATUS_LEAD_EM_ABERTO]) }
+        // O STATUS PEDIDO GANHA DO `apenasAbertos` — 08/10/2026. Pedir
+        // VIROU_CLIENTE junto de `apenasAbertos` daria vazio por construcao,
+        // e vazio seria lido como "ninguem virou cliente". Ver a porta.
+        ...(recorte?.status
+          ? { statusVendedora: recorte.status }
+          : apenasAbertos
+            ? { statusVendedora: In([...STATUS_LEAD_EM_ABERTO]) }
+            : {}),
+        // QUANDO O LEAD ENTROU, e nao quando foi encaminhado: "fica o
+        // registro de quando entrou" — decisao do Lucas em 08/10.
+        ...(recorte?.de && recorte?.ate
+          ? { criadoEm: Between(recorte.de, recorte.ate) }
           : {}),
       },
       order: { direcionadoVendedoraEm: 'DESC' },

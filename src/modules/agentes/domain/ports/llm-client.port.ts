@@ -927,6 +927,16 @@ export type GestaoConversasAgoraHandler = (input: {
 export type GestaoPanoramaLeadsHandler = (input: {
   /** Nome (ou parte). Ausente = a fila inteira. */
   vendedora?: string;
+  /**
+   * O status DA VENDEDORA: `NOVO`, `EM_CONTATO`, `VIROU_CLIENTE`,
+   * `NAO_VINGOU` — 08/10/2026.
+   *
+   * So vale com `vendedora`: a fila geral nao e por pessoa, e o status e o
+   * que ELA fez com o lead.
+   */
+  status?: string;
+  /** Um dia so, `AAAA-MM-DD`, por QUANDO O LEAD ENTROU. So com `vendedora`. */
+  dia?: string;
 }) => Promise<GestaoLeituraResultado & { total?: number }>;
 
 /**

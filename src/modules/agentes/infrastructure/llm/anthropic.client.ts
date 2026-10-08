@@ -1129,6 +1129,17 @@ const GESTAO_PANORAMA_LEADS_TOOL: Anthropic.Tool = {
         description:
           'Nome da vendedora, como falado. OMITA para a fila inteira — nao invente um nome quando a pergunta for geral.',
       },
+      status: {
+        type: 'string',
+        enum: ['NOVO', 'EM_CONTATO', 'VIROU_CLIENTE', 'NAO_VINGOU'],
+        description:
+          'So os leads neste status da VENDEDORA. `NOVO` e quem ela ainda nao encostou; `EM_CONTATO`, quem ela esta tratando; `VIROU_CLIENTE` e `NAO_VINGOU` sao os que ela JA DEU BAIXA. Use quando a pergunta nomear um ("quem esta apenas em Leads", "quem ela nao tocou ainda", "quantos viraram cliente"). SO VALE COM "vendedora" — sem ela, a fila geral nao e por vendedora. OMITA para os que estao em aberto.',
+      },
+      dia: {
+        type: 'string',
+        description:
+          'Um dia so, em AAAA-MM-DD, calculado a partir da data de hoje informada no system prompt. Filtra por QUANDO O LEAD ENTROU — nao por quando foi encaminhado. Use para "os leads que entraram hoje". SO VALE COM "vendedora". OMITA para sem recorte de tempo.',
+      },
     },
   },
 };

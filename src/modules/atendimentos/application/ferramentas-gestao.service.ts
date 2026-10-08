@@ -43,7 +43,11 @@ import type {
 } from '../domain/ports/repositories/conversa-whatsapp-repository.port';
 import { CLIENTE_REPOSITORY } from '../../clientes/domain/ports/injection-tokens';
 import { LEAD_REPOSITORY } from '../../leads/domain/ports/injection-tokens';
-import type { ILeadRepository } from '../../leads/domain/ports/repositories/lead-repository.port';
+import {
+  STATUS_LEAD_VENDEDORA,
+  type ILeadRepository,
+  type StatusLeadVendedora,
+} from '../../leads/domain/ports/repositories/lead-repository.port';
 import type { IClienteRepository } from '../../clientes/domain/ports/repositories/cliente-repository.port';
 import { VENDEDORA_REPOSITORY } from '../../vendedoras/domain/ports/injection-tokens';
 import type { IVendedoraRepository } from '../../vendedoras/domain/ports/repositories/vendedora-repository.port';
@@ -1850,8 +1854,13 @@ export class FerramentasGestaoService {
           : { status: 'OK' as const, linhas: await responder(null) };
       },
 
-      gestaoPanoramaLeads: async ({ vendedora }) => {
+      gestaoPanoramaLeads: async ({ vendedora, status, dia }) => {
         if (vendedora && vendedora.trim()) {
+          // O RECORTE DA GESTAO — 08/10/2026. O status e validado como a etapa
+          // do funil: valor inventado vira SEM recorte, nunca filtro por valor
+          // inexistente. Ver `statusDeLead`.
+          const pedido = statusDeLead(status);
+          const janela = oDiaInteiro(dia);
           return this.comVendedora(equipe, vendedora, async (_id, codigoErp) => {
             if (!codigoErp) return [];
             // ============================================================
@@ -1870,6 +1879,7 @@ export class FerramentasGestaoService {
               codigoErp,
               MAXIMO_LEADS + 1,
               false,
+              { ...(pedido ? { status: pedido } : {}), ...janela },
             );
             const linhas = achados
               .slice(0, MAXIMO_LEADS)
@@ -2341,6 +2351,19 @@ export function moeda(v: number): string {
  * que sempre devolve vazio.
  * ==========================================================================
  */
+/**
+ * O STATUS DE LEAD que o modelo escreveu, validado — 08/10/2026.
+ *
+ * Mesma regra do `etapaAberta` e do `categoriaDaBusca`: valor inventado vira
+ * SEM recorte. Aqui os QUATRO valem, inclusive os dois de baixa — a gestao
+ * pergunta "quantos viraram cliente" de propósito, e e a diferenca em relacao
+ * a fila da vendedora, que esconde o resolvido.
+ */
+function statusDeLead(status?: string): StatusLeadVendedora | undefined {
+  const limpo = (status ?? '').trim().toUpperCase();
+  return STATUS_LEAD_VENDEDORA.find((s) => s === limpo);
+}
+
 function etapaAberta(etapa?: string): EtapaAtendimento | undefined {
   const abertas: readonly EtapaAtendimento[] = [
     'PRIMEIRO_CONTATO',
