@@ -502,6 +502,46 @@ describe('RotearMensagemInternaUseCase', () => {
     });
 
     /**
+     * SAI PELA SESSAO QUE VAI RESPONDER, e com dois numeros isso importa: o
+     * "digitando" da Anastasia no chat da Helena apareceria no numero errado
+     * — ou em nenhum. O `agente` vem do roteador junto da mensagem, e e o
+     * mesmo que o controller usa no `enviarTexto`.
+     */
+    it('na Helena, o digitando sai pela sessão da ELENA', async () => {
+      identificarVendedora.execute.mockResolvedValue(VENDEDORA);
+
+      await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'minha agenda?',
+        agente: 'ELENA',
+      });
+
+      expect(whatsapp.iniciarDigitando).toHaveBeenCalledWith(
+        '558586467241@c.us',
+        'ELENA',
+      );
+      expect(whatsapp.pararDigitando).toHaveBeenCalledWith(
+        '558586467241@c.us',
+        'ELENA',
+      );
+    });
+
+    it('na Anastasia, pela dela', async () => {
+      identificarAdmin.execute.mockResolvedValue(ADMIN);
+
+      await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'como foi a semana?',
+        agente: 'ANASTASIA',
+      });
+
+      expect(whatsapp.iniciarDigitando).toHaveBeenCalledWith(
+        '558586467241@c.us',
+        'ANASTASIA',
+      );
+    });
+
+    /**
      * O `finally` É O PONTO: se o canal lançar e o indicador ficar ligado,
      * ela vê a agente "digitando" uma mensagem que nunca vem — e manda de
      * novo achando que não chegou.
