@@ -362,4 +362,101 @@ describe('o artefato que a ferramenta produz', () => {
       expect.objectContaining({ comFoto: false }),
     );
   });
+
+  /**
+   * ========================================================================
+   * A AGENDA DA SEMANA COLADA DE UMA VEZ — 08/10/2026.
+   *
+   * A gestora mandou sete dias num bloco de texto e pediu aviso uma hora
+   * antes de cada compromisso. O teto de lembrete era BOOLEANO: o primeiro
+   * entrava e os outros ouviam "você já guardou um lembrete neste turno" —
+   * ela teria de repetir um por um, que é exatamente o que ela evitou ao
+   * colar o bloco.
+   *
+   * O teto continua existindo — criação em massa, inclusive por injeção no
+   * texto que um cliente escreveu —, mas agora é CONTADO, em vinte.
+   * ========================================================================
+   */
+  describe('vários lembretes na mesma mensagem', () => {
+    /** Uma resposta com N pedidos de lembrete, como o modelo faz de verdade. */
+    const pedeLembretes = (n: number) => ({
+      content: [
+        { type: 'text', text: 'Vou guardar.' },
+        ...Array.from({ length: n }, (_, i) => ({
+          type: 'tool_use',
+          id: `l${i}`,
+          name: 'guardar_lembrete',
+          input: {
+            texto: `compromisso ${i}`,
+            quandoIso: '2026-10-13T15:30:00-03:00',
+          },
+        })),
+      ],
+      usage: { output_tokens: 10 },
+      stop_reason: 'tool_use',
+    });
+
+    /* ESTE É O TESTE. */
+    it('a semana inteira entra de uma vez — sete compromissos, sete lembretes', async () => {
+      const guardar = jest.fn().mockResolvedValue({ mensagem: 'Guardado.' });
+      create
+        .mockResolvedValueOnce(pedeLembretes(7))
+        .mockResolvedValueOnce(responde('Guardei os sete.'));
+
+      await cliente.chatComFerramentas({ ...base(), guardarLembrete: guardar });
+
+      expect(guardar).toHaveBeenCalledTimes(7);
+    });
+
+    it('no vigésimo primeiro para, e DIZ quantos entraram', async () => {
+      const guardar = jest.fn().mockResolvedValue({ mensagem: 'Guardado.' });
+      create
+        .mockResolvedValueOnce(pedeLembretes(25))
+        .mockResolvedValueOnce(responde('Guardei vinte.'));
+
+      await cliente.chatComFerramentas({ ...base(), guardarLembrete: guardar });
+
+      expect(guardar).toHaveBeenCalledTimes(20);
+
+      // E O QUE SOBROU NÃO SOME CALADO: o modelo recebe a conta e a ordem de
+      // dizer o que faltou. Sem isto ele confirmaria vinte e calaria os cinco.
+      const segunda = create.mock.calls[1][0] as { messages: unknown };
+      const resultados = JSON.stringify(segunda.messages);
+      expect(resultados).toContain('20 lembretes');
+      expect(resultados).toMatch(/QUAIS faltaram/);
+    });
+
+    /**
+     * O TETO DE UM POR TURNO CONTINUA onde ele protege de verdade: `avisar`
+     * manda WhatsApp para OUTRA pessoa, e vinte numa colada seriam vinte
+     * mensagens para a vendedora.
+     */
+    it('avisar vendedora continua em UM por turno', async () => {
+      const avisar = jest.fn().mockResolvedValue({ mensagem: 'Avisada.' });
+      create
+        .mockResolvedValueOnce({
+          content: [
+            {
+              type: 'tool_use',
+              id: 'a1',
+              name: 'avisar_vendedora',
+              input: { cliente: 'Carla' },
+            },
+            {
+              type: 'tool_use',
+              id: 'a2',
+              name: 'avisar_vendedora',
+              input: { cliente: 'Ana' },
+            },
+          ],
+          usage: { output_tokens: 10 },
+          stop_reason: 'tool_use',
+        })
+        .mockResolvedValueOnce(responde('Avisei uma.'));
+
+      await cliente.chatComFerramentas({ ...base(), avisarVendedora: avisar });
+
+      expect(avisar).toHaveBeenCalledTimes(1);
+    });
+  });
 });

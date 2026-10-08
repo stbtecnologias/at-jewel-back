@@ -867,19 +867,25 @@ const ESQUECER_COMBINADO_TOOL: Anthropic.Tool = {
 const GUARDAR_LEMBRETE_TOOL: Anthropic.Tool = {
   name: 'guardar_lembrete',
   description:
-    'Guarda um lembrete PESSOAL de quem esta falando com voce, e voce manda a mensagem na hora marcada. Use para "me lembra amanha de...", "me avisa as 15h que...", "nao me deixa esquecer de...". VOCE VAI MANDAR SOZINHA na hora — isto nao e combinado, que so vale quando a pessoa volta a perguntar. O lembrete e so dela: ninguem mais ve nem recebe. Serve para qualquer assunto, de trabalho ou nao.',
+    'Guarda um lembrete PESSOAL de quem esta falando com voce, e voce manda a mensagem na hora marcada. Use para "me lembra amanha de...", "me avisa as 15h que...", "nao me deixa esquecer de...". VOCE VAI MANDAR SOZINHA na hora — isto nao e combinado, que so vale quando a pessoa volta a perguntar. O lembrete e so dela: ninguem mais ve nem recebe. Serve para qualquer assunto, de trabalho ou nao. ' +
+    'CHAME VARIAS VEZES NA MESMA MENSAGEM, ate vinte, quando ela colar uma agenda com varios compromissos: UM LEMBRETE PARA CADA UM, de uma vez. NUNCA peca para ela repetir um por um. ' +
+    'ANTES DE GUARDAR, quando houver mais de tres, DIGA O QUE ENTENDEU: quantos compromissos achou, quais tem hora e quais nao tem — e pergunte as horas que faltam TODAS DE UMA VEZ, nao uma pergunta por compromisso. ' +
+    'NAO GUARDE o que nao e compromisso: "feriado", "sem evento", "nao tem aula nesse dia" e observacao sao contexto, nao lembrete.',
   input_schema: {
     type: 'object',
     properties: {
       texto: {
         type: 'string',
         description:
-          'O que lembrar, nas palavras DELA. Ate 400 caracteres. Nao reescreva em linguagem formal — ela vai receber isto de volta e precisa reconhecer.',
+          'O que lembrar, nas palavras DELA. Ate 400 caracteres. Nao reescreva em linguagem formal — ela vai receber isto de volta e precisa reconhecer. Inclua a HORA DO COMPROMISSO aqui quando o aviso for antes dele ("16:30h consulta da Stella"), senao ela recebe o aviso sem saber para quando e.',
       },
       quandoIso: {
         type: 'string',
         description:
-          'Quando avisar, em ISO 8601 com fuso (ex.: 2026-10-01T09:00:00-03:00), calculado a partir da data e hora de hoje informadas acima. Se ela nao disser a HORA, PERGUNTE antes de chamar — nunca escolha uma.',
+          'A HORA DE AVISAR — nao a hora do compromisso. ISO 8601 com fuso (ex.: 2026-10-01T09:00:00-03:00), calculado a partir da data e hora de hoje informadas acima. ' +
+          'O DESLOCAMENTO E O QUE ELA DISSER, e voce faz a conta: "me avisa uma hora antes" de um compromisso as 16:30 e 15:30; "15 minutos antes" das 7:40 e 7:25. ' +
+          'Quando ela mandar uma LISTA e um unico horario de aviso ("me avisa amanha as 08 de tudo isso"), use esse horario em todos. ' +
+          'Se ela nao disser a hora do compromisso NEM a do aviso, PERGUNTE antes de chamar — nunca escolha uma.',
       },
     },
     required: ['texto', 'quandoIso'],
@@ -1472,14 +1478,38 @@ interface TetosPorTurno {
   contatoAgendado: boolean;
   relatoGravado: boolean;
   /**
-   * Um lembrete por turno.
+   * Quantos lembretes este turno ja guardou. CONTADOR, e nao booleano.
    *
-   * Remarcar e cancelar NAO entram: os dois mexem em linha que ja existe, e
-   * quem pede "adia esses dois" merece que os dois sejam adiados. Guardar e
-   * que cria, e e por onde um laco viraria fila.
+   * ========================================================================
+   * ERA UM SO POR TURNO, E ISSO QUEBRAVA O USO REAL — 08/10/2026.
+   *
+   * A gestora mandou a agenda da SEMANA inteira numa colada — sete dias,
+   * quatro compromissos com hora — e pediu aviso uma hora antes de cada um.
+   * Com o booleano, o primeiro era guardado e os outros recebiam "voce ja
+   * guardou um lembrete neste turno": ela teria de repetir um por um, que e
+   * exatamente o que ela evitou ao colar o bloco.
+   *
+   * O TETO CONTINUA EXISTINDO, e pelo motivo de sempre: criacao em massa,
+   * inclusive por injecao no texto que um cliente escreveu. Vinte atende uma
+   * semana cheia com folga e segue longe de "fila infinita" — e estourar
+   * NAO descarta calado: o modelo recebe quantos entraram e o que falta.
+   *
+   * Remarcar e cancelar continuam FORA de teto: os dois mexem em linha que
+   * ja existe, e quem pede "adia esses dois" merece que os dois sejam
+   * adiados.
+   * ========================================================================
    */
-  lembreteGuardado: boolean;
+  lembretesGuardados: number;
 }
+
+/**
+ * Quantos lembretes um turno pode CRIAR.
+ *
+ * Vinte cobre a agenda de uma semana colada de uma vez (o caso que motivou o
+ * numero) e para muito antes de uma injecao conseguir encher a fila — o teto
+ * de pendentes por pessoa, no servico, e 50.
+ */
+const MAX_LEMBRETES_POR_TURNO = 20;
 
 /**
  * Os erros que NAO passam sozinhos — ver `executarLeitura`.
@@ -1643,7 +1673,7 @@ export class AnthropicClient implements ILlmClient {
       avisoEnviado: false,
       contatoAgendado: false,
       relatoGravado: false,
-      lembreteGuardado: false,
+      lembretesGuardados: 0,
     };
 
     let grafico: GraficoDinamico | undefined;
@@ -2189,17 +2219,27 @@ export class AnthropicClient implements ILlmClient {
       } else if (toolUse.name === 'guardar_lembrete' && params.guardarLembrete) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
-            // O TETO E DO TURNO. Ver `TetosPorTurno` — sem isto, um turno de
-            // cinco voltas guardaria cinco lembretes.
-            if (tetos.lembreteGuardado) {
-              return 'Voce ja guardou um lembrete neste turno. Confirme o que guardou e pergunte se ela quer marcar outro.';
+            // O TETO E DO TURNO, e e CONTADO. Ver `TetosPorTurno`: vinte,
+            // para a agenda de uma semana colada de uma vez caber.
+            //
+            // E ELE DIZ O QUE FALTOU. "Voce ja guardou um lembrete" fazia o
+            // modelo confirmar UM e calar sobre os outros seis; dizer quantos
+            // entraram e que o resto precisa de outra mensagem deixa a conta
+            // visivel para quem pediu.
+            if (tetos.lembretesGuardados >= MAX_LEMBRETES_POR_TURNO) {
+              return (
+                `Voce ja guardou ${MAX_LEMBRETES_POR_TURNO} lembretes nesta ` +
+                'mensagem, que e o maximo de uma vez. DIGA a ela quantos ' +
+                'foram guardados e QUAIS faltaram, e peca para mandar o resto ' +
+                'numa mensagem nova — nao finja que guardou tudo.'
+              );
             }
             const e = toolUse.input as { texto?: string; quandoIso?: string };
             const r = await params.guardarLembrete!({
               texto: String(e.texto ?? '').slice(0, 400),
               quandoIso: String(e.quandoIso ?? ''),
             });
-            tetos.lembreteGuardado = true;
+            tetos.lembretesGuardados += 1;
             return `${r.mensagem}\n\nResponda com isso, sem mudar o texto nem o horario.`;
           }),
         );
