@@ -73,7 +73,12 @@ describe('RotearMensagemInternaUseCase', () => {
     consultarAgora: jest.Mock;
     intencao: jest.Mock;
   };
-  let whatsapp: { baixarMidia: jest.Mock; numeroDoAgente: jest.Mock };
+  let whatsapp: {
+    baixarMidia: jest.Mock;
+    numeroDoAgente: jest.Mock;
+    iniciarDigitando: jest.Mock;
+    pararDigitando: jest.Mock;
+  };
   let transcricao: { transcrever: jest.Mock; disponivel: jest.Mock };
   /** RF9 — o leitor abre o arquivo; a analise o le SEM ferramenta nenhuma. */
   let leitor: { ler: jest.Mock };
@@ -143,6 +148,11 @@ describe('RotearMensagemInternaUseCase', () => {
       baixarMidia: jest.fn(),
       // O numero do outro agente, para a frase do desvio — ver "dois numeros".
       numeroDoAgente: jest.fn().mockResolvedValue('558598490118'),
+      // O "digitando..." de 08/10: o roteador liga antes do trabalho lento
+      // e desliga num finally. Dublado porque o que se testa aqui e o
+      // roteamento, nao a presenca.
+      iniciarDigitando: jest.fn(),
+      pararDigitando: jest.fn(),
     };
     transcricao = { transcrever: jest.fn(), disponivel: jest.fn(() => true) };
     // RF9 — o leitor abre o arquivo, a analise o le SEM ferramenta. Por
@@ -443,6 +453,90 @@ describe('RotearMensagemInternaUseCase', () => {
     expect(r.motivo).toBe('ignorado_remetente_desconhecido');
     expect(canalVendedora.execute).not.toHaveBeenCalled();
     expect(canalGestao.execute).not.toHaveBeenCalled();
+  });
+
+  /**
+   * ========================================================================
+   * O "DIGITANDO..." — 08/10/2026, pedido do Lucas.
+   *
+   * Quem manda e espera não sabe se chegou: uma resposta leva vários
+   * segundos, e sem sinal nenhum o silêncio e a falha são indistinguíveis.
+   *
+   * MAS O INDICADOR É UMA CONFIRMAÇÃO DE QUE EXISTE ALGUÉM DESTE LADO, que
+   * é exatamente o que o silêncio para número desconhecido existe para não
+   * dar. Por isso ele só começa DEPOIS do reconhecimento — e o primeiro
+   * teste abaixo é o que guarda isso.
+   * ========================================================================
+   */
+  describe('digitando', () => {
+    /* ESTE É O TESTE. O resto é contorno. */
+    it('desconhecido NÃO vê digitando — seria confirmar que há um canal aqui', async () => {
+      await useCase.execute({ de: '5511999999999@c.us', texto: 'oi' });
+
+      expect(whatsapp.iniciarDigitando).not.toHaveBeenCalled();
+      expect(whatsapp.pararDigitando).not.toHaveBeenCalled();
+    });
+
+    it('vendedora reconhecida vê digitando, e ele PARA no fim', async () => {
+      identificarVendedora.execute.mockResolvedValue(VENDEDORA);
+
+      await useCase.execute({ de: '558586467241@c.us', texto: 'minha agenda?' });
+
+      expect(whatsapp.iniciarDigitando).toHaveBeenCalledWith(
+        '558586467241@c.us',
+        undefined,
+      );
+      expect(whatsapp.pararDigitando).toHaveBeenCalledWith(
+        '558586467241@c.us',
+        undefined,
+      );
+    });
+
+    it('gestão também', async () => {
+      identificarAdmin.execute.mockResolvedValue(ADMIN);
+
+      await useCase.execute({ de: '558586467241@c.us', texto: 'como foi a semana?' });
+
+      expect(whatsapp.iniciarDigitando).toHaveBeenCalled();
+      expect(whatsapp.pararDigitando).toHaveBeenCalled();
+    });
+
+    /**
+     * O `finally` É O PONTO: se o canal lançar e o indicador ficar ligado,
+     * ela vê a agente "digitando" uma mensagem que nunca vem — e manda de
+     * novo achando que não chegou.
+     */
+    it('canal que lança ainda assim apaga o digitando', async () => {
+      identificarVendedora.execute.mockResolvedValue(VENDEDORA);
+      canalVendedora.execute.mockRejectedValue(new Error('modelo fora'));
+
+      await expect(
+        useCase.execute({ de: '558586467241@c.us', texto: 'minha agenda?' }),
+      ).rejects.toThrow('modelo fora');
+
+      expect(whatsapp.pararDigitando).toHaveBeenCalled();
+    });
+
+    /**
+     * EM GRUPO, NÃO. O indicador apareceria para a sala inteira, e a regra do
+     * grupo é falar só quando mencionada — "digitando" para todos seria
+     * presença constante onde se pediu discrição.
+     */
+    it('em grupo não digita, mesmo sendo mencionada', async () => {
+      identificarAdmin.execute.mockResolvedValue(ADMIN);
+
+      await useCase.execute({
+        de: '5585111@g.us',
+        texto: 'como foi a semana?',
+        grupo: {
+          autor: '558586467241@c.us',
+          mencionados: [],
+          mencionada: true,
+        },
+      });
+
+      expect(whatsapp.iniciarDigitando).not.toHaveBeenCalled();
+    });
   });
 
   it('audio de desconhecido nao baixa nem transcreve — custo zero', async () => {

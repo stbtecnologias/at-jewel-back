@@ -22,6 +22,10 @@ function make() {
     lidDoAgente: jest.fn(),
     resolverRemetente: jest.fn(async (de: string) => de),
     baixarMidia: jest.fn(),
+    // O "digitando" e do canal INTERNO, onde a espera e longa. Este fluxo e
+    // a triagem do cliente e nao o toca.
+    iniciarDigitando: jest.fn(),
+    pararDigitando: jest.fn(),
   };
 
   const config = {

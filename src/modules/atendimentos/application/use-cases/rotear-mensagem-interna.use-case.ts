@@ -31,6 +31,17 @@ import { AnalisarArquivoService } from '../analisar-arquivo.service';
  * arquivo.
  */
 const PERMISSAO_LOJA = 'analytics:read';
+
+/**
+ * De quanto em quanto tempo o "digitando..." e renovado.
+ *
+ * DEZ SEGUNDOS porque o indicador do WhatsApp cai sozinho entre 10 e 25 —
+ * renovar no piso da janela cobre a espera inteira sem depender de qual
+ * ponta do intervalo o aparelho dela usa. Presenca nao conta no teto de
+ * envio (ver `WahaGateway.presenca`), entao renovar nao custa mensagem.
+ */
+const INTERVALO_DIGITANDO_MS = 10_000;
+
 import { MemoriaDeGrupoService } from '../memoria-de-grupo.service';
 import { RecepcionarUseCase } from './recepcionar.use-case';
 import {
@@ -722,7 +733,9 @@ export class RotearMensagemInternaUseCase {
     // em silencio por um canal que nao sabe ler arquivo.
     // ---------------------------------------------------------------------
     if (msg.documento) {
-      const doArquivo = await this.lerDocumento(msg, admin, vendedora?.nome);
+      const doArquivo = await this.comDigitando(msg, () =>
+        this.lerDocumento(msg, admin, vendedora?.nome),
+      );
       if (doArquivo.resposta !== undefined) return doArquivo.resposta;
       if (doArquivo.texto) texto = doArquivo.texto;
     }
@@ -735,13 +748,15 @@ export class RotearMensagemInternaUseCase {
       // O `gestao` VAI JUNTO quando a MESMA pessoa tambem gerencia — e o
       // caso da Nathalia, gerente de vendas e vendedora com um numero so.
       // Vazio para quase todo mundo, e ai nada muda.
-      return this.canalVendedora.execute({
-        de: msg.de,
-        texto,
-        ...(admin
-          ? { gestao: { usuarioId: admin.id, role: admin.role } }
-          : {}),
-      });
+      return this.comDigitando(msg, () =>
+        this.canalVendedora.execute({
+          de: msg.de,
+          texto,
+          ...(admin
+            ? { gestao: { usuarioId: admin.id, role: admin.role } }
+            : {}),
+        }),
+      );
     }
 
     // O ID vai junto: e a chave da memoria de conversa dele. Telefone nao
@@ -751,25 +766,28 @@ export class RotearMensagemInternaUseCase {
     // ver tudo igual. Quem gerencia as vendedoras (GERENTE_VENDAS) recebe as
     // mesmas 17 ferramentas, mas nenhuma delas fala da loja em dinheiro — ver
     // `MensagemGestao.role`.
-    return this.canalGestao.execute({
-      usuarioId: admin!.id,
-      nome: admin!.nome,
-      role: admin!.role,
-      // ------------------------------------------------------------------
-      // NO GRUPO, A CONVERSA E DO GRUPO — 30/09/2026.
-      //
-      // Sem isto, cada pessoa teria o proprio fio e "e das outras?" do
-      // segundo a falar chegaria sem o assunto do primeiro. A conversa de um
-      // grupo e uma so, e todos a leem.
-      //
-      // E NAO VAZA NADA: tudo que entra nesta memoria ja esta escrito no
-      // grupo, visivel para os mesmos olhos. O que continua sendo por pessoa
-      // e o ESCOPO da resposta — o `role` acima e de quem mencionou.
-      // ------------------------------------------------------------------
-      ...(msg.grupo ? { conversaId: `grupo:${msg.de}` } : {}),
-      ...(msg.grupo ? { contexto: this.contextoDoGrupo(msg) } : {}),
-      texto,
-    });
+    return this.comDigitando(msg, () =>
+      this.canalGestao.execute({
+        usuarioId: admin!.id,
+        nome: admin!.nome,
+        role: admin!.role,
+        // ----------------------------------------------------------------
+        // NO GRUPO, A CONVERSA E DO GRUPO — 30/09/2026.
+        //
+        // Sem isto, cada pessoa teria o proprio fio e "e das outras?" do
+        // segundo a falar chegaria sem o assunto do primeiro. A conversa de
+        // um grupo e uma so, e todos a leem.
+        //
+        // E NAO VAZA NADA: tudo que entra nesta memoria ja esta escrito no
+        // grupo, visivel para os mesmos olhos. O que continua sendo por
+        // pessoa e o ESCOPO da resposta — o `role` acima e de quem
+        // mencionou.
+        // ----------------------------------------------------------------
+        ...(msg.grupo ? { conversaId: `grupo:${msg.de}` } : {}),
+        ...(msg.grupo ? { contexto: this.contextoDoGrupo(msg) } : {}),
+        texto,
+      }),
+    );
   }
 
   /**
@@ -866,6 +884,56 @@ export class RotearMensagemInternaUseCase {
     // So o tamanho no log: o conteudo tem o mesmo sigilo da mensagem.
     this.logger.debug(`Audio transcrito (${texto.length} caracteres).`);
     return texto;
+  }
+
+  /**
+   * "DIGITANDO..." ENQUANTO ELA ESPERA — 08/10/2026, pedido do Lucas.
+   *
+   * ======================================================================
+   * SO DEPOIS DO RECONHECIMENTO, E E POR ISSO QUE MORA AQUI.
+   *
+   * O indicador de digitacao e uma CONFIRMACAO de que existe alguem deste
+   * lado — a mesma coisa que o silencio para numero desconhecido existe
+   * para nao dar ("responder confirmaria a quem sondasse que existe um
+   * canal aqui", no cabecalho desta classe). Posto na borda HTTP, ele
+   * apareceria para qualquer um que mandasse mensagem.
+   *
+   * Entao ele envolve apenas os trechos LENTOS, e todos eles acontecem
+   * depois de se saber quem mandou: ler o arquivo e as duas chamadas de
+   * canal.
+   *
+   * RENOVA, porque o indicador do WhatsApp cai sozinho em 10 a 25
+   * segundos. Um disparo so cobriria o comeco da espera e deixaria o resto
+   * no mesmo silencio de antes.
+   *
+   * E PARA NO `finally`: resposta, falha e excecao todas apagam. O pior
+   * desfecho e ela ver "digitando" por 25 segundos depois de um erro —
+   * tempo de sobra para mandar de novo achando que nao chegou.
+   * ======================================================================
+   */
+  private async comDigitando<T>(
+    msg: MensagemDoCanal,
+    trabalho: () => Promise<T>,
+  ): Promise<T> {
+    // EM GRUPO, NAO. O indicador apareceria para a sala inteira, e a regra
+    // do grupo e falar so quando mencionada — "digitando" para todos seria
+    // presenca constante onde se pediu discricao.
+    if (msg.grupo) return trabalho();
+
+    const chat = msg.de;
+    const agente = msg.agente;
+
+    await this.whatsapp.iniciarDigitando(chat, agente);
+    const renovar = setInterval(() => {
+      void this.whatsapp.iniciarDigitando(chat, agente);
+    }, INTERVALO_DIGITANDO_MS);
+
+    try {
+      return await trabalho();
+    } finally {
+      clearInterval(renovar);
+      await this.whatsapp.pararDigitando(chat, agente);
+    }
   }
 
   /**

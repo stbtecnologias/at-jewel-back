@@ -71,6 +71,11 @@ describe('o gerente de vendas na Helena', () => {
         numeroDoAgente: jest.fn().mockResolvedValue('5585999999999'),
         lidDoAgente: jest.fn().mockResolvedValue(null),
         baixarMidia: jest.fn(),
+      // O "digitando..." de 08/10: o roteador liga antes do trabalho lento
+      // e desliga num finally. Dublado porque o que se testa aqui e o
+      // roteamento, nao a presenca.
+      iniciarDigitando: jest.fn(),
+      pararDigitando: jest.fn(),
       } as never,
       { disponivel: () => false, transcrever: jest.fn() } as never,
       naoParaTudo(),
