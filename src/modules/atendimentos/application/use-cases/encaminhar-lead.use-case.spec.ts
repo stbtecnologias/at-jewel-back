@@ -187,17 +187,44 @@ describe('EncaminharLeadUseCase', () => {
     expect(leads.encaminhar).not.toHaveBeenCalled();
   });
 
-  it('vendedora sem WhatsApp interno: o lead continua esperando', async () => {
+  it('vendedora sem WhatsApp nenhum: o lead continua esperando', async () => {
     vendedoras.buscarPorId.mockResolvedValue({
       id: 'vd-1',
       nome: 'Thiago Souza',
       whatsappInterno: null,
+      whatsappExterno: null,
     });
 
     const r = await useCase.execute({ vendedora: 'Thiago' });
 
     expect(r.status).toBe('VENDEDORA_SEM_WHATSAPP');
     expect(leads.encaminhar).not.toHaveBeenCalled();
+  });
+
+  /**
+   * RF16, 08/10/2026. Medido na base: das 7 vendedoras ativas, 7 têm o
+   * corporativo e **só 1 tem o interno**. Antes desta mudança o lead
+   * encaminhado para as outras seis não gerava mensagem nenhuma, e o status
+   * dizia `VENDEDORA_SEM_WHATSAPP` para quem tinha telefone de trabalho
+   * cadastrado.
+   */
+  it('só com o corporativo, o lead é encaminhado e ela recebe', async () => {
+    vendedoras.buscarPorId.mockResolvedValue({
+      id: 'vd-1',
+      nome: 'Thiago Souza',
+      whatsappInterno: null,
+      whatsappExterno: '5585911112222',
+    });
+
+    const r = await useCase.execute({ vendedora: 'Thiago' });
+
+    expect(r.status).not.toBe('VENDEDORA_SEM_WHATSAPP');
+    expect(leads.encaminhar).toHaveBeenCalled();
+    expect(whatsapp.enviarTexto).toHaveBeenCalled();
+    // O NUMERO IMPORTA, e nao so que a mensagem saiu: o `resolverChatId`
+    // falso devolve chatId para qualquer coisa, inclusive para `null`. Sem
+    // esta linha, voltar a ler o interno aqui passaria no teste.
+    expect(whatsapp.resolverChatId).toHaveBeenCalledWith('5585911112222');
   });
 
   it('nome ambíguo de vendedora vira pergunta, e não palpite', async () => {

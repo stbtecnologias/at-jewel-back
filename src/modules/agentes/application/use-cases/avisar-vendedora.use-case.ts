@@ -10,6 +10,10 @@ import { OCASIOES_ATENDIMENTO } from '../../../atendimentos/domain/entities/enum
 import type { IAtendimentoRepository } from '../../../atendimentos/domain/ports/repositories/atendimento-repository.port';
 import { VENDEDORA_REPOSITORY } from '../../../vendedoras/domain/ports/injection-tokens';
 import type { IVendedoraRepository } from '../../../vendedoras/domain/ports/repositories/vendedora-repository.port';
+import {
+  canalEmPalavras,
+  destinoDaVendedora,
+} from '../../../vendedoras/domain/para-onde-falar';
 
 export interface AvisarVendedoraInput {
   /** Nome (ou parte) do cliente, como o ADM escreveu na conversa. */
@@ -117,7 +121,10 @@ export class AvisarVendedoraUseCase {
         codigo,
       };
     }
-    if (!vendedora.whatsappInterno) {
+    // O interno OU o corporativo — ver `destinoDaVendedora`. Hoje seis das
+    // sete so tem o corporativo, e antes de 08/10 a conversa parava aqui.
+    const destino = destinoDaVendedora(vendedora);
+    if (!destino) {
       return { status: 'VENDEDORA_SEM_WHATSAPP', vendedoraNome: vendedora.nome };
     }
     const vendedoraId = vendedora.id;
@@ -156,10 +163,11 @@ export class AvisarVendedoraUseCase {
     // e anterior ao nono digito.
     let chatId: string | null;
     try {
-      chatId = await this.whatsapp.resolverChatId(vendedora.whatsappInterno);
+      chatId = await this.whatsapp.resolverChatId(destino.numero);
     } catch (err) {
       this.logger.error(
-        `Falha ao resolver o chatId da vendedora ${vendedora.id}: ${err instanceof Error ? err.message : err}`,
+        `Falha ao resolver o chatId da vendedora ${vendedora.id} ` +
+          `(${canalEmPalavras(destino.canal)}): ${err instanceof Error ? err.message : err}`,
       );
       return { status: 'FALHA_ENVIO', vendedoraNome: vendedora.nome };
     }

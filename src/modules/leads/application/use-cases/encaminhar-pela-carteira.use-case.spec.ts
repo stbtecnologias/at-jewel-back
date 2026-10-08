@@ -245,10 +245,11 @@ describe('EncaminharPelaCarteiraUseCase', () => {
    * O ATENDIMENTO E O REGISTRO QUE IMPORTA, nao a mensagem.
    */
   describe('a falha de aviso nao cancela o atendimento', () => {
-    it('sem whatsapp pessoal, atende do mesmo jeito', async () => {
+    it('sem whatsapp nenhum, atende do mesmo jeito', async () => {
       vendedoras.buscarPorCodigoErp.mockResolvedValue({
         ...HELENA,
         whatsappInterno: null,
+        whatsappExterno: null,
       });
 
       const r = await useCase.execute(LEAD);
@@ -256,6 +257,24 @@ describe('EncaminharPelaCarteiraUseCase', () => {
       expect(r).toMatchObject({ status: 'ATENDEU', avisada: false });
       expect(atendimentos.abrir).toHaveBeenCalled();
       expect(leads.encaminhar).toHaveBeenCalled();
+    });
+
+    /**
+     * RF16, 08/10/2026. Medido na base: das 7 vendedoras ativas, 7 tem o
+     * corporativo e SO 1 tem o interno. O atendimento abria do mesmo jeito,
+     * mas com `avisada: false` — a dona da carteira nunca soube do lead.
+     */
+    it('so com o corporativo, ela E avisada', async () => {
+      vendedoras.buscarPorCodigoErp.mockResolvedValue({
+        ...HELENA,
+        whatsappInterno: null,
+        whatsappExterno: '5585911112222',
+      });
+
+      const r = await useCase.execute(LEAD);
+
+      expect(r).toMatchObject({ status: 'ATENDEU', avisada: true });
+      expect(whatsapp.resolverChatId).toHaveBeenCalledWith('5585911112222');
     });
 
     /** Numero cadastrado que nao tem conta de WhatsApp. */

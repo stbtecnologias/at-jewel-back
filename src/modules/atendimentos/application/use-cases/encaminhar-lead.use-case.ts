@@ -12,6 +12,10 @@ import type {
 } from '../../../leads/domain/ports/repositories/lead-repository.port';
 import { VENDEDORA_REPOSITORY } from '../../../vendedoras/domain/ports/injection-tokens';
 import type { IVendedoraRepository } from '../../../vendedoras/domain/ports/repositories/vendedora-repository.port';
+import {
+  canalEmPalavras,
+  destinoDaVendedora,
+} from '../../../vendedoras/domain/para-onde-falar';
 import { ResolverVendedoraPorNomeUseCase } from './resolver-vendedora-por-nome.use-case';
 
 /** Teto da fila lida. Fila de leads da casa nao chega perto disso. */
@@ -132,7 +136,9 @@ export class EncaminharLeadUseCase {
     }
 
     const vendedora = await this.vendedoras.buscarPorId(alvo.id);
-    if (!vendedora?.whatsappInterno) {
+    // O interno OU o corporativo — ver `destinoDaVendedora`.
+    const destino = destinoDaVendedora(vendedora);
+    if (!vendedora || !destino) {
       return { status: 'VENDEDORA_SEM_WHATSAPP', vendedoraNome: alvo.nome };
     }
 
@@ -140,10 +146,11 @@ export class EncaminharLeadUseCase {
     // mensagem no vazio quando a conta e anterior ao nono digito.
     let chatId: string | null;
     try {
-      chatId = await this.whatsapp.resolverChatId(vendedora.whatsappInterno);
+      chatId = await this.whatsapp.resolverChatId(destino.numero);
     } catch (err) {
       this.logger.error(
-        `Falha ao resolver o chatId da vendedora ${vendedora.id}: ${err instanceof Error ? err.message : err}`,
+        `Falha ao resolver o chatId da vendedora ${vendedora.id} ` +
+          `(${canalEmPalavras(destino.canal)}): ${err instanceof Error ? err.message : err}`,
       );
       return { status: 'FALHA_ENVIO', vendedoraNome: alvo.nome };
     }

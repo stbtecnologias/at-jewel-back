@@ -5,6 +5,10 @@ import { WHATSAPP_GATEWAY } from '../../../atendimento/domain/ports/injection-to
 import type { IWhatsappGateway } from '../../../atendimento/domain/ports/whatsapp-gateway.port';
 import { VENDEDORA_REPOSITORY } from '../../../vendedoras/domain/ports/injection-tokens';
 import type { IVendedoraRepository } from '../../../vendedoras/domain/ports/repositories/vendedora-repository.port';
+import {
+  canalEmPalavras,
+  destinoDaVendedora,
+} from '../../../vendedoras/domain/para-onde-falar';
 import { ATENDIMENTO_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type {
   IAtendimentoRepository,
@@ -105,17 +109,20 @@ export class DispararPendenciasUseCase {
       this.clientes.buscarPorId(atendimento.clienteId),
       this.vendedoras.buscarPorId(atendimento.vendedoraId),
     ]);
-    if (!cliente || !vendedora?.whatsappInterno) {
+    // O interno OU o corporativo — ver `destinoDaVendedora`.
+    const destino = destinoDaVendedora(vendedora);
+    if (!cliente || !vendedora || !destino) {
       this.logger.warn(
         `Interacao ${pendencia.id} sem destinatario (cliente ou WhatsApp da vendedora ausente).`,
       );
       return 'ADIADA';
     }
 
-    const chatId = await this.whatsapp.resolverChatId(vendedora.whatsappInterno);
+    const chatId = await this.whatsapp.resolverChatId(destino.numero);
     if (!chatId) {
       this.logger.warn(
-        `Interacao ${pendencia.id}: o numero da vendedora ${vendedora.id} nao tem WhatsApp.`,
+        `Interacao ${pendencia.id}: o numero da vendedora ${vendedora.id} ` +
+          `(${canalEmPalavras(destino.canal)}) nao tem WhatsApp.`,
       );
       return 'ADIADA';
     }
