@@ -1523,7 +1523,7 @@ export class AnthropicClient implements ILlmClient {
       model: params.model,
       max_tokens: params.maxTokens,
       system: params.system,
-      messages: this.toApiMessages(params.mensagens),
+      messages: this.toApiMessages(params.mensagens, params.anexos),
     });
     return { texto: this.extrairTexto(resp), tokens: resp.usage.output_tokens };
   }
@@ -1531,7 +1531,7 @@ export class AnthropicClient implements ILlmClient {
   async chatComFerramentas(
     params: ChatParams,
   ): Promise<ChatComFerramentasResultado> {
-    const apiMessages = this.toApiMessages(params.mensagens);
+    const apiMessages = this.toApiMessages(params.mensagens, params.anexos);
 
     // Cada ferramenta so entra quando a aplicacao fornece o handler. O
     // grafico e a excecao historica: nasceu antes dos handlers e vale por
@@ -3167,8 +3167,9 @@ export class AnthropicClient implements ILlmClient {
    */
   private toApiMessages(
     mensagens: ChatParams['mensagens'],
+    anexos?: ChatParams['anexos'],
   ): Anthropic.MessageParam[] {
-    return mensagens.map((m) => {
+    const api = mensagens.map((m) => {
       const vazio =
         typeof m.content === 'string' && m.content.trim() === '';
       if (vazio) {
@@ -3181,8 +3182,80 @@ export class AnthropicClient implements ILlmClient {
       return {
         role: m.role,
         content: vazio ? '(mensagem sem texto)' : m.content,
-      };
+      } as Anthropic.MessageParam;
     });
+
+    return anexos?.length ? this.comAnexos(api, anexos) : api;
+  }
+
+  /**
+   * COLA OS ANEXOS NO ULTIMO TURNO DA USUARIA — 08/10/2026. RF9.
+   *
+   * ======================================================================
+   * NO ULTIMO TURNO DELA, E NAO NUMA MENSAGEM NOVA.
+   *
+   * A API exige que turnos alternem usuaria/assistente. Empurrar o anexo
+   * como mensagem propria criaria dois turnos de usuaria em sequencia — que
+   * a API recusa — ou obrigaria a inventar um turno do assistente no meio,
+   * que e mentira dentro da conversa.
+   *
+   * E O TEXTO VEM PRIMEIRO, o anexo depois: o modelo le na ordem, e a
+   * pergunta dela ("qual o markup disso?") precisa chegar antes do arquivo
+   * para ele saber o que procurar nele.
+   *
+   * SEM TURNO DE USUARIA, O ANEXO NAO ENTRA — e isso e falha nossa, nao
+   * dela: quem chamou montou a conversa errada. Fica no log, porque o
+   * silencio aqui apareceria como "a agente ignorou minha planilha".
+   * ======================================================================
+   */
+  private comAnexos(
+    api: Anthropic.MessageParam[],
+    anexos: NonNullable<ChatParams['anexos']>,
+  ): Anthropic.MessageParam[] {
+    const ultimo = api.map((m) => m.role).lastIndexOf('user');
+    if (ultimo < 0) {
+      this.logger.warn(
+        `${anexos.length} anexo(s) descartado(s): a conversa nao tem turno de ` +
+          'usuaria onde pendura-los.',
+      );
+      return api;
+    }
+
+    const alvo = api[ultimo];
+    const texto = typeof alvo.content === 'string' ? alvo.content : '';
+    const blocos: Anthropic.ContentBlockParam[] = texto
+      ? [{ type: 'text', text: texto }]
+      : [];
+
+    for (const anexo of anexos) {
+      if (anexo.nome) {
+        blocos.push({ type: 'text', text: `Arquivo: ${anexo.nome}` });
+      }
+      blocos.push(
+        anexo.tipo === 'pdf'
+          ? {
+              type: 'document',
+              source: {
+                type: 'base64',
+                media_type: 'application/pdf',
+                data: anexo.base64,
+              },
+            }
+          : {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type:
+                  anexo.mime as Anthropic.Base64ImageSource['media_type'],
+                data: anexo.base64,
+              },
+            },
+      );
+    }
+
+    const comBlocos = [...api];
+    comBlocos[ultimo] = { role: 'user', content: blocos };
+    return comBlocos;
   }
 
   private extrairTexto(resp: Anthropic.Message): string {

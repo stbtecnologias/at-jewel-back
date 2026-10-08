@@ -116,16 +116,76 @@ describe('extrairMensagemRecebida', () => {
     expect(r?.audio).toBeUndefined();
   });
 
-  it('documento e sticker continuam ignorados', () => {
-    // Documento nao e foto de peca, e sticker nunca vai para catalogo.
+  /**
+   * O DOCUMENTO PASSOU A ENTRAR EM 08/10/2026 — RF9.
+   *
+   * Ate aqui ele caia no mesmo `return null` do sticker, de proposito. O
+   * alinhamento de 07/10 pediu que a gestora pudesse mandar planilha e PDF
+   * para analise, e o problema nao era a agente nao entender: o arquivo nao
+   * passava desta funcao.
+   *
+   * ENTRAR NAO E RESPONDER. Quem decide se baixa e le e o roteador, depois de
+   * reconhecer quem mandou — aqui so se reconhece que ha documento.
+   */
+  it('documento entra, com a referencia e o nome', () => {
+    const r = extrairMensagemRecebida({
+      event: 'message',
+      payload: {
+        from: '558586467241@c.us',
+        hasMedia: true,
+        media: {
+          url: 'http://waha:3000/api/files/default/x.pdf',
+          mimetype: 'application/pdf',
+          filename: 'Posicao de estoque.pdf',
+        },
+        _data: { Info: { Type: 'media', MediaType: 'document' } },
+      },
+    });
+
+    expect(r?.documento).toEqual({
+      url: 'http://waha:3000/api/files/default/x.pdf',
+      mimetype: 'application/pdf',
+      nome: 'Posicao de estoque.pdf',
+    });
+    expect(r?.imagem).toBeUndefined();
+    expect(r?.audio).toBeUndefined();
+  });
+
+  /**
+   * O WhatsApp manda `.xlsx` como `application/octet-stream` com frequencia, e
+   * nesse caso a EXTENSAO e a unica pista. Sem o nome, planilha viraria "nao
+   * consigo ler esse tipo" — recusa confiante e errada.
+   */
+  it('planilha sem mime confiavel entra pelo MediaType, com o nome', () => {
+    const r = extrairMensagemRecebida({
+      event: 'message',
+      payload: {
+        from: '558586467241@c.us',
+        hasMedia: true,
+        media: {
+          url: 'http://waha:3000/api/files/default/x.bin',
+          mimetype: 'application/octet-stream',
+        },
+        _data: {
+          Info: { Type: 'media', MediaType: 'document' },
+          Message: { documentMessage: { fileName: 'Vendas.xlsx' } },
+        },
+      },
+    });
+
+    expect(r?.documento?.nome).toBe('Vendas.xlsx');
+  });
+
+  it('sticker continua ignorado', () => {
+    // E imagem, mas nunca e foto de peca nem arquivo para analisar.
     expect(
       extrairMensagemRecebida({
         event: 'message',
         payload: {
           from: '558586467241@c.us',
           hasMedia: true,
-          media: { url: 'http://waha:3000/api/files/default/x.pdf', mimetype: 'application/pdf' },
-          _data: { Info: { Type: 'media', MediaType: 'document' } },
+          media: { url: 'http://waha:3000/api/files/default/s.webp', mimetype: '' },
+          _data: { Info: { Type: 'media', MediaType: 'sticker' } },
         },
       }),
     ).toBeNull();

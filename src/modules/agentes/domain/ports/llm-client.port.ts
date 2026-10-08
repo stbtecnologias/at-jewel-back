@@ -1009,11 +1009,53 @@ export type GestaoAgendarHandler = (input: {
   modo?: 'OCASIONAL' | 'TRANSFERIR';
 }) => Promise<{ mensagem: string }>;
 
+/**
+ * UM ARQUIVO QUE A USUARIA MANDOU, PARA O MODELO LER — 08/10/2026. RF9.
+ *
+ * ==========================================================================
+ * A PRIMEIRA COISA QUE NAO E TEXTO A CHEGAR AO MODELO NESTE PROJETO.
+ *
+ * Ate aqui nenhuma chamada era multimodal — nem a foto do catalogo, que pede
+ * o CODIGO da peca a vendedora e trabalha so em texto. Entao isto nao e
+ * "mais um campo": e a porta aceitando conteudo de outra natureza.
+ *
+ * MORA EM `ChatParams`, E NAO EM `MensagemAgente`, DE PROPOSITO. A mensagem e
+ * PERSISTIDA na tabela `conversas` e e o que a memoria da conversa relembra;
+ * alargar o `content` para bloco arrastaria persistencia e memoria junto, e
+ * guardaria base64 de planilha no banco. O anexo vale para ESTA chamada:
+ * viaja ao lado, cola no ultimo turno da usuaria e nao fica.
+ *
+ * O XLSX NAO VEM POR AQUI. O modelo le PDF e imagem nativamente, mas `.xlsx`
+ * e um zip de XML — ele e convertido em TABELA antes, e entra como texto.
+ * ==========================================================================
+ */
+export interface AnexoDaConversa {
+  /** O que o modelo recebe: bloco de imagem ou bloco de documento. */
+  tipo: 'imagem' | 'pdf';
+  /** O arquivo em base64 — a API nao aceita URL para isto. */
+  base64: string;
+  /** `image/jpeg`, `image/png`, `application/pdf`. */
+  mime: string;
+  /**
+   * O nome do arquivo, quando o WhatsApp manda. Entra como texto ao lado do
+   * bloco: "Posicao de estoque.pdf" diz ao modelo o que ele esta lendo, e um
+   * PDF sem nome fica indistinguivel de outro na mesma conversa.
+   */
+  nome?: string;
+}
+
 export interface ChatParams {
   model: string;
   system: string;
   maxTokens: number;
   mensagens: MensagemAgente[];
+  /**
+   * Arquivos desta chamada, colados no ULTIMO turno da usuaria — RF9.
+   *
+   * Nao sao persistidos e nao entram na memoria da conversa: quem manda
+   * planilha pergunta sobre ela agora. Ver `AnexoDaConversa`.
+   */
+  anexos?: AnexoDaConversa[];
   // Quando presente, habilita a tool `registrar_demanda` no chatComFerramentas.
   registrarDemanda?: RegistrarDemandaHandler;
   // Idem para `avisar_vendedora`.
