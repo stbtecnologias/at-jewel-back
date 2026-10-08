@@ -194,7 +194,7 @@ const METAS_TOOL: Anthropic.Tool = {
 const PRODUTOS_TOOL: Anthropic.Tool = {
   name: 'consultar_produtos',
   description:
-    'Procura pecas no catalogo e devolve descricao, preco de venda e SE A PECA ESTA DISPONIVEL (disponivel/indisponivel). Pode ser chamada SEM termo de busca, so com os recortes — e assim que se monta uma tabela por faixa de preco. POR PADRAO SO TRAZ O QUE TEM EM ESTOQUE — e o que ela pode oferecer ao cliente hoje. NAO ha quantidade: se perguntarem quantas tem, diga que voce ve apenas se a peca esta disponivel. Use quando ela perguntar sobre produto — "quanto custa o brinco de esmeralda", "tem alianca de ouro 18k", "quantos pingentes de zirconia temos". Devolve no maximo seis pecas. Voce nao tem acesso a custo nem margem: se ela perguntar isso, diga que nao consegue ver.',
+    'Procura pecas no catalogo e devolve descricao, preco de venda e SE A PECA ESTA DISPONIVEL (disponivel/indisponivel). Pode ser chamada SEM termo de busca, so com os recortes — e assim que se monta uma tabela por faixa de preco. POR PADRAO SO TRAZ O QUE TEM EM ESTOQUE — e o que ela pode oferecer ao cliente hoje. NAO ha quantidade: se perguntarem quantas tem, diga que voce ve apenas se a peca esta disponivel. Use quando ela perguntar sobre produto — "quanto custa o brinco de esmeralda", "tem alianca de ouro 18k", "quantos pingentes de zirconia temos". Devolve no maximo DEZ pecas por vez, e o despacho diz quantas existem no total e o valor exato para pedir a pagina seguinte em `a_partir_de` — LISTE TODAS as que vierem. Voce nao tem acesso a custo nem margem: se ela perguntar isso, diga que nao consegue ver.',
   input_schema: {
     type: 'object',
     properties: {
