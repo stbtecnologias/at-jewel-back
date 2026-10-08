@@ -341,4 +341,96 @@ describe('LembretesService', () => {
 
     expect(r.linhas[0]).toContain('NÃO FOI ENVIADO');
   });
+
+  /**
+   * ========================================================================
+   * UMA FRASE POR MOTIVO — 08/10/2026.
+   *
+   * A gestora passou a colar a agenda DO DIA: "08/10 / 16h reunião com os
+   * fornecedores / 16:30 provas de catálogo / 18 pegar a Stella". Quando ela
+   * manda isso às 17h, o primeiro item já passou.
+   *
+   * A frase era uma só para os três motivos — ilegível, passado e distante —
+   * e dizia "pergunte para quando é". No compromisso que já passou isso vira
+   * pergunta sem sentido: **a hora estava escrita ali**. Perguntar o que não
+   * se sabe está certo; perguntar o que a pessoa acabou de dizer parece que
+   * ninguém leu.
+   * ========================================================================
+   */
+  describe('quando o horário não serve, a frase diz POR QUE', () => {
+    const ontem = new Date(Date.now() - 24 * 3_600_000).toISOString();
+    const emDoisAnos = new Date(
+      Date.now() + 730 * 24 * 3_600_000,
+    ).toISOString();
+
+    /* ESTE É O TESTE: é o caso da agenda do dia colada depois da hora. */
+    it('passado: diz que já passou e MANDA NÃO perguntar a hora', async () => {
+      const r = await meus().guardarLembrete({
+        texto: '16h reunião com os fornecedores',
+        quandoIso: ontem,
+      });
+
+      expect(r.mensagem).toContain('já passou');
+      expect(r.mensagem).toMatch(/NÃO pergunte para quando/i);
+      // E ensina a salvar o resto da lista, que é o que ela quer.
+      expect(r.mensagem).toMatch(/guarde os que ainda não passaram/i);
+      expect(repo.linhas).toHaveLength(0);
+    });
+
+    it('distante: manda confirmar o ANO, porque é o erro provável', async () => {
+      const r = await meus().guardarLembrete({
+        texto: 'nova peça de joias chega',
+        quandoIso: emDoisAnos,
+      });
+
+      expect(r.mensagem).toMatch(/passa de um ano/i);
+      expect(r.mensagem).toContain('ANO');
+      expect(repo.linhas).toHaveLength(0);
+    });
+
+    it('ilegível: aí sim pergunta, porque de fato não se sabe', async () => {
+      const r = await meus().guardarLembrete({
+        texto: 'qualquer coisa',
+        quandoIso: 'depois de amanhã de tarde',
+      });
+
+      expect(r.mensagem).toMatch(/não entendi/i);
+      expect(r.mensagem).toMatch(/Pergunte para quando/i);
+      expect(repo.linhas).toHaveLength(0);
+    });
+
+    /** O vizinho tem de se comportar igual — ver o comentário no serviço. */
+    it('remarcar para o passado também diz que já passou', async () => {
+      await meus().guardarLembrete({
+        texto: 'passar na Faby',
+        quandoIso: DAQUI_A_UMA_HORA,
+      });
+
+      const r = await meus().remarcarLembrete({
+        qual: 'Faby',
+        quandoIso: ontem,
+      });
+
+      expect(r.mensagem).toContain('já passou');
+      expect(r.mensagem).toMatch(/NÃO pergunte para quando/i);
+    });
+  });
+
+  /**
+   * O ALCANCE É DE UM ANO, e é o que faz o "28/10 — 10h nova peça chega"
+   * funcionar: ela pode mandar hoje um compromisso de qualquer dia do ano.
+   */
+  it('data bem à frente é guardada, dentro de um ano', async () => {
+    const emTresMeses = new Date(
+      Date.now() + 90 * 24 * 3_600_000,
+    ).toISOString();
+
+    const r = await meus().guardarLembrete({
+      texto: '10h nova peça de joias chega',
+      quandoIso: emTresMeses,
+    });
+
+    expect(r.mensagem).not.toMatch(/NÃO GUARDEI/);
+    expect(repo.linhas).toHaveLength(1);
+  });
 });

@@ -19,6 +19,50 @@
 export const DIAS_MAXIMOS_PADRAO = 180;
 
 /**
+ * POR QUE o instante nao serve — 08/10/2026.
+ *
+ * ==========================================================================
+ * TRES MOTIVOS QUE PEDEM TRES FRASES DIFERENTES.
+ *
+ * O `interpretarInstante` devolve `null` para ilegivel, passado e distante, e
+ * quem chamava dizia a mesma coisa nos tres: "precisa ser no futuro e dentro
+ * de um ano, pergunte para quando e".
+ *
+ * Isso ficou errado quando a gestora passou a colar a agenda DO DIA. Ela
+ * manda as 17h uma lista com "16h reuniao com os fornecedores", e a agente
+ * pergunta "para quando e a reuniao das 16h?" — pergunta sem sentido, porque
+ * a hora estava escrita ali. A resposta honesta e "essa ja passou, nao
+ * guardei".
+ *
+ * PERGUNTAR o que nao se sabe esta certo; perguntar o que a pessoa acabou de
+ * dizer parece que ninguem leu.
+ * ==========================================================================
+ */
+export type MotivoDoInstante = 'OK' | 'ILEGIVEL' | 'PASSADO' | 'DISTANTE';
+
+/**
+ * A MESMA regra do `interpretarInstante`, dizendo qual ramo reprovou.
+ *
+ * Os dois compartilham esta funcao de proposito, e e o motivo pelo qual este
+ * arquivo existe: a regra num lugar so, para nao mudar num caminho e ficar
+ * esquecida no vizinho.
+ */
+export function motivoDoInstante(
+  iso: string,
+  diasMaximos: number = DIAS_MAXIMOS_PADRAO,
+  agora: Date = new Date(),
+): MotivoDoInstante {
+  const quando = new Date(iso);
+  if (Number.isNaN(quando.getTime())) return 'ILEGIVEL';
+  const base = agora.getTime();
+  if (quando.getTime() < base) return 'PASSADO';
+  if (quando.getTime() > base + diasMaximos * 24 * 60 * 60_000) {
+    return 'DISTANTE';
+  }
+  return 'OK';
+}
+
+/**
  * Le o ISO 8601 que o modelo escreveu. `null` quando nao serve.
  *
  * Aceita apenas horario FUTURO e dentro do teto. Data no passado quase sempre
@@ -26,18 +70,18 @@ export const DIAS_MAXIMOS_PADRAO = 180;
  * certo e devolver `null` e deixar quem chama perguntar de novo — nunca
  * corrigir por conta propria, porque a correcao seria um palpite apresentado
  * como combinado.
+ *
+ * Quem precisa saber QUAL dos tres motivos reprovou usa o `motivoDoInstante`
+ * — ver o cabecalho dele.
  */
 export function interpretarInstante(
   iso: string,
   diasMaximos: number = DIAS_MAXIMOS_PADRAO,
   agora: Date = new Date(),
 ): Date | null {
-  const quando = new Date(iso);
-  if (Number.isNaN(quando.getTime())) return null;
-  const base = agora.getTime();
-  if (quando.getTime() < base) return null;
-  if (quando.getTime() > base + diasMaximos * 24 * 60 * 60_000) return null;
-  return quando;
+  return motivoDoInstante(iso, diasMaximos, agora) === 'OK'
+    ? new Date(iso)
+    : null;
 }
 
 /**
