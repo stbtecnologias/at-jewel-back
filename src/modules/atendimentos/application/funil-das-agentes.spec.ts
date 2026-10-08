@@ -94,11 +94,16 @@ describe('as etapas em palavras', () => {
 });
 
 describe('a carteira da vendedora (Elena)', () => {
-  let auditoria: { resumo: jest.Mock };
+  let auditoria: { resumo: jest.Mock; listar: jest.Mock };
   let servico: FerramentasVendedoraService;
 
   beforeEach(() => {
-    auditoria = { resumo: jest.fn() };
+    // O `listar` entrou em 08/10: o resumo dá a distribuição por etapa, a
+    // lista dá os NOMES. Ver o comentário em `consultarCarteiraAgora`.
+    auditoria = {
+      resumo: jest.fn(),
+      listar: jest.fn().mockResolvedValue({ itens: [], total: 0 }),
+    };
     servico = new FerramentasVendedoraService(
       { execute: jest.fn() } as never,
       { vendas: jest.fn(), metas: jest.fn() } as never,
@@ -148,7 +153,144 @@ describe('a carteira da vendedora (Elena)', () => {
 
     const r = await montar().consultarCarteiraAgora();
 
-    expect(r).toEqual({ total: 0, linhas: [], aguardandoRelato: 0 });
+    expect(r).toEqual({
+      total: 0,
+      linhas: [],
+      aguardandoRelato: 0,
+      clientes: [],
+    });
+  });
+
+  /**
+   * ========================================================================
+   * QUEM SÃO, E NÃO SÓ QUANTOS — 08/10/2026, de um teste em PRODUÇÃO.
+   *
+   * Conversa da Nathalia com a Helena, 11:21:
+   *
+   *   — "Quem são as clientes em negociação?"
+   *   — "Aqui o sistema só me dá o número — são 5 clientes em negociação,
+   *      mas sem os nomes. (...) o melhor caminho é você olhar direto no
+   *      seu funil de atendimento."
+   *
+   * A agente estava CERTA sobre a ferramenta — ela só chamava o `resumo`,
+   * que é agregado. Mas o dado estava a um método de distância, e o custo
+   * não aparecia como erro: a própria agente acabara de dizer que aqueles
+   * cinco eram "o foco mais imediato", e a conversa terminou mandando a
+   * vendedora para outra tela.
+   * ========================================================================
+   */
+  describe('quem são os clientes em curso', () => {
+    const emCurso = (nome: string, etapa = 'EM_NEGOCIACAO') => ({
+      clienteNome: nome,
+      etapa,
+      abertoEm: new Date('2026-10-03T10:00:00-03:00'),
+      aguardandoRelato: false,
+      proximoContatoEm: null,
+    });
+
+    /* ESTE É O TESTE. O resto é contorno. */
+    it('devolve os nomes, com a etapa e desde quando', async () => {
+      auditoria.resumo.mockResolvedValue({
+        total: 2,
+        porEtapa: etapas({ EM_NEGOCIACAO: 2 }),
+        vendedoras: [linha('Marina', 'vd-1', { EM_NEGOCIACAO: 2 }, 0)],
+      });
+      auditoria.listar.mockResolvedValue({
+        itens: [emCurso('Carla Oliveira'), emCurso('Ana Beatriz')],
+        total: 2,
+      });
+
+      const r = await montar().consultarCarteiraAgora();
+
+      // `rotuloEtapa` escreve sem acento, e é o MESMO rótulo das linhas do
+      // funil — reaproveitado de propósito: dois formatadores divergiriam, e
+      // "em negociacao" numa linha e "em negociação" na outra confundiria
+      // quem lê as duas juntas.
+      expect(r.clientes).toEqual([
+        'Carla Oliveira (em negociacao, desde 03/10)',
+        'Ana Beatriz (em negociacao, desde 03/10)',
+      ]);
+      expect(r.clientesOcultos).toBeUndefined();
+    });
+
+    /** E A LISTA É DELA: o `vendedoraId` vem por closure, como no resumo. */
+    it('lista só os abertos DELA, e só até o teto', async () => {
+      auditoria.resumo.mockResolvedValue({
+        total: 1,
+        porEtapa: etapas({ EM_NEGOCIACAO: 1 }),
+        vendedoras: [linha('Marina', 'vd-1', { EM_NEGOCIACAO: 1 }, 0)],
+      });
+
+      await montar().consultarCarteiraAgora();
+
+      expect(auditoria.listar).toHaveBeenCalledWith({
+        apenasAbertos: true,
+        vendedoraId: 'vd-1',
+        limit: 15,
+      });
+    });
+
+    /**
+     * O TETO SE ANUNCIA. Quinze de trinta parecem os trinta, e aí ela trata
+     * metade da carteira achando que viu tudo.
+     */
+    it('carteira maior que o teto diz quantos ficaram de fora', async () => {
+      auditoria.resumo.mockResolvedValue({
+        total: 30,
+        porEtapa: etapas({ EM_NEGOCIACAO: 30 }),
+        vendedoras: [linha('Marina', 'vd-1', { EM_NEGOCIACAO: 30 }, 0)],
+      });
+      auditoria.listar.mockResolvedValue({
+        itens: Array.from({ length: 15 }, (_, i) => emCurso(`Cliente ${i}`)),
+        total: 30,
+      });
+
+      const r = await montar().consultarCarteiraAgora();
+
+      expect(r.clientes).toHaveLength(15);
+      expect(r.clientesOcultos).toBe(15);
+    });
+
+    /**
+     * ESPERANDO O RELATO DELA é o que muda o dia: é a diferença entre um
+     * cliente que está andando e um parado por causa dela.
+     */
+    it('marca com destaque quem espera o relato dela', async () => {
+      auditoria.resumo.mockResolvedValue({
+        total: 1,
+        porEtapa: etapas({ EM_NEGOCIACAO: 1 }),
+        vendedoras: [linha('Marina', 'vd-1', { EM_NEGOCIACAO: 1 }, 1)],
+      });
+      auditoria.listar.mockResolvedValue({
+        itens: [{ ...emCurso('Carla Oliveira'), aguardandoRelato: true }],
+        total: 1,
+      });
+
+      const r = await montar().consultarCarteiraAgora();
+
+      expect(r.clientes[0]).toContain('ESPERANDO SEU RELATO');
+    });
+
+    it('contato já marcado aparece na linha', async () => {
+      auditoria.resumo.mockResolvedValue({
+        total: 1,
+        porEtapa: etapas({ REMARCADO: 1 }),
+        vendedoras: [linha('Marina', 'vd-1', { REMARCADO: 1 }, 0)],
+      });
+      auditoria.listar.mockResolvedValue({
+        itens: [
+          {
+            ...emCurso('Carla Oliveira', 'REMARCADO'),
+            proximoContatoEm: new Date('2026-10-14T15:00:00-03:00'),
+          },
+        ],
+        total: 1,
+      });
+
+      const r = await montar().consultarCarteiraAgora();
+
+      expect(r.clientes[0]).toContain('contato marcado para 14/10');
+    });
   });
 });
 

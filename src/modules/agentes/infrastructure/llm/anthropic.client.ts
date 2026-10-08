@@ -356,7 +356,7 @@ const ATUALIZAR_LEAD_TOOL: Anthropic.Tool = {
 const CARTEIRA_AGORA_TOOL: Anthropic.Tool = {
   name: 'consultar_minha_carteira',
   description:
-    'Diz como esta a carteira DELA agora: quantos clientes ela tem com atendimento em curso, em que pe cada grupo esta (em negociacao, remarcado, sem conseguir falar, primeiro contato) e quantos estao esperando o relato dela. Use quando ela perguntar "como esta minha carteira", "quantos clientes eu tenho em aberto", "o que esta parado comigo", "de quem eu preciso dar noticia", "quantos atendimentos eu tenho". Nao precisa passar nada. So enxerga a carteira dela. E o estado de AGORA, nao um periodo — nao diga "hoje" nem "esta semana" ao repassar. Nao traz venda nem valor: se ela perguntar quanto vendeu, use consultar_vendas.',
+    'Diz como esta a carteira DELA agora: quantos clientes ela tem com atendimento em curso, em que pe cada grupo esta (em negociacao, remarcado, sem conseguir falar, primeiro contato), quantos estao esperando o relato dela — e QUEM SAO, com nome, etapa e desde quando. Use quando ela perguntar "como esta minha carteira", "quantos clientes eu tenho em aberto", "o que esta parado comigo", "de quem eu preciso dar noticia", "quantos atendimentos eu tenho" — e tambem quando perguntar QUEM sao ("quem esta em negociacao?", "quais clientes?"): os nomes vem aqui, NAO mande ela olhar no painel. Nao precisa passar nada. So enxerga a carteira dela. E o estado de AGORA, nao um periodo — nao diga "hoje" nem "esta semana" ao repassar. Nao traz venda, valor nem telefone: se ela perguntar quanto vendeu, use consultar_vendas.',
   input_schema: { type: 'object', properties: {} },
 };
 
@@ -2633,9 +2633,22 @@ export class AnthropicClient implements ILlmClient {
                       : 'desses estao esperando o relato DELA'
                   } — e o que ela precisa resolver.`
                 : '';
+            // QUEM SAO, e nao so quantos — 08/10/2026. Nasceu do teste da
+            // Nathalia em PRODUCAO: ela perguntou "quem sao as clientes em
+            // negociacao?" e ouviu "o sistema so me da o numero (...) olhe
+            // direto no seu funil". O dado estava a um metodo de distancia.
+            const quemSao = r.clientes.length
+              ? `\n\nQUEM SAO:\n${r.clientes.map((c) => `- ${c}`).join('\n')}` +
+                (r.clientesOcultos
+                  ? `\n\nSAO ${r.total} NO TOTAL e esta lista traz ` +
+                    `${r.clientes.length}: DIGA isso e ofereca o resto.`
+                  : '') +
+                '\n\nQuando ela perguntar QUEM sao, responda com estes nomes — ' +
+                'NAO mande ela olhar no painel.'
+              : '';
             return (
               `Carteira dela AGORA: ${r.total} ${r.total === 1 ? 'cliente' : 'clientes'} ` +
-              `em atendimento em curso — ${r.linhas.join(', ')}.${espera}\n\n` +
+              `em atendimento em curso — ${r.linhas.join(', ')}.${espera}${quemSao}\n\n` +
               'Repasse os numeros exatamente como estao. Isto e o estado de agora, ' +
               'nao um recorte de periodo: nao diga "hoje" nem "esta semana".'
             );

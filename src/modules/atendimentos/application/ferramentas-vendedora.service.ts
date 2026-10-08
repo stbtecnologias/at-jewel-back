@@ -34,7 +34,7 @@ import {
   type VinculoDoLead,
 } from '../../leads/application/use-cases/atualizar-status-lead.use-case';
 import { linhaDoLead } from '../../leads/application/leads-em-lista';
-import { linhasDoFunil } from './etapas-em-palavras';
+import { linhasDoFunil, rotuloEtapa } from './etapas-em-palavras';
 import { formatarQuando } from './ferramentas-gestao.service';
 
 /**
@@ -47,6 +47,47 @@ import { formatarQuando } from './ferramentas-gestao.service';
  * "R$ 7.490,37" em "R$ 7.490" — pego pelo teste do catalogo em 21/08, na
  * refatoracao que juntou as ferramentas num servico.
  */
+/**
+ * Quantos clientes da carteira vem COM NOME — 08/10/2026.
+ *
+ * Quinze cobre a carteira aberta de uma vendedora com folga (o que esta em
+ * curso ao mesmo tempo e pequeno: a Nathalia tinha cinco) e cabe numa
+ * mensagem de WhatsApp sem virar parede de texto. Acima disso o despacho DIZ
+ * quantos ficaram de fora.
+ */
+const TETO_CARTEIRA_NOMEADA = 15;
+
+/**
+ * Uma linha por cliente em atendimento: quem, em que pe, e desde quando.
+ *
+ * O `aguardandoRelato` entra com destaque porque e o que muda o dia dela —
+ * "esperando SEU relato" e a diferenca entre um cliente que esta andando e um
+ * que esta parado por causa dela.
+ *
+ * SEM TELEFONE E SEM VALOR: este e o resumo do funil, nao a ficha. Quem quer
+ * contato usa o painel, e quem quer agendar chama `agendar_contato`.
+ */
+function linhaDoCliente(a: {
+  clienteNome: string;
+  etapa: string;
+  abertoEm: Date;
+  aguardandoRelato: boolean;
+  proximoContatoEm: Date | null;
+}): string {
+  const desde = a.abertoEm.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+  });
+  const proximo = a.proximoContatoEm
+    ? `, contato marcado para ${a.proximoContatoEm.toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+      })}`
+    : '';
+  const espera = a.aguardandoRelato ? ' — ESPERANDO SEU RELATO' : '';
+  return `${a.clienteNome} (${rotuloEtapa(a.etapa)}, desde ${desde}${proximo})${espera}`;
+}
+
 function moeda(v: number): string {
   return v.toLocaleString('pt-BR', {
     style: 'currency',
@@ -345,16 +386,44 @@ export class FerramentasVendedoraService {
       },
 
       consultarCarteiraAgora: async () => {
-        const r = await this.auditoria.resumo({
-          apenasAbertos: true,
-          vendedoraId,
-        });
+        // ================================================================
+        // O RESUMO **E** A LISTA — 08/10/2026, de um teste em PRODUCAO.
+        //
+        // A Nathalia perguntou a Helena "quem sao as clientes em
+        // negociacao?" e ouviu: "o sistema so me da o numero — sao 5 (...)
+        // o melhor caminho e voce olhar direto no seu funil". A agente
+        // estava certa sobre a ferramenta, que chamava apenas o `resumo`
+        // (agregado) — mas o dado existia a UM METODO de distancia.
+        //
+        // O custo nao aparecia como erro: a propria agente acabara de dizer
+        // que aqueles cinco eram "o foco mais imediato", e a conversa
+        // terminou mandando a vendedora para OUTRA TELA.
+        //
+        // DUAS CONSULTAS, DE PROPOSITO: o resumo traz a distribuicao por
+        // etapa, que a lista paginada nao da; a lista traz os nomes. Uma so
+        // responderia metade da pergunta.
+        // ================================================================
+        const [r, lista] = await Promise.all([
+          this.auditoria.resumo({ apenasAbertos: true, vendedoraId }),
+          this.auditoria.listar({
+            apenasAbertos: true,
+            vendedoraId,
+            limit: TETO_CARTEIRA_NOMEADA,
+          }),
+        ]);
         const minha = r.vendedoras[0];
-        if (!minha) return { total: 0, linhas: [], aguardandoRelato: 0 };
+        if (!minha) {
+          return { total: 0, linhas: [], aguardandoRelato: 0, clientes: [] };
+        }
         return {
           total: minha.total,
           linhas: linhasDoFunil(minha.porEtapa),
           aguardandoRelato: minha.aguardandoRelato,
+          clientes: lista.itens.map(linhaDoCliente),
+          // O TETO SE ANUNCIA: cinco de trinta parecem os trinta.
+          ...(lista.total > lista.itens.length
+            ? { clientesOcultos: lista.total - lista.itens.length }
+            : {}),
         };
       },
 

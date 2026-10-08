@@ -237,6 +237,39 @@ export interface CarteiraAgoraLlmResultado {
    * diz o que esta parado esperando ela.
    */
   aguardandoRelato: number;
+  /**
+   * QUEM SAO — 08/10/2026, e nasceu de um teste em producao.
+   *
+   * ========================================================================
+   * A AGENTE DIZIA O NUMERO E MANDAVA ELA OLHAR NO PAINEL.
+   *
+   * Conversa da Nathalia com a Helena, 08/10 as 11:21, em PRODUCAO:
+   *
+   *   — "Quem sao as clientes em negociacao?"
+   *   — "Aqui o sistema so me da o numero — sao 5 clientes em negociacao,
+   *      mas sem os nomes. Pra ver quem sao (...) o melhor caminho e voce
+   *      olhar direto no seu funil de atendimento."
+   *
+   * E a agente estava certa sobre a ferramenta: ela chamava o `resumo`, que
+   * e AGREGADO. Mas o dado existia a um metodo de distancia — o
+   * `listarAuditoria` devolve `clienteNome`, etapa, desde quando esta
+   * aberto, se espera relato e o ultimo relato dela.
+   *
+   * O custo disso e alto e nao aparece como erro: a propria agente acabara
+   * de dizer que aqueles cinco eram "o foco mais imediato", e a conversa
+   * terminou mandando a vendedora para outra tela. O passo seguinte do
+   * trabalho dela ficou fora do canal.
+   * ========================================================================
+   */
+  clientes: string[];
+  /**
+   * Quantos existem, quando a lista foi cortada pelo teto.
+   *
+   * `undefined` quando veio tudo. Teto que nao se anuncia faz cinco de
+   * trinta parecerem os trinta — o mesmo motivo do `total` em toda lista
+   * desta casa.
+   */
+  clientesOcultos?: number;
 }
 
 export type ConsultarCarteiraAgoraHandler =
