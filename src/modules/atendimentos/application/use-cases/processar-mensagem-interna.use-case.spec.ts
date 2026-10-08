@@ -487,6 +487,44 @@ describe('ProcessarMensagemInternaUseCase', () => {
 
   /**
    * ========================================================================
+   * A FOTO DA PECA SAI PELA HELENA — 08/10/2026.
+   *
+   * Pergunta do Lucas: a Nathalia consegue puxar, pela Helena, as peças até
+   * 10 mil COM FOTO? A cadeia inteira existia e o schema da vendedora tem
+   * `preco_ate`, `com_foto` e `so_com_foto` — mas **este elo não tinha
+   * teste**: que o `fotos` que o modelo devolve saia no resultado do canal.
+   *
+   * Sem isto, acrescentar um campo ao retorno (ou trocar o `motivo`) e
+   * reconstruir o objeto deixaria as fotos para trás. O texto continuaria
+   * chegando, a foto não — que foi o defeito de 07/10, quando ela anunciava
+   * a foto e nada vinha.
+   * ========================================================================
+   */
+  it('a foto da peça sai no resultado do canal', async () => {
+    identificar.execute.mockResolvedValue(VENDEDORA);
+    const foto = {
+      codigo: 'AN22083',
+      conteudo: Buffer.from('jpeg'),
+      mime: 'image/jpeg',
+      legenda: 'ANEL SOLITARIO',
+    };
+    llm.chatComFerramentas.mockResolvedValue({
+      texto: 'Segue a lista até 10 mil.',
+      tokens: 10,
+      fotos: [foto],
+    });
+
+    const r = await useCase.execute({
+      de: '558586467241@c.us',
+      texto: 'me monta uma tabela de peças até 10 mil com foto',
+    });
+
+    expect(r.resposta).toContain('até 10 mil');
+    expect(r.fotos).toEqual([foto]);
+  });
+
+  /**
+   * ========================================================================
    * OS LEMBRETES PESSOAIS NA HELENA — 08/10/2026, pedido do Lucas.
    *
    * A Nathalia é gerente de vendas E vendedora com um número só. O roteador

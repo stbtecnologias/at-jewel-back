@@ -411,6 +411,46 @@ describe('RotearMensagemInternaUseCase', () => {
     expect(canalGestao.execute).not.toHaveBeenCalled();
   });
 
+  /**
+   * ========================================================================
+   * A FOTO DA PECA ATRAVESSA O ROTEADOR — 08/10/2026.
+   *
+   * Pergunta do Lucas: a Nathalia consegue puxar, pela Helena, a lista de
+   * peças até 10 mil COM FOTO? A cadeia tem seis elos — schema da
+   * ferramenta, handler, despacho, canal, roteador e controller — e os
+   * cinco primeiros tinham teste. **Este, não.**
+   *
+   * E o roteador é onde a perda seria mais silenciosa: ele devolve o
+   * resultado do canal, e bastaria alguém reconstruir o objeto (para
+   * acrescentar um campo, trocar o motivo) para as fotos ficarem para trás.
+   * A resposta de texto continuaria chegando, a foto não — e foi exatamente
+   * esse o defeito de 07/10, quando ela anunciava a foto e nada vinha.
+   * ========================================================================
+   */
+  it('as fotos da peça atravessam o roteador, vindas da Elena', async () => {
+    identificarVendedora.execute.mockResolvedValue(VENDEDORA);
+    const foto = {
+      codigo: 'AN22083',
+      conteudo: Buffer.from('jpeg'),
+      mime: 'image/jpeg',
+      legenda: 'ANEL SOLITARIO',
+    };
+    canalVendedora.execute.mockResolvedValue({
+      resposta: 'Segue a lista até 10 mil.',
+      motivo: 'conversa',
+      fotos: [foto],
+    });
+
+    const r = await useCase.execute({
+      de: '558586467241@c.us',
+      texto: 'me monta uma tabela de peças até 10 mil com foto',
+      agente: 'ELENA',
+    });
+
+    expect(r.resposta).toContain('até 10 mil');
+    expect(r.fotos).toEqual([foto]);
+  });
+
   it('quem e VENDEDORA e tambem tem login continua na Elena', async () => {
     // O caso que a ordem existe para resolver.
     identificarVendedora.execute.mockResolvedValue(VENDEDORA);
