@@ -74,6 +74,10 @@ describe('o gerente de vendas na Helena', () => {
       } as never,
       { disponivel: () => false, transcrever: jest.fn() } as never,
       naoParaTudo(),
+      // RF9: nao ha documento nestes testes, e o roteador so toca no leitor e
+      // na analise quando a mensagem traz um.
+      naoParaTudo(),
+      naoParaTudo(),
     );
   });
 

@@ -75,6 +75,9 @@ describe('RotearMensagemInternaUseCase', () => {
   };
   let whatsapp: { baixarMidia: jest.Mock; numeroDoAgente: jest.Mock };
   let transcricao: { transcrever: jest.Mock; disponivel: jest.Mock };
+  /** RF9 — o leitor abre o arquivo; a analise o le SEM ferramenta nenhuma. */
+  let leitor: { ler: jest.Mock };
+  let analise: { analisar: jest.Mock };
   let useCase: RotearMensagemInternaUseCase;
 
   beforeEach(() => {
@@ -142,6 +145,10 @@ describe('RotearMensagemInternaUseCase', () => {
       numeroDoAgente: jest.fn().mockResolvedValue('558598490118'),
     };
     transcricao = { transcrever: jest.fn(), disponivel: jest.fn(() => true) };
+    // RF9 — o leitor abre o arquivo, a analise o le SEM ferramenta. Por
+    // padrao nenhum teste manda documento, e ai nenhum dos dois e tocado.
+    leitor = { ler: jest.fn() };
+    analise = { analisar: jest.fn() };
 
     useCase = new RotearMensagemInternaUseCase(
       identificarVendedora as never,
@@ -153,6 +160,8 @@ describe('RotearMensagemInternaUseCase', () => {
       whatsapp as never,
       transcricao,
       new MemoriaDeGrupoService(),
+      leitor as never,
+      analise as never,
     );
   });
 
@@ -479,6 +488,167 @@ describe('RotearMensagemInternaUseCase', () => {
     expect(canalVendedora.execute).toHaveBeenCalledWith({
       de: '558586467241@c.us',
       texto: 'minha agenda hoje?',
+    });
+  });
+
+  /**
+   * ========================================================================
+   * O ARQUIVO QUE A GESTAO MANDA — RF9, 08/10/2026.
+   *
+   * O alinhamento de 07/10 pediu que ela pudesse mandar planilha e PDF para
+   * analise. Medido no mesmo dia: documento chegava e era DESCARTADO na
+   * borda, de proposito — nao era a agente nao entender, o arquivo nao
+   * passava da porta.
+   *
+   * AQUI SE PROVA A ORDEM: baixar e ler custa, e acontece depois do
+   * reconhecimento. E a estrutura chega ROTULADA, para a agente nao citar
+   * numero de arquivo como numero do sistema.
+   * ========================================================================
+   */
+  describe('documento (RF9)', () => {
+    const DOC = {
+      url: 'http://waha:3000/api/files/default/x.xlsx',
+      mimetype:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      nome: 'Posicao de estoque.xlsx',
+    };
+
+    function arquivoChega() {
+      whatsapp.baixarMidia.mockResolvedValue({
+        conteudo: Buffer.from('xlsx'),
+        mimetype: DOC.mimetype,
+      });
+      leitor.ler.mockResolvedValue({ texto: 'Codigo | Valor\nAN1 | 100' });
+      analise.analisar.mockResolvedValue({
+        resumo: 'Posição de estoque, 2 colunas, 1 linha. Total R$ 100.',
+      });
+    }
+
+    /* ESTE É O TESTE. O resto é contorno. */
+    it('a gestão manda planilha e a estrutura chega à Anastasia, rotulada', async () => {
+      identificarAdmin.execute.mockResolvedValue(ADMIN);
+      arquivoChega();
+
+      await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'qual o markup disso?',
+        documento: DOC,
+      });
+
+      const enviado = canalGestao.execute.mock.calls[0][0] as { texto: string };
+      // A pergunta dela primeiro...
+      expect(enviado.texto.indexOf('markup')).toBeLessThan(
+        enviado.texto.indexOf('Total R$ 100'),
+      );
+      // ...e a estrutura DIZ que é do arquivo. Sem o rótulo, a agente trataria
+      // as linhas do relatório como coisa que ela mesma sabe.
+      expect(enviado.texto).toMatch(/NAO e dado do sistema/i);
+      expect(enviado.texto).toContain('Total R$ 100');
+    });
+
+    it('o nome do arquivo vai ao leitor — é a pista de tipo quando o mime não ajuda', async () => {
+      identificarAdmin.execute.mockResolvedValue(ADMIN);
+      arquivoChega();
+
+      await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'x',
+        documento: { ...DOC, mimetype: 'application/octet-stream' },
+      });
+
+      expect(leitor.ler).toHaveBeenCalledWith(
+        expect.objectContaining({ nome: 'Posicao de estoque.xlsx' }),
+      );
+    });
+
+    /**
+     * A VENDEDORA NAO MANDA ARQUIVO, e ouve isso. Silencio foi o defeito do
+     * audio em 21/08: quem mandava nao recebia resposta nenhuma e nem sabia
+     * por que.
+     */
+    it('vendedora que manda arquivo ouve que não dá — e nenhum canal é chamado', async () => {
+      identificarVendedora.execute.mockResolvedValue(VENDEDORA);
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'olha essa planilha',
+        documento: DOC,
+      });
+
+      expect(r.motivo).toBe('documento_sem_permissao');
+      expect(r.resposta).toMatch(/não consigo ler arquivo/i);
+      expect(canalVendedora.execute).not.toHaveBeenCalled();
+      expect(canalGestao.execute).not.toHaveBeenCalled();
+      // E NAO GASTOU NADA: nem download, nem leitura, nem chamada ao modelo.
+      expect(whatsapp.baixarMidia).not.toHaveBeenCalled();
+      expect(leitor.ler).not.toHaveBeenCalled();
+      expect(analise.analisar).not.toHaveBeenCalled();
+    });
+
+    it('download que falha vira frase, não silêncio', async () => {
+      identificarAdmin.execute.mockResolvedValue(ADMIN);
+      whatsapp.baixarMidia.mockResolvedValue(null);
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'olha isso',
+        documento: DOC,
+      });
+
+      expect(r.motivo).toBe('documento_download_falhou');
+      expect(r.resposta).toMatch(/não consegui baixá-lo/i);
+      expect(canalGestao.execute).not.toHaveBeenCalled();
+    });
+
+    it('arquivo sem URL nem tenta baixar', async () => {
+      identificarAdmin.execute.mockResolvedValue(ADMIN);
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'olha isso',
+        documento: { ...DOC, url: null },
+      });
+
+      expect(r.motivo).toBe('documento_sem_arquivo');
+      expect(whatsapp.baixarMidia).not.toHaveBeenCalled();
+    });
+
+    it('arquivo que não dá para ler: ela ouve o motivo do leitor', async () => {
+      identificarAdmin.execute.mockResolvedValue(ADMIN);
+      whatsapp.baixarMidia.mockResolvedValue({
+        conteudo: Buffer.from('x'),
+        mimetype: 'application/zip',
+      });
+      leitor.ler.mockResolvedValue({
+        aviso: 'Esse arquivo chegou como application/zip e eu nao consigo ler.',
+      });
+      analise.analisar.mockResolvedValue({
+        falha: 'Esse arquivo chegou como application/zip e eu nao consigo ler.',
+      });
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'olha isso',
+        documento: { ...DOC, mimetype: 'application/zip' },
+      });
+
+      expect(r.motivo).toBe('documento_nao_lido');
+      expect(r.resposta).toContain('application/zip');
+      expect(canalGestao.execute).not.toHaveBeenCalled();
+    });
+
+    it('arquivo sem legenda: a agente recebe o pedido de dizer o que há nele', async () => {
+      identificarAdmin.execute.mockResolvedValue(ADMIN);
+      arquivoChega();
+
+      await useCase.execute({
+        de: '558586467241@c.us',
+        texto: '',
+        documento: DOC,
+      });
+
+      const enviado = canalGestao.execute.mock.calls[0][0] as { texto: string };
+      expect(enviado.texto).toMatch(/o que há neste arquivo/i);
     });
   });
 
@@ -1404,6 +1574,8 @@ describe('RotearMensagemInternaUseCase — a conversa do Yerlon, de ponta a pont
       whatsapp as never,
       { transcrever: jest.fn(), disponivel: () => true },
       new MemoriaDeGrupoService(),
+      { ler: jest.fn() } as never,
+      { analisar: jest.fn() } as never,
     );
     const falar = (texto: string, extra: object = {}) =>
       roteador.execute({ de: DE, texto, em: Date.now(), ...extra });
@@ -1547,6 +1719,8 @@ describe('RotearMensagemInternaUseCase — a consulta do Lucas, de ponta a ponta
       {} as never,
       { transcrever: jest.fn(), disponivel: () => true },
       new MemoriaDeGrupoService(),
+      { ler: jest.fn() } as never,
+      { analisar: jest.fn() } as never,
     );
     const falar = (texto: string) =>
       roteador.execute({ de: DE, texto, em: Date.now() });

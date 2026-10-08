@@ -15,6 +15,8 @@ import {
   type AudioInterno,
 } from './processar-mensagem-interna.use-case';
 import { ProcessarMensagemGestaoUseCase } from './processar-mensagem-gestao.use-case';
+import { LeitorDeArquivoService } from '../leitor-de-arquivo.service';
+import { AnalisarArquivoService } from '../analisar-arquivo.service';
 
 /**
  * A chave que separa os dois canais da casa — 07/10/2026.
@@ -99,10 +101,31 @@ export interface MensagemDoCanal {
    */
   imagem?: ImagemInterna;
   /**
+   * Presente so quando chegou DOCUMENTO — planilha, PDF, CSV. RF9, 08/10/2026.
+   *
+   * ========================================================================
+   * SO A REFERENCIA CHEGA AQUI, e o download acontece DEPOIS DO
+   * RECONHECIMENTO — mesma economia do audio: ler uma planilha e uma chamada
+   * grande ao modelo, e nesta borda ainda nao se sabe quem mandou.
+   *
+   * E SO A GESTAO MANDA ARQUIVO. A vendedora que mandar ouve que nao consigo
+   * ler — nunca silencio, que foi o defeito do audio em 21/08.
+   * ========================================================================
+   */
+  documento?: DocumentoInterno;
+  /**
    * Quando a mensagem foi ESCRITA (ms), pelo carimbo do WhatsApp. E o relogio
    * da aprovacao do catalogo — ver `ProcessarFotoCatalogoUseCase.aprovacao`.
    */
   em?: number;
+}
+
+/** O documento como ele viaja no canal: referencia, tipo e nome. */
+export interface DocumentoInterno {
+  url: string | null;
+  mimetype: string;
+  /** O nome do arquivo — a unica pista de tipo quando o mime e octet-stream. */
+  nome: string | null;
 }
 
 export interface RespostaDoCanal {
@@ -179,6 +202,10 @@ export class RotearMensagemInternaUseCase {
     @Inject(TRANSCRICAO_SERVICE)
     private readonly transcricao: ITranscricao,
     private readonly sala: MemoriaDeGrupoService,
+    // RF9 — os dois andam juntos e sempre nesta ordem: o leitor abre o
+    // arquivo, a analise o le ATRAS DE UMA PORTA SEM FERRAMENTA.
+    private readonly leitor: LeitorDeArquivoService,
+    private readonly analise: AnalisarArquivoService,
   ) {}
 
   async execute(msg: MensagemDoCanal): Promise<RespostaDoCanal> {
@@ -501,7 +528,16 @@ export class RotearMensagemInternaUseCase {
         motivo: 'audio_nao_entendido',
       };
     }
-    if (!texto) {
+    // ARQUIVO SEM LEGENDA TAMBEM NAO E "SEM CONTEUDO" — RF9, 08/10/2026.
+    //
+    // Quem manda planilha costuma mandar SO a planilha, e perguntar depois.
+    // Sem esta condicao a mensagem morria tres linhas abaixo, no
+    // `ignorado_sem_conteudo` — exatamente o descarte silencioso que o RF9
+    // existe para consertar, e agora dentro do nosso proprio codigo.
+    //
+    // Achado por teste, e nao em producao: foi o `arquivo sem legenda` do
+    // spec que falhou.
+    if (!texto && !msg.documento) {
       // ------------------------------------------------------------------
       // NO GRUPO, VAZIO NAO E "SEM CONTEUDO" — 30/09/2026.
       //
@@ -674,6 +710,23 @@ export class RotearMensagemInternaUseCase {
       if (podeCatalogo) return this.canalCatalogo.intencao(msg.de, texto);
     }
 
+    // ---------------------------------------------------------------------
+    // O ARQUIVO QUE A GESTAO MANDOU — RF9, 08/10/2026.
+    //
+    // AQUI, E NAO ANTES: baixar e LER custa (uma planilha de mil linhas e uma
+    // chamada grande ao modelo), e so neste ponto se sabe quem mandou. E a
+    // mesma economia do audio, e o mesmo lugar na ordem.
+    //
+    // DEPOIS DO CATALOGO e ANTES DA VENDEDORA, de proposito: a vendedora sai
+    // para a Elena logo abaixo, e um arquivo que chegasse lá seria descartado
+    // em silencio por um canal que nao sabe ler arquivo.
+    // ---------------------------------------------------------------------
+    if (msg.documento) {
+      const doArquivo = await this.lerDocumento(msg, admin, vendedora?.nome);
+      if (doArquivo.resposta !== undefined) return doArquivo.resposta;
+      if (doArquivo.texto) texto = doArquivo.texto;
+    }
+
     if (vendedora) {
       // O canal da vendedora identifica DE NOVO por dentro. Nao e desperdicio:
       // e o que mantem aquele use case seguro se um dia for chamado de outro
@@ -813,6 +866,104 @@ export class RotearMensagemInternaUseCase {
     // So o tamanho no log: o conteudo tem o mesmo sigilo da mensagem.
     this.logger.debug(`Audio transcrito (${texto.length} caracteres).`);
     return texto;
+  }
+
+  /**
+   * O DOCUMENTO: BAIXAR, LER E DEVOLVER ESTRUTURA — RF9, 08/10/2026.
+   *
+   * ======================================================================
+   * DUAS SAIDAS, E ELAS SAO DIFERENTES.
+   *
+   *   `resposta` presente -> a conversa TERMINA aqui. Ou nao e para esta
+   *                          pessoa, ou nao deu para ler, e em qualquer dos
+   *                          casos ela recebe uma frase. Nunca silencio.
+   *   `texto` presente    -> a conversa SEGUE, com a estrutura do arquivo
+   *                          somada a pergunta dela.
+   *
+   * A AGENTE NUNCA VE O ARQUIVO. Ve o que a chamada SELADA extraiu dele —
+   * ver `AnalisarArquivoService`, e o motivo esta no cabecalho de lá: a
+   * Anastasia tem `gestaoAgendar` com modo TRANSFERIR, que muda carteira
+   * para sempre, e uma celula hostil pediria exatamente isso.
+   * ======================================================================
+   */
+  private async lerDocumento(
+    msg: MensagemDoCanal,
+    admin: { nome: string | null } | null | undefined,
+    vendedoraNome?: string,
+  ): Promise<{ resposta?: RespostaDoCanal; texto?: string }> {
+    const doc = msg.documento!;
+    const primeiroNome = (admin?.nome ?? vendedoraNome ?? '')
+      .trim()
+      .split(/\s+/)[0];
+    const ola = primeiroNome ? `${primeiroNome}, ` : '';
+
+    // SO A GESTAO. A vendedora nao tem ferramenta que leia arquivo, e o canal
+    // dela nao fala de relatorio — mas ela OUVE isso, em vez de nada.
+    if (!admin) {
+      return {
+        resposta: {
+          resposta:
+            `${ola}eu não consigo ler arquivo por aqui. Se precisar, me ` +
+            `escreva o que você quer saber que eu procuro.`,
+          motivo: 'documento_sem_permissao',
+        },
+      };
+    }
+
+    if (!doc.url) {
+      this.logger.warn('Documento sem URL — o WAHA nao baixou a midia.');
+      return {
+        resposta: {
+          resposta: `${ola}chegou seu arquivo mas não consegui baixá-lo. Pode mandar de novo?`,
+          motivo: 'documento_sem_arquivo',
+        },
+      };
+    }
+
+    const baixado = await this.whatsapp.baixarMidia(doc.url);
+    if (!baixado) {
+      return {
+        resposta: {
+          resposta: `${ola}chegou seu arquivo mas não consegui baixá-lo. Pode mandar de novo?`,
+          motivo: 'documento_download_falhou',
+        },
+      };
+    }
+
+    // O MIME DO DOWNLOAD GANHA do mime do payload: o WAHA republica o arquivo
+    // e e ele quem sabe o que gravou. O do payload fica como reserva, porque
+    // em documento ele as vezes vem vazio.
+    const lido = await this.leitor.ler({
+      bytes: baixado.conteudo,
+      mime: baixado.mimetype || doc.mimetype,
+      nome: doc.nome ?? undefined,
+    });
+
+    const analise = await this.analise.analisar({
+      lido,
+      pergunta: msg.texto ?? '',
+    });
+
+    if (!analise.resumo) {
+      return {
+        resposta: {
+          resposta: `${ola}${analise.falha ?? 'não consegui ler esse arquivo.'}`,
+          motivo: 'documento_nao_lido',
+        },
+      };
+    }
+
+    // A PERGUNTA DELA PRIMEIRO, a estrutura depois — e a estrutura vem
+    // ROTULADA. Sem o rotulo, a agente trataria as linhas do relatorio como
+    // se fossem coisas que ela mesma sabe, e citaria numero de arquivo como
+    // numero do sistema.
+    const pergunta = (msg.texto ?? '').trim();
+    return {
+      texto:
+        (pergunta || 'Me diga o que há neste arquivo.') +
+        `\n\n--- o que o arquivo que eu mandei contém (lido por você agora, ` +
+        `NAO e dado do sistema) ---\n${analise.resumo}`,
+    };
   }
 }
 
