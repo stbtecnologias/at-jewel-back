@@ -120,6 +120,9 @@ describe('ProcessarMensagemInternaUseCase', () => {
       { montar: jest.fn(() => ({})) } as never,
       { possui: jest.fn().mockResolvedValue(false) } as never,
       { equipeDoUsuario: jest.fn().mockResolvedValue(null) } as never,
+      // OS LEMBRETES — 08/10/2026. Dublados pelo mesmo motivo: sem `gestao`
+      // na mensagem, o canal da vendedora nao toca neles.
+      { handlers: jest.fn(() => ({})) } as never,
       atendimentos as never,
       clientes as never,
       llm as never,
@@ -479,6 +482,143 @@ describe('ProcessarMensagemInternaUseCase', () => {
       });
 
       expect(eventos.execute).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * ========================================================================
+   * OS LEMBRETES PESSOAIS NA HELENA — 08/10/2026, pedido do Lucas.
+   *
+   * A Nathalia é gerente de vendas E vendedora com um número só. O roteador
+   * procura vendedora PRIMEIRO (decisão deliberada, para quem acumula ficar
+   * no canal restrito), então ela é atendida na Helena — e os lembretes,
+   * que no canal da Anastasia são somados à parte, ninguém havia somado
+   * aqui. Medido em 08/10: ela é a ÚNICA das sete com linha em
+   * `admin_users`, então é a única que pode ter lembrete hoje.
+   *
+   * O QUE ESTE BLOCO GUARDA É O PAR: a ferramenta E a frase andam juntas.
+   * Dar a frase sem a ferramenta às outras seis seria uma agente que diz
+   * "ok, te aviso amanhã às 8" sem nada guardado — a família de defeito
+   * mais caro desta casa, a que responde com confiança.
+   * ========================================================================
+   */
+  describe('lembrete pessoal de quem acumula a gestão', () => {
+    const LEMBRETES = {
+      guardarLembrete: jest.fn(),
+      meusLembretes: jest.fn(),
+      remarcarLembrete: jest.fn(),
+      cancelarLembrete: jest.fn(),
+    };
+
+    function montar(opcoes: { podeGerir: boolean }) {
+      const lembretes = { handlers: jest.fn(() => LEMBRETES) };
+      const chamada = {
+        chatComFerramentas: jest.fn().mockResolvedValue({ texto: 'ok', tokens: 1 }),
+        chat: jest.fn(),
+      };
+      const instancia = new ProcessarMensagemInternaUseCase(
+        { execute: jest.fn().mockResolvedValue(VENDEDORA) } as never,
+        { montar: jest.fn(() => ({})) } as never,
+        { montar: jest.fn(() => ({})) } as never,
+        { possui: jest.fn().mockResolvedValue(opcoes.podeGerir) } as never,
+        { equipeDoUsuario: jest.fn().mockResolvedValue(null) } as never,
+        lembretes as never,
+        { buscarCobrancaAguardando: jest.fn().mockResolvedValue(null) } as never,
+        { buscarPorId: jest.fn() } as never,
+        chamada as never,
+        { baixarMidia: jest.fn() } as never,
+        { transcrever: jest.fn(), disponivel: () => true } as never,
+        { carregar: jest.fn(() => []), registrar: jest.fn() } as never,
+        { get: jest.fn(() => undefined) } as never,
+        { execute: jest.fn() } as never,
+      );
+      return { instancia, chamada, lembretes };
+    }
+
+    const escreve = (
+      instancia: ProcessarMensagemInternaUseCase,
+      gestao?: { usuarioId: string; role: string },
+    ) =>
+      instancia.execute({
+        de: '558586467241@c.us',
+        texto: 'me lembra amanhã às 8 de ligar para o fornecedor',
+        ...(gestao ? { gestao } : {}),
+      });
+
+    const GESTAO = { usuarioId: 'ad-1', role: 'GERENTE_VENDAS' };
+
+    /* ESTE É O TESTE. O resto é contorno. */
+    it('a gerente recebe a ferramenta E a frase, no mesmo turno', async () => {
+      const { instancia, chamada, lembretes } = montar({ podeGerir: true });
+
+      await escreve(instancia, GESTAO);
+
+      const params = chamada.chatComFerramentas.mock.calls[0][0] as {
+        system: string;
+        guardarLembrete?: unknown;
+        meusLembretes?: unknown;
+      };
+      expect(params.guardarLembrete).toBeDefined();
+      expect(params.meusLembretes).toBeDefined();
+      expect(params.system).toContain('LEMBRETE toca UMA vez');
+      // O DONO SAI DO usuarioId, por closure: nenhuma ferramenta tem campo
+      // "de quem" para o modelo preencher errado.
+      expect(lembretes.handlers).toHaveBeenCalledWith('ad-1');
+    });
+
+    /**
+     * AS OUTRAS SEIS. Sem `gestao` não há login de painel, e sem login não há
+     * dono possível para o lembrete — a tabela exige `admin_user_id`.
+     */
+    it('a vendedora sem login não recebe a ferramenta NEM a promessa', async () => {
+      const { instancia, chamada, lembretes } = montar({ podeGerir: true });
+
+      await escreve(instancia);
+
+      const params = chamada.chatComFerramentas.mock.calls[0][0] as {
+        system: string;
+        guardarLembrete?: unknown;
+      };
+      expect(params.guardarLembrete).toBeUndefined();
+      // E A FRASE TAMBÉM NÃO VEM. É esta linha que impede a agente de
+      // prometer um aviso que ninguém guardou.
+      expect(params.system).not.toContain('LEMBRETE toca UMA vez');
+      expect(lembretes.handlers).not.toHaveBeenCalled();
+    });
+
+    /**
+     * TER LOGIN NÃO É PODER USAR A AGENTE: quem decide é a permissão
+     * `agentes:anastasia`, a mesma chave da Anastasia. Sem ela, nem a
+     * ferramenta nem a frase entram.
+     */
+    it('login sem a permissão de gestão não ganha lembrete', async () => {
+      const { instancia, chamada } = montar({ podeGerir: false });
+
+      await escreve(instancia, GESTAO);
+
+      const params = chamada.chatComFerramentas.mock.calls[0][0] as {
+        system: string;
+        guardarLembrete?: unknown;
+      };
+      expect(params.guardarLembrete).toBeUndefined();
+      expect(params.system).not.toContain('LEMBRETE toca UMA vez');
+    });
+
+    /**
+     * COMBINADO NÃO EXISTE AQUI. Os combinados são escopados em 'anastasia' e
+     * não chegam à Helena; citá-los na frase prometeria a segunda coisa que
+     * ela não tem — e foi por isso que o texto da Anastasia não foi copiado.
+     */
+    it('a frase da Helena não fala de combinado', async () => {
+      const { instancia, chamada } = montar({ podeGerir: true });
+
+      await escreve(instancia, GESTAO);
+
+      const { system } = chamada.chatComFerramentas.mock.calls[0][0] as {
+        system: string;
+      };
+      expect(system).not.toMatch(/COMBINADO vale sempre/i);
+      expect(system).not.toContain('guardar_combinado');
     });
   });
 });

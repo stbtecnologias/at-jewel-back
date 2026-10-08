@@ -2,7 +2,11 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { FotoDeProduto } from '../fotos-de-produto.service';
 import { ConfigService } from '@nestjs/config';
 import { limparEHigienizar } from '../../../../shared/http/sanitize/sanitize-text.transform';
-import { ELENA_INTERNA_SYSTEM } from '../../../agentes/application/personas';
+import {
+  ELENA_INTERNA_SYSTEM,
+  ELENA_LEMBRETE_EXTRA,
+} from '../../../agentes/application/personas';
+import { LembretesService } from '../../../agentes/application/lembretes.service';
 import { LLM_CLIENT } from '../../../agentes/domain/ports/injection-tokens';
 import type { ILlmClient } from '../../../agentes/domain/ports/llm-client.port';
 import { WHATSAPP_GATEWAY } from '../../../atendimento/domain/ports/injection-tokens';
@@ -114,6 +118,9 @@ export class ProcessarMensagemInternaUseCase {
     private readonly ferramentasGestao: FerramentasGestaoService,
     private readonly permissoes: PermissionsService,
     private readonly escopoVendas: EscopoVendasService,
+    // OS LEMBRETES PESSOAIS, para quem acumula a gestao — 08/10/2026. O
+    // MESMO servico da Anastasia; o dono sai do `usuarioId`, por closure.
+    private readonly lembretes: LembretesService,
     @Inject(ATENDIMENTO_REPOSITORY)
     private readonly atendimentos: IAtendimentoRepository,
     @Inject(CLIENTE_REPOSITORY)
@@ -176,10 +183,22 @@ export class ProcessarMensagemInternaUseCase {
     // do mesmo jeito que a Anastasia do painel recebe o contexto da aba.
     const pendencia = await this.montarContextoPendencia(vendedoraId);
 
+    // AS FERRAMENTAS DE GESTAO SUBIRAM PARA CA — 08/10/2026.
+    //
+    // Antes eram montadas dentro da chamada ao modelo. Vieram para antes do
+    // prompt porque o PROMPT precisa saber se elas entraram: o pedaco sobre
+    // lembrete so pode ser dito a quem TEM a ferramenta. Ver
+    // `ELENA_LEMBRETE_EXTRA` — o porque esta no cabecalho dele.
+    const deGestao = await this.ferramentasDeGestao(msg.gestao, primeiroNome);
+
     const system =
       `${ELENA_INTERNA_SYSTEM}\n\n` +
       `Você está falando com ${primeiroNome}. Agora são ${agoraLocal()} (fuso da loja) — ` +
-      `use isto para entender "hoje", "amanhã" e horários relativos.\n\n${pendencia}`;
+      `use isto para entender "hoje", "amanhã" e horários relativos.\n\n${pendencia}` +
+      // A FERRAMENTA DECIDE A FRASE, e nao o papel. Perguntar pelo handler
+      // garante que as duas nunca se separem: se um dia o lembrete sair
+      // daqui, a promessa sai junto, sozinha.
+      ('guardarLembrete' in deGestao ? `\n\n${ELENA_LEMBRETE_EXTRA}` : '');
 
     let relatoRegistrado = false;
 
@@ -236,7 +255,7 @@ export class ProcessarMensagemInternaUseCase {
         // `verQuantidade` saem do papel dela, pelo MESMO servico que a
         // Anastasia usa. Nenhuma regra e reescrita aqui.
         // ================================================================
-        ...(await this.ferramentasDeGestao(msg.gestao, primeiroNome)),
+        ...deGestao,
         ...this.ferramentas.montar({
           vendedoraId,
           codigoErp,
@@ -396,17 +415,38 @@ export class ProcessarMensagemInternaUseCase {
     );
     if (!podeGerir) return {};
 
-    return this.ferramentasGestao.montar({
-      solicitante: nome,
-      // O FATURAMENTO DA LOJA NAO ENTRA PELA HELENA. Quem o enxerga e
-      // desviado para a Anastasia no roteador, entao aqui isto e sempre
-      // falso — escrito explicito para nao depender daquele desvio.
-      verLoja: false,
-      verQuantidade: await this.permissoes.possui(gestao.role, 'estoque:quantidade'),
-      // AS VENDEDORAS QUE ELA ALCANCA, do MESMO servico que a tela de
-      // Vendas usa: uma regra, tres portas.
-      equipe: await this.escopoVendas.equipeDoUsuario(gestao.usuarioId),
-    }) as unknown as Record<string, unknown>;
+    return {
+      // OS LEMBRETES PESSOAIS NA HELENA — 08/10/2026, pedido do Lucas.
+      //
+      // ====================================================================
+      // ELES FICAM FORA DO `montar()` AQUI PELO MESMO MOTIVO DE LA.
+      //
+      // O `FerramentasGestaoService` e o que a agente sabe sobre a LOJA;
+      // lembrete e o que ela sabe sobre a PESSOA. No canal da Anastasia os
+      // dois conjuntos sao somados lado a lado, e aqui ninguem havia somado
+      // o segundo — a Nathalia, que e gerente de vendas E vendedora com um
+      // numero so, cai na Helena pela ordem do roteador e ficava sem.
+      //
+      // O `usuarioId` entra por CLOSURE, como na Anastasia: nenhuma das
+      // quatro ferramentas tem campo "de quem", entao nao ha o que o modelo
+      // preencha errado — e o lembrete de uma nunca aparece para outra.
+      // ====================================================================
+      ...this.lembretes.handlers(gestao.usuarioId),
+      ...this.ferramentasGestao.montar({
+        solicitante: nome,
+        // O FATURAMENTO DA LOJA NAO ENTRA PELA HELENA. Quem o enxerga e
+        // desviado para a Anastasia no roteador, entao aqui isto e sempre
+        // falso — escrito explicito para nao depender daquele desvio.
+        verLoja: false,
+        verQuantidade: await this.permissoes.possui(
+          gestao.role,
+          'estoque:quantidade',
+        ),
+        // AS VENDEDORAS QUE ELA ALCANCA, do MESMO servico que a tela de
+        // Vendas usa: uma regra, tres portas.
+        equipe: await this.escopoVendas.equipeDoUsuario(gestao.usuarioId),
+      }),
+    } as unknown as Record<string, unknown>;
   }
 
   private async montarContextoPendencia(vendedoraId: string): Promise<string> {
