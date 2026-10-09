@@ -39,8 +39,44 @@ import type { AnexoDaConversa } from '../../agentes/domain/ports/llm-client.port
  * ==========================================================================
  */
 
-/** Teto do arquivo. Acima disto nao se le, e se DIZ que nao se leu. */
-const MAXIMO_BYTES = 12 * 1024 * 1024;
+/**
+ * O TETO E POR TIPO, E CADA NUMERO VEM DE UM LIMITE DA API — 09/10/2026.
+ *
+ * ==========================================================================
+ * ERA UM SO, DE 12 MB, E ESTAVA ERRADO PARA IMAGEM.
+ *
+ * A API aceita no maximo 10 MB POR IMAGEM **ja em base64**, e base64 infla um
+ * terco: 12 MB de arquivo viram 16 MB. Uma foto entre 7,5 e 12 MB passava
+ * nesta checagem e era RECUSADA la, com `invalid_request_error` — e, para
+ * quem mandou, isso virava "nao consegui" generico, sem dizer que o problema
+ * era o tamanho. Teto que nao se anuncia e o pior tipo de teto.
+ *
+ * Achado em 09/10 ao conferir os limites reais, depois de a gestora mandar um
+ * PDF de 143 MB. Esse nao cabe de jeito nenhum — mas o caso da imagem cabia,
+ * e ninguem saberia.
+ * ==========================================================================
+ *
+ *   PDF      32 MB e o teto da REQUISICAO INTEIRA. Em base64, 20 MB de
+ *            arquivo viram ~26,7 MB e sobram ~5 MB para prompt, ferramentas
+ *            e historico — que sao texto, na casa dos KB.
+ *
+ *   IMAGEM   10 MB em base64, POR IMAGEM. Entao 7 MB de arquivo (~9,3 MB
+ *            codificados), com folga.
+ *
+ *   PLANILHA Nao vai ao modelo como anexo: vira TEXTO aqui, e quem segura o
+ *            tamanho e o `MAXIMO_LINHAS`. O teto aqui e so para nao carregar
+ *            um arquivo absurdo na memoria antes de descobrir isso.
+ */
+const MAXIMO_PDF = 20 * 1024 * 1024;
+const MAXIMO_IMAGEM = 7 * 1024 * 1024;
+const MAXIMO_OUTROS = 20 * 1024 * 1024;
+
+/** Qual teto vale para este arquivo, e o rotulo que entra na frase. */
+function tetoDoTipo(mime: string): { bytes: number; oQue: string } {
+  if (mime === 'application/pdf') return { bytes: MAXIMO_PDF, oQue: 'PDF' };
+  if (IMAGENS.includes(mime)) return { bytes: MAXIMO_IMAGEM, oQue: 'imagem' };
+  return { bytes: MAXIMO_OUTROS, oQue: 'arquivo' };
+}
 
 /**
  * Teto de linhas da planilha.
@@ -109,12 +145,15 @@ export class LeitorDeArquivoService {
     const nome = arquivo.nome?.trim() || undefined;
     const mime = (arquivo.mime || '').toLowerCase().split(';')[0].trim();
 
-    if (arquivo.bytes.length > MAXIMO_BYTES) {
+    const teto = tetoDoTipo(mime);
+    if (arquivo.bytes.length > teto.bytes) {
       const mb = (arquivo.bytes.length / 1024 / 1024).toFixed(1);
+      // A FRASE DIZ O TIPO porque os tetos sao diferentes: sem isso, quem
+      // ouviu "o limite e 7 MB" para uma foto acha que vale para a planilha.
       return {
         aviso:
-          `O arquivo tem ${mb} MB e o limite de leitura e ` +
-          `${MAXIMO_BYTES / 1024 / 1024} MB. Nao consegui abrir.`,
+          `Esse ${teto.oQue} tem ${mb} MB e o limite de leitura para ` +
+          `${teto.oQue} e ${teto.bytes / 1024 / 1024} MB. Nao consegui abrir.`,
       };
     }
 

@@ -202,15 +202,80 @@ describe('LeitorDeArquivoService', () => {
       expect(r.aviso).toContain('PDF');
     });
 
-    it('arquivo grande demais: diz o tamanho e o limite', async () => {
+    /**
+     * ====================================================================
+     * O TETO É POR TIPO, E CADA NÚMERO VEM DE UM LIMITE DA API — 09/10/2026.
+     *
+     * Era um só, de 12 MB. Para IMAGEM isso estava errado: a API aceita no
+     * máximo 10 MB já em base64, e base64 infla um terço — uma foto de 8 a
+     * 12 MB passava aqui e era recusada lá, virando "não consegui"
+     * genérico para quem mandou.
+     *
+     * Estes testes guardam os dois lados de cada corte. O da imagem é o que
+     * teria pegado o defeito.
+     * ====================================================================
+     */
+    it('PDF grande demais: diz o tamanho e o limite do PDF', async () => {
+      const r = await leitor.ler({
+        bytes: Buffer.alloc(21 * 1024 * 1024),
+        mime: 'application/pdf',
+      });
+
+      expect(r.anexo).toBeUndefined();
+      expect(r.aviso).toMatch(/21\.0 MB/);
+      expect(r.aviso).toContain('20 MB');
+      // DIZ O TIPO: sem isso, quem ouviu o limite do PDF acha que vale para
+      // a foto, que tem outro.
+      expect(r.aviso).toContain('PDF');
+    });
+
+    it('PDF de 13 MB AGORA PASSA — era recusado pelo teto velho', async () => {
       const r = await leitor.ler({
         bytes: Buffer.alloc(13 * 1024 * 1024),
         mime: 'application/pdf',
       });
 
+      expect(r.aviso).toBeUndefined();
+      expect(r.anexo?.tipo).toBe('pdf');
+    });
+
+    it('IMAGEM acima de 7 MB é recusada AQUI, e não pela API', async () => {
+      // O defeito que isto pega: com o teto único de 12 MB, estes 8 MB
+      // passavam e viravam ~10,7 MB em base64 — acima dos 10 MB que a API
+      // aceita por imagem. A recusa vinha de lá, sem dizer o motivo.
+      const r = await leitor.ler({
+        bytes: Buffer.alloc(8 * 1024 * 1024),
+        mime: 'image/jpeg',
+      });
+
       expect(r.anexo).toBeUndefined();
-      expect(r.aviso).toMatch(/13\.0 MB/);
-      expect(r.aviso).toContain('12 MB');
+      expect(r.aviso).toMatch(/8\.0 MB/);
+      expect(r.aviso).toContain('7 MB');
+      expect(r.aviso).toContain('imagem');
+    });
+
+    it('imagem dentro do limite passa', async () => {
+      const r = await leitor.ler({
+        bytes: Buffer.alloc(6 * 1024 * 1024),
+        mime: 'image/jpeg',
+      });
+
+      expect(r.aviso).toBeUndefined();
+      expect(r.anexo?.tipo).toBe('imagem');
+    });
+
+    it('o base64 da imagem no limite cabe nos 10 MB da API', () => {
+      // A conta que justifica o 7: base64 infla 4/3. Se alguém subir o teto
+      // da imagem sem refazer esta conta, isto quebra ANTES de a API
+      // recusar em produção.
+      const MAXIMO_IMAGEM = 7 * 1024 * 1024;
+      expect(Math.ceil(MAXIMO_IMAGEM / 3) * 4).toBeLessThan(10 * 1024 * 1024);
+    });
+
+    it('o base64 do PDF no limite cabe na requisição de 32 MB', () => {
+      const MAXIMO_PDF = 20 * 1024 * 1024;
+      // Com folga para o prompt, as ferramentas e o histórico, que são texto.
+      expect(Math.ceil(MAXIMO_PDF / 3) * 4).toBeLessThan(28 * 1024 * 1024);
     });
 
     it('planilha corrompida não lança — devolve o que fazer', async () => {
