@@ -1720,6 +1720,22 @@ function ehDefeitoDeCodigo(err: unknown): boolean {
   return err instanceof Error && ERROS_DE_DEFEITO.has(err.name);
 }
 
+/**
+ * O `stop_reason` traduzido no que o canal precisa saber — 09/10/2026.
+ *
+ * Tres casos, porque tres frases diferentes: o teto cortou antes da primeira
+ * palavra, o modelo recusou, ou nenhum dos dois (so blocos nao-texto, que e
+ * defeito nosso de montagem). Qualquer outro valor cai em 'outro': a frase
+ * generica e honesta, e o log guarda o valor exato.
+ */
+function motivoDoVazio(
+  stop: string | null | undefined,
+): 'max_tokens' | 'refusal' | 'outro' {
+  if (stop === 'max_tokens') return 'max_tokens';
+  if (stop === 'refusal') return 'refusal';
+  return 'outro';
+}
+
 @Injectable()
 export class AnthropicClient implements ILlmClient {
   private readonly logger = new Logger(AnthropicClient.name);
@@ -1882,7 +1898,17 @@ export class AnthropicClient implements ILlmClient {
         (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
       );
       if (pedidos.length === 0) {
-        return { texto: this.extrairTexto(resp), tokens, grafico, fotos };
+        const texto = this.extrairTexto(resp);
+        // O MOTIVO SOBE JUNTO quando nao ha texto — ver `semTexto` no port.
+        // O log de 29/09 ja contava isto ao servidor; quem perguntou e que
+        // ficava sem nada.
+        return {
+          texto,
+          tokens,
+          grafico,
+          fotos,
+          ...(texto ? {} : { semTexto: motivoDoVazio(resp.stop_reason) }),
+        };
       }
 
       const rodada = await this.despachar(pedidos, params, tetos);

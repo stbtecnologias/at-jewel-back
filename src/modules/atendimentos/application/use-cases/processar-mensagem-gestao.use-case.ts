@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { respostaQuandoNaoVeioTexto } from '../resposta-sem-texto';
 import { ConfigService } from '@nestjs/config';
 import { limparEHigienizar } from '../../../../shared/http/sanitize/sanitize-text.transform';
 import { ANASTASIA_GESTAO_SYSTEM } from '../../../agentes/application/personas';
@@ -164,7 +165,7 @@ export class ProcessarMensagemGestaoUseCase {
       '(me chamaram pelo nome no grupo, sem escrever mais nada)';
 
     try {
-      const { texto, fotos } = await this.llm.chatComFerramentas({
+      const { texto, fotos, semTexto } = await this.llm.chatComFerramentas({
         model: modeloDeIa(this.config, 'ANTHROPIC_MODEL_GESTAO', 'claude-opus-4-8'),
         system,
         // O TETO SUBIU DE 700 PARA 1500 — 05/10/2026.
@@ -234,6 +235,25 @@ export class ProcessarMensagemGestaoUseCase {
         // preencher errado.
         ...this.lembretes.handlers(msg.usuarioId),
       });
+
+      // ==================================================================
+      // RESPOSTA SEM TEXTO NAO PODE VIRAR SILENCIO — 09/10/2026.
+      //
+      // O webhook ignora `!resposta`, e a gestora ficaria esperando depois
+      // de ter visto o "digitando...". Aconteceu: ela respondeu "geral" a
+      // uma pergunta da agente e nao recebeu nada. Ver
+      // `resposta-sem-texto.ts` — e NAO guarda na memoria, porque o turno
+      // nao produziu resposta nenhuma para a proxima se apoiar.
+      // ==================================================================
+      if (!texto) {
+        this.logger.warn(
+          `Resposta sem texto no canal da gestao (motivo: ${semTexto ?? 'desconhecido'}).`,
+        );
+        return {
+          resposta: respostaQuandoNaoVeioTexto(semTexto),
+          motivo: 'falha_agente',
+        };
+      }
 
       // So guarda o que deu certo. Turno com falha na memoria faria a proxima
       // resposta se apoiar num erro.

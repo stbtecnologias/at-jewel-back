@@ -648,7 +648,42 @@ const COLUNAS_DA_BUSCA = [
  * dois grupos no mesmo WHERE nao podem disputar `:busca0`.
  */
 function ondeOGrupoCasa(grupo: GrupoDeBusca, i: number): Brackets {
+  /** A sigla casando por palavra inteira, em qualquer coluna da busca. */
+  const casaSigla = (sigla: string, j: number): Brackets => {
+    const chave = `sigla${i}_${j}`;
+    const valor = { [chave]: comoPalavraInteira(sigla) };
+    return new Brackets((coluna) => {
+      for (const nome of COLUNAS_DA_BUSCA) {
+        coluna.orWhere(`p.${nome} ~* :${chave}`, valor);
+      }
+    });
+  };
+
   return new Brackets((ramo) => {
+    // ====================================================================
+    // GRUPO SEM TERMOS É SÓ SIGLA — 09/10/2026.
+    //
+    // Nasce quando a pessoa digita a sigla direto ("tem peças OB?"). Um
+    // `Brackets` VAZIO no ramo das palavras não restringe nada — e isso é
+    // o defeito original com outra roupa: o catálogo inteiro de volta,
+    // agora sem nem o corte de duas letras para explicar.
+    //
+    // Sem palavra, o primeiro `where` já é o da sigla.
+    // ====================================================================
+    if (grupo.termos.length === 0) {
+      if (grupo.siglas.length === 0) {
+        // `gruposDaBusca` nunca devolve grupo vazio. Se um dia devolver,
+        // NÃO casar nada é melhor que casar tudo.
+        ramo.where('1 = 0');
+        return;
+      }
+      ramo.where(casaSigla(grupo.siglas[0], 0));
+      grupo.siglas
+        .slice(1)
+        .forEach((sigla, j) => ramo.orWhere(casaSigla(sigla, j + 1)));
+      return;
+    }
+
     ramo.where(
       new Brackets((todasAsPalavras) => {
         for (const [j, palavra] of grupo.termos.entries()) {
@@ -666,15 +701,7 @@ function ondeOGrupoCasa(grupo: GrupoDeBusca, i: number): Brackets {
     );
 
     for (const [j, sigla] of grupo.siglas.entries()) {
-      const chave = `sigla${i}_${j}`;
-      const valor = { [chave]: comoPalavraInteira(sigla) };
-      ramo.orWhere(
-        new Brackets((coluna) => {
-          for (const nome of COLUNAS_DA_BUSCA) {
-            coluna.orWhere(`p.${nome} ~* :${chave}`, valor);
-          }
-        }),
-      );
+      ramo.orWhere(casaSigla(sigla, j));
     }
   });
 }

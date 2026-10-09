@@ -659,4 +659,47 @@ describe('ProcessarMensagemInternaUseCase', () => {
       expect(system).not.toContain('guardar_combinado');
     });
   });
+
+  /**
+   * ======================================================================
+   * RESPOSTA SEM TEXTO NAO PODE VIRAR SILENCIO — 09/10/2026, producao.
+   *
+   * O webhook ignora resposta vazia, entao devolver '' aqui faz a vendedora
+   * ficar esperando depois de ter visto o "digitando...". Aconteceu no
+   * canal da gestao: a gestora respondeu "geral" a uma pergunta da agente
+   * e nao recebeu nada.
+   * ======================================================================
+   */
+  describe('quando o modelo nao escreve nada', () => {
+    /* ESTE E O TESTE. */
+    it('NAO devolve resposta vazia — o webhook calaria', async () => {
+      llm.chatComFerramentas.mockResolvedValue({ texto: '', tokens: 0 });
+
+      const r = await useCase.execute({ de: '558586467241@c.us', texto: 'oi' });
+
+      expect(r.resposta).toBeTruthy();
+      expect(String(r.resposta).length).toBeGreaterThan(20);
+    });
+
+    it('a frase muda com o motivo — cortada por tamanho pede MENOS', async () => {
+      llm.chatComFerramentas.mockResolvedValue({
+        texto: '',
+        tokens: 0,
+        semTexto: 'max_tokens',
+      });
+
+      const r = await useCase.execute({ de: '558586467241@c.us', texto: 'oi' });
+
+      expect(r.resposta).toContain('menos');
+    });
+
+    it('NAO guarda o turno vazio na memoria', async () => {
+      // Gravar o vazio faria a proxima resposta se apoiar num buraco.
+      llm.chatComFerramentas.mockResolvedValue({ texto: '', tokens: 0 });
+
+      await useCase.execute({ de: '558586467241@c.us', texto: 'oi' });
+
+      expect(memoria.registrar).not.toHaveBeenCalled();
+    });
+  });
 });

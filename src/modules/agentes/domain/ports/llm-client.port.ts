@@ -1304,6 +1304,29 @@ export interface ChatComFerramentasResultado extends ChatResultado {
    * depois da resposta.
    */
   fotos?: FotoDeProdutoLlm[];
+  /**
+   * POR QUE A RESPOSTA VEIO SEM TEXTO — 09/10/2026.
+   *
+   * ==========================================================================
+   * TEXTO VAZIO VIRAVA SILENCIO, E SILENCIO NAO E RESPOSTA.
+   *
+   * O webhook trata `!resposta` como "nao ha o que responder" — regra certa
+   * para audio vazio no canal do cliente. No canal interno ela e outra coisa:
+   * a pessoa perguntou, a agente mostrou "digitando...", e nao chegou nada.
+   *
+   * Aconteceu em producao em 09/10. A gestora perguntou "quem tem leads
+   * hoje", a agente explicou o recorte e perguntou "geral, ou de uma
+   * vendedora?", ela respondeu "geral" — e entao o silencio.
+   *
+   * O cliente JA LOGAVA o motivo desde 29/09 ("resposta sem texto:
+   * stop_reason=..."), mas o log fica no servidor e quem perguntou fica sem
+   * nada. Agora o motivo sobe junto, e o canal decide o que dizer.
+   * ==========================================================================
+   *
+   * Ausente quando ha texto. `max_tokens` e o caso esperado: o teto cortou a
+   * resposta antes de o modelo escrever a primeira palavra.
+   */
+  semTexto?: 'max_tokens' | 'refusal' | 'outro';
 }
 
 /** Uma foto pronta para enviar, com a legenda que acompanha a peca. */
