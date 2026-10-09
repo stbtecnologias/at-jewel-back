@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { respostaQuandoNaoVeioTexto } from '../resposta-sem-texto';
 import type { FotoDeProduto } from '../fotos-de-produto.service';
 import { ConfigService } from '@nestjs/config';
 import { limparEHigienizar } from '../../../../shared/http/sanitize/sanitize-text.transform';
@@ -216,7 +217,7 @@ export class ProcessarMensagemInternaUseCase {
     await this.registrarConsultaRestrita(vendedoraId, pergunta);
 
     try {
-      const { texto, fotos } = await this.llm.chatComFerramentas({
+      const { texto, fotos, semTexto } = await this.llm.chatComFerramentas({
         model: modeloDeIa(this.config, 'ANTHROPIC_MODEL_INTERNO', 'claude-opus-4-8'),
         system,
         // O TETO SUBIU DE 700 PARA 1500 — 05/10/2026.
@@ -266,6 +267,27 @@ export class ProcessarMensagemInternaUseCase {
           },
         }),
       });
+
+      // ==================================================================
+      // RESPOSTA SEM TEXTO NAO PODE VIRAR SILENCIO — 09/10/2026.
+      //
+      // O webhook ignora `!resposta`, e a vendedora ficaria esperando
+      // depois de ter visto o "digitando...". O gemeo deste guarda esta no
+      // `processar-mensagem-gestao`, e o defeito foi visto la primeiro.
+      // Ver `resposta-sem-texto.ts`.
+      //
+      // E NAO GUARDA NA MEMORIA: o turno nao produziu resposta, e gravar o
+      // vazio faria a proxima se apoiar num buraco.
+      // ==================================================================
+      if (!texto) {
+        this.logger.warn(
+          `Resposta sem texto no canal interno (motivo: ${semTexto ?? 'desconhecido'}).`,
+        );
+        return {
+          resposta: respostaQuandoNaoVeioTexto(semTexto),
+          motivo: 'falha_agente',
+        };
+      }
 
       // So guarda o que deu certo. Turno com falha na memoria faria a proxima
       // resposta se apoiar num erro.
