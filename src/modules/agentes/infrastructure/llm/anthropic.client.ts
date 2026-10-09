@@ -3937,7 +3937,7 @@ function textoDaFidelidade(
  * QUANDO ACABA, DIZ QUE ACABOU. Sem isso a agente ofereceria "os proximos"
  * de uma lista que terminou, e quem le pediria por nada.
  */
-function faixaDaLista(
+export function faixaDaLista(
   pulados: number,
   mostrados: number,
   total?: number,
@@ -3951,6 +3951,27 @@ function faixaDaLista(
   const ultimo = pulados + mostrados;
   return (
     `SAO ${total} NO TOTAL, e estes sao do ${primeiro}o ao ${ultimo}o. ` +
+    // ====================================================================
+    // "LISTE AS N" COM O NUMERO, E DIZENDO O QUE ACONTECE SE NAO LISTAR —
+    // 09/10/2026, achado em PRODUCAO no primeiro dia.
+    //
+    // A ferramenta devolveu 20 clientes Ouro, este texto disse "do 1o ao
+    // 20o, faltam 28", e a agente LISTOU DEZ e repetiu "faltam 28". Para
+    // quem leu, faltavam 38.
+    //
+    // E o numero errado nao e o pior. Se ela mostra dez e a pessoa diz
+    // "continua", a proxima chamada vai com `a_partir_de = 20` — o valor
+    // que ESTE texto mandou usar — e os clientes 11 a 20 somem para
+    // sempre, sem nada na conversa indicando que sumiram.
+    //
+    // "Repasse os nomes exatamente como estao" nao bastava: o modelo leu
+    // como "seja fiel aos que voce escolher repetir". O `consultar_produtos`
+    // aprendeu isso em 08/10 e ganhou um "LISTE TODAS"; a licao nao tinha
+    // chegado aqui, que e por onde QUATRO ferramentas paginam.
+    // ====================================================================
+    `LISTE AS ${mostrados} LINHAS ACIMA, TODAS — se mostrar menos, a ` +
+    `continuacao comeca no ${ultimo + 1}o e as que voce omitiu nao aparecem ` +
+    'nunca mais. ' +
     `FALTAM ${total - ultimo}. DIGA a faixa e o total na resposta, e PERGUNTE ` +
     'se quer a continuacao — se disser que sim, chame a ferramenta de novo ' +
     `com a_partir_de = ${ultimo}. Nunca deixe parecer que a lista acabou.\n\n`
