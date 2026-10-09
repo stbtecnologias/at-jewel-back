@@ -198,6 +198,14 @@ export class ProcessarMensagemGestaoUseCase {
             msg.role,
             'estoque:quantidade',
           ),
+          // A ESCRITA DE CARTEIRA — 09/10/2026. A MESMA chave que guarda a
+          // edicao de cliente no painel: uma regra, duas portas. Sem ela a
+          // ferramenta nem e DECLARADA ao modelo, entao ele nao chega a
+          // oferecer o que ela nao pode fazer.
+          podeAtribuirCarteira: await this.permissoes.possui(
+            msg.role,
+            'clientes:write',
+          ),
           // AS VENDEDORAS QUE ELA ALCANCA — 28/09/2026. Vem do MESMO
           // `EscopoVendasService` que a tela de Vendas usa: uma regra, duas
           // portas. Sem isso, a gerente de um time veria o desempenho das

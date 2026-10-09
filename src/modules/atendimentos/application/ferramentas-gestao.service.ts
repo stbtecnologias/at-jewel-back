@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { categoriaDaBusca } from '../../../shared/catalogo/categorias';
 import {
   linhaDoClienteFiel,
@@ -15,6 +15,7 @@ import type {
   GestaoEpocaHandler,
   GestaoPorEmpresaHandler,
   GestaoVendasDetalhadasHandler,
+  GestaoAtribuirVendedoraHandler,
   GestaoFidelidadeHandler,
   GestaoMelhoresHandler,
   GestaoAgendarHandler,
@@ -253,6 +254,15 @@ export interface FerramentasGestao {
   gestaoMelhores: GestaoMelhoresHandler;
   /** Os Ouro, Prata e Bronze — da loja, ou de uma vendedora. */
   gestaoFidelidade: GestaoFidelidadeHandler;
+  /**
+   * A UNICA ESCRITA DA GESTAO SOBRE CADASTRO DE CLIENTE — 09/10/2026.
+   *
+   * OPCIONAL, e e isso que faz o escopo: quem nao tem `clientes:write` nao
+   * recebe o handler, e sem handler a ferramenta nem e DECLARADA ao modelo.
+   * O escopo aqui e AUSENCIA DE CAMINHO, como no resto do projeto — e nao um
+   * `if` dentro do handler, que existiria so para ser recusado.
+   */
+  gestaoAtribuirVendedora?: GestaoAtribuirVendedoraHandler;
   gestaoFeedbacks: GestaoFeedbacksHandler;
   gestaoDiaDaVendedora: GestaoDiaDaVendedoraHandler;
   gestaoConversasAgora: GestaoConversasAgoraHandler;
@@ -340,6 +350,22 @@ export interface ContextoGestao {
    * ==========================================================================
    */
   equipe?: string[] | null;
+  /**
+   * PODE ATRIBUIR UM CLIENTE A UMA VENDEDORA? — 09/10/2026.
+   *
+   * A chave e `clientes:write`, a MESMA que guarda a edicao de cliente no
+   * painel: uma regra, duas portas. Hoje a tem ADMIN, GERENTE, GERENTE_VENDAS
+   * e o SUPERADMIN pelo curinga `*`.
+   *
+   * O PADRAO E `false`, pelo mesmo motivo do `verLoja` — e aqui pesa mais,
+   * porque isto ESCREVE. Quem esquecer de informar perde uma acao; o inverso
+   * abriria escrita de cadastro a quem so podia ler.
+   *
+   * E ELA SO PREENCHE O QUE ESTA EM BRANCO — decisao do Lucas em 09/10. Tirar
+   * cliente de uma vendedora e dar a outra nao passa por aqui; a ferramenta
+   * recusa e diz de quem e. Ver `atribuirVendedoraSeSemDona`.
+   */
+  podeAtribuirCarteira?: boolean;
 }
 
 /**
@@ -363,6 +389,8 @@ export interface ContextoGestao {
  */
 @Injectable()
 export class FerramentasGestaoService {
+  private readonly logger = new Logger(FerramentasGestaoService.name);
+
   constructor(
     private readonly resolverVendedora: ResolverVendedoraPorNomeUseCase,
     private readonly consultarVendas: ConsultarVendasUseCase,
@@ -404,6 +432,7 @@ export class FerramentasGestaoService {
       solicitante,
       verLoja = false,
       verQuantidade = false,
+      podeAtribuirCarteira = false,
       equipe = null,
     } = ctx;
 
@@ -1433,6 +1462,143 @@ export class FerramentasGestaoService {
 
         return { status: achados.length > 1 ? 'AMBIGUO' : 'OK', linhas };
       },
+
+      /**
+       * ATRIBUIR UM CLIENTE SEM DONA A UMA VENDEDORA — 09/10/2026.
+       *
+       * ====================================================================
+       * A PRIMEIRA ESCRITA DA AGENTE SOBRE CADASTRO DE CLIENTE.
+       *
+       * Nasceu da lista de Ouro: 19 dos 48 não têm vendedora, e o primeiro
+       * colocado — 39 compras — é um deles. Ver a lista e não poder arrumar
+       * ali mesmo é o que o Lucas pediu para resolver.
+       *
+       * ELA SÓ PREENCHE O QUE ESTÁ EM BRANCO. Transferir cliente de uma
+       * vendedora para outra NÃO passa por aqui: carteira é o que define o
+       * que cada vendedora vê e recebe, e trocar isso numa frase ambígua é
+       * caro demais. Quando o cliente já tem dona, a ferramenta diz QUEM É e
+       * não grava nada.
+       *
+       * A garantia não é este `if`: é o `WHERE vendedora_codigo_erp IS NULL`
+       * do `atribuirVendedoraSeSemDona`. O `if` existe para a FRASE ficar
+       * boa; a regra existe na escrita.
+       * ====================================================================
+       */
+      // SEM `clientes:write`, A CHAVE NEM EXISTE no objeto devolvido — e por
+      // isso a ferramenta nao e declarada ao modelo. Nao ha versao recusavel.
+      ...(podeAtribuirCarteira
+        ? {
+      gestaoAtribuirVendedora: async ({ cliente, vendedora }) => {
+        // A VENDEDORA PRIMEIRO, e é de propósito: é ela que decide se a
+        // pessoa pode mexer nisso. Resolver o cliente antes faria a resposta
+        // falar de um cliente mesmo quando a vendedora está fora da equipe.
+        const daVendedora = await this.comVendedora(
+          equipe,
+          vendedora,
+          async (_id, codigoErp) => (codigoErp ? [codigoErp] : []),
+        );
+        const candidatas = daVendedora.nomes ?? [];
+        if (daVendedora.status === 'AMBIGUA') {
+          return {
+            mensagem:
+              `Há mais de uma vendedora com esse nome: ${candidatas.join(', ')}. ` +
+              'Pergunte qual delas antes de atribuir. Nada foi alterado.',
+          };
+        }
+        if (daVendedora.status === 'NAO_ENCONTRADA') {
+          return {
+            mensagem:
+              'Não encontrei essa vendedora' +
+              (candidatas.length ? `. Parecidas: ${candidatas.join(', ')}` : '') +
+              '. Nada foi alterado.',
+          };
+        }
+        const codigoDaVendedora = daVendedora.linhas[0];
+        if (!codigoDaVendedora) {
+          // Vendedora sem cadastro no ERP não tem carteira — o mesmo caso que
+          // o `ConsultarCarteiraVendedoraUseCase` trata devolvendo vazio.
+          return {
+            mensagem:
+              `A ${daVendedora.vendedora} não tem código no ERP, e a carteira ` +
+              'é por esse código. Nada foi alterado — isso precisa ser ' +
+              'corrigido no cadastro dela.',
+          };
+        }
+
+        const achados = await this.clientes.buscarPorNomeParcial(
+          cliente,
+          MAXIMO_CLIENTES_HOMONIMOS + 1,
+        );
+        if (achados.length === 0) {
+          return {
+            mensagem: `Não encontrei nenhum cliente com esse nome. Nada foi alterado.`,
+          };
+        }
+        // HOMÔNIMO NÃO VIRA ESCOLHA DO MODELO. Com duas pessoas de nome
+        // parecido, gravar na primeira seria pôr o cliente de alguém na
+        // carteira de outra pessoa sem ninguém saber.
+        if (achados.length > 1) {
+          return {
+            mensagem:
+              `Há mais de um cliente com esse nome: ` +
+              `${achados.slice(0, MAXIMO_CLIENTES_HOMONIMOS).map((c) => `${c.nome}${c.codigoErp ? ` (código ${c.codigoErp})` : ''}`).join('; ')}. ` +
+              'Pergunte qual deles, pelo código. Nada foi alterado.',
+          };
+        }
+
+        const alvo = achados[0];
+        if (alvo.vendedoraCodigoErp) {
+          const dona = await this.vendedoras.buscarPorCodigoErp(
+            alvo.vendedoraCodigoErp,
+          );
+          return {
+            mensagem:
+              `${alvo.nome} já está na carteira de ` +
+              `${dona?.nome ?? `uma vendedora não cadastrada (${alvo.vendedoraCodigoErp})`}. ` +
+              'NÃO alterei nada: eu só preencho cliente que está sem vendedora. ' +
+              'Para trocar a carteira, isso é feito no painel.',
+          };
+        }
+
+        // `id` e opcional na entidade (ela existe antes de ser gravada). Aqui
+        // ele veio do banco, entao a ausencia seria defeito — e sem id nao ha
+        // o que atualizar.
+        if (!alvo.id) {
+          return {
+            mensagem:
+              'Não consegui identificar esse cliente no cadastro. Nada foi alterado.',
+          };
+        }
+        const gravou = await this.clientes.atribuirVendedoraSeSemDona(
+          alvo.id,
+          codigoDaVendedora,
+        );
+        if (!gravou) {
+          // Chegou aqui com o `if` acima dizendo que estava vazio: alguém
+          // preencheu no meio do caminho — a sincronização do ERP mexe nos
+          // clientes com frequência. Dizer "pronto" aqui seria mentir.
+          return {
+            mensagem:
+              `${alvo.nome} ganhou uma vendedora enquanto eu gravava, e eu NÃO ` +
+              'sobrescrevi. Peça para conferir de quem é agora.',
+          };
+        }
+
+        // O LOG É O QUE TORNA UMA REVERSÃO DETECTÁVEL. A integração atualiza
+        // cliente com frequência; se um dia ela apagar isto, a única forma de
+        // descobrir é ter registrado que nós escrevemos. Sem nome de cliente.
+        this.logger.log(
+          `Carteira atribuida: cliente ${alvo.id} -> vendedora ${codigoDaVendedora}` +
+            (solicitante ? ` (pedido por ${solicitante})` : ''),
+        );
+        return {
+          mensagem:
+            `Pronto: ${alvo.nome} agora está na carteira da ${daVendedora.vendedora}. ` +
+            'Responda com isso, sem alterar nomes.',
+        };
+      },
+          }
+        : {}),
       /**
        * O DIA DE UMA VENDEDORA NUMA FRASE — a pergunta "como esta o canal da
        * Marina hoje".

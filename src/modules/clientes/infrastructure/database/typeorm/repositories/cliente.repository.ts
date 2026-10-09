@@ -51,6 +51,23 @@ import { ClientePerfilOrmEntity } from '../entities/cliente-perfil.orm-entity';
  * TERMO VAZIO DEVOLVE LISTA VAZIA, e nao a base inteira: sem palavra nenhuma
  * nao ha condicao, e uma consulta sem condicao traria todo mundo.
  */
+/**
+ * "ESTE CLIENTE NAO TEM DONA" — uma expressao so, usada pelos dois lados.
+ *
+ * A LISTAGEM conta quantos estao sem dona; a ATRIBUICAO so grava em quem
+ * esta sem dona. Se as duas definissem isso por conta propria, bastaria uma
+ * string vazia na coluna para a lista dizer "SEM VENDEDORA" e a atribuicao
+ * responder "ja tem dona" — sobre o MESMO cliente, na mesma conversa.
+ *
+ * Medido em 09/10: 690 nulos e zero vazios. O `= ''` e defensivo, porque a
+ * coluna vem de importacao de ERP, onde vazio chega das duas formas.
+ */
+function SEM_DONA(alias?: string): string {
+  // Sem alias no `UPDATE`, que nao tem um; com alias no `SELECT`, que tem.
+  const col = alias ? `${alias}.vendedora_codigo_erp` : 'vendedora_codigo_erp';
+  return `(${col} IS NULL OR ${col} = '')`;
+}
+
 export function palavrasDoNome(termo: string): string[] {
   return escaparCuringas(termo)
     .split(/\s+/)
@@ -253,6 +270,28 @@ export class ClienteRepository implements IClienteRepository {
     vendedoraCodigoErp: string | null,
   ): Promise<void> {
     await this.repo.update(clienteId, { vendedoraCodigoErp });
+  }
+
+  async atribuirVendedoraSeSemDona(
+    clienteId: string,
+    vendedoraCodigoErp: string,
+  ): Promise<boolean> {
+    // `IS NULL` NO WHERE — ver o porquê no port.
+    //
+    // O `= ''` junto é defensivo, e eu medi antes de escrevê-lo: hoje são 690
+    // nulos e ZERO vazios. Fica porque a coluna vem de importação de ERP, onde
+    // "vazio" chega das duas formas — e porque o `SEM_DONA` da listagem usa a
+    // MESMA expressão. Se um dia aparecer uma string vazia, os dois caminhos
+    // continuam concordando sobre quem está sem dona; discordar aqui faria a
+    // lista mostrar "SEM VENDEDORA" e a atribuição responder "já tem dona".
+    const r = await this.repo
+      .createQueryBuilder()
+      .update()
+      .set({ vendedoraCodigoErp })
+      .where('id = :clienteId', { clienteId })
+      .andWhere(SEM_DONA())
+      .execute();
+    return (r.affected ?? 0) > 0;
   }
 
   async buscarNaCarteiraPorNome(
@@ -657,7 +696,7 @@ export class ClienteRepository implements IClienteRepository {
              a.ultima_compra,
              v.nome                                                    AS vendedora_nome,
              COUNT(*) OVER ()                                          AS total,
-             COUNT(*) FILTER (WHERE a.vendedora_codigo_erp IS NULL) OVER ()
+             COUNT(*) FILTER (WHERE ${SEM_DONA('a')}) OVER ()
                                                                        AS sem_vendedora
       FROM comNivel a
       LEFT JOIN vendedoras v ON v.codigo_erp = a.vendedora_codigo_erp

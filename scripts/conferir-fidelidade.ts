@@ -213,6 +213,115 @@ async function main() {
     `${comValor.length} de ${ouro.clientes.length} com valor positivo`,
   );
 
+  // =========================================================================
+  // A ESCRITA CONDICIONAL, CONTRA O BANCO — 09/10/2026.
+  //
+  // Os specs provam o handler com repositório dublado: eles garantem que o
+  // `if` do serviço recusa. O que NENHUM deles alcança é o `WHERE` do
+  // `UPDATE`, e é ali que mora a garantia de verdade — é o que segura a
+  // corrida com a sincronização do ERP, que mexe em cliente o tempo todo.
+  //
+  // TUDO DENTRO DE UMA TRANSAÇÃO QUE TERMINA EM ROLLBACK. Este arquivo não
+  // deixa nada escrito; o banco local é cópia de produção e continua igual.
+  // =========================================================================
+  console.log('\nA escrita que só preenche o que está em branco');
+  const runner = ds.createQueryRunner();
+  await runner.connect();
+  await runner.startTransaction();
+  /** Guardado fora da transação para conferir o ROLLBACK depois dela. */
+  let idSemDona: string | null = null;
+  try {
+    const repoNaTransacao = new ClienteRepository(
+      runner.manager.getRepository(ClienteOrmEntity),
+      ds,
+    );
+    // OS CÓDIGOS TÊM DE SER DE VENDEDORAS QUE EXISTEM, e isto não é detalhe
+    // do teste: há uma FK `fk_clientes_vendedora_codigo` apontando para
+    // `vendedoras(codigo_erp)`. Descobri escrevendo este arquivo, com um
+    // código inventado — e ela é uma garantia a mais na atribuição: nem que
+    // o modelo inventasse um código, o banco aceitaria.
+    const codigos = await runner.query(
+      `SELECT codigo_erp FROM vendedoras
+       WHERE codigo_erp IS NOT NULL AND ativo ORDER BY codigo_erp LIMIT 2`,
+    );
+    const CODIGO_A = codigos[0]?.codigo_erp;
+    const CODIGO_B = codigos[1]?.codigo_erp;
+
+    const comDona = await runner.query(
+      `SELECT id, vendedora_codigo_erp AS v FROM clientes
+       WHERE vendedora_codigo_erp IS NOT NULL AND ativo LIMIT 1`,
+    );
+    const semDona = await runner.query(
+      `SELECT id FROM clientes
+       WHERE vendedora_codigo_erp IS NULL AND ativo LIMIT 1`,
+    );
+
+    idSemDona = semDona[0]?.id ?? null;
+
+    if (comDona[0] && semDona[0] && CODIGO_A && CODIGO_B) {
+      const recusou = await repoNaTransacao.atribuirVendedoraSeSemDona(
+        comDona[0].id,
+        CODIGO_A,
+      );
+      const depois = await runner.query(
+        `SELECT vendedora_codigo_erp AS v FROM clientes WHERE id = $1`,
+        [comDona[0].id],
+      );
+      conferir(
+        'cliente COM dona: recusa, e a dona NÃO muda',
+        recusou === false && depois[0].v === comDona[0].v,
+        `gravou=${recusou}, dona continua a mesma=${depois[0].v === comDona[0].v}`,
+      );
+
+      const gravou = await repoNaTransacao.atribuirVendedoraSeSemDona(
+        semDona[0].id,
+        CODIGO_A,
+      );
+      const agora = await runner.query(
+        `SELECT vendedora_codigo_erp AS v FROM clientes WHERE id = $1`,
+        [semDona[0].id],
+      );
+      conferir(
+        'cliente SEM dona: grava',
+        gravou === true && agora[0].v === CODIGO_A,
+        `gravou=${gravou}, valor=${agora[0].v}`,
+      );
+
+      // E a segunda vez NÃO grava por cima da primeira.
+      const deNovo = await repoNaTransacao.atribuirVendedoraSeSemDona(
+        semDona[0].id,
+        CODIGO_B,
+      );
+      const final = await runner.query(
+        `SELECT vendedora_codigo_erp AS v FROM clientes WHERE id = $1`,
+        [semDona[0].id],
+      );
+      conferir(
+        'e a segunda atribuição no mesmo cliente é recusada',
+        deNovo === false && final[0].v === CODIGO_A,
+        `gravou=${deNovo}, valor=${final[0].v}`,
+      );
+    } else {
+      conferir('havia cliente com e sem dona para testar', false, 'não havia');
+    }
+  } finally {
+    await runner.rollbackTransaction();
+    await runner.release();
+  }
+  // FORA DA TRANSAÇÃO: o cliente que recebeu vendedora lá dentro tem de
+  // continuar SEM nenhuma aqui. Sem esta conferência, um `rollback` que não
+  // acontecesse deixaria o banco sujo e ninguém saberia.
+  const sobrou = await ds.query<{ n: string }[]>(
+    `SELECT COUNT(*) AS n FROM clientes
+     WHERE id = $1 AND vendedora_codigo_erp IS NOT NULL`,
+    [idSemDona],
+  );
+  conferir(
+    'o ROLLBACK desfez tudo — nada ficou escrito',
+    Number(sobrou[0].n) === 0,
+    `${sobrou[0].n} cliente(s) com vendedora que não deviam ter`,
+  );
+
   await ds.destroy();
   console.log(falhou ? vermelho('\nAlguma coisa falhou.\n') : verde('\nTudo certo.\n'));
   process.exit(falhou ? 1 : 0);

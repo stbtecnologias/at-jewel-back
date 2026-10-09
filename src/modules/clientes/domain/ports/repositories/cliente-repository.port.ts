@@ -338,6 +338,31 @@ export interface IClienteRepository {
   transferirCarteira(clienteId: string, vendedoraCodigoErp: string | null): Promise<void>;
 
   /**
+   * ATRIBUI A VENDEDORA **SO SE O CLIENTE NAO TIVER NENHUMA** — 09/10/2026.
+   *
+   * ========================================================================
+   * A CONDICAO MORA NO `WHERE`, E NAO NUM `if` ANTES DA ESCRITA.
+   *
+   * Decisao do Lucas: a Anastasia PREENCHE o que esta em branco e NAO tira
+   * cliente de ninguem. Ler o dono, decidir em TypeScript e so entao gravar
+   * deixaria uma janela entre a leitura e a escrita — e nessa janela a
+   * sincronizacao do ERP, que mexe nos clientes com frequencia (1.082 dos
+   * 1.096 ja foram atualizados depois de criados), pode preencher a coluna.
+   * O `UPDATE` sairia por cima de uma dona que passou a existir.
+   *
+   * Com a condicao no `WHERE`, "so se estiver vazia" e uma propriedade da
+   * ESCRITA, e nao uma intencao de quem chamou.
+   * ========================================================================
+   *
+   * Devolve `false` quando nao gravou — cliente inexistente ou ja com dona —,
+   * e quem chama precisa dizer qual dos dois foi.
+   */
+  atribuirVendedoraSeSemDona(
+    clienteId: string,
+    vendedoraCodigoErp: string,
+  ): Promise<boolean>;
+
+  /**
    * Exclusao FISICA. Nao confundir com `ativo = false`, o desligamento suave.
    *
    * `clientes_perfil` cai por CASCADE — some todo o dado da triagem — e as

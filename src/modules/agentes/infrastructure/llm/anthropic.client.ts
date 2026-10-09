@@ -1100,6 +1100,46 @@ const GESTAO_FIDELIDADE_TOOL: Anthropic.Tool = {
   },
 };
 
+/**
+ * ATRIBUIR UM CLIENTE SEM DONA A UMA VENDEDORA — 09/10/2026.
+ *
+ * ==========================================================================
+ * UMA DAS POUCAS QUE ESCREVEM, E A DESCRICAO PRECISA DIZER O LIMITE.
+ *
+ * Se ela nao disser "SO quem esta sem vendedora", o modelo vai OFERECER
+ * transferencia — "quer que eu passe a Maria para a Beatriz?" — e a gestao
+ * vai pedir. A ferramenta recusaria depois, mas a oferta ja teria sido feita,
+ * e quem ouviu "posso fazer isso" nao entende o "nao" que vem em seguida.
+ *
+ * A recusa existe de verdade no `WHERE` da escrita. Isto aqui e para a
+ * conversa nao prometer o que o banco nao vai cumprir.
+ * ==========================================================================
+ */
+const GESTAO_ATRIBUIR_VENDEDORA_TOOL: Anthropic.Tool = {
+  name: 'atribuir_vendedora_ao_cliente',
+  description:
+    'Coloca um cliente QUE ESTA SEM VENDEDORA na carteira de uma vendedora. ' +
+    'Use quando a gestao disser de quem e um cliente que apareceu "sem vendedora" numa lista — "esse cliente e da Marina", "a primeira da lista e da Ylka". ' +
+    'SO PREENCHE QUEM ESTA EM BRANCO: se o cliente ja tem vendedora, ela NAO e trocada e a ferramenta responde de quem e. ' +
+    'NUNCA ofereca transferir cliente de uma vendedora para outra — isso e feito no painel, nao por aqui. ' +
+    'Use o nome do cliente o mais completo possivel: com homonimo a ferramenta nao grava e pede para escolher.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      cliente: {
+        type: 'string',
+        description:
+          'Nome do cliente, como aparece na lista. Quanto mais completo, menos chance de homonimo.',
+      },
+      vendedora: {
+        type: 'string',
+        description: 'Nome da vendedora que recebe o cliente, como falado.',
+      },
+    },
+    required: ['cliente', 'vendedora'],
+  },
+};
+
 const GESTAO_LEADS_TOOL: Anthropic.Tool = {
   name: 'listar_leads',
   description:
@@ -1636,6 +1676,16 @@ interface TetosPorTurno {
    * ========================================================================
    */
   lembretesGuardados: number;
+  /**
+   * Quantas carteiras este turno ja atribuiu. CONTADOR, pelo mesmo motivo do
+   * lembrete: "a primeira, a terceira e a quinta sao da Ylka" e uso legitimo,
+   * e um booleano faria a gestao repetir uma por uma.
+   *
+   * O TETO existe porque isto ESCREVE em cadastro, e escrita em massa a
+   * partir de texto e exatamente o que injecao explora. Dez cobre qualquer
+   * pedido real — sao 19 clientes Ouro sem dona na loja inteira.
+   */
+  carteirasAtribuidas: number;
 }
 
 /**
@@ -1646,6 +1696,9 @@ interface TetosPorTurno {
  * de pendentes por pessoa, no servico, e 50.
  */
 const MAX_LEMBRETES_POR_TURNO = 20;
+
+/** Quantas carteiras um turno pode atribuir. Ver `TetosPorTurno`. */
+const MAX_CARTEIRAS_POR_TURNO = 10;
 
 /**
  * Os erros que NAO passam sozinhos — ver `executarLeitura`.
@@ -1754,6 +1807,8 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoCarteira) tools.push(GESTAO_CARTEIRA_TOOL);
     if (params.gestaoMelhores) tools.push(GESTAO_MELHORES_TOOL);
     if (params.gestaoFidelidade) tools.push(GESTAO_FIDELIDADE_TOOL);
+    if (params.gestaoAtribuirVendedora)
+      tools.push(GESTAO_ATRIBUIR_VENDEDORA_TOOL);
     if (params.gestaoAgendar) tools.push(GESTAO_AGENDAR_TOOL);
     if (params.gestaoFeedbacks) tools.push(GESTAO_FEEDBACKS_TOOL);
     if (params.gestaoFunil) tools.push(GESTAO_FUNIL_TOOL);
@@ -1812,6 +1867,7 @@ export class AnthropicClient implements ILlmClient {
       contatoAgendado: false,
       relatoGravado: false,
       lembretesGuardados: 0,
+      carteirasAtribuidas: 0,
     };
 
     let grafico: GraficoDinamico | undefined;
@@ -2052,6 +2108,37 @@ export class AnthropicClient implements ILlmClient {
             );
           }),
         );
+      } else if (
+        toolUse.name === 'atribuir_vendedora_ao_cliente' &&
+        params.gestaoAtribuirVendedora
+      ) {
+        // O TETO VEM ANTES DA CHAMADA, e nao depois: depois ja teria escrito.
+        if (tetos.carteirasAtribuidas >= MAX_CARTEIRAS_POR_TURNO) {
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: toolUse.id,
+            content:
+              `Voce ja atribuiu ${MAX_CARTEIRAS_POR_TURNO} carteiras nesta ` +
+              'mensagem, que e o limite. DIGA quais ficaram de fora e peca ' +
+              'para ela mandar os restantes numa proxima mensagem.',
+            is_error: true,
+          });
+        } else {
+          tetos.carteirasAtribuidas += 1;
+          toolResults.push(
+            await this.executarLeitura(toolUse, async () => {
+              const e = toolUse.input as {
+                cliente?: string;
+                vendedora?: string;
+              };
+              const r = await params.gestaoAtribuirVendedora!({
+                cliente: String(e.cliente ?? '').slice(0, 120),
+                vendedora: String(e.vendedora ?? '').slice(0, 80),
+              });
+              return `${r.mensagem}\n\nResponda com isso, sem alterar nomes.`;
+            }),
+          );
+        }
       } else if (
         toolUse.name === 'agendar_para_vendedora' &&
         params.gestaoAgendar

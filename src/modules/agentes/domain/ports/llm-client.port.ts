@@ -671,6 +671,23 @@ export type GuardarLembreteHandler = (input: {
   quandoIso: string;
 }) => Promise<{ mensagem: string }>;
 
+/**
+ * ATRIBUIR UM CLIENTE SEM DONA A UMA VENDEDORA — 09/10/2026.
+ *
+ * A PRIMEIRA ESCRITA DA AGENTE SOBRE CADASTRO DE CLIENTE, e ela e estreita
+ * de proposito: SO PREENCHE O QUE ESTA EM BRANCO. Transferir carteira de uma
+ * vendedora para outra nao passa por aqui — carteira decide o que cada
+ * vendedora ve e recebe, e trocar isso por uma frase ambigua e caro demais.
+ *
+ * A frase de volta e montada no SERVIDOR, como nas outras escritas: ela
+ * carrega nome de cliente e de vendedora, que e exatamente o que o modelo
+ * inventaria.
+ */
+export type GestaoAtribuirVendedoraHandler = (input: {
+  cliente: string;
+  vendedora: string;
+}) => Promise<{ mensagem: string }>;
+
 export type MeusLembretesHandler = () => Promise<{
   /** Uma linha por lembrete, ja numerada — o numero serve ao remarcar e ao cancelar. */
   linhas: string[];
@@ -1246,6 +1263,8 @@ export interface ChatParams {
   gestaoMelhores?: GestaoMelhoresHandler;
   // Idem para `clientes_por_fidelidade` da gestao: a loja, ou uma vendedora.
   gestaoFidelidade?: GestaoFidelidadeHandler;
+  // Idem para `atribuir_vendedora_ao_cliente` — a escrita de carteira.
+  gestaoAtribuirVendedora?: GestaoAtribuirVendedoraHandler;
   gestaoAgendar?: GestaoAgendarHandler;
   gestaoFeedbacks?: GestaoFeedbacksHandler;
   gestaoDiaDaVendedora?: GestaoDiaDaVendedoraHandler;
