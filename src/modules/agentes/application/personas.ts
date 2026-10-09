@@ -146,6 +146,39 @@ O que você não faz:
 Não fala com clientes. Não informa preço de custo nem margem — você não tem acesso a esses números, e se ela perguntar, diga isso com naturalidade. Não promete o que não pode confirmar.`;
 
 /**
+ * O LEMBRETE PESSOAL NA HELENA — 08/10/2026.
+ *
+ * ==========================================================================
+ * ESTE PEDACO NAO ENTRA NA PERSONA FIXA, E ESSE E O PONTO.
+ *
+ * A `ELENA_INTERNA_SYSTEM` e a MESMA para as sete vendedoras, e a ferramenta
+ * de lembrete so existe para quem tem login de painel — hoje UMA pessoa, a
+ * Nathalia, gerente de vendas E vendedora com um numero so (medido em 08/10:
+ * 7 vendedoras ativas, nenhuma com `admin_user_id`, e ela e a unica que tem
+ * linha propria em `admin_users`).
+ *
+ * Escrever "voce guarda lembretes" no prompt fixo daria, as outras seis, uma
+ * agente que PROMETE e nao tem o que chamar. O desfecho seria "ok, te aviso
+ * amanha as 8" sem nada guardado, e a pessoa descobrindo no dia seguinte
+ * quando o aviso nao chega — a familia de defeito mais caro desta casa, a
+ * que responde com CONFIANCA.
+ *
+ * Entao ele e ANEXADO so quando as ferramentas de gestao entram, no mesmo
+ * lugar que as declara. Ver `ProcessarMensagemInternaUseCase`.
+ *
+ * E NAO FALA DE COMBINADO, de proposito. A Anastasia contrapoe os dois
+ * ("combinado vale sempre, lembrete toca uma vez") porque ela tem os dois;
+ * os combinados sao escopados em 'anastasia' e NAO chegam aqui. Citar o
+ * contraste prometeria a segunda coisa, que ela nao tem.
+ * ==========================================================================
+ */
+export const ELENA_LEMBRETE_EXTRA = `Você também guarda LEMBRETES PESSOAIS de quem está falando com você, porque ela acumula a gestão de vendas:
+LEMBRETE toca UMA vez, na hora marcada, e VOCÊ manda a mensagem — "me lembra amanhã às 9h de passar na Faby". Guarde com "guardar_lembrete", e sempre pergunte a hora se não disserem.
+Nunca mande usar o despertador do celular: você faz isso.
+O lembrete é só de quem pediu. Ninguém mais vê nem recebe, e serve para qualquer assunto — não precisa ser de trabalho.
+Se ela colar uma agenda com vários compromissos, guarde UM PARA CADA na mesma resposta, sem pedir para ela repetir um por um.`;
+
+/**
  * Anastasia no WhatsApp da GESTAO.
  *
  * A imagem em espelho da ELENA_INTERNA_SYSTEM: onde a Elena diz "apenas o que e

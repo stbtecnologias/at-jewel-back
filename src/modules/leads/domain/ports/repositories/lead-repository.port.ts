@@ -211,6 +211,28 @@ export interface ILeadRepository {
      * ========================================================================
      */
     apenasAbertos?: boolean,
+    /**
+     * O RECORTE DA GESTAO — 08/10/2026.
+     *
+     * ========================================================================
+     * SO A ANASTASIA USA, E ELE E MAIS FINO QUE O `apenasAbertos`.
+     *
+     * Pedido do Lucas: "saber quem esta apenas em Leads (...) por status ou
+     * dia". `apenasAbertos` responde "em aberto ou tudo", que e a pergunta da
+     * VENDEDORA; a gestao quer nomear UM status ("quem esta so em NOVO, que
+     * ninguem encostou ainda") e um DIA ("o que entrou hoje").
+     *
+     * O `status` GANHA do `apenasAbertos` quando vem — pedir `VIROU_CLIENTE`
+     * com `apenasAbertos` seria um recorte vazio por construcao, e vazio aqui
+     * seria lido como "ninguem virou cliente".
+     *
+     * O DIA FILTRA `criado_em` — QUANDO O LEAD ENTROU, e nao quando foi
+     * encaminhado nem quando ela mexeu. E a leitura do Lucas em 08/10: "fica
+     * o registro de quando entrou". Para "o que mandei para ela hoje" o campo
+     * seria `direcionadoVendedoraEm`, e isso e outra pergunta.
+     * ========================================================================
+     */
+    recorte?: { status?: StatusLeadVendedora; de?: Date; ate?: Date },
   ): Promise<Lead[]>;
 
   /**

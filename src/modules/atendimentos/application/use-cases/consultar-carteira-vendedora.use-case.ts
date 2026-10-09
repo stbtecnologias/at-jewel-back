@@ -3,8 +3,11 @@ import { CLIENTE_REPOSITORY } from '../../../clientes/domain/ports/injection-tok
 import type {
   ClienteDaCarteira,
   ClienteDaEpoca,
+  EscopoDeCliente,
   IClienteRepository,
+  PaginaDeFidelidade,
 } from '../../../clientes/domain/ports/repositories/cliente-repository.port';
+import type { NivelDeFidelidade } from '../../../../shared/clientes/fidelidade';
 import {
   janelasDaDataComemorativa,
   janelasDoMes,
@@ -216,5 +219,43 @@ export class ConsultarCarteiraVendedoraUseCase {
       }),
     ]);
     return { clientes, total };
+  }
+
+  /**
+   * OS CLIENTES POR NÍVEL DE FIDELIDADE — Ouro, Prata, Bronze — 09/10/2026.
+   *
+   * ==========================================================================
+   * O ESCOPO É EXPLÍCITO, E ISSO NÃO É DETALHE.
+   *
+   * Quem chama tem de escrever `{ tipo: 'LOJA' }` para alcançar a loja: no
+   * canal da vendedora o código do ERP chega NULO quando ela não tem cadastro,
+   * e "nulo = a loja inteira" faria aquela vendedora ver a base toda sem
+   * ninguém ter decidido isso. É a mesma proteção do `compradoresPorEpoca`.
+   * ==========================================================================
+   *
+   * `mesesSemComprar` vira data AQUI e não no repositório: "seis meses atrás"
+   * é regra de aplicação, e o repositório recebe o instante pronto — o que
+   * deixa a consulta testável sem relógio.
+   */
+  async porFidelidade(opcoes: {
+    escopo: EscopoDeCliente;
+    nivel?: NivelDeFidelidade;
+    mesesSemComprar?: number;
+    deslocamento?: number;
+  }): Promise<PaginaDeFidelidade & { deslocamento: number }> {
+    let semCompraDesde: Date | undefined;
+    if (opcoes.mesesSemComprar && opcoes.mesesSemComprar > 0) {
+      semCompraDesde = new Date();
+      semCompraDesde.setMonth(semCompraDesde.getMonth() - opcoes.mesesSemComprar);
+    }
+
+    const deslocamento = opcoes.deslocamento ?? 0;
+    const pagina = await this.clientes.clientesPorFidelidade(opcoes.escopo, {
+      nivel: opcoes.nivel,
+      semCompraDesde,
+      limite: MAXIMO,
+      deslocamento,
+    });
+    return { ...pagina, deslocamento };
   }
 }

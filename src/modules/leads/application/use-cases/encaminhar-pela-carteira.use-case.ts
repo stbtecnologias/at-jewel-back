@@ -8,6 +8,10 @@ import { CLIENTE_REPOSITORY } from '../../../clientes/domain/ports/injection-tok
 import type { IClienteRepository } from '../../../clientes/domain/ports/repositories/cliente-repository.port';
 import { VENDEDORA_REPOSITORY } from '../../../vendedoras/domain/ports/injection-tokens';
 import type { IVendedoraRepository } from '../../../vendedoras/domain/ports/repositories/vendedora-repository.port';
+import {
+  canalEmPalavras,
+  destinoDaVendedora,
+} from '../../../vendedoras/domain/para-onde-falar';
 import { LEAD_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type {
   ILeadRepository,
@@ -108,7 +112,8 @@ export class EncaminharPelaCarteiraUseCase {
       relato: this.relatoDaTriagem(lead),
     });
 
-    const avisada = await this.avisar(dona.whatsappInterno, lead);
+    // O interno OU o corporativo — ver `destinoDaVendedora`.
+    const avisada = await this.avisar(destinoDaVendedora(dona), lead);
 
     // O LEAD FECHA PORQUE O ASSUNTO MUDOU DE CASA, e nao porque acabou. Daqui
     // em diante a conversa e do atendimento; deixar o lead aberto faria a
@@ -194,20 +199,31 @@ export class EncaminharPelaCarteiraUseCase {
   /**
    * O aviso no WhatsApp pessoal dela. Devolve se saiu, e NUNCA levanta erro.
    *
-   * A FALHA NAO CANCELA NADA: hoje 19 das 23 vendedoras nao tem WhatsApp
-   * pessoal cadastrado. Se isso barrasse, a regra da carteira nao valeria para
-   * quase ninguem — e o atendimento e o registro que importa, nao a mensagem.
-   * Quem fica sabendo e a gestao.
+   * A FALHA NAO CANCELA NADA, e a razao vem do cadastro: das 7 vendedoras
+   * ativas, 7 tem o corporativo e so 1 tem o interno (medido em 08/10). Se a
+   * falta do aviso barrasse, a regra da carteira nao valeria para quase
+   * ninguem — e o atendimento e o registro que importa, nao a mensagem. Quem
+   * fica sabendo e a gestao.
+   *
+   * ATE 08/10 ERA PIOR DO QUE ISSO: so o interno servia, entao SEIS DAS SETE
+   * nunca recebiam, e o `return false` acontecia em silencio. Agora o
+   * corporativo vale, e o log diz por onde saiu.
    */
-  private async avisar(whatsapp: string | null, lead: Lead): Promise<boolean> {
-    if (!whatsapp) return false;
+  private async avisar(
+    destino: ReturnType<typeof destinoDaVendedora>,
+    lead: Lead,
+  ): Promise<boolean> {
+    if (!destino) return false;
 
     try {
-      const chatId = await this.whatsapp.resolverChatId(whatsapp);
+      const chatId = await this.whatsapp.resolverChatId(destino.numero);
       if (!chatId) return false;
 
       // Numero da Elena: quem recebe e a VENDEDORA dona da carteira.
       await this.whatsapp.enviarTexto(chatId, this.mensagem(lead), 'ELENA');
+      this.logger.log(
+        `Dona do lead ${lead.id} avisada ${canalEmPalavras(destino.canal)}.`,
+      );
       return true;
     } catch (err) {
       this.logger.error(

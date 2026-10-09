@@ -12,6 +12,7 @@ import { EscopoVendasService } from '../../../vendas/application/escopo-vendas.s
 import { FerramentasGestaoService } from '../ferramentas-gestao.service';
 import { MemoriaConversaService } from '../memoria-conversa.service';
 import { modeloDeIa } from '../../../../shared/config/modelo-de-ia';
+import type { FotoDeProduto } from '../fotos-de-produto.service';
 
 export interface MensagemGestao {
   /** Id do usuario. E a CHAVE da memoria de conversa — nunca o telefone. */
@@ -73,6 +74,8 @@ export interface MensagemGestao {
 export interface RespostaGestao {
   resposta: string;
   motivo: 'conversa' | 'falha_agente';
+  /** Ver `RespostaDoCanal.fotos` — vao depois do texto, quando existirem. */
+  fotos?: FotoDeProduto[];
 }
 
 /**
@@ -161,7 +164,7 @@ export class ProcessarMensagemGestaoUseCase {
       '(me chamaram pelo nome no grupo, sem escrever mais nada)';
 
     try {
-      const { texto } = await this.llm.chatComFerramentas({
+      const { texto, fotos } = await this.llm.chatComFerramentas({
         model: modeloDeIa(this.config, 'ANTHROPIC_MODEL_GESTAO', 'claude-opus-4-8'),
         system,
         // O TETO SUBIU DE 700 PARA 1500 — 05/10/2026.
@@ -195,6 +198,14 @@ export class ProcessarMensagemGestaoUseCase {
             msg.role,
             'estoque:quantidade',
           ),
+          // A ESCRITA DE CARTEIRA — 09/10/2026. A MESMA chave que guarda a
+          // edicao de cliente no painel: uma regra, duas portas. Sem ela a
+          // ferramenta nem e DECLARADA ao modelo, entao ele nao chega a
+          // oferecer o que ela nao pode fazer.
+          podeAtribuirCarteira: await this.permissoes.possui(
+            msg.role,
+            'clientes:write',
+          ),
           // AS VENDEDORAS QUE ELA ALCANCA — 28/09/2026. Vem do MESMO
           // `EscopoVendasService` que a tela de Vendas usa: uma regra, duas
           // portas. Sem isso, a gerente de um time veria o desempenho das
@@ -227,7 +238,9 @@ export class ProcessarMensagemGestaoUseCase {
       // So guarda o que deu certo. Turno com falha na memoria faria a proxima
       // resposta se apoiar num erro.
       this.memoria.registrar(chave, pergunta, texto);
-      return { resposta: texto, motivo: 'conversa' };
+      // As fotos vao JUNTO da resposta, e nao no lugar dela: quem envia e o
+      // webhook, depois do texto. Ver `RespostaDoCanal.fotos`.
+      return { resposta: texto, motivo: 'conversa', fotos };
     } catch (err) {
       this.logger.error(
         `Falha do agente de gestao: ${err instanceof Error ? err.message : err}`,

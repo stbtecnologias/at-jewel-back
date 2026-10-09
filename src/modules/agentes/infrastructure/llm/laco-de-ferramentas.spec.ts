@@ -213,3 +213,250 @@ describe('o laço de ferramentas', () => {
     expect(r.tokens).toBe(10 + 10 + 5);
   });
 });
+
+/**
+ * ==========================================================================
+ * A FOTO QUE A AGENTE ANUNCIOU E NUNCA CHEGOU — 07/10/2026.
+ *
+ * Pelo WhatsApp:
+ *
+ *   "me mostra o AN22083"
+ *   "Anel solitário diamantes 0.30 cts, ouro branco 18K — código AN22083:
+ *    R$ 8.900, disponível. Segue a foto."
+ *
+ * E a foto não veio. O handler tinha baixado a imagem (78 KB, conferido
+ * contra a Conexa), o texto do despacho já mandava anunciá-la — mas o
+ * cliente do LLM largava a lista no caminho, e o webhook recebia vazio.
+ *
+ * A SUÍTE INTEIRA PASSOU COM O DEFEITO NO LUGAR: 2.118 testes, e nenhum
+ * cobria a travessia do artefato. Cada ponta funcionava sozinha; o que não
+ * existia era o teste da ponte — o mesmo buraco do laço de 29/09, que é por
+ * isso que este teste mora aqui.
+ * ==========================================================================
+ */
+describe('o artefato que a ferramenta produz', () => {
+  let cliente: AnthropicClient;
+  let create: jest.Mock;
+
+  const pedeProdutos = () => ({
+    content: [
+      { type: 'text', text: 'Vou olhar.' },
+      {
+        type: 'tool_use',
+        id: 'tp',
+        name: 'consultar_produtos',
+        input: { busca: 'AN22083' },
+      },
+    ],
+    usage: { output_tokens: 10 },
+    stop_reason: 'tool_use',
+  });
+
+  const responde = (texto: string) => ({
+    content: [{ type: 'text', text: texto }],
+    usage: { output_tokens: 5 },
+    stop_reason: 'end_turn',
+  });
+
+  const umaFoto = {
+    codigo: 'AN22083',
+    legenda: 'ANEL SOLITARIO — AN22083',
+    conteudo: Buffer.from('PNG'),
+    mime: 'image/png',
+  };
+
+  const achado = {
+    produtos: [{ linha: 'ANEL SOLITARIO — AN22083: R$ 8.900, 1 em estoque' }],
+    total: 1,
+    semEstoque: 0,
+    incluiuSemEstoque: false,
+    foraDaCategoria: 0,
+    fotos: [umaFoto],
+    tinhamFoto: 1,
+  };
+
+  beforeEach(() => {
+    cliente = new AnthropicClient({ get: () => 'chave-de-teste' } as never);
+    create = jest.fn();
+    (cliente as unknown as { client: unknown }).client = {
+      messages: { create },
+    };
+  });
+
+  const base = () =>
+    ({
+      model: 'claude-sonnet-5',
+      maxTokens: 2048,
+      system: 'voce e a Anastasia',
+      mensagens: [{ role: 'user', content: 'me mostra o AN22083' }],
+    }) as unknown as ChatParams;
+
+  /* ESTE É O TESTE. O resto é contorno. */
+  it('a foto achada pela ferramenta da GESTÃO sai do turno', async () => {
+    create
+      .mockResolvedValueOnce(pedeProdutos())
+      .mockResolvedValueOnce(responde('Segue a foto.'));
+
+    const r = await cliente.chatComFerramentas({
+      ...base(),
+      gestaoProdutos: jest.fn().mockResolvedValue(achado),
+    });
+
+    expect(r.fotos).toHaveLength(1);
+    expect(r.fotos?.[0].codigo).toBe('AN22083');
+  });
+
+  it('e a da VENDEDORA também — são dois handlers com o mesmo nome', async () => {
+    create
+      .mockResolvedValueOnce(pedeProdutos())
+      .mockResolvedValueOnce(responde('Segue a foto.'));
+
+    const r = await cliente.chatComFerramentas({
+      ...base(),
+      consultarProdutos: jest.fn().mockResolvedValue(achado),
+    });
+
+    expect(r.fotos).toHaveLength(1);
+  });
+
+  /** Sem foto nenhuma, o turno não inventa um artefato vazio. */
+  it('busca sem foto não leva nada junto', async () => {
+    create
+      .mockResolvedValueOnce(pedeProdutos())
+      .mockResolvedValueOnce(responde('Nenhuma tem foto.'));
+
+    const r = await cliente.chatComFerramentas({
+      ...base(),
+      gestaoProdutos: jest
+        .fn()
+        .mockResolvedValue({ ...achado, fotos: [], tinhamFoto: 0 }),
+    });
+
+    expect(r.fotos).toHaveLength(0);
+  });
+
+  /**
+   * Ela pediu "sem foto": o campo tem de chegar ao handler como `false`.
+   * Sem isto, o serviço baixa imagem que ninguém vai mandar.
+   */
+  it('o pedido de "só o texto" chega ao handler', async () => {
+    const handler = jest.fn().mockResolvedValue({ ...achado, fotos: [] });
+    create
+      .mockResolvedValueOnce({
+        content: [
+          {
+            type: 'tool_use',
+            id: 'tp',
+            name: 'consultar_produtos',
+            input: { busca: 'AN22083', com_foto: false },
+          },
+        ],
+        usage: { output_tokens: 10 },
+        stop_reason: 'tool_use',
+      })
+      .mockResolvedValueOnce(responde('Sem foto.'));
+
+    await cliente.chatComFerramentas({ ...base(), gestaoProdutos: handler });
+
+    expect(handler).toHaveBeenCalledWith(
+      expect.objectContaining({ comFoto: false }),
+    );
+  });
+
+  /**
+   * ========================================================================
+   * A AGENDA DA SEMANA COLADA DE UMA VEZ — 08/10/2026.
+   *
+   * A gestora mandou sete dias num bloco de texto e pediu aviso uma hora
+   * antes de cada compromisso. O teto de lembrete era BOOLEANO: o primeiro
+   * entrava e os outros ouviam "você já guardou um lembrete neste turno" —
+   * ela teria de repetir um por um, que é exatamente o que ela evitou ao
+   * colar o bloco.
+   *
+   * O teto continua existindo — criação em massa, inclusive por injeção no
+   * texto que um cliente escreveu —, mas agora é CONTADO, em vinte.
+   * ========================================================================
+   */
+  describe('vários lembretes na mesma mensagem', () => {
+    /** Uma resposta com N pedidos de lembrete, como o modelo faz de verdade. */
+    const pedeLembretes = (n: number) => ({
+      content: [
+        { type: 'text', text: 'Vou guardar.' },
+        ...Array.from({ length: n }, (_, i) => ({
+          type: 'tool_use',
+          id: `l${i}`,
+          name: 'guardar_lembrete',
+          input: {
+            texto: `compromisso ${i}`,
+            quandoIso: '2026-10-13T15:30:00-03:00',
+          },
+        })),
+      ],
+      usage: { output_tokens: 10 },
+      stop_reason: 'tool_use',
+    });
+
+    /* ESTE É O TESTE. */
+    it('a semana inteira entra de uma vez — sete compromissos, sete lembretes', async () => {
+      const guardar = jest.fn().mockResolvedValue({ mensagem: 'Guardado.' });
+      create
+        .mockResolvedValueOnce(pedeLembretes(7))
+        .mockResolvedValueOnce(responde('Guardei os sete.'));
+
+      await cliente.chatComFerramentas({ ...base(), guardarLembrete: guardar });
+
+      expect(guardar).toHaveBeenCalledTimes(7);
+    });
+
+    it('no vigésimo primeiro para, e DIZ quantos entraram', async () => {
+      const guardar = jest.fn().mockResolvedValue({ mensagem: 'Guardado.' });
+      create
+        .mockResolvedValueOnce(pedeLembretes(25))
+        .mockResolvedValueOnce(responde('Guardei vinte.'));
+
+      await cliente.chatComFerramentas({ ...base(), guardarLembrete: guardar });
+
+      expect(guardar).toHaveBeenCalledTimes(20);
+
+      // E O QUE SOBROU NÃO SOME CALADO: o modelo recebe a conta e a ordem de
+      // dizer o que faltou. Sem isto ele confirmaria vinte e calaria os cinco.
+      const segunda = create.mock.calls[1][0] as { messages: unknown };
+      const resultados = JSON.stringify(segunda.messages);
+      expect(resultados).toContain('20 lembretes');
+      expect(resultados).toMatch(/QUAIS faltaram/);
+    });
+
+    /**
+     * O TETO DE UM POR TURNO CONTINUA onde ele protege de verdade: `avisar`
+     * manda WhatsApp para OUTRA pessoa, e vinte numa colada seriam vinte
+     * mensagens para a vendedora.
+     */
+    it('avisar vendedora continua em UM por turno', async () => {
+      const avisar = jest.fn().mockResolvedValue({ mensagem: 'Avisada.' });
+      create
+        .mockResolvedValueOnce({
+          content: [
+            {
+              type: 'tool_use',
+              id: 'a1',
+              name: 'avisar_vendedora',
+              input: { cliente: 'Carla' },
+            },
+            {
+              type: 'tool_use',
+              id: 'a2',
+              name: 'avisar_vendedora',
+              input: { cliente: 'Ana' },
+            },
+          ],
+          usage: { output_tokens: 10 },
+          stop_reason: 'tool_use',
+        })
+        .mockResolvedValueOnce(responde('Avisei uma.'));
+
+      await cliente.chatComFerramentas({ ...base(), avisarVendedora: avisar });
+
+      expect(avisar).toHaveBeenCalledTimes(1);
+    });
+  });
+});

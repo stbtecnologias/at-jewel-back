@@ -1,17 +1,28 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, FindOptionsWhere, ILike, Repository } from 'typeorm';
-import { vendaEfetiva } from '../../../../../../shared/database/sql/movimentacao-como-venda';
+import {
+  receitaLiquida,
+  vendaEfetiva,
+} from '../../../../../../shared/database/sql/movimentacao-como-venda';
 import { escaparCuringas } from '../../../../../../shared/database/sql/escapar-curingas';
+import {
+  NivelDeFidelidade,
+  nivelEmSql,
+  ordemEmSql,
+} from '../../../../../../shared/clientes/fidelidade';
 import { Cliente } from '../../../../domain/entities/cliente.entity';
 import { ClientePerfil } from '../../../../domain/entities/cliente-perfil.entity';
 import {
   ClienteDaCarteira,
   ClienteDaEpoca,
+  EscopoDeCliente,
   EscopoDeEpoca,
   FiltroCliente,
   FiltroDemografico,
   IClienteRepository,
+  PaginaDeFidelidade,
+  RecorteDeFidelidade,
   TierCliente,
 } from '../../../../domain/ports/repositories/cliente-repository.port';
 import { ClienteOrmEntity } from '../entities/cliente.orm-entity';
@@ -40,6 +51,23 @@ import { ClientePerfilOrmEntity } from '../entities/cliente-perfil.orm-entity';
  * TERMO VAZIO DEVOLVE LISTA VAZIA, e nao a base inteira: sem palavra nenhuma
  * nao ha condicao, e uma consulta sem condicao traria todo mundo.
  */
+/**
+ * "ESTE CLIENTE NAO TEM DONA" — uma expressao so, usada pelos dois lados.
+ *
+ * A LISTAGEM conta quantos estao sem dona; a ATRIBUICAO so grava em quem
+ * esta sem dona. Se as duas definissem isso por conta propria, bastaria uma
+ * string vazia na coluna para a lista dizer "SEM VENDEDORA" e a atribuicao
+ * responder "ja tem dona" — sobre o MESMO cliente, na mesma conversa.
+ *
+ * Medido em 09/10: 690 nulos e zero vazios. O `= ''` e defensivo, porque a
+ * coluna vem de importacao de ERP, onde vazio chega das duas formas.
+ */
+function SEM_DONA(alias?: string): string {
+  // Sem alias no `UPDATE`, que nao tem um; com alias no `SELECT`, que tem.
+  const col = alias ? `${alias}.vendedora_codigo_erp` : 'vendedora_codigo_erp';
+  return `(${col} IS NULL OR ${col} = '')`;
+}
+
 export function palavrasDoNome(termo: string): string[] {
   return escaparCuringas(termo)
     .split(/\s+/)
@@ -60,6 +88,11 @@ export class ClienteRepository implements IClienteRepository {
     // Faixas por nº de compras concluidas. Agregado, sem PII. O recorte
     // demografico (sexo/origem/faixa) vem de clientes_perfil; o periodo filtra
     // por clientes CRIADOS no intervalo (c.criado_em). Tudo parametrizado ($n).
+    //
+    // OS CORTES SAIRAM DAQUI em 09/10/2026 e moram em `shared/clientes/
+    // fidelidade.ts`: a agente responde a mesma pergunta pelo WhatsApp, e a
+    // regra escrita em dois lugares um dia divergiria. O SQL abaixo e GERADO
+    // pelas mesmas constantes que a agente usa.
     const params: unknown[] = [];
     let whereDemo = '';
     const precisaPerfil =
@@ -109,16 +142,8 @@ export class ClienteRepository implements IClienteRepository {
       SELECT t.tier, t.ordem, COUNT(*)::int AS total
       FROM compras
       CROSS JOIN LATERAL (
-        SELECT CASE
-          WHEN n = 0 THEN 'Sem compras'
-          WHEN n <= 2 THEN 'Bronze'
-          WHEN n <= 5 THEN 'Prata'
-          ELSE 'Ouro' END AS tier,
-          CASE
-          WHEN n = 0 THEN 0
-          WHEN n <= 2 THEN 1
-          WHEN n <= 5 THEN 2
-          ELSE 3 END AS ordem
+        SELECT ${nivelEmSql('n')} AS tier,
+               ${ordemEmSql('n')} AS ordem
       ) t
       GROUP BY t.tier, t.ordem
       ORDER BY t.ordem
@@ -245,6 +270,28 @@ export class ClienteRepository implements IClienteRepository {
     vendedoraCodigoErp: string | null,
   ): Promise<void> {
     await this.repo.update(clienteId, { vendedoraCodigoErp });
+  }
+
+  async atribuirVendedoraSeSemDona(
+    clienteId: string,
+    vendedoraCodigoErp: string,
+  ): Promise<boolean> {
+    // `IS NULL` NO WHERE — ver o porquê no port.
+    //
+    // O `= ''` junto é defensivo, e eu medi antes de escrevê-lo: hoje são 690
+    // nulos e ZERO vazios. Fica porque a coluna vem de importação de ERP, onde
+    // "vazio" chega das duas formas — e porque o `SEM_DONA` da listagem usa a
+    // MESMA expressão. Se um dia aparecer uma string vazia, os dois caminhos
+    // continuam concordando sobre quem está sem dona; discordar aqui faria a
+    // lista mostrar "SEM VENDEDORA" e a atribuição responder "já tem dona".
+    const r = await this.repo
+      .createQueryBuilder()
+      .update()
+      .set({ vendedoraCodigoErp })
+      .where('id = :clienteId', { clienteId })
+      .andWhere(SEM_DONA())
+      .execute();
+    return (r.affected ?? 0) > 0;
   }
 
   async buscarNaCarteiraPorNome(
@@ -552,6 +599,128 @@ export class ClienteRepository implements IClienteRepository {
       // COUNT(*) OVER () conta os GRUPOS da consulta inteira, antes do LIMIT
       // — e exatamente "quantos clientes atendem ao criterio".
       total: Number(rows[0]?.total ?? 0),
+    };
+  }
+
+  /**
+   * OS CLIENTES POR NÍVEL DE FIDELIDADE, COM NOME — 09/10/2026.
+   *
+   * ==========================================================================
+   * O MESMO DEFEITO DA HELENA, DO OUTRO LADO.
+   *
+   * O painel já dizia QUANTOS são Ouro, no cartão da tela de Clientes. Quem
+   * precisa agir precisa saber QUEM — e foi o pedido da gestora. A regra do
+   * nível não é reescrita aqui: ela vem de `shared/clientes/fidelidade.ts`,
+   * de onde o SQL do cartão também sai desde hoje.
+   * ==========================================================================
+   *
+   * `LEFT JOIN` nas movimentações, e não `JOIN`: sem isso o nível
+   * "Sem compras" não existiria, e ele é a maior faixa da base — 616 de
+   * 1.096. "Quem nunca comprou" é pergunta legítima e tem de ter resposta.
+   *
+   * A VENDEDORA VEM DA CARTEIRA (`clientes.vendedora_codigo_erp`), e não de
+   * quem fez a venda. São respostas diferentes: 106 clientes compraram com
+   * mais de uma vendedora, e "de quem é esse cliente" é a dona da carteira.
+   * É também o que o `EscopoVendasService` usa, então a regra de quem vê o
+   * quê continua sendo uma só.
+   */
+  async clientesPorFidelidade(
+    escopo: EscopoDeCliente,
+    recorte: RecorteDeFidelidade,
+  ): Promise<PaginaDeFidelidade> {
+    // O RECORTE DA CARTEIRA SÓ EXISTE QUANDO O ESCOPO DIZ CARTEIRA — mesmo
+    // motivo do `compradoresPorEpoca`: não há caminho em que o filtro "caia"
+    // por um valor ausente e a vendedora passe a ver a loja inteira.
+    const params: unknown[] = [];
+    let daCarteira = '';
+    if (escopo.tipo === 'CARTEIRA') {
+      params.push(escopo.vendedoraCodigoErp);
+      daCarteira = `AND c.vendedora_codigo_erp = $${params.length}`;
+    }
+
+    // O NÍVEL É DERIVADO, então ele filtra DEPOIS do agrupamento — por isso
+    // a consulta tem duas camadas, e não um WHERE a mais.
+    let doNivel = '';
+    if (recorte.nivel) {
+      params.push(recorte.nivel);
+      doNivel = `AND a.nivel = $${params.length}`;
+    }
+    let adormecido = '';
+    if (recorte.semCompraDesde) {
+      params.push(recorte.semCompraDesde);
+      adormecido = `AND a.ultima_compra < $${params.length}`;
+    }
+
+    params.push(recorte.limite);
+    const limite = `$${params.length}`;
+    params.push(recorte.deslocamento ?? 0);
+    const deslocamento = `$${params.length}`;
+
+    const rows = await this.dataSource.query<
+      {
+        id: string;
+        nome: string;
+        nivel: NivelDeFidelidade;
+        compras: string;
+        valor_liquido: string;
+        ultima_compra: Date | null;
+        vendedora_nome: string | null;
+        total: string;
+        sem_vendedora: string;
+      }[]
+    >(
+      `
+      WITH agregado AS (
+        SELECT c.id,
+               c.nome,
+               c.vendedora_codigo_erp,
+               COUNT(*) FILTER (WHERE ${vendaEfetiva('m')})            AS compras,
+               ${receitaLiquida('m')}                                  AS valor_liquido,
+               MAX(m.data_movimentacao) FILTER (WHERE ${vendaEfetiva('m')})
+                                                                       AS ultima_compra
+        FROM clientes c
+        LEFT JOIN movimentacoes m ON m.cliente_id = c.id
+        WHERE c.ativo = TRUE
+          ${daCarteira}
+        GROUP BY c.id, c.nome, c.vendedora_codigo_erp
+      ),
+      comNivel AS (
+        SELECT a.*, ${nivelEmSql('a.compras')} AS nivel, ${ordemEmSql('a.compras')} AS ordem
+        FROM agregado a
+      )
+      SELECT a.id,
+             a.nome,
+             a.nivel,
+             a.compras,
+             a.valor_liquido,
+             a.ultima_compra,
+             v.nome                                                    AS vendedora_nome,
+             COUNT(*) OVER ()                                          AS total,
+             COUNT(*) FILTER (WHERE ${SEM_DONA('a')}) OVER ()
+                                                                       AS sem_vendedora
+      FROM comNivel a
+      LEFT JOIN vendedoras v ON v.codigo_erp = a.vendedora_codigo_erp
+      WHERE TRUE
+        ${doNivel}
+        ${adormecido}
+      ORDER BY a.ordem DESC, a.compras DESC, a.valor_liquido DESC, a.nome ASC
+      LIMIT ${limite} OFFSET ${deslocamento}
+      `,
+      params,
+    );
+
+    return {
+      clientes: rows.map((r) => ({
+        id: r.id,
+        nome: r.nome,
+        nivel: r.nivel,
+        compras: Number(r.compras),
+        valorLiquido: Number(r.valor_liquido),
+        ultimaCompra: r.ultima_compra,
+        vendedoraNome: r.vendedora_nome,
+      })),
+      total: Number(rows[0]?.total ?? 0),
+      semVendedora: Number(rows[0]?.sem_vendedora ?? 0),
     };
   }
 

@@ -128,4 +128,43 @@ export interface IWhatsappGateway {
   baixarMidia(
     url: string,
   ): Promise<{ conteudo: Buffer; mimetype: string } | null>;
+
+  /**
+   * "DIGITANDO..." NO CHAT DELA — 08/10/2026.
+   *
+   * ========================================================================
+   * QUEM MANDA E ESPERA NAO SABE SE CHEGOU.
+   *
+   * Uma resposta pode levar vários segundos: cada volta de ferramenta é uma
+   * chamada ao modelo, e o caminho com foto faz `HEAD` em até 250 URLs antes
+   * de baixar até dez imagens. Sem sinal nenhum, o silêncio e a falha são
+   * indistinguíveis — e a pessoa manda de novo.
+   *
+   * DOIS CUIDADOS, E OS DOIS IMPORTAM:
+   *
+   * 1. O INDICADOR EXPIRA. No WhatsApp ele cai sozinho em 10 a 25 segundos,
+   *    então um disparo só não cobre a espera: quem chama RENOVA enquanto a
+   *    resposta não sai.
+   *
+   * 2. ELE CONFIRMA QUE EXISTE ALGUEM AQUI. O roteador fica calado de
+   *    propósito para número desconhecido — responder qualquer coisa
+   *    "confirmaria a quem sondasse que existe um canal aqui". "Digitando"
+   *    é essa confirmação, então só pode começar DEPOIS do reconhecimento.
+   *
+   * NAO LANCA NUNCA. Falhar em mostrar que está pensando não pode impedir a
+   * resposta de sair; o pior desfecho aceitável é a pessoa esperar sem ver o
+   * aviso, que é exatamente como era antes.
+   * ========================================================================
+   */
+  iniciarDigitando(chatId: string, agente?: AgenteDaCasa): Promise<void>;
+
+  /**
+   * Apaga o "digitando...".
+   *
+   * Chamado num `finally`: resposta, falha e exceção TODAS têm de apagar o
+   * indicador, senão ela fica vendo a agente digitar uma mensagem que nunca
+   * vem. Ele expira sozinho, mas 25 segundos de "digitando" depois de um
+   * erro é tempo de sobra para ela mandar de novo.
+   */
+  pararDigitando(chatId: string, agente?: AgenteDaCasa): Promise<void>;
 }

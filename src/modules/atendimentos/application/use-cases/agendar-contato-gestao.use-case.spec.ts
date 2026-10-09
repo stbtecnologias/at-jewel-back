@@ -377,11 +377,12 @@ describe('AgendarContatoGestaoUseCase', () => {
    * numero so aparecia horas depois, num `logger.warn` que ninguem le: a
    * pendencia voltava a cada rodada e expirava sozinha em 6h.
    */
-  describe('vendedora sem WhatsApp interno', () => {
+  describe('vendedora sem WhatsApp nenhum', () => {
     beforeEach(() => {
       vendedoras.buscarPorId.mockResolvedValue({
         nome: 'Camila Rezende',
         whatsappInterno: null,
+        whatsappExterno: null,
       });
     });
 
@@ -411,6 +412,35 @@ describe('AgendarContatoGestaoUseCase', () => {
       });
 
       expect(clientes.transferirCarteira).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * RF16, 08/10/2026. Medido na base: das 7 vendedoras ativas, 7 têm o
+   * corporativo e **só 1 tem o interno**. Antes desta mudança a gestão não
+   * conseguia agendar contato com seis das sete — a trava recusava na hora,
+   * e recusava por falta de um número que quase ninguém tem.
+   */
+  describe('vendedora só com o corporativo', () => {
+    beforeEach(() => {
+      vendedoras.buscarPorId.mockResolvedValue({
+        nome: 'Camila Rezende',
+        whatsappInterno: null,
+        whatsappExterno: '5585988887777',
+      });
+    });
+
+    it('agenda, e o aviso sai pelo corporativo', async () => {
+      const r = await useCase.execute({
+        ...DESTINO,
+        nomeCliente: 'Carla Oliveira',
+        quandoIso: DAQUI_A_UMA_HORA,
+        modo: 'OCASIONAL',
+      });
+
+      expect(r.status).not.toBe('VENDEDORA_SEM_WHATSAPP');
+      expect(whatsapp.resolverChatId).toHaveBeenCalledWith('5585988887777');
+      expect(whatsapp.enviarTexto).toHaveBeenCalled();
     });
   });
 });

@@ -1,9 +1,15 @@
 import { datasDeRecorte } from '../../../shared/tempo/recorte-de-datas';
+import {
+  linhaDoClienteFiel,
+  nivelDaPergunta,
+  nivelEmPalavras,
+} from '../../../shared/clientes/fidelidade';
 import { Inject, Injectable } from '@nestjs/common';
 import type {
   AgendarContatoHandler,
   AtualizarLeadHandler,
   ClientesPorEpocaHandler,
+  ClientesPorFidelidadeHandler,
   ClientesSemComprarHandler,
   ConsultarAgendaHandler,
   ConsultarMetasHandler,
@@ -34,7 +40,7 @@ import {
   type VinculoDoLead,
 } from '../../leads/application/use-cases/atualizar-status-lead.use-case';
 import { linhaDoLead } from '../../leads/application/leads-em-lista';
-import { linhasDoFunil } from './etapas-em-palavras';
+import { linhasDoFunil, rotuloEtapa } from './etapas-em-palavras';
 import { formatarQuando } from './ferramentas-gestao.service';
 
 /**
@@ -47,6 +53,47 @@ import { formatarQuando } from './ferramentas-gestao.service';
  * "R$ 7.490,37" em "R$ 7.490" — pego pelo teste do catalogo em 21/08, na
  * refatoracao que juntou as ferramentas num servico.
  */
+/**
+ * Quantos clientes da carteira vem COM NOME — 08/10/2026.
+ *
+ * Quinze cobre a carteira aberta de uma vendedora com folga (o que esta em
+ * curso ao mesmo tempo e pequeno: a Nathalia tinha cinco) e cabe numa
+ * mensagem de WhatsApp sem virar parede de texto. Acima disso o despacho DIZ
+ * quantos ficaram de fora.
+ */
+const TETO_CARTEIRA_NOMEADA = 15;
+
+/**
+ * Uma linha por cliente em atendimento: quem, em que pe, e desde quando.
+ *
+ * O `aguardandoRelato` entra com destaque porque e o que muda o dia dela —
+ * "esperando SEU relato" e a diferenca entre um cliente que esta andando e um
+ * que esta parado por causa dela.
+ *
+ * SEM TELEFONE E SEM VALOR: este e o resumo do funil, nao a ficha. Quem quer
+ * contato usa o painel, e quem quer agendar chama `agendar_contato`.
+ */
+function linhaDoCliente(a: {
+  clienteNome: string;
+  etapa: string;
+  abertoEm: Date;
+  aguardandoRelato: boolean;
+  proximoContatoEm: Date | null;
+}): string {
+  const desde = a.abertoEm.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+  });
+  const proximo = a.proximoContatoEm
+    ? `, contato marcado para ${a.proximoContatoEm.toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+      })}`
+    : '';
+  const espera = a.aguardandoRelato ? ' — ESPERANDO SEU RELATO' : '';
+  return `${a.clienteNome} (${rotuloEtapa(a.etapa)}, desde ${desde}${proximo})${espera}`;
+}
+
 function moeda(v: number): string {
   return v.toLocaleString('pt-BR', {
     style: 'currency',
@@ -68,6 +115,8 @@ export interface FerramentasVendedora {
   clientesSemComprar: ClientesSemComprarHandler;
   clientesPorEpoca: ClientesPorEpocaHandler;
   melhoresClientes: MelhoresClientesHandler;
+  /** Os Ouro, Prata e Bronze da carteira dela — a mesma regra do painel. */
+  clientesPorFidelidade: ClientesPorFidelidadeHandler;
   agendarContato: AgendarContatoHandler;
   /** So existe quando ha mensagem original para extrair — ver `montar`. */
   registrarRelato?: RegistrarRelatoHandler;
@@ -345,16 +394,44 @@ export class FerramentasVendedoraService {
       },
 
       consultarCarteiraAgora: async () => {
-        const r = await this.auditoria.resumo({
-          apenasAbertos: true,
-          vendedoraId,
-        });
+        // ================================================================
+        // O RESUMO **E** A LISTA — 08/10/2026, de um teste em PRODUCAO.
+        //
+        // A Nathalia perguntou a Helena "quem sao as clientes em
+        // negociacao?" e ouviu: "o sistema so me da o numero — sao 5 (...)
+        // o melhor caminho e voce olhar direto no seu funil". A agente
+        // estava certa sobre a ferramenta, que chamava apenas o `resumo`
+        // (agregado) — mas o dado existia a UM METODO de distancia.
+        //
+        // O custo nao aparecia como erro: a propria agente acabara de dizer
+        // que aqueles cinco eram "o foco mais imediato", e a conversa
+        // terminou mandando a vendedora para OUTRA TELA.
+        //
+        // DUAS CONSULTAS, DE PROPOSITO: o resumo traz a distribuicao por
+        // etapa, que a lista paginada nao da; a lista traz os nomes. Uma so
+        // responderia metade da pergunta.
+        // ================================================================
+        const [r, lista] = await Promise.all([
+          this.auditoria.resumo({ apenasAbertos: true, vendedoraId }),
+          this.auditoria.listar({
+            apenasAbertos: true,
+            vendedoraId,
+            limit: TETO_CARTEIRA_NOMEADA,
+          }),
+        ]);
         const minha = r.vendedoras[0];
-        if (!minha) return { total: 0, linhas: [], aguardandoRelato: 0 };
+        if (!minha) {
+          return { total: 0, linhas: [], aguardandoRelato: 0, clientes: [] };
+        }
         return {
           total: minha.total,
           linhas: linhasDoFunil(minha.porEtapa),
           aguardandoRelato: minha.aguardandoRelato,
+          clientes: lista.itens.map(linhaDoCliente),
+          // O TETO SE ANUNCIA: cinco de trinta parecem os trinta.
+          ...(lista.total > lista.itens.length
+            ? { clientesOcultos: lista.total - lista.itens.length }
+            : {}),
         };
       },
 
@@ -389,10 +466,38 @@ export class FerramentasVendedoraService {
         };
       },
 
-      consultarProdutos: async ({ busca }) => {
-        const achados = await this.produtos.execute(busca);
+      consultarProdutos: async ({
+        busca,
+        incluirSemEstoque,
+        categoria,
+        precoDe,
+        precoAte,
+        aPartirDe,
+        comFoto,
+        soComFoto,
+      }) => {
+        const achados = await this.produtos.execute(busca, {
+          incluirSemEstoque,
+          categoria,
+          precoDe,
+          precoAte,
+          aPartirDe,
+          comFoto,
+          soComFoto,
+        });
         return {
-          produtos: achados.map((p) => ({
+          total: achados.total,
+          semEstoque: achados.semEstoque,
+          incluiuSemEstoque: achados.incluiuSemEstoque,
+          categoria: achados.categoria,
+          foraDaCategoria: achados.foraDaCategoria,
+          faixa: achados.faixa,
+          pulados: achados.pulados,
+          fotos: achados.fotos,
+          tinhamFoto: achados.tinhamFoto,
+          soComFoto: achados.soComFoto,
+          naoConferidas: achados.naoConferidas,
+          produtos: achados.produtos.map((p) => ({
             // DISPONIVEL, E NAO QUANTOS — 25/09/2026. Ver
             // `ProdutoParaVendedora`: o numero nao chega ate aqui.
             linha:
@@ -463,6 +568,59 @@ export class FerramentasVendedoraService {
             linha: `${c.nome} — ${c.quantidade} ${c.quantidade === 1 ? unidade : unidade + 's'}, ${moeda(c.valorTotal)}`,
           })),
           total,
+        };
+      },
+
+      /**
+       * OS CLIENTES OURO DA CARTEIRA DELA — 09/10/2026.
+       *
+       * ================================================================
+       * SEM `codigo_erp` NAO HA CARTEIRA, E A RESPOSTA E VAZIA — NAO A LOJA.
+       *
+       * O escopo e escrito como `{ tipo: 'CARTEIRA' }`, nunca derivado de um
+       * valor ausente: vendedora sem cadastro no ERP chega aqui com
+       * `codigoErp` nulo, e "nulo = a loja" faria ela ver a base inteira sem
+       * ninguem ter decidido isso.
+       * ================================================================
+       */
+      clientesPorFidelidade: async ({ nivel, mesesSemComprar, aPartirDe }) => {
+        const pedido = nivelDaPergunta(nivel);
+        // NIVEL ESCRITO E NAO RECONHECIDO: nao consulta. Filtrar por um nivel
+        // inexistente devolveria lista vazia, e vazio soa como "voce nao tem
+        // nenhum" — que e falso.
+        if (nivel && !pedido) {
+          return {
+            linhas: [],
+            total: 0,
+            deslocamento: 0,
+            semVendedora: 0,
+            cortes: nivelEmPalavras('Ouro'),
+            nivelDesconhecido: true,
+          };
+        }
+        if (!codigoErp) {
+          return {
+            linhas: [],
+            total: 0,
+            deslocamento: 0,
+            semVendedora: 0,
+            cortes: nivelEmPalavras(pedido ?? 'Ouro'),
+          };
+        }
+        const r = await this.carteira.porFidelidade({
+          escopo: { tipo: 'CARTEIRA', vendedoraCodigoErp: codigoErp },
+          nivel: pedido ?? undefined,
+          mesesSemComprar,
+          deslocamento: aPartirDe,
+        });
+        return {
+          linhas: r.clientes.map(linhaDoClienteFiel),
+          total: r.total,
+          deslocamento: r.deslocamento,
+          semVendedora: r.semVendedora,
+          cortes: pedido
+            ? `${pedido}, ${nivelEmPalavras(pedido)}`
+            : `todos os niveis — Ouro e ${nivelEmPalavras('Ouro')}`,
         };
       },
 

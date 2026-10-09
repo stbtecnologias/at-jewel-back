@@ -49,18 +49,24 @@ describe('ProcessarMensagemInternaUseCase', () => {
       metas: jest.fn().mockResolvedValue([]),
     };
     produtos = {
-      execute: jest.fn().mockResolvedValue([
-        {
-          descricao: 'Brinco Vintage Esmeralda',
-          categoria: 'Brinco',
-          familia: 'Ouro Branco',
-          codigo: 'SEED-P0002',
-          precoVenda: 7490.37,
-          // DISPONIVEL, e nao quantos — 25/09/2026. O numero deixou de existir
-          // no tipo, entao nao ha como ele vazar para o modelo.
-          disponivel: true,
-        },
-      ]),
+      // AMOSTRA + TOTAL desde 07/10 — ver `ResultadoDeProdutos`. Um array
+      // solto fazia o modelo tratar as seis do teto como o catalogo inteiro.
+      execute: jest.fn().mockResolvedValue({
+        total: 1,
+        semEstoque: 0,
+        produtos: [
+          {
+            descricao: 'Brinco Vintage Esmeralda',
+            categoria: 'Brinco',
+            familia: 'Ouro Branco',
+            codigo: 'SEED-P0002',
+            precoVenda: 7490.37,
+            // DISPONIVEL, e nao quantos — 25/09/2026. O numero deixou de
+            // existir no tipo, entao nao ha como ele vazar para o modelo.
+            disponivel: true,
+          },
+        ],
+      }),
     };
     carteira = {
       // Desde 21/08 a carteira devolve AMOSTRA + TOTAL, e nao um array solto:
@@ -114,6 +120,9 @@ describe('ProcessarMensagemInternaUseCase', () => {
       { montar: jest.fn(() => ({})) } as never,
       { possui: jest.fn().mockResolvedValue(false) } as never,
       { equipeDoUsuario: jest.fn().mockResolvedValue(null) } as never,
+      // OS LEMBRETES — 08/10/2026. Dublados pelo mesmo motivo: sem `gestao`
+      // na mensagem, o canal da vendedora nao toca neles.
+      { handlers: jest.fn(() => ({})) } as never,
       atendimentos as never,
       clientes as never,
       llm as never,
@@ -184,7 +193,10 @@ describe('ProcessarMensagemInternaUseCase', () => {
 
       const r = await params().consultarProdutos!({ busca: 'brinco' });
 
-      expect(produtos.execute).toHaveBeenCalledWith('brinco');
+      // O segundo argumento virou um objeto de recorte em 07/10 (estoque,
+      // categoria, e em seguida preco e pagina). O que este teste guarda e a
+      // BUSCA chegando inteira — o recorte tem specs proprios.
+      expect(produtos.execute.mock.calls[0][0]).toBe('brinco');
       const linha = r.produtos[0].linha;
       expect(linha).toContain('7.490,37');
       expect(linha).toContain('disponível');
@@ -470,6 +482,181 @@ describe('ProcessarMensagemInternaUseCase', () => {
       });
 
       expect(eventos.execute).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * ========================================================================
+   * A FOTO DA PECA SAI PELA HELENA — 08/10/2026.
+   *
+   * Pergunta do Lucas: a Nathalia consegue puxar, pela Helena, as peças até
+   * 10 mil COM FOTO? A cadeia inteira existia e o schema da vendedora tem
+   * `preco_ate`, `com_foto` e `so_com_foto` — mas **este elo não tinha
+   * teste**: que o `fotos` que o modelo devolve saia no resultado do canal.
+   *
+   * Sem isto, acrescentar um campo ao retorno (ou trocar o `motivo`) e
+   * reconstruir o objeto deixaria as fotos para trás. O texto continuaria
+   * chegando, a foto não — que foi o defeito de 07/10, quando ela anunciava
+   * a foto e nada vinha.
+   * ========================================================================
+   */
+  it('a foto da peça sai no resultado do canal', async () => {
+    identificar.execute.mockResolvedValue(VENDEDORA);
+    const foto = {
+      codigo: 'AN22083',
+      conteudo: Buffer.from('jpeg'),
+      mime: 'image/jpeg',
+      legenda: 'ANEL SOLITARIO',
+    };
+    llm.chatComFerramentas.mockResolvedValue({
+      texto: 'Segue a lista até 10 mil.',
+      tokens: 10,
+      fotos: [foto],
+    });
+
+    const r = await useCase.execute({
+      de: '558586467241@c.us',
+      texto: 'me monta uma tabela de peças até 10 mil com foto',
+    });
+
+    expect(r.resposta).toContain('até 10 mil');
+    expect(r.fotos).toEqual([foto]);
+  });
+
+  /**
+   * ========================================================================
+   * OS LEMBRETES PESSOAIS NA HELENA — 08/10/2026, pedido do Lucas.
+   *
+   * A Nathalia é gerente de vendas E vendedora com um número só. O roteador
+   * procura vendedora PRIMEIRO (decisão deliberada, para quem acumula ficar
+   * no canal restrito), então ela é atendida na Helena — e os lembretes,
+   * que no canal da Anastasia são somados à parte, ninguém havia somado
+   * aqui. Medido em 08/10: ela é a ÚNICA das sete com linha em
+   * `admin_users`, então é a única que pode ter lembrete hoje.
+   *
+   * O QUE ESTE BLOCO GUARDA É O PAR: a ferramenta E a frase andam juntas.
+   * Dar a frase sem a ferramenta às outras seis seria uma agente que diz
+   * "ok, te aviso amanhã às 8" sem nada guardado — a família de defeito
+   * mais caro desta casa, a que responde com confiança.
+   * ========================================================================
+   */
+  describe('lembrete pessoal de quem acumula a gestão', () => {
+    const LEMBRETES = {
+      guardarLembrete: jest.fn(),
+      meusLembretes: jest.fn(),
+      remarcarLembrete: jest.fn(),
+      cancelarLembrete: jest.fn(),
+    };
+
+    function montar(opcoes: { podeGerir: boolean }) {
+      const lembretes = { handlers: jest.fn(() => LEMBRETES) };
+      const chamada = {
+        chatComFerramentas: jest.fn().mockResolvedValue({ texto: 'ok', tokens: 1 }),
+        chat: jest.fn(),
+      };
+      const instancia = new ProcessarMensagemInternaUseCase(
+        { execute: jest.fn().mockResolvedValue(VENDEDORA) } as never,
+        { montar: jest.fn(() => ({})) } as never,
+        { montar: jest.fn(() => ({})) } as never,
+        { possui: jest.fn().mockResolvedValue(opcoes.podeGerir) } as never,
+        { equipeDoUsuario: jest.fn().mockResolvedValue(null) } as never,
+        lembretes as never,
+        { buscarCobrancaAguardando: jest.fn().mockResolvedValue(null) } as never,
+        { buscarPorId: jest.fn() } as never,
+        chamada as never,
+        { baixarMidia: jest.fn() } as never,
+        { transcrever: jest.fn(), disponivel: () => true } as never,
+        { carregar: jest.fn(() => []), registrar: jest.fn() } as never,
+        { get: jest.fn(() => undefined) } as never,
+        { execute: jest.fn() } as never,
+      );
+      return { instancia, chamada, lembretes };
+    }
+
+    const escreve = (
+      instancia: ProcessarMensagemInternaUseCase,
+      gestao?: { usuarioId: string; role: string },
+    ) =>
+      instancia.execute({
+        de: '558586467241@c.us',
+        texto: 'me lembra amanhã às 8 de ligar para o fornecedor',
+        ...(gestao ? { gestao } : {}),
+      });
+
+    const GESTAO = { usuarioId: 'ad-1', role: 'GERENTE_VENDAS' };
+
+    /* ESTE É O TESTE. O resto é contorno. */
+    it('a gerente recebe a ferramenta E a frase, no mesmo turno', async () => {
+      const { instancia, chamada, lembretes } = montar({ podeGerir: true });
+
+      await escreve(instancia, GESTAO);
+
+      const params = chamada.chatComFerramentas.mock.calls[0][0] as {
+        system: string;
+        guardarLembrete?: unknown;
+        meusLembretes?: unknown;
+      };
+      expect(params.guardarLembrete).toBeDefined();
+      expect(params.meusLembretes).toBeDefined();
+      expect(params.system).toContain('LEMBRETE toca UMA vez');
+      // O DONO SAI DO usuarioId, por closure: nenhuma ferramenta tem campo
+      // "de quem" para o modelo preencher errado.
+      expect(lembretes.handlers).toHaveBeenCalledWith('ad-1');
+    });
+
+    /**
+     * AS OUTRAS SEIS. Sem `gestao` não há login de painel, e sem login não há
+     * dono possível para o lembrete — a tabela exige `admin_user_id`.
+     */
+    it('a vendedora sem login não recebe a ferramenta NEM a promessa', async () => {
+      const { instancia, chamada, lembretes } = montar({ podeGerir: true });
+
+      await escreve(instancia);
+
+      const params = chamada.chatComFerramentas.mock.calls[0][0] as {
+        system: string;
+        guardarLembrete?: unknown;
+      };
+      expect(params.guardarLembrete).toBeUndefined();
+      // E A FRASE TAMBÉM NÃO VEM. É esta linha que impede a agente de
+      // prometer um aviso que ninguém guardou.
+      expect(params.system).not.toContain('LEMBRETE toca UMA vez');
+      expect(lembretes.handlers).not.toHaveBeenCalled();
+    });
+
+    /**
+     * TER LOGIN NÃO É PODER USAR A AGENTE: quem decide é a permissão
+     * `agentes:anastasia`, a mesma chave da Anastasia. Sem ela, nem a
+     * ferramenta nem a frase entram.
+     */
+    it('login sem a permissão de gestão não ganha lembrete', async () => {
+      const { instancia, chamada } = montar({ podeGerir: false });
+
+      await escreve(instancia, GESTAO);
+
+      const params = chamada.chatComFerramentas.mock.calls[0][0] as {
+        system: string;
+        guardarLembrete?: unknown;
+      };
+      expect(params.guardarLembrete).toBeUndefined();
+      expect(params.system).not.toContain('LEMBRETE toca UMA vez');
+    });
+
+    /**
+     * COMBINADO NÃO EXISTE AQUI. Os combinados são escopados em 'anastasia' e
+     * não chegam à Helena; citá-los na frase prometeria a segunda coisa que
+     * ela não tem — e foi por isso que o texto da Anastasia não foi copiado.
+     */
+    it('a frase da Helena não fala de combinado', async () => {
+      const { instancia, chamada } = montar({ podeGerir: true });
+
+      await escreve(instancia, GESTAO);
+
+      const { system } = chamada.chatComFerramentas.mock.calls[0][0] as {
+        system: string;
+      };
+      expect(system).not.toMatch(/COMBINADO vale sempre/i);
+      expect(system).not.toContain('guardar_combinado');
     });
   });
 });

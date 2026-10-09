@@ -6,7 +6,9 @@ import type {
 } from '../domain/ports/repositories/lembretes-repository.port';
 import {
   interpretarInstante,
+  motivoDoInstante,
   quandoEmPalavras,
+  type MotivoDoInstante,
 } from '../../../shared/tempo/instante';
 
 /**
@@ -37,7 +39,13 @@ export type ResultadoGuardar =
   | { status: 'VAZIO' }
   | { status: 'LONGO'; teto: number }
   | { status: 'CHEIO'; teto: number }
-  | { status: 'HORARIO_INVALIDO' };
+  /**
+   * O `motivo` entra para que a frase diga a VERDADE — 08/10/2026.
+   *
+   * Ilegivel, passado e distante pediam respostas diferentes e recebiam a
+   * mesma. Ver `motivoDoInstante`.
+   */
+  | { status: 'HORARIO_INVALIDO'; motivo: MotivoDoInstante };
 
 export type ResolucaoLembrete =
   | { status: 'ACHOU'; lembrete: Lembrete }
@@ -91,8 +99,9 @@ export class LembretesService {
     if (!limpo) return { status: 'VAZIO' };
     if (limpo.length > TETO_TEXTO) return { status: 'LONGO', teto: TETO_TEXTO };
 
-    const quando = interpretarInstante(quandoIso, DIAS_MAXIMOS);
-    if (!quando) return { status: 'HORARIO_INVALIDO' };
+    const motivo = motivoDoInstante(quandoIso, DIAS_MAXIMOS);
+    if (motivo !== 'OK') return { status: 'HORARIO_INVALIDO', motivo };
+    const quando = interpretarInstante(quandoIso, DIAS_MAXIMOS)!;
 
     // O TETO E CONFERIDO ANTES DE GRAVAR. Gravar e depois avisar deixaria o
     // quinquagesimo primeiro no banco, valendo, e a pessoa achando que nao
@@ -203,12 +212,32 @@ export class LembretesService {
                 `NÃO GUARDEI — já são ${r.teto} lembretes esperando. ` +
                 'Diga que é preciso cancelar algum antes.',
             };
+          // UMA FRASE POR MOTIVO — 08/10/2026, quando a gestora passou a
+          // colar a agenda DO DIA. "Pergunte para quando é" servia para hora
+          // ausente e virava pergunta sem sentido no compromisso que já
+          // passou: a hora estava escrita ali.
           case 'HORARIO_INVALIDO':
-            return {
-              mensagem:
-                'NÃO GUARDEI — o horário não serve: precisa ser no futuro e ' +
-                'dentro de um ano. Pergunte para quando é, sem escolher você.',
-            };
+            switch (r.motivo) {
+              case 'PASSADO':
+                return {
+                  mensagem:
+                    'NÃO GUARDEI — esse horário já passou. Diga isso a ela, ' +
+                    'e NÃO pergunte para quando é: ela já disse. Se houver ' +
+                    'outros na mesma lista, guarde os que ainda não passaram.',
+                };
+              case 'DISTANTE':
+                return {
+                  mensagem:
+                    'NÃO GUARDEI — passa de um ano daqui. Diga isso a ela e ' +
+                    'confirme o ANO, porque pode ter saído errado.',
+                };
+              default:
+                return {
+                  mensagem:
+                    'NÃO GUARDEI — não entendi a data e a hora. Pergunte ' +
+                    'para quando é, sem escolher você.',
+                };
+            }
         }
       },
 
@@ -226,14 +255,14 @@ export class LembretesService {
         qual: string;
         quandoIso: string;
       }) => {
-        const quando = interpretarInstante(quandoIso, DIAS_MAXIMOS);
-        if (!quando) {
-          return {
-            mensagem:
-              'NÃO REMARQUEI — o horário não serve: precisa ser no futuro e ' +
-              'dentro de um ano. Pergunte para quando é.',
-          };
+        // O MESMO TRATAMENTO DO `guardar`, e de proposito: a regra aplicada
+        // num caminho e esquecida no vizinho e a forma de erro que a
+        // auditoria de 30/09 achou quatro vezes no projeto.
+        const motivo = motivoDoInstante(quandoIso, DIAS_MAXIMOS);
+        if (motivo !== 'OK') {
+          return { mensagem: naoServeParaRemarcar(motivo) };
         }
+        const quando = interpretarInstante(quandoIso, DIAS_MAXIMOS)!;
 
         const r = await this.resolver(usuarioId, qual);
         if (r.status !== 'ACHOU') return { mensagem: naoAchei(r, listaNumerada) };
@@ -261,6 +290,32 @@ export class LembretesService {
         return { mensagem: `Cancelado: "${r.lembrete.texto}".` };
       },
     };
+  }
+}
+
+/**
+ * Por que a nova hora de um remarcar nao serve — uma frase por motivo.
+ *
+ * Mesma razao do `guardar`: "pergunte para quando é" sobre um horario que a
+ * pessoa acabou de dizer parece que ninguem leu.
+ */
+function naoServeParaRemarcar(motivo: MotivoDoInstante): string {
+  switch (motivo) {
+    case 'PASSADO':
+      return (
+        'NÃO REMARQUEI — esse horário já passou. Diga isso a ela, e NÃO ' +
+        'pergunte para quando é: ela já disse.'
+      );
+    case 'DISTANTE':
+      return (
+        'NÃO REMARQUEI — passa de um ano daqui. Diga isso a ela e confirme ' +
+        'o ANO, porque pode ter saído errado.'
+      );
+    default:
+      return (
+        'NÃO REMARQUEI — não entendi a data e a hora. Pergunte para quando ' +
+        'é, sem escolher você.'
+      );
   }
 }
 

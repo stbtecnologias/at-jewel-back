@@ -17,6 +17,11 @@ export class ListarProdutosUseCase {
     return this.produtoRepository.findAll(filtros);
   }
 
+  /** Quantas existem com esse filtro, ignorando o teto da lista. */
+  async contar(filtros: FiltroProduto): Promise<number> {
+    return this.produtoRepository.contar(filtros);
+  }
+
   /**
    * Os tipos de peca que existem no catalogo — 28/09/2026.
    *

@@ -1,4 +1,12 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { categoriaDaBusca } from '../../../shared/catalogo/categorias';
+import {
+  linhaDoClienteFiel,
+  nivelDaPergunta,
+  nivelEmPalavras,
+} from '../../../shared/clientes/fidelidade';
+import { faixaDePreco } from '../../../shared/catalogo/faixa-de-preco';
+import { FotosDeProdutoService } from './fotos-de-produto.service';
 import { diasDeCalendario } from '../../../shared/tempo/dias-de-calendario';
 import { dataDeCorte, datasDeRecorte } from '../../../shared/tempo/recorte-de-datas';
 import type { NomeComemorativo } from '../../../shared/tempo/datas-comemorativas';
@@ -7,6 +15,8 @@ import type {
   GestaoEpocaHandler,
   GestaoPorEmpresaHandler,
   GestaoVendasDetalhadasHandler,
+  GestaoAtribuirVendedoraHandler,
+  GestaoFidelidadeHandler,
   GestaoMelhoresHandler,
   GestaoAgendarHandler,
   GestaoCarteiraDoClienteHandler,
@@ -40,7 +50,11 @@ import type {
 } from '../domain/ports/repositories/conversa-whatsapp-repository.port';
 import { CLIENTE_REPOSITORY } from '../../clientes/domain/ports/injection-tokens';
 import { LEAD_REPOSITORY } from '../../leads/domain/ports/injection-tokens';
-import type { ILeadRepository } from '../../leads/domain/ports/repositories/lead-repository.port';
+import {
+  STATUS_LEAD_VENDEDORA,
+  type ILeadRepository,
+  type StatusLeadVendedora,
+} from '../../leads/domain/ports/repositories/lead-repository.port';
 import type { IClienteRepository } from '../../clientes/domain/ports/repositories/cliente-repository.port';
 import { VENDEDORA_REPOSITORY } from '../../vendedoras/domain/ports/injection-tokens';
 import type { IVendedoraRepository } from '../../vendedoras/domain/ports/repositories/vendedora-repository.port';
@@ -62,7 +76,9 @@ import { ResolverVendedoraPorNomeUseCase } from './use-cases/resolver-vendedora-
 import { ConsultarAuditoriaUseCase } from './use-cases/consultar-auditoria.use-case';
 import { ConsultarLinhaDoTempoUseCase } from './use-cases/consultar-linha-do-tempo.use-case';
 import type {
+  AtendimentoAuditoria,
   ContagemPorEtapa,
+  EtapaAtendimento,
   PontoDaLinha,
 } from '../domain/ports/repositories/atendimento-repository.port';
 import { EncaminharLeadUseCase } from './use-cases/encaminhar-lead.use-case';
@@ -104,11 +120,29 @@ const MAXIMO_CLIENTES_HOMONIMOS = 5;
  * cobre a quase totalidade, e o total vem junto para que um recorte grande nao
  * pareca completo.
  */
+/**
+ * Teto da lista de produtos — ver `ConsultarProdutosVendedoraUseCase`, que
+ * conta a historia dos tres valores no mesmo dia: 6, depois 20, depois 10.
+ *
+ * O que fixou em 10: com 20, a agente anunciava vinte e listava dez, e a
+ * continuacao pularia as dez do meio.
+ */
+const TETO_DE_PRODUTOS = 10;
+
 const MAXIMO_VENDAS_DETALHADAS = 10;
 
 const MAXIMO_FEEDBACKS = 10;
 /** Leads por resposta. Acima disso a mensagem deixa de ser lida. */
 const MAXIMO_LEADS = 15;
+
+/**
+ * Clientes NOMEADOS por resposta do funil — 08/10/2026.
+ *
+ * Vinte, e nao os quinze da Helena: aqui a lista e da EQUIPE, e sete carteiras
+ * somadas passam de uma. Acima disso a mensagem de WhatsApp deixa de ser lida,
+ * e o despacho DIZ quantos ficaram de fora.
+ */
+const TETO_FUNIL_NOMEADO = 20;
 
 /**
  * O status como uma pessoa fala. DISPONIVEL nao entra: ela e o normal, e
@@ -218,6 +252,17 @@ export interface FerramentasGestao {
   gestaoPorEmpresa: GestaoPorEmpresaHandler;
   gestaoVendasDetalhadas: GestaoVendasDetalhadasHandler;
   gestaoMelhores: GestaoMelhoresHandler;
+  /** Os Ouro, Prata e Bronze — da loja, ou de uma vendedora. */
+  gestaoFidelidade: GestaoFidelidadeHandler;
+  /**
+   * A UNICA ESCRITA DA GESTAO SOBRE CADASTRO DE CLIENTE — 09/10/2026.
+   *
+   * OPCIONAL, e e isso que faz o escopo: quem nao tem `clientes:write` nao
+   * recebe o handler, e sem handler a ferramenta nem e DECLARADA ao modelo.
+   * O escopo aqui e AUSENCIA DE CAMINHO, como no resto do projeto — e nao um
+   * `if` dentro do handler, que existiria so para ser recusado.
+   */
+  gestaoAtribuirVendedora?: GestaoAtribuirVendedoraHandler;
   gestaoFeedbacks: GestaoFeedbacksHandler;
   gestaoDiaDaVendedora: GestaoDiaDaVendedoraHandler;
   gestaoConversasAgora: GestaoConversasAgoraHandler;
@@ -305,6 +350,22 @@ export interface ContextoGestao {
    * ==========================================================================
    */
   equipe?: string[] | null;
+  /**
+   * PODE ATRIBUIR UM CLIENTE A UMA VENDEDORA? — 09/10/2026.
+   *
+   * A chave e `clientes:write`, a MESMA que guarda a edicao de cliente no
+   * painel: uma regra, duas portas. Hoje a tem ADMIN, GERENTE, GERENTE_VENDAS
+   * e o SUPERADMIN pelo curinga `*`.
+   *
+   * O PADRAO E `false`, pelo mesmo motivo do `verLoja` — e aqui pesa mais,
+   * porque isto ESCREVE. Quem esquecer de informar perde uma acao; o inverso
+   * abriria escrita de cadastro a quem so podia ler.
+   *
+   * E ELA SO PREENCHE O QUE ESTA EM BRANCO — decisao do Lucas em 09/10. Tirar
+   * cliente de uma vendedora e dar a outra nao passa por aqui; a ferramenta
+   * recusa e diz de quem e. Ver `atribuirVendedoraSeSemDona`.
+   */
+  podeAtribuirCarteira?: boolean;
 }
 
 /**
@@ -328,6 +389,8 @@ export interface ContextoGestao {
  */
 @Injectable()
 export class FerramentasGestaoService {
+  private readonly logger = new Logger(FerramentasGestaoService.name);
+
   constructor(
     private readonly resolverVendedora: ResolverVendedoraPorNomeUseCase,
     private readonly consultarVendas: ConsultarVendasUseCase,
@@ -339,6 +402,7 @@ export class FerramentasGestaoService {
     private readonly conexoes: ConexoesService,
     private readonly waha: WahaAdminClient,
     private readonly listarProdutos: ListarProdutosUseCase,
+    private readonly fotosDeProduto: FotosDeProdutoService,
     private readonly agenda: ConsultarAgendaVendedoraUseCase,
     private readonly desempenho: ConsultarDesempenhoVendedoraUseCase,
     private readonly carteira: ConsultarCarteiraVendedoraUseCase,
@@ -368,6 +432,7 @@ export class FerramentasGestaoService {
       solicitante,
       verLoja = false,
       verQuantidade = false,
+      podeAtribuirCarteira = false,
       equipe = null,
     } = ctx;
 
@@ -665,6 +730,103 @@ export class FerramentasGestaoService {
         return { ...r, total };
       },
 
+      /**
+       * OS CLIENTES OURO DA LOJA — 09/10/2026.
+       *
+       * ==================================================================
+       * A ÚNICA FERRAMENTA DE GESTÃO EM QUE A VENDEDORA É OPCIONAL.
+       *
+       * "Me lista os clientes Ouro" é pergunta da LOJA, e foi assim que a
+       * gestora pediu. As outras exigem o nome porque a pergunta é sempre
+       * sobre alguém; esta não, e exigir faria o modelo inventar um nome.
+       *
+       * Com nome, o escopo passa pelo `comVendedora` — que resolve apelido,
+       * recusa quem está fora da equipe e devolve AMBIGUA quando há duas. Sem
+       * nome, `{ tipo: 'LOJA' }` escrito à mão: nunca derivado de ausência.
+       * ==================================================================
+       *
+       * E A RESPOSTA DIZ QUANTOS NÃO TÊM DONA. Medido em 09/10: 19 dos 48
+       * Ouro estão sem `vendedora_codigo_erp`, somando metade do valor. A
+       * soma por vendedora dá 29 — quem lê precisa saber que faltam 19, ou
+       * vai embora achando que viu a loja inteira.
+       */
+      gestaoFidelidade: async ({
+        nivel,
+        vendedora,
+        mesesSemComprar,
+        aPartirDe,
+      }) => {
+        const pedido = nivelDaPergunta(nivel);
+        const vazio = {
+          linhas: [] as string[],
+          total: 0,
+          deslocamento: 0,
+          semVendedora: 0,
+        };
+        // NÍVEL ESCRITO E NÃO RECONHECIDO: não consulta nada. Ver o gêmeo na
+        // `ferramentas-vendedora.service.ts`.
+        if (nivel && !pedido) {
+          return {
+            ...vazio,
+            cortes: nivelEmPalavras('Ouro'),
+            nivelDesconhecido: true,
+          };
+        }
+        const cortes = pedido
+          ? `${pedido}, ${nivelEmPalavras(pedido)}`
+          : `todos os níveis — Ouro é ${nivelEmPalavras('Ouro')}`;
+
+        // SEM NOME: a loja. O escopo é escrito, e não derivado da ausência.
+        if (!vendedora) {
+          const r = await this.carteira.porFidelidade({
+            escopo: { tipo: 'LOJA' },
+            nivel: pedido ?? undefined,
+            mesesSemComprar,
+            deslocamento: aPartirDe,
+          });
+          return {
+            linhas: r.clientes.map(linhaDoClienteFiel),
+            total: r.total,
+            deslocamento: r.deslocamento,
+            semVendedora: r.semVendedora,
+            cortes,
+            status: 'OK',
+          };
+        }
+
+        let pagina: { total: number; deslocamento: number } | null = null;
+        const r = await this.comVendedora(
+          equipe,
+          vendedora,
+          async (_id, codigoErp) => {
+            // Vendedora sem cadastro no ERP não tem carteira. Lista vazia, e
+            // não a loja: ver `ConsultarCarteiraVendedoraUseCase`.
+            if (!codigoErp) return [];
+            const p = await this.carteira.porFidelidade({
+              escopo: { tipo: 'CARTEIRA', vendedoraCodigoErp: codigoErp },
+              nivel: pedido ?? undefined,
+              mesesSemComprar,
+              deslocamento: aPartirDe,
+            });
+            pagina = { total: p.total, deslocamento: p.deslocamento };
+            return p.clientes.map(linhaDoClienteFiel);
+          },
+        );
+        const p = pagina as { total: number; deslocamento: number } | null;
+        return {
+          linhas: r.linhas,
+          total: p?.total ?? 0,
+          deslocamento: p?.deslocamento ?? 0,
+          // NA CARTEIRA DE ALGUÉM, TODO MUNDO TEM DONA por definição — avisar
+          // "zero sem vendedora" aqui seria ruído.
+          semVendedora: 0,
+          cortes,
+          status: r.status,
+          nomes: r.nomes,
+          vendedora: r.status === 'OK' ? r.vendedora : undefined,
+        };
+      },
+
       // A PECA NO CATALOGO, COM A QUANTIDADE — 25/09/2026.
       //
       // O espelho da `consultarProdutos` da vendedora.
@@ -686,13 +848,139 @@ export class FerramentasGestaoService {
       // O SALDO VEM DA TABELA `estoque` — o `estoqueAtual` do
       // `ListarProdutosUseCase` ja e o somatorio de la desde 17/09, e nao a
       // coluna `produtos.estoque_atual`, que esta zerada na base inteira.
-      gestaoProdutos: async ({ busca }) => {
-        const achados = await this.listarProdutos.execute({
+      gestaoProdutos: async ({
+        busca,
+        incluirSemEstoque,
+        categoria,
+        precoDe,
+        precoAte,
+        aPartirDe,
+        comFoto,
+        soComFoto,
+      }) => {
+        // Mesma regra do canal da vendedora, e pelas mesmas decisoes de 07/10:
+        // so o disponivel (salvo quando ela PEDE o indisponivel), padrao joia,
+        // e sempre AMOSTRA + TOTAL — o teto sozinho vira resposta errada. Ver
+        // `ConsultarProdutosVendedoraUseCase`, que explica cada numero.
+        const daPergunta = categoriaDaBusca(categoria);
+        const faixa = faixaDePreco(precoDe, precoAte);
+        const pulados = Math.max(0, Math.trunc(aPartirDe ?? 0));
+        const filtro = {
           busca,
           ativo: true,
-          limit: 6,
-        });
+          apenasDisponiveis: !incluirSemEstoque,
+          categoriaSugerida: daPergunta,
+          precoDe: faixa.de,
+          precoAte: faixa.ate,
+        };
+        // "AS QUE TIVEREM FOTOS" — 07/10/2026, pedido do Lucas no WhatsApp.
+        //
+        // A foto nao esta no banco, esta na Conexa: o SQL tira quem nem URL
+        // tem, o `HEAD` diz quais respondem, e so entao da para paginar — a
+        // pagina e da lista JA conferida. Ver o gemeo em
+        // `ConsultarProdutosVendedoraUseCase.soAsQueTemFoto`.
+        if (soComFoto) {
+          const candidatas = await this.listarProdutos.execute({
+            ...filtro,
+            comFotoCadastrada: true,
+            limit: 250,
+          });
+          const conferencia = await this.fotosDeProduto.quaisTemFoto(
+            candidatas.map((p) => ({
+              codigo: p.codigoErp ?? p.id ?? '',
+              url: p.fotoUrl ?? null,
+              legenda: '',
+            })),
+          );
+          const porCodigo = new Map(
+            candidatas.map((p) => [p.codigoErp ?? p.id ?? '', p]),
+          );
+          const todas = conferencia.comFoto
+            .map((c) => porCodigo.get(c.codigo))
+            .filter((p): p is NonNullable<typeof p> => !!p);
+          const pagina = todas.slice(pulados, pulados + TETO_DE_PRODUTOS);
+          const comImagem = await this.fotosDeProduto.buscar(
+            pagina.map((p) => ({
+              codigo: p.codigoErp ?? '',
+              url: p.fotoUrl ?? null,
+              legenda:
+                `${p.descricaoEtiqueta ?? `${p.categoria} ${p.familia}`}` +
+                `${p.codigoErp ? ` — ${p.codigoErp}` : ''}`,
+            })),
+            // Ela filtrou por foto: a pagina inteira vai com imagem.
+            true,
+          );
+          return {
+            total: todas.length,
+            semEstoque: 0,
+            incluiuSemEstoque: false,
+            categoria: daPergunta,
+            foraDaCategoria: 0,
+            faixa,
+            pulados,
+            fotos: comImagem.fotos,
+            tinhamFoto: candidatas.length,
+            soComFoto: true,
+            naoConferidas: conferencia.cortadas,
+            produtos: pagina.map((p) => ({
+              linha:
+                `${p.descricaoEtiqueta ?? `${p.categoria} ${p.familia}`}` +
+                `${p.codigoErp ? ` — código ${p.codigoErp}` : ''}: ` +
+                `${moeda(p.valorVenda)}, ` +
+                `${saldoEmPalavras(p.estoqueAtual, verQuantidade)}`,
+            })),
+          };
+        }
+
+        const [achados, total, comSaldo] = await Promise.all([
+          this.listarProdutos.execute({
+            ...filtro,
+            limit: TETO_DE_PRODUTOS,
+            deslocamento: pulados,
+          }),
+          this.listarProdutos.contar(filtro),
+          this.listarProdutos.contar({ ...filtro, apenasDisponiveis: true }),
+        ]);
+        const [noCatalogo, semRecorte] = await Promise.all([
+          incluirSemEstoque
+            ? Promise.resolve(total)
+            : this.listarProdutos.contar({
+                ...filtro,
+                apenasDisponiveis: false,
+              }),
+          daPergunta
+            ? this.listarProdutos.contar({
+                ...filtro,
+                categoriaSugerida: undefined,
+              })
+            : Promise.resolve(total),
+        ]);
+        // As fotos sao baixadas ANTES de o modelo escrever — so quem baixou
+        // sabe quais das URLs respondem (metade da joia nao responde), e a
+        // agente precisa do numero para nao prometer o que nao vai mandar.
+        const { fotos, tinhamUrl } =
+          comFoto !== false
+            ? await this.fotosDeProduto.buscar(
+                achados.map((p) => ({
+                  codigo: p.codigoErp ?? '',
+                  url: p.fotoUrl ?? null,
+                  legenda:
+                    `${p.descricaoEtiqueta ?? `${p.categoria} ${p.familia}`}` +
+                    `${p.codigoErp ? ` — ${p.codigoErp}` : ''}`,
+                })),
+              )
+            : { fotos: [], tinhamUrl: 0 };
+
         return {
+          total,
+          semEstoque: Math.max(0, noCatalogo - comSaldo),
+          incluiuSemEstoque: incluirSemEstoque === true,
+          categoria: daPergunta,
+          foraDaCategoria: Math.max(0, semRecorte - total),
+          faixa,
+          pulados,
+          fotos,
+          tinhamFoto: tinhamUrl,
           produtos: achados.map((p) => ({
             linha:
               `${p.descricaoEtiqueta ?? `${p.categoria} ${p.familia}`}` +
@@ -1174,6 +1462,143 @@ export class FerramentasGestaoService {
 
         return { status: achados.length > 1 ? 'AMBIGUO' : 'OK', linhas };
       },
+
+      /**
+       * ATRIBUIR UM CLIENTE SEM DONA A UMA VENDEDORA — 09/10/2026.
+       *
+       * ====================================================================
+       * A PRIMEIRA ESCRITA DA AGENTE SOBRE CADASTRO DE CLIENTE.
+       *
+       * Nasceu da lista de Ouro: 19 dos 48 não têm vendedora, e o primeiro
+       * colocado — 39 compras — é um deles. Ver a lista e não poder arrumar
+       * ali mesmo é o que o Lucas pediu para resolver.
+       *
+       * ELA SÓ PREENCHE O QUE ESTÁ EM BRANCO. Transferir cliente de uma
+       * vendedora para outra NÃO passa por aqui: carteira é o que define o
+       * que cada vendedora vê e recebe, e trocar isso numa frase ambígua é
+       * caro demais. Quando o cliente já tem dona, a ferramenta diz QUEM É e
+       * não grava nada.
+       *
+       * A garantia não é este `if`: é o `WHERE vendedora_codigo_erp IS NULL`
+       * do `atribuirVendedoraSeSemDona`. O `if` existe para a FRASE ficar
+       * boa; a regra existe na escrita.
+       * ====================================================================
+       */
+      // SEM `clientes:write`, A CHAVE NEM EXISTE no objeto devolvido — e por
+      // isso a ferramenta nao e declarada ao modelo. Nao ha versao recusavel.
+      ...(podeAtribuirCarteira
+        ? {
+      gestaoAtribuirVendedora: async ({ cliente, vendedora }) => {
+        // A VENDEDORA PRIMEIRO, e é de propósito: é ela que decide se a
+        // pessoa pode mexer nisso. Resolver o cliente antes faria a resposta
+        // falar de um cliente mesmo quando a vendedora está fora da equipe.
+        const daVendedora = await this.comVendedora(
+          equipe,
+          vendedora,
+          async (_id, codigoErp) => (codigoErp ? [codigoErp] : []),
+        );
+        const candidatas = daVendedora.nomes ?? [];
+        if (daVendedora.status === 'AMBIGUA') {
+          return {
+            mensagem:
+              `Há mais de uma vendedora com esse nome: ${candidatas.join(', ')}. ` +
+              'Pergunte qual delas antes de atribuir. Nada foi alterado.',
+          };
+        }
+        if (daVendedora.status === 'NAO_ENCONTRADA') {
+          return {
+            mensagem:
+              'Não encontrei essa vendedora' +
+              (candidatas.length ? `. Parecidas: ${candidatas.join(', ')}` : '') +
+              '. Nada foi alterado.',
+          };
+        }
+        const codigoDaVendedora = daVendedora.linhas[0];
+        if (!codigoDaVendedora) {
+          // Vendedora sem cadastro no ERP não tem carteira — o mesmo caso que
+          // o `ConsultarCarteiraVendedoraUseCase` trata devolvendo vazio.
+          return {
+            mensagem:
+              `A ${daVendedora.vendedora} não tem código no ERP, e a carteira ` +
+              'é por esse código. Nada foi alterado — isso precisa ser ' +
+              'corrigido no cadastro dela.',
+          };
+        }
+
+        const achados = await this.clientes.buscarPorNomeParcial(
+          cliente,
+          MAXIMO_CLIENTES_HOMONIMOS + 1,
+        );
+        if (achados.length === 0) {
+          return {
+            mensagem: `Não encontrei nenhum cliente com esse nome. Nada foi alterado.`,
+          };
+        }
+        // HOMÔNIMO NÃO VIRA ESCOLHA DO MODELO. Com duas pessoas de nome
+        // parecido, gravar na primeira seria pôr o cliente de alguém na
+        // carteira de outra pessoa sem ninguém saber.
+        if (achados.length > 1) {
+          return {
+            mensagem:
+              `Há mais de um cliente com esse nome: ` +
+              `${achados.slice(0, MAXIMO_CLIENTES_HOMONIMOS).map((c) => `${c.nome}${c.codigoErp ? ` (código ${c.codigoErp})` : ''}`).join('; ')}. ` +
+              'Pergunte qual deles, pelo código. Nada foi alterado.',
+          };
+        }
+
+        const alvo = achados[0];
+        if (alvo.vendedoraCodigoErp) {
+          const dona = await this.vendedoras.buscarPorCodigoErp(
+            alvo.vendedoraCodigoErp,
+          );
+          return {
+            mensagem:
+              `${alvo.nome} já está na carteira de ` +
+              `${dona?.nome ?? `uma vendedora não cadastrada (${alvo.vendedoraCodigoErp})`}. ` +
+              'NÃO alterei nada: eu só preencho cliente que está sem vendedora. ' +
+              'Para trocar a carteira, isso é feito no painel.',
+          };
+        }
+
+        // `id` e opcional na entidade (ela existe antes de ser gravada). Aqui
+        // ele veio do banco, entao a ausencia seria defeito — e sem id nao ha
+        // o que atualizar.
+        if (!alvo.id) {
+          return {
+            mensagem:
+              'Não consegui identificar esse cliente no cadastro. Nada foi alterado.',
+          };
+        }
+        const gravou = await this.clientes.atribuirVendedoraSeSemDona(
+          alvo.id,
+          codigoDaVendedora,
+        );
+        if (!gravou) {
+          // Chegou aqui com o `if` acima dizendo que estava vazio: alguém
+          // preencheu no meio do caminho — a sincronização do ERP mexe nos
+          // clientes com frequência. Dizer "pronto" aqui seria mentir.
+          return {
+            mensagem:
+              `${alvo.nome} ganhou uma vendedora enquanto eu gravava, e eu NÃO ` +
+              'sobrescrevi. Peça para conferir de quem é agora.',
+          };
+        }
+
+        // O LOG É O QUE TORNA UMA REVERSÃO DETECTÁVEL. A integração atualiza
+        // cliente com frequência; se um dia ela apagar isto, a única forma de
+        // descobrir é ter registrado que nós escrevemos. Sem nome de cliente.
+        this.logger.log(
+          `Carteira atribuida: cliente ${alvo.id} -> vendedora ${codigoDaVendedora}` +
+            (solicitante ? ` (pedido por ${solicitante})` : ''),
+        );
+        return {
+          mensagem:
+            `Pronto: ${alvo.nome} agora está na carteira da ${daVendedora.vendedora}. ` +
+            'Responda com isso, sem alterar nomes.',
+        };
+      },
+          }
+        : {}),
       /**
        * O DIA DE UMA VENDEDORA NUMA FRASE — a pergunta "como esta o canal da
        * Marina hoje".
@@ -1700,8 +2125,13 @@ export class FerramentasGestaoService {
           : { status: 'OK' as const, linhas: await responder(null) };
       },
 
-      gestaoPanoramaLeads: async ({ vendedora }) => {
+      gestaoPanoramaLeads: async ({ vendedora, status, dia }) => {
         if (vendedora && vendedora.trim()) {
+          // O RECORTE DA GESTAO — 08/10/2026. O status e validado como a etapa
+          // do funil: valor inventado vira SEM recorte, nunca filtro por valor
+          // inexistente. Ver `statusDeLead`.
+          const pedido = statusDeLead(status);
+          const janela = oDiaInteiro(dia);
           return this.comVendedora(equipe, vendedora, async (_id, codigoErp) => {
             if (!codigoErp) return [];
             // ============================================================
@@ -1720,6 +2150,7 @@ export class FerramentasGestaoService {
               codigoErp,
               MAXIMO_LEADS + 1,
               false,
+              { ...(pedido ? { status: pedido } : {}), ...janela },
             );
             const linhas = achados
               .slice(0, MAXIMO_LEADS)
@@ -1773,13 +2204,31 @@ export class FerramentasGestaoService {
         return { status: 'OK', linhas };
       },
 
-      gestaoFunil: async ({ vendedora }) => {
+      gestaoFunil: async ({ vendedora, etapa, dia }) => {
+        // O RECORTE VIAJA JUNTO — 08/10/2026. Por ETAPA responde "quem esta SO
+        // em negociacao"; por DIA, "o que abriu hoje". Os dois ja existiam no
+        // `FiltroAuditoria`; o que faltava era a ferramenta oferece-los.
+        const valida = etapaAberta(etapa);
+        const recorte = {
+          ...(valida ? { etapa: valida } : {}),
+          ...oDiaInteiro(dia),
+        };
+
         if (vendedora && vendedora.trim()) {
           return this.comVendedora(equipe, vendedora, async (id) => {
-            const r = await this.auditoria.resumo({
-              apenasAbertos: true,
-              vendedoraId: id,
-            });
+            const [r, lista] = await Promise.all([
+              this.auditoria.resumo({
+                apenasAbertos: true,
+                vendedoraId: id,
+                ...recorte,
+              }),
+              this.auditoria.listar({
+                apenasAbertos: true,
+                vendedoraId: id,
+                ...recorte,
+                limit: TETO_FUNIL_NOMEADO,
+              }),
+            ]);
             const dela = r.vendedoras[0];
             if (!dela) return [];
             const linhas = [fraseDoFunil(dela.total, dela.porEtapa)];
@@ -1790,13 +2239,16 @@ export class FerramentasGestaoService {
                   : `${dela.aguardandoRelato} deles estao esperando o relato dela`,
               );
             }
-            return linhas;
+            return [...linhas, ...nomesDoFunil(lista, false)];
           });
         }
 
         // A LOJA — OU A EQUIPE. Uma linha do todo, e depois uma por vendedora:
         // e a leitura que a gestao faz, primeiro o tamanho, depois de quem e.
-        const r = await this.auditoria.resumo({ apenasAbertos: true });
+        const r = await this.auditoria.resumo({
+          apenasAbertos: true,
+          ...recorte,
+        });
 
         // ================================================================
         // O RECORTE E APLICADO DEPOIS DA CONSULTA, e aqui isso e correto —
@@ -1841,7 +2293,52 @@ export class FerramentasGestaoService {
                 : ''),
           );
         }
-        return { status: 'OK', linhas };
+
+        // ================================================================
+        // OS NOMES, UMA CONSULTA POR VENDEDORA — 08/10/2026.
+        //
+        // E a diferenca em relacao a contagem logo acima, que busca tudo e
+        // filtra depois. Ali o comentario explica por que aquilo e aceitavel:
+        // o que vem e contagem por pessoa, e nao ha agregado da loja para
+        // vazar.
+        //
+        // AQUI VEM NOME DE CLIENTE, e isso muda a conta. Buscar a loja
+        // inteira e descartar depois faria nomes de outra equipe passarem
+        // pela memoria — nao voltam na resposta, mas SAO LIDOS. Perguntar
+        // por vendedora deixa a regra ESTRUTURAL: o que esta fora do escopo
+        // nao e sequer consultado, e continua certo sozinho no dia em que
+        // nascer uma segunda equipe (SP, o RF12).
+        //
+        // O CUSTO E BAIXO E MEDIDO: a equipe tem 7 ativas, e cada consulta e
+        // indexada. Para quem alcanca TODO MUNDO (`equipe === null`, o caso
+        // do ADMIN) uma consulta so continua valendo — nao ha escopo para
+        // proteger.
+        // ================================================================
+        const comNome = daEquipe.filter((v) => v.total > 0);
+        const paginas = await Promise.all(
+          equipe === null
+            ? [
+                this.auditoria.listar({
+                  apenasAbertos: true,
+                  ...recorte,
+                  limit: TETO_FUNIL_NOMEADO,
+                }),
+              ]
+            : comNome.map((v) =>
+                this.auditoria.listar({
+                  apenasAbertos: true,
+                  vendedoraId: v.vendedoraId,
+                  ...recorte,
+                  limit: TETO_FUNIL_NOMEADO,
+                }),
+              ),
+        );
+        const juntas = {
+          itens: paginas.flatMap((p) => p.itens).slice(0, TETO_FUNIL_NOMEADO),
+          total: paginas.reduce((s, p) => s + p.total, 0),
+        };
+
+        return { status: 'OK', linhas: [...linhas, ...nomesDoFunil(juntas, true)] };
       },
 
     };
@@ -2105,6 +2602,118 @@ export function moeda(v: number): string {
  * diria da equipe um numero que e do todo — e ele seria PLAUSIVEL, que e o
  * pior tipo de numero errado.
  */
+/**
+ * A ETAPA QUE O MODELO ESCREVEU, validada — 08/10/2026.
+ *
+ * ==========================================================================
+ * VALOR INVENTADO VIRA "SEM RECORTE", E NAO ZERO LINHAS.
+ *
+ * E a mesma regra do `categoriaDaBusca` e pelo mesmo motivo: o modelo as
+ * vezes escreve "NEGOCIACAO", "em negociacao" ou "ABERTO" neste campo.
+ * Filtrar por um valor que nao existe devolveria ZERO — e zero e
+ * indistinguivel de "nao ha ninguem nessa etapa", que e uma resposta
+ * confiante e errada.
+ *
+ * Sem recorte, a agente devolve o funil inteiro e a gestao ve que a etapa
+ * pedida nao esta ali. Erra menos, e o engano aparece.
+ *
+ * CONCLUIDO e NAO_AVANCOU ficam de fora de proposito: as duas SAO o
+ * desfecho, e o funil aqui e `apenasAbertos`. Aceita-las criaria um recorte
+ * que sempre devolve vazio.
+ * ==========================================================================
+ */
+/**
+ * O STATUS DE LEAD que o modelo escreveu, validado — 08/10/2026.
+ *
+ * Mesma regra do `etapaAberta` e do `categoriaDaBusca`: valor inventado vira
+ * SEM recorte. Aqui os QUATRO valem, inclusive os dois de baixa — a gestao
+ * pergunta "quantos viraram cliente" de propósito, e e a diferenca em relacao
+ * a fila da vendedora, que esconde o resolvido.
+ */
+function statusDeLead(status?: string): StatusLeadVendedora | undefined {
+  const limpo = (status ?? '').trim().toUpperCase();
+  return STATUS_LEAD_VENDEDORA.find((s) => s === limpo);
+}
+
+function etapaAberta(etapa?: string): EtapaAtendimento | undefined {
+  const abertas: readonly EtapaAtendimento[] = [
+    'PRIMEIRO_CONTATO',
+    'EM_NEGOCIACAO',
+    'REMARCADO',
+    'SEM_CONTATO',
+  ];
+  const limpa = (etapa ?? '').trim().toUpperCase();
+  return abertas.find((e) => e === limpa);
+}
+
+/**
+ * UM DIA INTEIRO, e nao o instante da meia-noite — 08/10/2026.
+ *
+ * ==========================================================================
+ * O `ate` DA AUDITORIA COMPARA `aberto_em <= $N`, E `aberto_em` E TIMESTAMP.
+ *
+ * Passar o dia nas duas pontas pelo `datasDeRecorte` daria `de` e `ate` as
+ * 00:00:00 — e o filtro pegaria so o atendimento aberto exatamente na
+ * virada. "O que abriu hoje" voltaria vazio, e vazio aqui e indistinguivel
+ * de "nao abriu nada hoje": um numero errado que ninguem confere.
+ *
+ * O `datasDeRecorte` continua sendo quem VALIDA (ele recusa "2026-02-31",
+ * que o `new Date` normalizaria em silencio para 3 de marco). So o fim do
+ * dia e empurrado depois.
+ * ==========================================================================
+ */
+function oDiaInteiro(dia?: string): { de: Date; ate: Date } | Record<string, never> {
+  if (!dia) return {};
+  const janela = datasDeRecorte(dia, dia);
+  if (!janela) return {};
+  const ate = new Date(janela.ate);
+  ate.setHours(23, 59, 59, 999);
+  return { de: janela.de, ate };
+}
+
+/**
+ * As linhas de QUEM SAO, para a gestao — 08/10/2026.
+ *
+ * Nasceu do mesmo teste em producao que consertou a Helena: a agente sabia
+ * QUANTOS estavam em negociacao e mandava olhar no painel para saber QUEM.
+ *
+ * `comVendedora` decide se o nome da vendedora entra: na lista da equipe ele
+ * e o ponto da pergunta do Lucas ("saber quem e a vendedora"); na carteira de
+ * uma pessoa so, repetir o mesmo nome em vinte linhas e ruido.
+ *
+ * O TETO SE ANUNCIA. Vinte de cinquenta parecem os cinquenta, e ai a gestao
+ * cobra metade do time achando que viu o todo.
+ */
+function nomesDoFunil(
+  pagina: { itens: AtendimentoAuditoria[]; total: number },
+  comVendedora: boolean,
+): string[] {
+  if (pagina.itens.length === 0) return [];
+
+  const linhas = pagina.itens.map((a) => {
+    const desde = a.abertoEm.toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+    });
+    const quem = comVendedora ? ` — ${a.vendedoraNome}` : '';
+    const espera = a.aguardandoRelato ? ' — ESPERANDO O RELATO DELA' : '';
+    return `${a.clienteNome}${quem} (${rotuloEtapa(a.etapa)}, desde ${desde})${espera}`;
+  });
+
+  const cortou = pagina.total - pagina.itens.length;
+  return [
+    'QUEM SAO:',
+    ...linhas,
+    ...(cortou > 0
+      ? [
+          `Sao ${pagina.total} no total e esta lista traz ${pagina.itens.length}: ` +
+            'DIGA isso e ofereca o resto.',
+        ]
+      : []),
+    'Quando perguntarem QUEM, responda com estes nomes — NAO mande olhar no painel.',
+  ];
+}
+
 function somarEtapas(porEtapa: ContagemPorEtapa[]): ContagemPorEtapa {
   return porEtapa.reduce<ContagemPorEtapa>(
     (soma, atual) => {

@@ -15,8 +15,13 @@ import {
 } from '../../../../domain/ports/repositories/produto-repository.port';
 import {
   SALDO_POR_PRODUTO,
+  comSaldoEm,
   saldoDe,
 } from '../../../../../../shared/database/sql/saldo-do-produto';
+import {
+  type GrupoDeBusca,
+  gruposDaBusca,
+} from '../../../../../../shared/catalogo/sinonimos';
 import { ProdutoOrmEntity } from '../entities/produto.orm-entity';
 
 const NOME_PRODUTO = `COALESCE(NULLIF(descricao_etiqueta, ''), codigo_erp, categoria || ' ' || familia, LEFT(id::text, 8))`;
@@ -137,6 +142,52 @@ export class ProdutoRepository implements IProdutoRepository {
   }
 
   async findAll(filtros: FiltroProduto): Promise<Produto[]> {
+    const qb = this.montarConsulta(filtros);
+
+    // ORDEM DE PERGUNTA DE PRECO E O PRECO. Quem pede "pecas ate 20 mil" quer
+    // uma tabela, e tabela de preco se le do mais barato para o mais caro —
+    // e o mesmo formato do relatorio do Safira que a gestao usa hoje. Sem
+    // faixa, segue valendo a entrada mais recente primeiro.
+    const porPreco =
+      filtros.precoDe !== undefined || filtros.precoAte !== undefined;
+    if (porPreco) qb.orderBy('p.valor_venda', 'ASC');
+    else qb.orderBy('p.criado_em', 'DESC');
+
+    // O DESEMPATE NAO E ZELO — e o que faz a pagina 2 ser a pagina 2. Com
+    // duas pecas do mesmo preco e sem segundo criterio, o Postgres pode
+    // devolve-las em ordem diferente a cada consulta: uma repete na pagina
+    // seguinte e outra desaparece, sem erro nenhum. Foi o conserto da
+    // carteira em 05/10, e `id` e unico por definicao.
+    qb.addOrderBy('p.id', 'ASC');
+
+    if (filtros.deslocamento) qb.skip(Math.max(0, Math.trunc(filtros.deslocamento)));
+    if (filtros.limit) qb.take(filtros.limit);
+
+    return this.comSaldo(await qb.getMany());
+  }
+
+  /**
+   * QUANTAS SAO DE VERDADE, sem o teto da lista — 07/10/2026.
+   *
+   * Nasceu de um teste do Lucas no mesmo dia. Ele perguntou "tem alguma
+   * esmeralda sem estoque?" e a Anastasia respondeu:
+   *
+   *   "Nenhuma esmeralda esta sem estoque — todas as SEIS pecas que aparecem
+   *    no catalogo estao disponiveis."
+   *
+   * Sao 112 no catalogo, 9 com saldo. O modelo recebeu as seis do teto e
+   * raciocinou sobre elas como se fossem o catalogo inteiro — do mesmo jeito
+   * que a carteira fazia antes de 21/08, quando passou a devolver AMOSTRA +
+   * TOTAL. Teto sem total vira resposta confiante e errada.
+   *
+   * A MESMA consulta do `findAll`, sem `take` e sem ordem: nao da para contar
+   * por uma regra e listar por outra.
+   */
+  async contar(filtros: FiltroProduto): Promise<number> {
+    return this.montarConsulta(filtros).getCount();
+  }
+
+  private montarConsulta(filtros: FiltroProduto) {
     const qb = this.repo.createQueryBuilder('p');
 
     if (filtros.categoria !== undefined) {
@@ -158,6 +209,26 @@ export class ProdutoRepository implements IProdutoRepository {
     // quase tudo e so estragariam o filtro.
     //
     // ======================================================================
+    // ... E CADA PALAVRA TEM MAIS DE UMA GRAFIA — 08/10/2026. RF6 e RF7.
+    //
+    // A vendedora escreve em portugues e o catalogo esta escrito em sigla.
+    // Medido na base: "brinco de diamante" achava ZERO pecas com estoque, e
+    // a loja tem 259 joias de diamante — porque `DTS` e `DMT` nao sao a
+    // palavra "diamante". O mesmo no metal: `OA 18K` nao contem "ouro" nem
+    // "amarelo", e era por isso que "ouro amarelo" achava zero.
+    //
+    // Entao onde ia uma palavra agora vai um GRUPO de grafias equivalentes
+    // (ver `gruposDaBusca`): OU entre as grafias, E entre os grupos.
+    //
+    // A SIGLA CASA POR PALAVRA INTEIRA, e isso nao e preciosismo — e o que
+    // separa a correcao do estrago. Medido: `ON` (ouro negro) casa 4.682
+    // pecas como substring e 63 por palavra inteira, porque pegava
+    // cONjunto, cONcha e ONCA; `OR` (ouro rose) casa 1.025 contra 175, por
+    // cOR, flOR e cORacao. A palavra em portugues continua por substring,
+    // que e como a busca sempre funcionou.
+    // ======================================================================
+    //
+    // ======================================================================
     // ... E O CODIGO VALE SOZINHO — 06/10/2026.
     //
     // A gestora escreveu "An24084 me da a descricao desse produto". O AND
@@ -174,32 +245,49 @@ export class ProdutoRepository implements IProdutoRepository {
     // entrar — "brinco de esmeralda", "anel ouro", "colar safira" e
     // "pulseira diamante" devolvem exatamente o mesmo de antes.
     // ======================================================================
-    const palavras = palavrasDaBusca(filtros.busca);
+    const grupos = gruposDaBusca(filtros.busca);
     const codigos = codigosNaBusca(filtros.busca);
 
-    if (palavras.length > 0 || codigos.length > 0) {
+    if (grupos.length > 0 || codigos.length > 0) {
       qb.andWhere(
         // Os parenteses importam: sem eles o OR vazaria e anularia os
         // filtros de categoria/familia/ativo acima.
         new Brackets((raiz) => {
-          if (palavras.length > 0) {
+          if (grupos.length > 0) {
             raiz.where(
               new Brackets((todas) => {
-                for (const [i, palavra] of palavras.entries()) {
-                  const chave = `busca${i}`;
-                  const termo = `%${palavra}%`;
+                // AQUI DENTRO, E NAO LA EM CIMA — 07/10/2026.
+                //
+                // O filtro de saldo mora no ramo das PALAVRAS para que o ramo
+                // do CODIGO, logo abaixo no mesmo OR, passe por fora dele.
+                // "Me da a descricao do An24084" tem que achar a peca mesmo
+                // sem estoque; "anel de esmeralda" nao pode trazer o que a
+                // loja nao tem.
+                if (filtros.apenasDisponiveis) {
+                  todas.andWhere(comSaldoEm('p'));
+                }
+                if (filtros.categoriaSugerida) {
+                  todas.andWhere('p.categoria = :categoriaSugerida', {
+                    categoriaSugerida: filtros.categoriaSugerida,
+                  });
+                }
+                if (filtros.precoDe !== undefined) {
+                  todas.andWhere('p.valor_venda >= :precoDe', {
+                    precoDe: filtros.precoDe,
+                  });
+                }
+                if (filtros.precoAte !== undefined) {
+                  todas.andWhere('p.valor_venda <= :precoAte', {
+                    precoAte: filtros.precoAte,
+                  });
+                }
+                if (filtros.comFotoCadastrada) {
                   todas.andWhere(
-                    new Brackets((b) =>
-                      b
-                        .where(`p.descricao_etiqueta ILIKE :${chave}`, { [chave]: termo })
-                        .orWhere(`p.categoria ILIKE :${chave}`, { [chave]: termo })
-                        .orWhere(`p.familia ILIKE :${chave}`, { [chave]: termo })
-                        .orWhere(`p.colecao ILIKE :${chave}`, { [chave]: termo })
-                        .orWhere(`p.tipo_pedra ILIKE :${chave}`, { [chave]: termo })
-                        .orWhere(`p.cor ILIKE :${chave}`, { [chave]: termo })
-                        .orWhere(`p.codigo_erp ILIKE :${chave}`, { [chave]: termo }),
-                    ),
+                    "p.foto_url IS NOT NULL AND p.foto_url <> ''",
                   );
+                }
+                for (const [i, grupo] of grupos.entries()) {
+                  todas.andWhere(ondeOGrupoCasa(grupo, i));
                 }
               }),
             );
@@ -216,12 +304,29 @@ export class ProdutoRepository implements IProdutoRepository {
           }
         }),
       );
+    } else {
+      // Sem texto nenhum — a listagem do painel, ou a tool sem termo. Nao ha
+      // ramo de codigo para preservar, entao os filtros sao diretos.
+      if (filtros.apenasDisponiveis) qb.andWhere(comSaldoEm('p'));
+      if (filtros.categoriaSugerida) {
+        qb.andWhere('p.categoria = :categoriaSugerida', {
+          categoriaSugerida: filtros.categoriaSugerida,
+        });
+      }
+      if (filtros.precoDe !== undefined) {
+        qb.andWhere('p.valor_venda >= :precoDe', { precoDe: filtros.precoDe });
+      }
+      if (filtros.precoAte !== undefined) {
+        qb.andWhere('p.valor_venda <= :precoAte', {
+          precoAte: filtros.precoAte,
+        });
+      }
+      if (filtros.comFotoCadastrada) {
+        qb.andWhere("p.foto_url IS NOT NULL AND p.foto_url <> ''");
+      }
     }
 
-    qb.orderBy('p.criado_em', 'DESC');
-    if (filtros.limit) qb.take(filtros.limit);
-
-    return this.comSaldo(await qb.getMany());
+    return qb;
   }
 
   async findById(id: string): Promise<Produto | null> {
@@ -512,16 +617,78 @@ export class ProdutoRepository implements IProdutoRepository {
 }
 
 /**
- * Palavras uteis de uma busca livre. Descarta as de ate dois caracteres — "de",
- * "do", "e" casam com quase tudo — e limita a quatro, para uma frase longa nao
- * virar oito condicoes no banco.
+ * As colunas em que uma busca livre procura. A ORDEM NAO IMPORTA — e um OR —,
+ * mas a LISTA importa: `tipo_pedra` e `cor` sao as duas que guardam sigla, e
+ * sao justamente as que fazem o dicionario do RF6/RF7 valer.
  */
-function palavrasDaBusca(busca: string | undefined): string[] {
-  return (busca ?? '')
-    .trim()
-    .split(/\s+/)
-    .filter((p) => p.length > 2)
-    .slice(0, 4);
+const COLUNAS_DA_BUSCA = [
+  'descricao_etiqueta',
+  'categoria',
+  'familia',
+  'colecao',
+  'tipo_pedra',
+  'cor',
+  'codigo_erp',
+] as const;
+
+/**
+ * As palavras de um grupo precisam TODAS aparecer; qualquer uma das siglas
+ * sozinha ja serve. Ou seja: `(palavra1 E palavra2) OU sigla1 OU sigla2`.
+ *
+ * A PALAVRA EM PORTUGUES CASA POR SUBSTRING, como a busca sempre funcionou:
+ * "esmeralda" tem de achar "ANEL VINTAGE ESMERALDA GOTA".
+ *
+ * A SIGLA CASA POR PALAVRA INTEIRA (`\m` e `\M`, a fronteira de palavra do
+ * Postgres), e ai esta a diferenca que a base mostrou: como substring, `ON`
+ * casaria 4.682 pecas (cONjunto, cONcha, ONCA) e `OR` casaria 1.025 (cOR,
+ * flOR, cORacao). Por palavra inteira sao 63 e 175 — e todas nas colunas de
+ * pedra, cor e etiqueta, que e onde a sigla deve estar.
+ *
+ * O `i` entra no nome do parametro porque um grupo nao sabe dos outros, e
+ * dois grupos no mesmo WHERE nao podem disputar `:busca0`.
+ */
+function ondeOGrupoCasa(grupo: GrupoDeBusca, i: number): Brackets {
+  return new Brackets((ramo) => {
+    ramo.where(
+      new Brackets((todasAsPalavras) => {
+        for (const [j, palavra] of grupo.termos.entries()) {
+          const chave = `busca${i}_${j}`;
+          const valor = { [chave]: `%${palavra}%` };
+          todasAsPalavras.andWhere(
+            new Brackets((coluna) => {
+              for (const nome of COLUNAS_DA_BUSCA) {
+                coluna.orWhere(`p.${nome} ILIKE :${chave}`, valor);
+              }
+            }),
+          );
+        }
+      }),
+    );
+
+    for (const [j, sigla] of grupo.siglas.entries()) {
+      const chave = `sigla${i}_${j}`;
+      const valor = { [chave]: comoPalavraInteira(sigla) };
+      ramo.orWhere(
+        new Brackets((coluna) => {
+          for (const nome of COLUNAS_DA_BUSCA) {
+            coluna.orWhere(`p.${nome} ~* :${chave}`, valor);
+          }
+        }),
+      );
+    }
+  });
+}
+
+/**
+ * A sigla virando expressao regular de palavra inteira.
+ *
+ * Escapa o que nao e letra ou digito antes de montar: hoje toda sigla da
+ * tabela e so letra, mas ela NASCEU PARA CRESCER com o que a equipe mandar, e
+ * uma sigla com ponto ou barra viraria metacaractere de regex sem isto.
+ */
+function comoPalavraInteira(sigla: string): string {
+  const escapada = sigla.replace(/[^\p{L}\p{N}]/gu, (c) => `\\${c}`);
+  return `\\m${escapada}\\M`;
 }
 
 /**

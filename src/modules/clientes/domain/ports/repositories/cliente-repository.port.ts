@@ -1,3 +1,4 @@
+import { NivelDeFidelidade } from '../../../../../shared/clientes/fidelidade';
 import { Cliente } from '../../entities/cliente.entity';
 import { ClientePerfil } from '../../entities/cliente-perfil.entity';
 import { TabelaPreco } from '../../entities/enums';
@@ -35,6 +36,70 @@ export interface ClienteDaEpoca extends ClienteDaCarteira {
 export type EscopoDeEpoca =
   | { tipo: 'CARTEIRA'; vendedoraCodigoErp: string }
   | { tipo: 'LOJA' };
+
+/**
+ * O MESMO discriminante, com o nome que ele sempre devia ter tido: ele nao e
+ * da epoca, e de qualquer pergunta sobre cliente. `EscopoDeEpoca` fica como
+ * apelido para nao mexer em cinco arquivos num commit que e sobre fidelidade.
+ */
+export type EscopoDeCliente = EscopoDeEpoca;
+
+/** Uma linha da lista de fidelidade. Sem telefone e sem e-mail. */
+export interface ClienteFiel {
+  id: string;
+  nome: string;
+  nivel: NivelDeFidelidade;
+  /** Compras concluidas. Devolucao NAO desconta aqui — so no valor. */
+  compras: number;
+  /** Venda menos devolucao. Informa, e nao classifica. */
+  valorLiquido: number;
+  /** Nula so quando o nivel e "Sem compras". */
+  ultimaCompra: Date | null;
+  /** O nome da vendedora da carteira, ou nulo quando o cliente nao tem dona. */
+  vendedoraNome: string | null;
+}
+
+export interface RecorteDeFidelidade {
+  /**
+   * O nivel pedido. Ausente = todos os niveis, do mais fiel para o menos.
+   *
+   * Vem VALIDADO por `nivelDaPergunta`, nunca convertido: nivel inventado
+   * pelo modelo viraria filtro que nao casa nada, e lista vazia e
+   * indistinguivel de "nao ha nenhum".
+   */
+  nivel?: NivelDeFidelidade;
+  /**
+   * So quem NAO compra desde esta data — o cliente adormecido.
+   *
+   * Quem nunca comprou fica de fora por construcao: `ultima_compra` e nula e
+   * nula nao e menor que data nenhuma. E o certo — "nao compra desde maio"
+   * nao descreve quem nunca comprou.
+   */
+  semCompraDesde?: Date;
+  /** Teto de linhas. Quem chama precisa dizer quantas ficaram de fora. */
+  limite: number;
+  /**
+   * A pagina seguinte. A ordenacao desempata por NOME na implementacao — sem
+   * o segundo critério paginar repete e pula, e aqui o empate em "6 compras"
+   * e regra, nao exceção.
+   */
+  deslocamento?: number;
+}
+
+export interface PaginaDeFidelidade {
+  clientes: ClienteFiel[];
+  /** Quantos atendem ao recorte, antes do teto. */
+  total: number;
+  /**
+   * Quantos do recorte NAO tem vendedora na carteira.
+   *
+   * Existe porque a resposta mentiria por omissao sem ele: medido em 09/10,
+   * 19 dos 48 clientes Ouro nao tem `vendedora_codigo_erp` — 40% deles, e
+   * metade do valor. Somar "os Ouro de cada vendedora" da 29, e nao 48, e
+   * quem le precisa saber que os outros existem e nao tem dona.
+   */
+  semVendedora: number;
+}
 
 export interface FiltroCliente {
   ativo?: boolean;
@@ -207,6 +272,21 @@ export interface IClienteRepository {
   ): Promise<number>;
 
   /**
+   * OS CLIENTES POR NIVEL DE FIDELIDADE — Ouro, Prata, Bronze — 09/10/2026.
+   *
+   * A mesma regra do cartao "Clientes Ouro" do painel, agora com NOMES e nao
+   * so a contagem: e o pedido da gestora, e e o mesmo defeito que a Helena
+   * tinha ("5 em negociacao, olhe no painel").
+   *
+   * O nivel sai de `shared/clientes/fidelidade.ts`, que e de onde o SQL do
+   * painel tambem sai. Ver la por que fidelidade e recorrencia.
+   */
+  clientesPorFidelidade(
+    escopo: EscopoDeCliente,
+    recorte: RecorteDeFidelidade,
+  ): Promise<PaginaDeFidelidade>;
+
+  /**
    * QUEM COMPRA NAQUELA EPOCA — 01/10/2026.
    *
    * Recebe uma JANELA POR ANO (dezembro de 2023, de 2024, de 2025...) e soma
@@ -256,6 +336,31 @@ export interface IClienteRepository {
    * `null` desvincula (cliente sem carteira).
    */
   transferirCarteira(clienteId: string, vendedoraCodigoErp: string | null): Promise<void>;
+
+  /**
+   * ATRIBUI A VENDEDORA **SO SE O CLIENTE NAO TIVER NENHUMA** — 09/10/2026.
+   *
+   * ========================================================================
+   * A CONDICAO MORA NO `WHERE`, E NAO NUM `if` ANTES DA ESCRITA.
+   *
+   * Decisao do Lucas: a Anastasia PREENCHE o que esta em branco e NAO tira
+   * cliente de ninguem. Ler o dono, decidir em TypeScript e so entao gravar
+   * deixaria uma janela entre a leitura e a escrita — e nessa janela a
+   * sincronizacao do ERP, que mexe nos clientes com frequencia (1.082 dos
+   * 1.096 ja foram atualizados depois de criados), pode preencher a coluna.
+   * O `UPDATE` sairia por cima de uma dona que passou a existir.
+   *
+   * Com a condicao no `WHERE`, "so se estiver vazia" e uma propriedade da
+   * ESCRITA, e nao uma intencao de quem chamou.
+   * ========================================================================
+   *
+   * Devolve `false` quando nao gravou — cliente inexistente ou ja com dona —,
+   * e quem chama precisa dizer qual dos dois foi.
+   */
+  atribuirVendedoraSeSemDona(
+    clienteId: string,
+    vendedoraCodigoErp: string,
+  ): Promise<boolean>;
 
   /**
    * Exclusao FISICA. Nao confundir com `ativo = false`, o desligamento suave.

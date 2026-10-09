@@ -5,6 +5,11 @@ import { CLIENTE_REPOSITORY } from '../../../clientes/domain/ports/injection-tok
 import type { IClienteRepository } from '../../../clientes/domain/ports/repositories/cliente-repository.port';
 import { VENDEDORA_REPOSITORY } from '../../../vendedoras/domain/ports/injection-tokens';
 import type { IVendedoraRepository } from '../../../vendedoras/domain/ports/repositories/vendedora-repository.port';
+import {
+  canalEmPalavras,
+  destinoDaVendedora,
+  type DestinoDaVendedora,
+} from '../../../vendedoras/domain/para-onde-falar';
 import { ATENDIMENTO_REPOSITORY } from '../../domain/ports/injection-tokens';
 import type { IAtendimentoRepository } from '../../domain/ports/repositories/atendimento-repository.port';
 import {
@@ -158,7 +163,10 @@ export class AgendarContatoGestaoUseCase {
     // teria transferido a carteira do cliente. Recusar depois disso deixaria a
     // transferencia feita e o agendamento nao — o pior dos dois mundos.
     const destino = await this.vendedoras.buscarPorId(entrada.vendedoraId);
-    if (!destino?.whatsappInterno) {
+    // O interno OU o corporativo — ver `destinoDaVendedora`. A trava continua
+    // vindo ANTES de tudo, pelo motivo do comentario acima.
+    const paraOndeFalar = destinoDaVendedora(destino);
+    if (!paraOndeFalar) {
       return { status: 'VENDEDORA_SEM_WHATSAPP', vendedora: entrada.vendedoraNome };
     }
 
@@ -267,7 +275,7 @@ export class AgendarContatoGestaoUseCase {
       cobrancaAtual?.status === 'PENDENTE' ? cobrancaAtual.combinadoEm : null;
 
     const aviso = await this.avisar({
-      whatsappInterno: destino.whatsappInterno,
+      paraOndeFalar,
       vendedoraId: entrada.vendedoraId,
       vendedoraNome: entrada.vendedoraNome,
       clienteNome: cliente.nome,
@@ -333,7 +341,7 @@ export class AgendarContatoGestaoUseCase {
    * pediu recebe a frase dizendo que o aviso nao saiu.
    */
   private async avisar(dados: {
-    whatsappInterno: string;
+    paraOndeFalar: DestinoDaVendedora;
     vendedoraId: string;
     vendedoraNome: string;
     clienteNome: string;
@@ -351,10 +359,13 @@ export class AgendarContatoGestaoUseCase {
     const remarcacao = combinadoAnterior !== null;
 
     try {
-      const chatId = await this.whatsapp.resolverChatId(dados.whatsappInterno);
+      const chatId = await this.whatsapp.resolverChatId(
+        dados.paraOndeFalar.numero,
+      );
       if (!chatId) {
         this.logger.warn(
-          `Agendamento: o numero da vendedora ${dados.vendedoraId} nao tem WhatsApp.`,
+          `Agendamento: o numero da vendedora ${dados.vendedoraId} ` +
+            `(${canalEmPalavras(dados.paraOndeFalar.canal)}) nao tem WhatsApp.`,
         );
         return 'FALHOU';
       }

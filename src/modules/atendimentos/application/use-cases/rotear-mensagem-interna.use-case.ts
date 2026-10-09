@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { FotoDeProduto } from '../fotos-de-produto.service';
 import { BuscarAdminPorTelefoneUseCase } from '../../../auth/application/use-cases/buscar-admin-por-telefone.use-case';
 import type { AgenteDaCasa } from '../../../atendimento/domain/agente-da-casa';
 import { WHATSAPP_GATEWAY } from '../../../atendimento/domain/ports/injection-tokens';
@@ -14,6 +15,8 @@ import {
   type AudioInterno,
 } from './processar-mensagem-interna.use-case';
 import { ProcessarMensagemGestaoUseCase } from './processar-mensagem-gestao.use-case';
+import { LeitorDeArquivoService } from '../leitor-de-arquivo.service';
+import { AnalisarArquivoService } from '../analisar-arquivo.service';
 
 /**
  * A chave que separa os dois canais da casa — 07/10/2026.
@@ -28,6 +31,17 @@ import { ProcessarMensagemGestaoUseCase } from './processar-mensagem-gestao.use-
  * arquivo.
  */
 const PERMISSAO_LOJA = 'analytics:read';
+
+/**
+ * De quanto em quanto tempo o "digitando..." e renovado.
+ *
+ * DEZ SEGUNDOS porque o indicador do WhatsApp cai sozinho entre 10 e 25 —
+ * renovar no piso da janela cobre a espera inteira sem depender de qual
+ * ponta do intervalo o aparelho dela usa. Presenca nao conta no teto de
+ * envio (ver `WahaGateway.presenca`), entao renovar nao custa mensagem.
+ */
+const INTERVALO_DIGITANDO_MS = 10_000;
+
 import { MemoriaDeGrupoService } from '../memoria-de-grupo.service';
 import { RecepcionarUseCase } from './recepcionar.use-case';
 import {
@@ -98,15 +112,46 @@ export interface MensagemDoCanal {
    */
   imagem?: ImagemInterna;
   /**
+   * Presente so quando chegou DOCUMENTO — planilha, PDF, CSV. RF9, 08/10/2026.
+   *
+   * ========================================================================
+   * SO A REFERENCIA CHEGA AQUI, e o download acontece DEPOIS DO
+   * RECONHECIMENTO — mesma economia do audio: ler uma planilha e uma chamada
+   * grande ao modelo, e nesta borda ainda nao se sabe quem mandou.
+   *
+   * E SO A GESTAO MANDA ARQUIVO. A vendedora que mandar ouve que nao consigo
+   * ler — nunca silencio, que foi o defeito do audio em 21/08.
+   * ========================================================================
+   */
+  documento?: DocumentoInterno;
+  /**
    * Quando a mensagem foi ESCRITA (ms), pelo carimbo do WhatsApp. E o relogio
    * da aprovacao do catalogo — ver `ProcessarFotoCatalogoUseCase.aprovacao`.
    */
   em?: number;
 }
 
+/** O documento como ele viaja no canal: referencia, tipo e nome. */
+export interface DocumentoInterno {
+  url: string | null;
+  mimetype: string;
+  /** O nome do arquivo — a unica pista de tipo quando o mime e octet-stream. */
+  nome: string | null;
+}
+
 export interface RespostaDoCanal {
   resposta: string | null;
   motivo: string;
+  /**
+   * As fotos das pecas, JA BAIXADAS, para irem depois do texto — 07/10/2026.
+   *
+   * Quem envia e o webhook, nao o use case: o envio e a unica coisa que
+   * precisa do chat de destino, e o canal ja resolve isso para o texto.
+   *
+   * Vem vazio quase sempre, e isso e o esperado: das 546 pecas com saldo,
+   * 196 tem foto; na joia, 55 de 320.
+   */
+  fotos?: FotoDeProduto[];
 }
 
 /**
@@ -168,6 +213,10 @@ export class RotearMensagemInternaUseCase {
     @Inject(TRANSCRICAO_SERVICE)
     private readonly transcricao: ITranscricao,
     private readonly sala: MemoriaDeGrupoService,
+    // RF9 — os dois andam juntos e sempre nesta ordem: o leitor abre o
+    // arquivo, a analise o le ATRAS DE UMA PORTA SEM FERRAMENTA.
+    private readonly leitor: LeitorDeArquivoService,
+    private readonly analise: AnalisarArquivoService,
   ) {}
 
   async execute(msg: MensagemDoCanal): Promise<RespostaDoCanal> {
@@ -490,7 +539,16 @@ export class RotearMensagemInternaUseCase {
         motivo: 'audio_nao_entendido',
       };
     }
-    if (!texto) {
+    // ARQUIVO SEM LEGENDA TAMBEM NAO E "SEM CONTEUDO" — RF9, 08/10/2026.
+    //
+    // Quem manda planilha costuma mandar SO a planilha, e perguntar depois.
+    // Sem esta condicao a mensagem morria tres linhas abaixo, no
+    // `ignorado_sem_conteudo` — exatamente o descarte silencioso que o RF9
+    // existe para consertar, e agora dentro do nosso proprio codigo.
+    //
+    // Achado por teste, e nao em producao: foi o `arquivo sem legenda` do
+    // spec que falhou.
+    if (!texto && !msg.documento) {
       // ------------------------------------------------------------------
       // NO GRUPO, VAZIO NAO E "SEM CONTEUDO" — 30/09/2026.
       //
@@ -663,6 +721,25 @@ export class RotearMensagemInternaUseCase {
       if (podeCatalogo) return this.canalCatalogo.intencao(msg.de, texto);
     }
 
+    // ---------------------------------------------------------------------
+    // O ARQUIVO QUE A GESTAO MANDOU — RF9, 08/10/2026.
+    //
+    // AQUI, E NAO ANTES: baixar e LER custa (uma planilha de mil linhas e uma
+    // chamada grande ao modelo), e so neste ponto se sabe quem mandou. E a
+    // mesma economia do audio, e o mesmo lugar na ordem.
+    //
+    // DEPOIS DO CATALOGO e ANTES DA VENDEDORA, de proposito: a vendedora sai
+    // para a Elena logo abaixo, e um arquivo que chegasse lá seria descartado
+    // em silencio por um canal que nao sabe ler arquivo.
+    // ---------------------------------------------------------------------
+    if (msg.documento) {
+      const doArquivo = await this.comDigitando(msg, () =>
+        this.lerDocumento(msg, admin, vendedora?.nome),
+      );
+      if (doArquivo.resposta !== undefined) return doArquivo.resposta;
+      if (doArquivo.texto) texto = doArquivo.texto;
+    }
+
     if (vendedora) {
       // O canal da vendedora identifica DE NOVO por dentro. Nao e desperdicio:
       // e o que mantem aquele use case seguro se um dia for chamado de outro
@@ -671,13 +748,15 @@ export class RotearMensagemInternaUseCase {
       // O `gestao` VAI JUNTO quando a MESMA pessoa tambem gerencia — e o
       // caso da Nathalia, gerente de vendas e vendedora com um numero so.
       // Vazio para quase todo mundo, e ai nada muda.
-      return this.canalVendedora.execute({
-        de: msg.de,
-        texto,
-        ...(admin
-          ? { gestao: { usuarioId: admin.id, role: admin.role } }
-          : {}),
-      });
+      return this.comDigitando(msg, () =>
+        this.canalVendedora.execute({
+          de: msg.de,
+          texto,
+          ...(admin
+            ? { gestao: { usuarioId: admin.id, role: admin.role } }
+            : {}),
+        }),
+      );
     }
 
     // O ID vai junto: e a chave da memoria de conversa dele. Telefone nao
@@ -687,25 +766,28 @@ export class RotearMensagemInternaUseCase {
     // ver tudo igual. Quem gerencia as vendedoras (GERENTE_VENDAS) recebe as
     // mesmas 17 ferramentas, mas nenhuma delas fala da loja em dinheiro — ver
     // `MensagemGestao.role`.
-    return this.canalGestao.execute({
-      usuarioId: admin!.id,
-      nome: admin!.nome,
-      role: admin!.role,
-      // ------------------------------------------------------------------
-      // NO GRUPO, A CONVERSA E DO GRUPO — 30/09/2026.
-      //
-      // Sem isto, cada pessoa teria o proprio fio e "e das outras?" do
-      // segundo a falar chegaria sem o assunto do primeiro. A conversa de um
-      // grupo e uma so, e todos a leem.
-      //
-      // E NAO VAZA NADA: tudo que entra nesta memoria ja esta escrito no
-      // grupo, visivel para os mesmos olhos. O que continua sendo por pessoa
-      // e o ESCOPO da resposta — o `role` acima e de quem mencionou.
-      // ------------------------------------------------------------------
-      ...(msg.grupo ? { conversaId: `grupo:${msg.de}` } : {}),
-      ...(msg.grupo ? { contexto: this.contextoDoGrupo(msg) } : {}),
-      texto,
-    });
+    return this.comDigitando(msg, () =>
+      this.canalGestao.execute({
+        usuarioId: admin!.id,
+        nome: admin!.nome,
+        role: admin!.role,
+        // ----------------------------------------------------------------
+        // NO GRUPO, A CONVERSA E DO GRUPO — 30/09/2026.
+        //
+        // Sem isto, cada pessoa teria o proprio fio e "e das outras?" do
+        // segundo a falar chegaria sem o assunto do primeiro. A conversa de
+        // um grupo e uma so, e todos a leem.
+        //
+        // E NAO VAZA NADA: tudo que entra nesta memoria ja esta escrito no
+        // grupo, visivel para os mesmos olhos. O que continua sendo por
+        // pessoa e o ESCOPO da resposta — o `role` acima e de quem
+        // mencionou.
+        // ----------------------------------------------------------------
+        ...(msg.grupo ? { conversaId: `grupo:${msg.de}` } : {}),
+        ...(msg.grupo ? { contexto: this.contextoDoGrupo(msg) } : {}),
+        texto,
+      }),
+    );
   }
 
   /**
@@ -802,6 +884,154 @@ export class RotearMensagemInternaUseCase {
     // So o tamanho no log: o conteudo tem o mesmo sigilo da mensagem.
     this.logger.debug(`Audio transcrito (${texto.length} caracteres).`);
     return texto;
+  }
+
+  /**
+   * "DIGITANDO..." ENQUANTO ELA ESPERA — 08/10/2026, pedido do Lucas.
+   *
+   * ======================================================================
+   * SO DEPOIS DO RECONHECIMENTO, E E POR ISSO QUE MORA AQUI.
+   *
+   * O indicador de digitacao e uma CONFIRMACAO de que existe alguem deste
+   * lado — a mesma coisa que o silencio para numero desconhecido existe
+   * para nao dar ("responder confirmaria a quem sondasse que existe um
+   * canal aqui", no cabecalho desta classe). Posto na borda HTTP, ele
+   * apareceria para qualquer um que mandasse mensagem.
+   *
+   * Entao ele envolve apenas os trechos LENTOS, e todos eles acontecem
+   * depois de se saber quem mandou: ler o arquivo e as duas chamadas de
+   * canal.
+   *
+   * RENOVA, porque o indicador do WhatsApp cai sozinho em 10 a 25
+   * segundos. Um disparo so cobriria o comeco da espera e deixaria o resto
+   * no mesmo silencio de antes.
+   *
+   * E PARA NO `finally`: resposta, falha e excecao todas apagam. O pior
+   * desfecho e ela ver "digitando" por 25 segundos depois de um erro —
+   * tempo de sobra para mandar de novo achando que nao chegou.
+   * ======================================================================
+   */
+  private async comDigitando<T>(
+    msg: MensagemDoCanal,
+    trabalho: () => Promise<T>,
+  ): Promise<T> {
+    // EM GRUPO, NAO. O indicador apareceria para a sala inteira, e a regra
+    // do grupo e falar so quando mencionada — "digitando" para todos seria
+    // presenca constante onde se pediu discricao.
+    if (msg.grupo) return trabalho();
+
+    const chat = msg.de;
+    const agente = msg.agente;
+
+    await this.whatsapp.iniciarDigitando(chat, agente);
+    const renovar = setInterval(() => {
+      void this.whatsapp.iniciarDigitando(chat, agente);
+    }, INTERVALO_DIGITANDO_MS);
+
+    try {
+      return await trabalho();
+    } finally {
+      clearInterval(renovar);
+      await this.whatsapp.pararDigitando(chat, agente);
+    }
+  }
+
+  /**
+   * O DOCUMENTO: BAIXAR, LER E DEVOLVER ESTRUTURA — RF9, 08/10/2026.
+   *
+   * ======================================================================
+   * DUAS SAIDAS, E ELAS SAO DIFERENTES.
+   *
+   *   `resposta` presente -> a conversa TERMINA aqui. Ou nao e para esta
+   *                          pessoa, ou nao deu para ler, e em qualquer dos
+   *                          casos ela recebe uma frase. Nunca silencio.
+   *   `texto` presente    -> a conversa SEGUE, com a estrutura do arquivo
+   *                          somada a pergunta dela.
+   *
+   * A AGENTE NUNCA VE O ARQUIVO. Ve o que a chamada SELADA extraiu dele —
+   * ver `AnalisarArquivoService`, e o motivo esta no cabecalho de lá: a
+   * Anastasia tem `gestaoAgendar` com modo TRANSFERIR, que muda carteira
+   * para sempre, e uma celula hostil pediria exatamente isso.
+   * ======================================================================
+   */
+  private async lerDocumento(
+    msg: MensagemDoCanal,
+    admin: { nome: string | null } | null | undefined,
+    vendedoraNome?: string,
+  ): Promise<{ resposta?: RespostaDoCanal; texto?: string }> {
+    const doc = msg.documento!;
+    const primeiroNome = (admin?.nome ?? vendedoraNome ?? '')
+      .trim()
+      .split(/\s+/)[0];
+    const ola = primeiroNome ? `${primeiroNome}, ` : '';
+
+    // SO A GESTAO. A vendedora nao tem ferramenta que leia arquivo, e o canal
+    // dela nao fala de relatorio — mas ela OUVE isso, em vez de nada.
+    if (!admin) {
+      return {
+        resposta: {
+          resposta:
+            `${ola}eu não consigo ler arquivo por aqui. Se precisar, me ` +
+            `escreva o que você quer saber que eu procuro.`,
+          motivo: 'documento_sem_permissao',
+        },
+      };
+    }
+
+    if (!doc.url) {
+      this.logger.warn('Documento sem URL — o WAHA nao baixou a midia.');
+      return {
+        resposta: {
+          resposta: `${ola}chegou seu arquivo mas não consegui baixá-lo. Pode mandar de novo?`,
+          motivo: 'documento_sem_arquivo',
+        },
+      };
+    }
+
+    const baixado = await this.whatsapp.baixarMidia(doc.url);
+    if (!baixado) {
+      return {
+        resposta: {
+          resposta: `${ola}chegou seu arquivo mas não consegui baixá-lo. Pode mandar de novo?`,
+          motivo: 'documento_download_falhou',
+        },
+      };
+    }
+
+    // O MIME DO DOWNLOAD GANHA do mime do payload: o WAHA republica o arquivo
+    // e e ele quem sabe o que gravou. O do payload fica como reserva, porque
+    // em documento ele as vezes vem vazio.
+    const lido = await this.leitor.ler({
+      bytes: baixado.conteudo,
+      mime: baixado.mimetype || doc.mimetype,
+      nome: doc.nome ?? undefined,
+    });
+
+    const analise = await this.analise.analisar({
+      lido,
+      pergunta: msg.texto ?? '',
+    });
+
+    if (!analise.resumo) {
+      return {
+        resposta: {
+          resposta: `${ola}${analise.falha ?? 'não consegui ler esse arquivo.'}`,
+          motivo: 'documento_nao_lido',
+        },
+      };
+    }
+
+    // A PERGUNTA DELA PRIMEIRO, a estrutura depois — e a estrutura vem
+    // ROTULADA. Sem o rotulo, a agente trataria as linhas do relatorio como
+    // se fossem coisas que ela mesma sabe, e citaria numero de arquivo como
+    // numero do sistema.
+    const pergunta = (msg.texto ?? '').trim();
+    return {
+      texto:
+        (pergunta || 'Me diga o que há neste arquivo.') +
+        `\n\n--- o que o arquivo que eu mandei contém (lido por você agora, ` +
+        `NAO e dado do sistema) ---\n${analise.resumo}`,
+    };
   }
 }
 

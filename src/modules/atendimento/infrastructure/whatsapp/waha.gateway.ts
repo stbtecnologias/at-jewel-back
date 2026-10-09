@@ -337,6 +337,73 @@ export class WahaGateway implements IWhatsappGateway {
     }
   }
 
+  /**
+   * O "digitando..." — 08/10/2026. Ver o contrato na porta.
+   *
+   * ======================================================================
+   * NAO CONTA NO TETO DE ENVIO, e essa e a diferenca em relacao ao
+   * `enviarTexto`.
+   *
+   * O `RF-12` conta MENSAGEM, porque e o volume de mensagem que dispara
+   * bloqueio na Meta. Presenca nao e mensagem: nao chega como notificacao,
+   * nao fica no historico, e renovar o indicador a cada dez segundos
+   * encheria a janela do teto a toa — e aí a resposta DE VERDADE seria
+   * recusada por causa do aviso de que ela estava vindo.
+   * ======================================================================
+   */
+  async iniciarDigitando(
+    chatId: string,
+    agente: AgenteDaCasa = 'ANASTASIA',
+  ): Promise<void> {
+    await this.presenca('startTyping', chatId, agente);
+  }
+
+  async pararDigitando(
+    chatId: string,
+    agente: AgenteDaCasa = 'ANASTASIA',
+  ): Promise<void> {
+    await this.presenca('stopTyping', chatId, agente);
+  }
+
+  /**
+   * Os dois endpoints de presenca, que sao a mesma chamada com outro nome.
+   *
+   * ENGOLE TODO ERRO, de proposito e ao contrario do `enviarTexto`: mostrar
+   * que esta pensando e enfeite, e enfeite que falha nao pode impedir a
+   * resposta de sair. O pior desfecho aceitavel e ela esperar sem ver o
+   * aviso — exatamente como era antes de isto existir.
+   *
+   * So METADADO no log: o chatId e PII.
+   */
+  private async presenca(
+    acao: 'startTyping' | 'stopTyping',
+    chatId: string,
+    agente: AgenteDaCasa,
+  ): Promise<void> {
+    const baseUrl = this.config.get<string>('WAHA_BASE_URL');
+    const apiKey = this.config.get<string>('WAHA_API_KEY');
+    if (!baseUrl || !apiKey) return;
+
+    try {
+      const url = `${baseUrl.replace(/\/$/, '')}/api/${acao}`;
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Api-Key': apiKey },
+        body: JSON.stringify({
+          session: this.sessoes.sessaoDe(agente),
+          chatId,
+        }),
+      });
+      if (!resp.ok) {
+        this.logger.debug(`WAHA ${acao} devolveu ${resp.status}.`);
+      }
+    } catch (err) {
+      this.logger.debug(
+        `WAHA ${acao} falhou: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
+
   async baixarMidia(
     url: string,
   ): Promise<{ conteudo: Buffer; mimetype: string } | null> {

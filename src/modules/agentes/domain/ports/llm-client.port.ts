@@ -144,6 +144,34 @@ export type ConsultarMetasHandler = () => Promise<ConsultarMetasLlmResultado>;
 // nao ha o que revelar mesmo sob instrucao no meio da conversa.
 export interface ConsultarProdutosLlmInput {
   busca: string;
+  /**
+   * So quando ela PEDE o que nao tem em estoque. Sem isto, a consulta
+   * devolve apenas o disponivel — decisao do Lucas em 07/10/2026.
+   *
+   * O codigo exato passa por fora dos dois jeitos: `An24084` acha a peca com
+   * ou sem saldo, e sem precisar deste campo.
+   */
+  incluirSemEstoque?: boolean;
+  /**
+   * A categoria vinda da PERGUNTA. Vazio significa o padrao — joia —, e nao
+   * "sem filtro": ver `categoriaDaBusca`.
+   */
+  categoria?: string;
+  /**
+   * A faixa de preco da pergunta. `unknown` porque o modelo manda texto: a
+   * leitura e a correcao ficam em `faixaDePreco`.
+   */
+  precoDe?: unknown;
+  precoAte?: unknown;
+  /** Quantas pular — a continuacao da lista. Ver `faixaDaLista`. */
+  aPartirDe?: number;
+  /**
+   * Mandar as fotos junto? Decisao do Lucas em 07/10: a foto VEM, e so nao
+   * vem quando ela pedir so o texto. Entao o padrao e `true`.
+   */
+  comFoto?: boolean;
+  /** So as que TEM foto conferida — muda a lista, nao so o anexo. */
+  soComFoto?: boolean;
 }
 
 export interface ProdutoLlm {
@@ -153,6 +181,38 @@ export interface ProdutoLlm {
 
 export interface ConsultarProdutosLlmResultado {
   produtos: ProdutoLlm[];
+  /** Quantas o filtro acha de verdade — `produtos` e so o comeco da lista. */
+  total: number;
+  /**
+   * Quantas EXISTEM no catalogo e ficaram de fora por nao ter saldo.
+   *
+   * E o numero que impede a resposta confiante e errada: sem ele, "nao achei
+   * nenhum brinco de diamante" sai no lugar de "achei 22, nenhuma em estoque".
+   */
+  semEstoque: number;
+  /**
+   * A lista JA traz as zeradas?
+   *
+   * Muda a frase inteira: com a lista filtrada, `semEstoque` e o que ficou de
+   * FORA; com ela aberta, e quantas das que estao ali nao tem saldo.
+   */
+  incluiuSemEstoque: boolean;
+  /** Em que categoria a lista esta. Vazio = sem recorte (TODAS). */
+  categoria?: string;
+  /** Quantas casam com o termo e ficaram de fora POR CAUSA da categoria. */
+  foraDaCategoria: number;
+  /** A faixa de preco aplicada, ja lida e corrigida. */
+  faixa?: { de?: number; ate?: number };
+  /** Quantas foram puladas antes desta pagina. */
+  pulados?: number;
+  /** As fotos que EXISTEM, ja baixadas. Vazio e o caso comum na joia. */
+  fotos?: FotoDeProdutoLlm[];
+  /** Quantas pecas da lista tinham URL de foto cadastrada. */
+  tinhamFoto?: number;
+  /** A lista inteira e so de pecas com foto conferida? */
+  soComFoto?: boolean;
+  /** Candidatas que ficaram sem conferir por causa do teto. */
+  naoConferidas?: number;
 }
 
 export type ConsultarProdutosHandler = (
@@ -177,6 +237,39 @@ export interface CarteiraAgoraLlmResultado {
    * diz o que esta parado esperando ela.
    */
   aguardandoRelato: number;
+  /**
+   * QUEM SAO — 08/10/2026, e nasceu de um teste em producao.
+   *
+   * ========================================================================
+   * A AGENTE DIZIA O NUMERO E MANDAVA ELA OLHAR NO PAINEL.
+   *
+   * Conversa da Nathalia com a Helena, 08/10 as 11:21, em PRODUCAO:
+   *
+   *   — "Quem sao as clientes em negociacao?"
+   *   — "Aqui o sistema so me da o numero — sao 5 clientes em negociacao,
+   *      mas sem os nomes. Pra ver quem sao (...) o melhor caminho e voce
+   *      olhar direto no seu funil de atendimento."
+   *
+   * E a agente estava certa sobre a ferramenta: ela chamava o `resumo`, que
+   * e AGREGADO. Mas o dado existia a um metodo de distancia — o
+   * `listarAuditoria` devolve `clienteNome`, etapa, desde quando esta
+   * aberto, se espera relato e o ultimo relato dela.
+   *
+   * O custo disso e alto e nao aparece como erro: a propria agente acabara
+   * de dizer que aqueles cinco eram "o foco mais imediato", e a conversa
+   * terminou mandando a vendedora para outra tela. O passo seguinte do
+   * trabalho dela ficou fora do canal.
+   * ========================================================================
+   */
+  clientes: string[];
+  /**
+   * Quantos existem, quando a lista foi cortada pelo teto.
+   *
+   * `undefined` quando veio tudo. Teto que nao se anuncia faz cinco de
+   * trinta parecerem os trinta — o mesmo motivo do `total` em toda lista
+   * desta casa.
+   */
+  clientesOcultos?: number;
 }
 
 export type ConsultarCarteiraAgoraHandler =
@@ -307,6 +400,75 @@ export type MelhoresClientesHandler = (input: {
   categoria?: string;
   ultimosMeses?: number;
 }) => Promise<ConsultarCarteiraLlmResultado>;
+
+/**
+ * OS CLIENTES OURO, PRATA E BRONZE — 09/10/2026.
+ *
+ * ==========================================================================
+ * A MESMA PALAVRA QUE O PAINEL USA, E O MESMO NUMERO.
+ *
+ * O cartao "Clientes Ouro" da tela de Clientes ja dizia QUANTOS. A gestora
+ * pediu QUEM, e a regra do nivel sai de `shared/clientes/fidelidade.ts`, de
+ * onde o SQL do cartao tambem sai desde hoje. Dois numeros para a mesma
+ * palavra seria pior do que nao ter a ferramenta.
+ * ==========================================================================
+ */
+export interface FidelidadeLlmResultado {
+  /** Linhas prontas: nome, nivel, compras, valor liquido, ultima compra. */
+  linhas: string[];
+  /** Quantos atendem ao recorte — nao quantos vieram. */
+  total: number;
+  /** Quantos foram pulados para montar esta pagina. */
+  deslocamento: number;
+  /**
+   * Quantos do recorte NAO tem vendedora na carteira.
+   *
+   * Vai ao modelo de proposito: medido em 09/10, 19 dos 48 clientes Ouro nao
+   * tem dona. Sem este numero, "os Ouro de cada vendedora" somaria 29 e a
+   * resposta pareceria completa.
+   */
+  semVendedora: number;
+  /** O corte em palavras — "6 compras ou mais". Para ela nao chutar o numero. */
+  cortes: string;
+  /**
+   * O nivel pedido nao existe.
+   *
+   * O modelo escreve o valor do enum e pode escrever "Diamante". Filtrar por
+   * nivel inexistente devolveria lista vazia, e vazio e indistinguivel de
+   * "nao ha nenhum" — a forma de erro mais cara deste projeto.
+   */
+  nivelDesconhecido?: boolean;
+}
+
+/** Da VENDEDORA: so a carteira dela, e sem parametro de escopo nenhum. */
+export type ClientesPorFidelidadeHandler = (input: {
+  nivel?: string;
+  mesesSemComprar?: number;
+  aPartirDe?: number;
+}) => Promise<FidelidadeLlmResultado>;
+
+/**
+ * Da GESTAO: a loja inteira, ou uma vendedora quando ela disser o nome.
+ *
+ * `vendedora` e OPCIONAL aqui, ao contrario das outras ferramentas de gestao:
+ * "me lista os clientes Ouro" e uma pergunta da LOJA, e exigir o nome faria o
+ * modelo inventar um.
+ */
+export type GestaoFidelidadeHandler = (input: {
+  nivel?: string;
+  vendedora?: string;
+  mesesSemComprar?: number;
+  aPartirDe?: number;
+}) => Promise<
+  FidelidadeLlmResultado & {
+    /** 'OK' | 'AMBIGUA' | 'NAO_ENCONTRADA' — so quando veio nome. */
+    status?: string;
+    /** As candidatas, quando o nome ficou ambiguo. */
+    nomes?: string[];
+    /** O nome resolvido, para a resposta citar de quem e a lista. */
+    vendedora?: string;
+  }
+>;
 
 // Handler da tool `agendar_contato`, do canal INTERNO. UNICA ferramenta do
 // canal que ESCREVE — por isso o resultado e fechado, com um status por
@@ -509,6 +671,23 @@ export type GuardarLembreteHandler = (input: {
   quandoIso: string;
 }) => Promise<{ mensagem: string }>;
 
+/**
+ * ATRIBUIR UM CLIENTE SEM DONA A UMA VENDEDORA — 09/10/2026.
+ *
+ * A PRIMEIRA ESCRITA DA AGENTE SOBRE CADASTRO DE CLIENTE, e ela e estreita
+ * de proposito: SO PREENCHE O QUE ESTA EM BRANCO. Transferir carteira de uma
+ * vendedora para outra nao passa por aqui — carteira decide o que cada
+ * vendedora ve e recebe, e trocar isso por uma frase ambigua e caro demais.
+ *
+ * A frase de volta e montada no SERVIDOR, como nas outras escritas: ela
+ * carrega nome de cliente e de vendedora, que e exatamente o que o modelo
+ * inventaria.
+ */
+export type GestaoAtribuirVendedoraHandler = (input: {
+  cliente: string;
+  vendedora: string;
+}) => Promise<{ mensagem: string }>;
+
 export type MeusLembretesHandler = () => Promise<{
   /** Uma linha por lembrete, ja numerada — o numero serve ao remarcar e ao cancelar. */
   linhas: string[];
@@ -664,7 +843,31 @@ export type GestaoPanoramaHandler = (
  */
 export type GestaoProdutosHandler = (input: {
   busca: string;
-}) => Promise<{ produtos: { linha: string }[] }>;
+  /** Ver `ConsultarProdutosLlmInput.incluirSemEstoque` — mesma regra. */
+  incluirSemEstoque?: boolean;
+  /** Ver `ConsultarProdutosLlmInput.categoria` — mesma regra. */
+  categoria?: string;
+  /** Ver `ConsultarProdutosLlmInput` — a faixa e a pagina, mesmas regras. */
+  precoDe?: unknown;
+  precoAte?: unknown;
+  aPartirDe?: number;
+  comFoto?: boolean;
+  soComFoto?: boolean;
+}) => Promise<{
+  produtos: { linha: string }[];
+  /** Ver `ConsultarProdutosLlmResultado` — amostra e total andam juntos. */
+  total: number;
+  semEstoque: number;
+  incluiuSemEstoque: boolean;
+  categoria?: string;
+  foraDaCategoria: number;
+  faixa?: { de?: number; ate?: number };
+  pulados?: number;
+  fotos?: FotoDeProdutoLlm[];
+  tinhamFoto?: number;
+  soComFoto?: boolean;
+  naoConferidas?: number;
+}>;
 
 /**
  * O que mais saiu, por valor.
@@ -810,6 +1013,16 @@ export type GestaoConversasAgoraHandler = (input: {
 export type GestaoPanoramaLeadsHandler = (input: {
   /** Nome (ou parte). Ausente = a fila inteira. */
   vendedora?: string;
+  /**
+   * O status DA VENDEDORA: `NOVO`, `EM_CONTATO`, `VIROU_CLIENTE`,
+   * `NAO_VINGOU` — 08/10/2026.
+   *
+   * So vale com `vendedora`: a fila geral nao e por pessoa, e o status e o
+   * que ELA fez com o lead.
+   */
+  status?: string;
+  /** Um dia so, `AAAA-MM-DD`, por QUANDO O LEAD ENTROU. So com `vendedora`. */
+  dia?: string;
 }) => Promise<GestaoLeituraResultado & { total?: number }>;
 
 /**
@@ -897,8 +1110,17 @@ export type GestaoCompararAnteriorHandler = (input: {
 }) => Promise<GestaoLeituraResultado>;
 
 export type GestaoFunilHandler = (input: {
-  /** Nome (ou parte). Ausente = a loja inteira. */
+  /** Nome (ou parte). Ausente = a equipe inteira de quem pergunta. */
   vendedora?: string;
+  /**
+   * So os atendimentos nesta etapa — 08/10/2026.
+   *
+   * Responde "quem esta SO em negociacao", que era a pergunta da gestao que
+   * o agregado nao alcancava.
+   */
+  etapa?: string;
+  /** Um dia so, `AAAA-MM-DD`, pela data de ABERTURA do atendimento. */
+  dia?: string;
 }) => Promise<GestaoLeituraResultado & { total?: number }>;
 
 export type GestaoFeedbacksHandler = (input: {
@@ -925,11 +1147,53 @@ export type GestaoAgendarHandler = (input: {
   modo?: 'OCASIONAL' | 'TRANSFERIR';
 }) => Promise<{ mensagem: string }>;
 
+/**
+ * UM ARQUIVO QUE A USUARIA MANDOU, PARA O MODELO LER — 08/10/2026. RF9.
+ *
+ * ==========================================================================
+ * A PRIMEIRA COISA QUE NAO E TEXTO A CHEGAR AO MODELO NESTE PROJETO.
+ *
+ * Ate aqui nenhuma chamada era multimodal — nem a foto do catalogo, que pede
+ * o CODIGO da peca a vendedora e trabalha so em texto. Entao isto nao e
+ * "mais um campo": e a porta aceitando conteudo de outra natureza.
+ *
+ * MORA EM `ChatParams`, E NAO EM `MensagemAgente`, DE PROPOSITO. A mensagem e
+ * PERSISTIDA na tabela `conversas` e e o que a memoria da conversa relembra;
+ * alargar o `content` para bloco arrastaria persistencia e memoria junto, e
+ * guardaria base64 de planilha no banco. O anexo vale para ESTA chamada:
+ * viaja ao lado, cola no ultimo turno da usuaria e nao fica.
+ *
+ * O XLSX NAO VEM POR AQUI. O modelo le PDF e imagem nativamente, mas `.xlsx`
+ * e um zip de XML — ele e convertido em TABELA antes, e entra como texto.
+ * ==========================================================================
+ */
+export interface AnexoDaConversa {
+  /** O que o modelo recebe: bloco de imagem ou bloco de documento. */
+  tipo: 'imagem' | 'pdf';
+  /** O arquivo em base64 — a API nao aceita URL para isto. */
+  base64: string;
+  /** `image/jpeg`, `image/png`, `application/pdf`. */
+  mime: string;
+  /**
+   * O nome do arquivo, quando o WhatsApp manda. Entra como texto ao lado do
+   * bloco: "Posicao de estoque.pdf" diz ao modelo o que ele esta lendo, e um
+   * PDF sem nome fica indistinguivel de outro na mesma conversa.
+   */
+  nome?: string;
+}
+
 export interface ChatParams {
   model: string;
   system: string;
   maxTokens: number;
   mensagens: MensagemAgente[];
+  /**
+   * Arquivos desta chamada, colados no ULTIMO turno da usuaria — RF9.
+   *
+   * Nao sao persistidos e nao entram na memoria da conversa: quem manda
+   * planilha pergunta sobre ela agora. Ver `AnexoDaConversa`.
+   */
+  anexos?: AnexoDaConversa[];
   // Quando presente, habilita a tool `registrar_demanda` no chatComFerramentas.
   registrarDemanda?: RegistrarDemandaHandler;
   // Idem para `avisar_vendedora`.
@@ -960,6 +1224,8 @@ export interface ChatParams {
   /** Espelha o `gestaoItensExigeVendedora`: sem `verLoja`, o schema obriga. */
   gestaoEpocaExigeVendedora?: boolean;
   melhoresClientes?: MelhoresClientesHandler;
+  // Idem para `clientes_por_fidelidade` — os Ouro, Prata e Bronze da carteira.
+  clientesPorFidelidade?: ClientesPorFidelidadeHandler;
   // Idem para `agendar_contato` — a unica que escreve.
   agendarContato?: AgendarContatoHandler;
   // Canal da GESTAO. Nunca convivem com os de cima: quem monta os handlers e o
@@ -995,6 +1261,10 @@ export interface ChatParams {
   gestaoLeads?: GestaoLeadsHandler;
   gestaoCarteira?: GestaoCarteiraHandler;
   gestaoMelhores?: GestaoMelhoresHandler;
+  // Idem para `clientes_por_fidelidade` da gestao: a loja, ou uma vendedora.
+  gestaoFidelidade?: GestaoFidelidadeHandler;
+  // Idem para `atribuir_vendedora_ao_cliente` — a escrita de carteira.
+  gestaoAtribuirVendedora?: GestaoAtribuirVendedoraHandler;
   gestaoAgendar?: GestaoAgendarHandler;
   gestaoFeedbacks?: GestaoFeedbacksHandler;
   gestaoDiaDaVendedora?: GestaoDiaDaVendedoraHandler;
@@ -1022,6 +1292,26 @@ export interface ChatResultado {
 
 export interface ChatComFerramentasResultado extends ChatResultado {
   grafico?: GraficoDinamico;
+  /**
+   * As fotos das pecas que a busca encontrou, JA BAIXADAS — 07/10/2026.
+   *
+   * Mesmo desenho do `grafico`: a ferramenta produz um artefato que nao cabe
+   * no texto, e ele viaja por fora do dialogo ate quem sabe envia-lo.
+   *
+   * Vem com bytes, e nao com URL: a origem e HTTP e o envio exige base64 —
+   * e, mais importante, metade das URLs responde 404. Quem baixou ja sabe
+   * quais existem; mandar a URL adiante empurraria essa descoberta para
+   * depois da resposta.
+   */
+  fotos?: FotoDeProdutoLlm[];
+}
+
+/** Uma foto pronta para enviar, com a legenda que acompanha a peca. */
+export interface FotoDeProdutoLlm {
+  codigo: string;
+  legenda: string;
+  conteudo: Buffer;
+  mime: string;
 }
 
 // Porta que abstrai o provedor de LLM (implementada via @anthropic-ai/sdk na

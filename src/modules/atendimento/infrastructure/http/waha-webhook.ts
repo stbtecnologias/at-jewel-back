@@ -65,7 +65,13 @@ interface WahaWebhookBody {
     hasMedia?: boolean;
     /** Quando a mensagem foi escrita, em SEGUNDOS. */
     timestamp?: number;
-    media?: { url?: string; mimetype?: string } | null;
+    media?: {
+      url?: string;
+      mimetype?: string;
+      /** O nome do arquivo, em documento. Tres grafias possiveis — ver
+       *  `extrairDocumento`: o WAHA nao e consistente entre engines. */
+      filename?: string;
+    } | null;
     _data?: {
       Info?: {
         Type?: string;
@@ -74,9 +80,13 @@ interface WahaWebhookBody {
         SenderAlt?: string;
         /** Nome que a pessoa escolheu no proprio WhatsApp. */
         PushName?: string;
+        /** O nome do arquivo em documento, na engine que o poe aqui. */
+        FileName?: string;
       };
       Message?: {
         audioMessage?: { mimetype?: string; seconds?: number };
+        /** Documento: o nome do arquivo vem daqui no payload cru do Baileys. */
+        documentMessage?: { fileName?: string; mimetype?: string };
         /**
          * `mentionedJID` com JID MAIUSCULO — conferido em 30/09/2026 num grupo
          * de verdade. Toda documentacao e todo exemplo publico escrevem
@@ -122,6 +132,35 @@ export interface AudioRecebido {
   segundos: number | null;
 }
 
+/**
+ * DOCUMENTO QUE VEIO JUNTO — 08/10/2026. RF9.
+ *
+ * ==========================================================================
+ * ELE CHEGAVA E ERA DESCARTADO NA BORDA, E ISSO ERA DELIBERADO.
+ *
+ * Ate 08/10 esta funcao extraia imagem e audio; documento caia no mesmo
+ * `return null` do sticker. O alinhamento de 07/10 pediu que a gestora
+ * pudesse mandar planilha e PDF para analise — e o problema nao era a agente
+ * nao entender: o arquivo nao passava daqui.
+ *
+ * SO A REFERENCIA VIAJA, como no audio. Baixar e LER custa (uma planilha de
+ * mil linhas e uma chamada grande ao modelo), e nesta borda ainda nao se sabe
+ * quem mandou. Quem baixa e o roteador, depois de reconhecer.
+ * ==========================================================================
+ */
+export interface DocumentoRecebido {
+  /** Endereco do arquivo JA DESCRIPTOGRAFADO. `null` quando o WAHA nao baixou. */
+  url: string | null;
+  mimetype: string;
+  /**
+   * O nome como ela salvou — "Posicao de estoque.pdf".
+   *
+   * NAO E ENFEITE: e o unico sinal de tipo quando o WhatsApp manda
+   * `application/octet-stream`, o que acontece com `.xlsx` com frequencia.
+   */
+  nome: string | null;
+}
+
 export interface MensagemWhatsapp {
   /** Chat de origem (formato WhatsApp, ex.: `5585...@c.us`, ou um `@lid`). */
   de: string;
@@ -134,6 +173,8 @@ export interface MensagemWhatsapp {
   audio?: AudioRecebido;
   /** Presente so quando a mensagem e de imagem. */
   imagem?: ImagemRecebida;
+  /** Presente so quando a mensagem traz DOCUMENTO (planilha, PDF). */
+  documento?: DocumentoRecebido;
   /**
    * Quando a mensagem foi ESCRITA, em milissegundos — o carimbo do WhatsApp,
    * e nao a hora em que chegou aqui.
@@ -465,15 +506,19 @@ export function extrairMensagemRecebida(body: unknown): MensagemWhatsapp | null 
   // Imagem so e procurada quando NAO ha audio: os dois usam `media`, e um
   // audio nunca deve ser confundido com foto.
   const imagem = audio ? null : extrairImagem(payload);
+  // Documento por ultimo, e so quando nao foi nenhum dos dois: os tres usam
+  // `media`, e um PDF reconhecido como imagem iria ao modelo como foto.
+  const documento = audio || imagem ? null : extrairDocumento(payload);
 
-  // Sem texto, sem audio e sem imagem nao ha o que processar. Documento,
-  // sticker e evento de status caem aqui, e continuam ignorados de proposito.
-  if (!texto.trim() && !audio && !imagem) return null;
+  // Sem texto, sem audio, sem imagem e sem documento nao ha o que processar.
+  // Sticker e evento de status caem aqui, e continuam ignorados de proposito.
+  if (!texto.trim() && !audio && !imagem && !documento) return null;
 
   const msg: MensagemWhatsapp = { de, texto };
   if (grupo) msg.grupo = grupo;
   if (audio) msg.audio = audio;
   if (imagem) msg.imagem = imagem;
+  if (documento) msg.documento = documento;
   // O WAHA manda o timestamp em SEGUNDOS — o mesmo campo que o
   // `contatoDoEvento` ja le para a regua da vendedora.
   if (typeof payload.timestamp === 'number' && payload.timestamp > 0) {
@@ -591,6 +636,47 @@ function extrairImagem(
 
   const url = typeof payload.media?.url === 'string' ? payload.media.url : null;
   return { url, mimetype: mimeDaMidia || 'image/jpeg' };
+}
+
+/**
+ * O DOCUMENTO — 08/10/2026. RF9.
+ *
+ * ==========================================================================
+ * DOIS SINAIS, PELO MESMO MOTIVO DA IMAGEM: o payload varia por engine e por
+ * versao do WAHA.
+ *
+ * E AQUI O NOME IMPORTA MAIS QUE NO RESTO. O WhatsApp manda `.xlsx` como
+ * `application/octet-stream` com frequencia, e nesse caso a extensao e a
+ * UNICA pista do que o arquivo e. Sem ela, planilha viraria "nao consigo ler
+ * esse tipo" — recusa confiante e errada.
+ *
+ * O MIME VAZIO NAO IMPEDE: se o MediaType diz `document`, o arquivo e
+ * documento. Quem decide o que da para ler e o leitor, que tem a extensao e
+ * o conteudo; esta funcao so reconhece que ha documento.
+ * ==========================================================================
+ */
+function extrairDocumento(
+  payload: NonNullable<WahaWebhookBody['payload']>,
+): DocumentoRecebido | null {
+  const mediaType = String(payload._data?.Info?.MediaType ?? '').toLowerCase();
+  const mimeDaMidia = payload.media?.mimetype ?? '';
+
+  const ehDocumento =
+    mediaType === 'document' ||
+    mimeDaMidia === 'application/pdf' ||
+    mimeDaMidia.includes('spreadsheet') ||
+    mimeDaMidia.includes('excel') ||
+    mimeDaMidia === 'text/csv';
+  if (!ehDocumento) return null;
+
+  const url = typeof payload.media?.url === 'string' ? payload.media.url : null;
+  const bruto =
+    payload.media?.filename ??
+    payload._data?.Info?.FileName ??
+    payload._data?.Message?.documentMessage?.fileName;
+  const nome = typeof bruto === 'string' && bruto.trim() ? bruto.trim() : null;
+
+  return { url, mimetype: mimeDaMidia, nome };
 }
 
 function extrairAudio(

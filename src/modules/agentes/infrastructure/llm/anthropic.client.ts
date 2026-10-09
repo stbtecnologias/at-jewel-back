@@ -1,11 +1,22 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { Injectable, Logger } from '@nestjs/common';
+import {
+  CATEGORIAS,
+  categoriaEmPalavras,
+} from '../../../../shared/catalogo/categorias';
+import { faixaEmPalavras } from '../../../../shared/catalogo/faixa-de-preco';
+import {
+  NIVEIS_DE_FIDELIDADE,
+  nivelEmPalavras,
+} from '../../../../shared/clientes/fidelidade';
 import { ConfigService } from '@nestjs/config';
 import type {
   ChatComFerramentasResultado,
   ChatParams,
   GestaoLeituraResultado,
   ChatResultado,
+  FidelidadeLlmResultado,
+  FotoDeProdutoLlm,
   GraficoDinamico,
   ILlmClient,
   PeriodoAgendaLlm,
@@ -188,7 +199,7 @@ const METAS_TOOL: Anthropic.Tool = {
 const PRODUTOS_TOOL: Anthropic.Tool = {
   name: 'consultar_produtos',
   description:
-    'Procura pecas no catalogo e devolve descricao, preco de venda e SE A PECA ESTA DISPONIVEL (disponivel/indisponivel). NAO ha quantidade: se perguntarem quantas tem, diga que voce ve apenas se a peca esta disponivel. Use quando ela perguntar sobre produto — "quanto custa o brinco de esmeralda", "tem alianca de ouro 18k", "quantos pingentes de zirconia temos". Devolve no maximo seis pecas. Voce nao tem acesso a custo nem margem: se ela perguntar isso, diga que nao consegue ver.',
+    'Procura pecas no catalogo e devolve descricao, preco de venda e SE A PECA ESTA DISPONIVEL (disponivel/indisponivel). Pode ser chamada SEM termo de busca, so com os recortes — e assim que se monta uma tabela por faixa de preco. POR PADRAO SO TRAZ O QUE TEM EM ESTOQUE — e o que ela pode oferecer ao cliente hoje. NAO ha quantidade: se perguntarem quantas tem, diga que voce ve apenas se a peca esta disponivel. Use quando ela perguntar sobre produto — "quanto custa o brinco de esmeralda", "tem alianca de ouro 18k", "quantos pingentes de zirconia temos". Devolve no maximo DEZ pecas por vez, e o despacho diz quantas existem no total e o valor exato para pedir a pagina seguinte em `a_partir_de` — LISTE TODAS as que vierem. Voce nao tem acesso a custo nem margem: se ela perguntar isso, diga que nao consegue ver.',
   input_schema: {
     type: 'object',
     properties: {
@@ -196,10 +207,52 @@ const PRODUTOS_TOOL: Anthropic.Tool = {
         type: 'string',
         description:
           'O que procurar, nas palavras dela: nome da peca, categoria, familia, colecao, pedra, cor ou codigo do ERP. Ex.: "esmeralda", "alianca ouro 18k", "SEED-P0002".' +
-          'Se ela citar um CODIGO ("An24084", "o CO24022"), mande SO o codigo neste campo — nao repita a frase dela em volta.',
+          'Se ela citar um CODIGO ("An24084", "o CO24022"), mande SO o codigo neste campo — nao repita a frase dela em volta.' +
+          'OMITA este campo quando a pergunta nao tiver termo — "uma tabela de pecas ate 20 mil", "o que temos em estoque", "as mais caras". NAO invente palavra generica como "peca" ou "joia": isso nao casa com nada e devolve lista vazia.',
+      },
+      incluir_sem_estoque: {
+        type: 'boolean',
+        description:
+          'SO quando ela pedir o que NAO esta disponivel: "tem alguma sem estoque", "me mostra as indisponiveis tambem", "e as que acabaram". NAO mande nas demais perguntas — sem este campo a busca ja traz so o que a loja tem para vender. Codigo exato ("An24084") sempre acha a peca, com estoque ou sem, e nao precisa deste campo.',
+      },
+      categoria: {
+        type: 'string',
+        enum: [...CATEGORIAS, 'TODAS'],
+        description:
+          'O PADRAO E JOIA (JEWEL): nao mande nada em pergunta comum de peca. Mande HOME quando a pergunta for de DECORACAO — vaso, copo, bandeja, bowl, cinzeiro, abajur, castical, porta-joia. Mande a categoria que ela citar quando citar uma. Mande TODAS quando ela quiser ver tudo junto ("de qualquer categoria", "me mostra tudo"). Codigo exato acha a peca em qualquer categoria e nao precisa deste campo.',
+      },
+      preco_de: {
+        type: 'number',
+        description:
+          'Piso de preco em reais. "acima de 10 mil" -> 10000. Omita quando ela nao citar piso.',
+      },
+      preco_ate: {
+        type: 'number',
+        description:
+          'Teto de preco em reais, e vale QUALQUER valor que ela disser: "ate 20 mil" -> 20000, "ate 75.985,25" -> 75985.25. Use sempre que ela citar um limite de preco. Com faixa, a lista vem do mais barato para o mais caro.',
+      },
+      a_partir_de: {
+        type: 'integer',
+        description:
+          'Quantas pecas PULAR, para continuar uma lista ja comecada. Omita na primeira vez. Quando a resposta disser "estes sao o 1o ao 20o de 97", peca os proximos com 20; depois 40, e assim ate acabar.',
+      },
+      com_foto: {
+        type: 'boolean',
+        description:
+          'A FOTO VAI JUNTO POR PADRAO — nao mande este campo em pergunta comum. Mande false SO quando ela pedir sem foto: "so o texto", "sem as fotos", "nao precisa de imagem". ATENCAO: a maioria das pecas NAO tem foto cadastrada, entao a resposta da ferramenta diz quantas foram de verdade — fale desse numero, nao prometa foto de peca que nao tem.',
+      },
+      so_com_foto: {
+        type: 'boolean',
+        description:
+          'SO AS PECAS QUE TEM FOTO. Mande true quando ela pedir a lista FILTRADA por isso: "as que tiverem foto", "so as que tem imagem", "monta a tabela com as que tem foto". E diferente de com_foto: aquele diz se a imagem acompanha; este MUDA A LISTA, deixando de fora as pecas sem foto. A conferencia e feita peca a peca na hora, entao a resposta demora alguns segundos a mais.',
       },
     },
-    required: ['busca'],
+    // BUSCA DEIXOU DE SER OBRIGATORIA EM 07/10/2026. "Me monta uma tabela de
+    // pecas ate 20 mil" nao tem termo nenhum: o modelo era obrigado a
+    // inventar um ("pecas", "joia"), que nao casa com campo nenhum, e a
+    // consulta voltava vazia. O recorte sozinho — preco, categoria, estoque —
+    // ja e uma pergunta legitima.
+    required: [],
   },
 };
 
@@ -213,7 +266,7 @@ const PRODUTOS_TOOL: Anthropic.Tool = {
 const GESTAO_PRODUTOS_TOOL: Anthropic.Tool = {
   name: 'consultar_produtos',
   description:
-    'Procura pecas no catalogo e devolve descricao, preco de venda e QUANTIDADE em estoque. Use quando perguntarem sobre produto — "quanto custa o brinco de esmeralda", "quantos aneis de diamante temos", "tem o CO25413".',
+    'Procura pecas no catalogo e devolve descricao, preco de venda e QUANTIDADE em estoque. Pode ser chamada SEM termo de busca, so com os recortes — e assim que se monta uma tabela por faixa de preco. POR PADRAO SO TRAZ O QUE TEM EM ESTOQUE. Use quando perguntarem sobre produto — "quanto custa o brinco de esmeralda", "quantos aneis de diamante temos", "tem o CO25413".',
   input_schema: {
     type: 'object',
     properties: {
@@ -221,10 +274,52 @@ const GESTAO_PRODUTOS_TOOL: Anthropic.Tool = {
         type: 'string',
         description:
           'O que procurar: nome da peca, categoria, familia, colecao, pedra, cor ou codigo do ERP.' +
-          'Se ela citar um CODIGO ("An24084", "o CO24022"), mande SO o codigo neste campo — nao repita a frase dela em volta.',
+          'Se ela citar um CODIGO ("An24084", "o CO24022"), mande SO o codigo neste campo — nao repita a frase dela em volta.' +
+          'OMITA este campo quando a pergunta nao tiver termo — "uma tabela de pecas ate 20 mil", "o que temos em estoque", "as mais caras". NAO invente palavra generica como "peca" ou "joia": isso nao casa com nada e devolve lista vazia.',
+      },
+      incluir_sem_estoque: {
+        type: 'boolean',
+        description:
+          'SO quando perguntarem pelo que NAO esta disponivel: "tem alguma sem estoque", "me mostra as indisponiveis tambem", "quais pecas zeraram". NAO mande nas demais perguntas — sem este campo a busca ja traz so o que tem estoque. Codigo exato ("An24084") sempre acha a peca, com estoque ou sem, e nao precisa deste campo.',
+      },
+      categoria: {
+        type: 'string',
+        enum: [...CATEGORIAS, 'TODAS'],
+        description:
+          'O PADRAO E JOIA (JEWEL): nao mande nada em pergunta comum de peca. Mande HOME quando a pergunta for de DECORACAO — vaso, copo, bandeja, bowl, cinzeiro, abajur, castical, porta-joia. Mande a categoria que ela citar quando citar uma. Mande TODAS quando ela quiser ver tudo junto ("de qualquer categoria", "me mostra tudo"). Codigo exato acha a peca em qualquer categoria e nao precisa deste campo.',
+      },
+      preco_de: {
+        type: 'number',
+        description:
+          'Piso de preco em reais. "acima de 10 mil" -> 10000. Omita quando ela nao citar piso.',
+      },
+      preco_ate: {
+        type: 'number',
+        description:
+          'Teto de preco em reais, e vale QUALQUER valor que ela disser: "ate 20 mil" -> 20000, "ate 75.985,25" -> 75985.25. Use sempre que ela citar um limite de preco. Com faixa, a lista vem do mais barato para o mais caro.',
+      },
+      a_partir_de: {
+        type: 'integer',
+        description:
+          'Quantas pecas PULAR, para continuar uma lista ja comecada. Omita na primeira vez. Quando a resposta disser "estes sao o 1o ao 20o de 97", peca os proximos com 20; depois 40, e assim ate acabar.',
+      },
+      com_foto: {
+        type: 'boolean',
+        description:
+          'A FOTO VAI JUNTO POR PADRAO — nao mande este campo em pergunta comum. Mande false SO quando ela pedir sem foto: "so o texto", "sem as fotos", "nao precisa de imagem". ATENCAO: a maioria das pecas NAO tem foto cadastrada, entao a resposta da ferramenta diz quantas foram de verdade — fale desse numero, nao prometa foto de peca que nao tem.',
+      },
+      so_com_foto: {
+        type: 'boolean',
+        description:
+          'SO AS PECAS QUE TEM FOTO. Mande true quando ela pedir a lista FILTRADA por isso: "as que tiverem foto", "so as que tem imagem", "monta a tabela com as que tem foto". E diferente de com_foto: aquele diz se a imagem acompanha; este MUDA A LISTA, deixando de fora as pecas sem foto. A conferencia e feita peca a peca na hora, entao a resposta demora alguns segundos a mais.',
       },
     },
-    required: ['busca'],
+    // BUSCA DEIXOU DE SER OBRIGATORIA EM 07/10/2026. "Me monta uma tabela de
+    // pecas ate 20 mil" nao tem termo nenhum: o modelo era obrigado a
+    // inventar um ("pecas", "joia"), que nao casa com campo nenhum, e a
+    // consulta voltava vazia. O recorte sozinho — preco, categoria, estoque —
+    // ja e uma pergunta legitima.
+    required: [],
   },
 };
 
@@ -266,7 +361,7 @@ const ATUALIZAR_LEAD_TOOL: Anthropic.Tool = {
 const CARTEIRA_AGORA_TOOL: Anthropic.Tool = {
   name: 'consultar_minha_carteira',
   description:
-    'Diz como esta a carteira DELA agora: quantos clientes ela tem com atendimento em curso, em que pe cada grupo esta (em negociacao, remarcado, sem conseguir falar, primeiro contato) e quantos estao esperando o relato dela. Use quando ela perguntar "como esta minha carteira", "quantos clientes eu tenho em aberto", "o que esta parado comigo", "de quem eu preciso dar noticia", "quantos atendimentos eu tenho". Nao precisa passar nada. So enxerga a carteira dela. E o estado de AGORA, nao um periodo — nao diga "hoje" nem "esta semana" ao repassar. Nao traz venda nem valor: se ela perguntar quanto vendeu, use consultar_vendas.',
+    'Diz como esta a carteira DELA agora: quantos clientes ela tem com atendimento em curso, em que pe cada grupo esta (em negociacao, remarcado, sem conseguir falar, primeiro contato), quantos estao esperando o relato dela — e QUEM SAO, com nome, etapa e desde quando. Use quando ela perguntar "como esta minha carteira", "quantos clientes eu tenho em aberto", "o que esta parado comigo", "de quem eu preciso dar noticia", "quantos atendimentos eu tenho" — e tambem quando perguntar QUEM sao ("quem esta em negociacao?", "quais clientes?"): os nomes vem aqui, NAO mande ela olhar no painel. Nao precisa passar nada. So enxerga a carteira dela. E o estado de AGORA, nao um periodo — nao diga "hoje" nem "esta semana" ao repassar. Nao traz venda, valor nem telefone: se ela perguntar quanto vendeu, use consultar_vendas.',
   input_schema: { type: 'object', properties: {} },
 };
 
@@ -365,6 +460,74 @@ const MELHORES_TOOL: Anthropic.Tool = {
       },
     },
   },
+};
+
+/**
+ * OS CAMPOS DA FIDELIDADE, compartilhados pelos dois canais — 09/10/2026.
+ *
+ * ==========================================================================
+ * O ENUM SAI DA CONSTANTE, E NAO DE UMA LISTA ESCRITA A MAO AQUI.
+ *
+ * Se amanha nascer um nivel, ou um sumir, o schema acompanha no mesmo commit.
+ * Enum de schema que diverge do codigo e o defeito que nao da erro: o modelo
+ * escreve um valor que a consulta nao conhece, o filtro nao casa nada, e lista
+ * vazia e indistinguivel de "nao ha nenhum".
+ * ==========================================================================
+ */
+const CAMPOS_DE_FIDELIDADE = {
+  nivel: {
+    type: 'string' as const,
+    enum: [...NIVEIS_DE_FIDELIDADE],
+    description:
+      'O nivel pedido. Omita para trazer todos, do mais fiel para o menos. ' +
+      `Ouro e ${nivelEmPalavras('Ouro')}, Prata ${nivelEmPalavras('Prata')}, ` +
+      `Bronze ${nivelEmPalavras('Bronze')}.`,
+  },
+  meses_sem_comprar: {
+    type: 'integer' as const,
+    description:
+      'So quem NAO compra ha pelo menos tantos meses — o cliente adormecido. ' +
+      'Use para "quais Ouro pararam de comprar", "quem nao compra ha mais de ' +
+      'seis meses". Quem nunca comprou nunca entra aqui. Omita para todos.',
+  },
+  a_partir_de: {
+    type: 'integer' as const,
+    description:
+      'Quantos ja foram mostrados, para pedir a pagina seguinte. O despacho ' +
+      'diz o valor exato. Omita na primeira chamada.',
+  },
+};
+
+/**
+ * OS CLIENTES OURO DA CARTEIRA DELA — 09/10/2026.
+ *
+ * A VERSAO DA VENDEDORA nao tem escopo nenhum no schema, de proposito: a
+ * carteira dela e decidida pelo telefone antes da conversa comecar, e nao por
+ * um parametro que o modelo possa escrever.
+ *
+ * ==========================================================================
+ * "MEUS" NO NOME, E NAO O MESMO NOME DA DE GESTAO — e isso e deliberado.
+ *
+ * A Nathalia e gerente de vendas E vendedora, com um numero so: ela recebe os
+ * DOIS conjuntos de ferramentas. Com o mesmo nome, as duas versoes seriam
+ * declaradas de uma vez e o conjunto teria nome repetido. O
+ * `clientes_por_epoca` e o `consultar_produtos` resolvem isso DESLIGANDO uma
+ * das duas — e aqui isso custaria metade da pergunta dela: ou a carteira
+ * dela, ou a loja, nunca as duas.
+ *
+ * Com nomes distintos ela tem as duas, e o modelo escolhe pela palavra que
+ * ela usou: "meus clientes Ouro" ou "os clientes Ouro da loja". E o mesmo par
+ * que `melhores_clientes` e `melhores_da_vendedora` ja formam.
+ * ==========================================================================
+ */
+const FIDELIDADE_TOOL: Anthropic.Tool = {
+  name: 'meus_clientes_por_fidelidade',
+  description:
+    'Lista os clientes DA CARTEIRA DELA por nivel de fidelidade — Ouro, Prata, Bronze — com quantas compras, quanto ja gastou e quando comprou pela ultima vez. ' +
+    `O nivel e por NUMERO DE COMPRAS: Ouro e ${nivelEmPalavras('Ouro')}. E a mesma classificacao do painel. ` +
+    'Use para "quais sao meus clientes Ouro", "quem sao meus melhores clientes por fidelidade", "algum Ouro parou de comprar". ' +
+    'O valor mostrado JA ABATE devolucao. Nao traz telefone.',
+  input_schema: { type: 'object', properties: { ...CAMPOS_DE_FIDELIDADE } },
 };
 
 // ===========================================================================
@@ -777,19 +940,25 @@ const ESQUECER_COMBINADO_TOOL: Anthropic.Tool = {
 const GUARDAR_LEMBRETE_TOOL: Anthropic.Tool = {
   name: 'guardar_lembrete',
   description:
-    'Guarda um lembrete PESSOAL de quem esta falando com voce, e voce manda a mensagem na hora marcada. Use para "me lembra amanha de...", "me avisa as 15h que...", "nao me deixa esquecer de...". VOCE VAI MANDAR SOZINHA na hora — isto nao e combinado, que so vale quando a pessoa volta a perguntar. O lembrete e so dela: ninguem mais ve nem recebe. Serve para qualquer assunto, de trabalho ou nao.',
+    'Guarda um lembrete PESSOAL de quem esta falando com voce, e voce manda a mensagem na hora marcada. Use para "me lembra amanha de...", "me avisa as 15h que...", "nao me deixa esquecer de...". VOCE VAI MANDAR SOZINHA na hora — isto nao e combinado, que so vale quando a pessoa volta a perguntar. O lembrete e so dela: ninguem mais ve nem recebe. Serve para qualquer assunto, de trabalho ou nao. ' +
+    'CHAME VARIAS VEZES NA MESMA MENSAGEM, ate vinte, quando ela colar uma agenda com varios compromissos: UM LEMBRETE PARA CADA UM, de uma vez. NUNCA peca para ela repetir um por um. ' +
+    'ANTES DE GUARDAR, quando houver mais de tres, DIGA O QUE ENTENDEU: quantos compromissos achou, quais tem hora e quais nao tem — e pergunte as horas que faltam TODAS DE UMA VEZ, nao uma pergunta por compromisso. ' +
+    'NAO GUARDE o que nao e compromisso: "feriado", "sem evento", "nao tem aula nesse dia" e observacao sao contexto, nao lembrete.',
   input_schema: {
     type: 'object',
     properties: {
       texto: {
         type: 'string',
         description:
-          'O que lembrar, nas palavras DELA. Ate 400 caracteres. Nao reescreva em linguagem formal — ela vai receber isto de volta e precisa reconhecer.',
+          'O que lembrar, nas palavras DELA. Ate 400 caracteres. Nao reescreva em linguagem formal — ela vai receber isto de volta e precisa reconhecer. Inclua a HORA DO COMPROMISSO aqui quando o aviso for antes dele ("16:30h consulta da Stella"), senao ela recebe o aviso sem saber para quando e.',
       },
       quandoIso: {
         type: 'string',
         description:
-          'Quando avisar, em ISO 8601 com fuso (ex.: 2026-10-01T09:00:00-03:00), calculado a partir da data e hora de hoje informadas acima. Se ela nao disser a HORA, PERGUNTE antes de chamar — nunca escolha uma.',
+          'A HORA DE AVISAR — nao a hora do compromisso. ISO 8601 com fuso (ex.: 2026-10-01T09:00:00-03:00), calculado a partir da data e hora de hoje informadas acima. ' +
+          'O DESLOCAMENTO E O QUE ELA DISSER, e voce faz a conta: "me avisa uma hora antes" de um compromisso as 16:30 e 15:30; "15 minutos antes" das 7:40 e 7:25. ' +
+          'Quando ela mandar uma LISTA e um unico horario de aviso ("me avisa amanha as 08 de tudo isso"), use esse horario em todos. ' +
+          'Se ela nao disser a hora do compromisso NEM a do aviso, PERGUNTE antes de chamar — nunca escolha uma.',
       },
     },
     required: ['texto', 'quandoIso'],
@@ -890,6 +1059,84 @@ const GESTAO_MELHORES_TOOL: Anthropic.Tool = {
       },
     },
     required: ['vendedora'],
+  },
+};
+
+/**
+ * OS CLIENTES OURO DA LOJA — 09/10/2026.
+ *
+ * ==========================================================================
+ * `vendedora` E OPCIONAL AQUI, AO CONTRARIO DAS OUTRAS DA GESTAO.
+ *
+ * "Me lista os clientes Ouro" e uma pergunta da LOJA, e foi assim que a
+ * gestora pediu. As outras ferramentas de gestao exigem o nome porque a
+ * pergunta e sempre sobre alguem; esta nao. Exigir o nome aqui faria o modelo
+ * INVENTAR uma vendedora para poder chamar a ferramenta.
+ * ==========================================================================
+ *
+ * E O DESPACHO DIZ QUANTOS NAO TEM VENDEDORA: medido em 09/10, 19 dos 48
+ * clientes Ouro nao tem dona na carteira — 40% deles, e metade do valor.
+ * Somar "os Ouro de cada vendedora" da 29. Sem esse numero a resposta
+ * pareceria completa e estaria errada.
+ */
+const GESTAO_FIDELIDADE_TOOL: Anthropic.Tool = {
+  name: 'clientes_por_fidelidade',
+  description:
+    'Lista os clientes da loja por nivel de fidelidade — Ouro, Prata, Bronze — com quantas compras, quanto ja gastou, quando comprou pela ultima vez e de qual vendedora e a carteira. ' +
+    `O nivel e por NUMERO DE COMPRAS: Ouro e ${nivelEmPalavras('Ouro')}. E a MESMA classificacao do cartao "Clientes Ouro" do painel, e o numero bate com ele. ` +
+    'Use para "me lista os clientes Ouro", "quem sao os clientes mais fieis", "quais Ouro pararam de comprar", "os Ouro da Marina". ' +
+    'Sem nome de vendedora traz a LOJA INTEIRA. O valor mostrado JA ABATE devolucao. Nao traz telefone.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      ...CAMPOS_DE_FIDELIDADE,
+      vendedora: {
+        type: 'string',
+        description:
+          'Nome da vendedora, como falado, para ver so a carteira dela. ' +
+          'OMITA para a loja inteira — e o padrao, e a maioria das perguntas.',
+      },
+    },
+  },
+};
+
+/**
+ * ATRIBUIR UM CLIENTE SEM DONA A UMA VENDEDORA — 09/10/2026.
+ *
+ * ==========================================================================
+ * UMA DAS POUCAS QUE ESCREVEM, E A DESCRICAO PRECISA DIZER O LIMITE.
+ *
+ * Se ela nao disser "SO quem esta sem vendedora", o modelo vai OFERECER
+ * transferencia — "quer que eu passe a Maria para a Beatriz?" — e a gestao
+ * vai pedir. A ferramenta recusaria depois, mas a oferta ja teria sido feita,
+ * e quem ouviu "posso fazer isso" nao entende o "nao" que vem em seguida.
+ *
+ * A recusa existe de verdade no `WHERE` da escrita. Isto aqui e para a
+ * conversa nao prometer o que o banco nao vai cumprir.
+ * ==========================================================================
+ */
+const GESTAO_ATRIBUIR_VENDEDORA_TOOL: Anthropic.Tool = {
+  name: 'atribuir_vendedora_ao_cliente',
+  description:
+    'Coloca um cliente QUE ESTA SEM VENDEDORA na carteira de uma vendedora. ' +
+    'Use quando a gestao disser de quem e um cliente que apareceu "sem vendedora" numa lista — "esse cliente e da Marina", "a primeira da lista e da Ylka". ' +
+    'SO PREENCHE QUEM ESTA EM BRANCO: se o cliente ja tem vendedora, ela NAO e trocada e a ferramenta responde de quem e. ' +
+    'NUNCA ofereca transferir cliente de uma vendedora para outra — isso e feito no painel, nao por aqui. ' +
+    'Use o nome do cliente o mais completo possivel: com homonimo a ferramenta nao grava e pede para escolher.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      cliente: {
+        type: 'string',
+        description:
+          'Nome do cliente, como aparece na lista. Quanto mais completo, menos chance de homonimo.',
+      },
+      vendedora: {
+        type: 'string',
+        description: 'Nome da vendedora que recebe o cliente, como falado.',
+      },
+    },
+    required: ['cliente', 'vendedora'],
   },
 };
 
@@ -1032,6 +1279,17 @@ const GESTAO_PANORAMA_LEADS_TOOL: Anthropic.Tool = {
         type: 'string',
         description:
           'Nome da vendedora, como falado. OMITA para a fila inteira — nao invente um nome quando a pergunta for geral.',
+      },
+      status: {
+        type: 'string',
+        enum: ['NOVO', 'EM_CONTATO', 'VIROU_CLIENTE', 'NAO_VINGOU'],
+        description:
+          'So os leads neste status da VENDEDORA. `NOVO` e quem ela ainda nao encostou; `EM_CONTATO`, quem ela esta tratando; `VIROU_CLIENTE` e `NAO_VINGOU` sao os que ela JA DEU BAIXA. Use quando a pergunta nomear um ("quem esta apenas em Leads", "quem ela nao tocou ainda", "quantos viraram cliente"). SO VALE COM "vendedora" — sem ela, a fila geral nao e por vendedora. OMITA para os que estao em aberto.',
+      },
+      dia: {
+        type: 'string',
+        description:
+          'Um dia so, em AAAA-MM-DD, calculado a partir da data de hoje informada no system prompt. Filtra por QUANDO O LEAD ENTROU — nao por quando foi encaminhado. Use para "os leads que entraram hoje". SO VALE COM "vendedora". OMITA para sem recorte de tempo.',
       },
     },
   },
@@ -1181,14 +1439,28 @@ const GESTAO_COMPARAR_ANTERIOR_TOOL: Anthropic.Tool = {
 const GESTAO_FUNIL_TOOL: Anthropic.Tool = {
   name: 'funil_de_atendimentos',
   description:
-    'Como estao os atendimentos EM CURSO agora, por etapa: em negociacao, remarcado, sem conseguir falar, primeiro contato. SEM "vendedora", traz a loja inteira mais uma linha por vendedora. COM "vendedora", traz so a carteira dela. Use quando perguntarem "como esta o funil", "quantos clientes em negociacao", "o que esta parado", "como esta a carteira da Marina", "quantos atendimentos abertos temos". E o estado de AGORA, nao um periodo — nao diga "hoje" nem "esta semana" ao repassar. Nao traz venda nem valor: para dinheiro use as ferramentas de vendas.',
+    'Como estao os atendimentos EM CURSO agora, por etapa: em negociacao, remarcado, sem conseguir falar, primeiro contato. SEM "vendedora", traz a equipe inteira mais uma linha por vendedora. COM "vendedora", traz so a carteira dela. ' +
+    'E TRAZ QUEM SAO — nome do cliente, de qual VENDEDORA, em que etapa, desde quando e quem espera o relato dela. Quando perguntarem QUEM ("quem esta em negociacao?", "quais clientes a Marina tem parados?"), responda com os nomes: eles vem aqui. ' +
+    'Use para "como esta o funil", "quantos clientes em negociacao", "o que esta parado", "como esta a carteira da Marina", "quantos atendimentos abertos temos". ' +
+    'O recorte por ETAPA responde "quem esta SO em negociacao"; o por DIA responde "o que abriu hoje". Sem etapa e sem dia e o estado de AGORA, e ai nao diga "hoje" nem "esta semana" ao repassar. Nao traz venda, valor nem telefone: para dinheiro use as ferramentas de vendas.',
   input_schema: {
     type: 'object',
     properties: {
       vendedora: {
         type: 'string',
         description:
-          'Nome da vendedora, como falado. OMITA para a loja inteira — nao invente um nome quando a pergunta for geral.',
+          'Nome da vendedora, como falado. OMITA para a equipe inteira — nao invente um nome quando a pergunta for geral.',
+      },
+      etapa: {
+        type: 'string',
+        enum: ['EM_NEGOCIACAO', 'REMARCADO', 'SEM_CONTATO', 'PRIMEIRO_CONTATO'],
+        description:
+          'So os atendimentos nesta etapa. Use quando a pergunta nomear uma ("quem esta em negociacao", "quem nao conseguiu falar"). OMITA para todas as etapas.',
+      },
+      dia: {
+        type: 'string',
+        description:
+          'Um dia so, em AAAA-MM-DD, calculado a partir da data de hoje informada no system prompt. Use para "o que abriu hoje", "os de ontem". Filtra pela data de ABERTURA do atendimento — omita para o estado de agora, sem recorte de tempo.',
       },
     },
   },
@@ -1382,14 +1654,51 @@ interface TetosPorTurno {
   contatoAgendado: boolean;
   relatoGravado: boolean;
   /**
-   * Um lembrete por turno.
+   * Quantos lembretes este turno ja guardou. CONTADOR, e nao booleano.
    *
-   * Remarcar e cancelar NAO entram: os dois mexem em linha que ja existe, e
-   * quem pede "adia esses dois" merece que os dois sejam adiados. Guardar e
-   * que cria, e e por onde um laco viraria fila.
+   * ========================================================================
+   * ERA UM SO POR TURNO, E ISSO QUEBRAVA O USO REAL — 08/10/2026.
+   *
+   * A gestora mandou a agenda da SEMANA inteira numa colada — sete dias,
+   * quatro compromissos com hora — e pediu aviso uma hora antes de cada um.
+   * Com o booleano, o primeiro era guardado e os outros recebiam "voce ja
+   * guardou um lembrete neste turno": ela teria de repetir um por um, que e
+   * exatamente o que ela evitou ao colar o bloco.
+   *
+   * O TETO CONTINUA EXISTINDO, e pelo motivo de sempre: criacao em massa,
+   * inclusive por injecao no texto que um cliente escreveu. Vinte atende uma
+   * semana cheia com folga e segue longe de "fila infinita" — e estourar
+   * NAO descarta calado: o modelo recebe quantos entraram e o que falta.
+   *
+   * Remarcar e cancelar continuam FORA de teto: os dois mexem em linha que
+   * ja existe, e quem pede "adia esses dois" merece que os dois sejam
+   * adiados.
+   * ========================================================================
    */
-  lembreteGuardado: boolean;
+  lembretesGuardados: number;
+  /**
+   * Quantas carteiras este turno ja atribuiu. CONTADOR, pelo mesmo motivo do
+   * lembrete: "a primeira, a terceira e a quinta sao da Ylka" e uso legitimo,
+   * e um booleano faria a gestao repetir uma por uma.
+   *
+   * O TETO existe porque isto ESCREVE em cadastro, e escrita em massa a
+   * partir de texto e exatamente o que injecao explora. Dez cobre qualquer
+   * pedido real — sao 19 clientes Ouro sem dona na loja inteira.
+   */
+  carteirasAtribuidas: number;
 }
+
+/**
+ * Quantos lembretes um turno pode CRIAR.
+ *
+ * Vinte cobre a agenda de uma semana colada de uma vez (o caso que motivou o
+ * numero) e para muito antes de uma injecao conseguir encher a fila — o teto
+ * de pendentes por pessoa, no servico, e 50.
+ */
+const MAX_LEMBRETES_POR_TURNO = 20;
+
+/** Quantas carteiras um turno pode atribuir. Ver `TetosPorTurno`. */
+const MAX_CARTEIRAS_POR_TURNO = 10;
 
 /**
  * Os erros que NAO passam sozinhos — ver `executarLeitura`.
@@ -1433,7 +1742,7 @@ export class AnthropicClient implements ILlmClient {
       model: params.model,
       max_tokens: params.maxTokens,
       system: params.system,
-      messages: this.toApiMessages(params.mensagens),
+      messages: this.toApiMessages(params.mensagens, params.anexos),
     });
     return { texto: this.extrairTexto(resp), tokens: resp.usage.output_tokens };
   }
@@ -1441,7 +1750,7 @@ export class AnthropicClient implements ILlmClient {
   async chatComFerramentas(
     params: ChatParams,
   ): Promise<ChatComFerramentasResultado> {
-    const apiMessages = this.toApiMessages(params.mensagens);
+    const apiMessages = this.toApiMessages(params.mensagens, params.anexos);
 
     // Cada ferramenta so entra quando a aplicacao fornece o handler. O
     // grafico e a excecao historica: nasceu antes dos handlers e vale por
@@ -1497,6 +1806,9 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoLeads) tools.push(GESTAO_LEADS_TOOL);
     if (params.gestaoCarteira) tools.push(GESTAO_CARTEIRA_TOOL);
     if (params.gestaoMelhores) tools.push(GESTAO_MELHORES_TOOL);
+    if (params.gestaoFidelidade) tools.push(GESTAO_FIDELIDADE_TOOL);
+    if (params.gestaoAtribuirVendedora)
+      tools.push(GESTAO_ATRIBUIR_VENDEDORA_TOOL);
     if (params.gestaoAgendar) tools.push(GESTAO_AGENDAR_TOOL);
     if (params.gestaoFeedbacks) tools.push(GESTAO_FEEDBACKS_TOOL);
     if (params.gestaoFunil) tools.push(GESTAO_FUNIL_TOOL);
@@ -1519,6 +1831,7 @@ export class AnthropicClient implements ILlmClient {
     if (params.clientesSemComprar) tools.push(SEM_COMPRAR_TOOL);
     if (params.clientesPorEpoca) tools.push(EPOCA_TOOL);
     if (params.melhoresClientes) tools.push(MELHORES_TOOL);
+    if (params.clientesPorFidelidade) tools.push(FIDELIDADE_TOOL);
     if (params.agendarContato) tools.push(AGENDAR_TOOL);
 
     const first = await this.client.messages.create({
@@ -1553,10 +1866,14 @@ export class AnthropicClient implements ILlmClient {
       avisoEnviado: false,
       contatoAgendado: false,
       relatoGravado: false,
-      lembreteGuardado: false,
+      lembretesGuardados: 0,
+      carteirasAtribuidas: 0,
     };
 
     let grafico: GraficoDinamico | undefined;
+    // As fotos das pecas, se a busca encontrou alguma. Mesmo desenho do
+    // grafico: artefato que nao cabe no dialogo e viaja por fora.
+    let fotos: FotoDeProdutoLlm[] | undefined;
     const conversa: Anthropic.MessageParam[] = [...apiMessages];
     let resp = first;
 
@@ -1565,13 +1882,16 @@ export class AnthropicClient implements ILlmClient {
         (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
       );
       if (pedidos.length === 0) {
-        return { texto: this.extrairTexto(resp), tokens, grafico };
+        return { texto: this.extrairTexto(resp), tokens, grafico, fotos };
       }
 
       const rodada = await this.despachar(pedidos, params, tetos);
       // O grafico e um so por turno: o ultimo pedido vence, e nao ha
       // acumulo — a tela mostra um.
       grafico = rodada.grafico ?? grafico;
+      // A ULTIMA BUSCA VENCE, como no grafico: se ela refinou a pergunta, as
+      // fotos que vao junto sao as da lista que ela acabou de receber.
+      fotos = rodada.fotos ?? fotos;
 
       // ====================================================================
       // O TETO NAO DESCARTA PEDIDO EM SILENCIO — foi esse o defeito.
@@ -1635,10 +1955,12 @@ export class AnthropicClient implements ILlmClient {
   ): Promise<{
     toolResults: Anthropic.ToolResultBlockParam[];
     grafico?: GraficoDinamico;
+    fotos?: FotoDeProdutoLlm[];
   }> {
     // Processa cada tool_use, acumulando o resultado (grafico) e os
     // tool_result que voltam ao modelo na volta seguinte.
     let grafico: GraficoDinamico | undefined;
+    let fotos: FotoDeProdutoLlm[] | undefined;
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
 
     for (const toolUse of toolUses) {
@@ -1739,6 +2061,84 @@ export class AnthropicClient implements ILlmClient {
             );
           }),
         );
+      } else if (
+        toolUse.name === 'clientes_por_fidelidade' &&
+        params.gestaoFidelidade
+      ) {
+        // DOIS NOMES, E O DESPACHO RAMIFICA PELO NOME — nao por qual handler
+        // existe. A Nathalia tem OS DOIS, e um `if` por handler sempre
+        // escolheria o mesmo, mandando "meus clientes Ouro" para a loja.
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as {
+              nivel?: string;
+              vendedora?: string;
+              meses_sem_comprar?: number;
+              a_partir_de?: number;
+            };
+            const r = await params.gestaoFidelidade!({
+              nivel: e.nivel,
+              mesesSemComprar: e.meses_sem_comprar,
+              aPartirDe: e.a_partir_de,
+              vendedora: e.vendedora
+                ? String(e.vendedora).slice(0, 80)
+                : undefined,
+            });
+            return textoDaFidelidade(r, { daLoja: !e.vendedora });
+          }),
+        );
+      } else if (
+        toolUse.name === 'meus_clientes_por_fidelidade' &&
+        params.clientesPorFidelidade
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as {
+              nivel?: string;
+              meses_sem_comprar?: number;
+              a_partir_de?: number;
+            };
+            return textoDaFidelidade(
+              await params.clientesPorFidelidade!({
+                nivel: e.nivel,
+                mesesSemComprar: e.meses_sem_comprar,
+                aPartirDe: e.a_partir_de,
+              }),
+              { daLoja: false },
+            );
+          }),
+        );
+      } else if (
+        toolUse.name === 'atribuir_vendedora_ao_cliente' &&
+        params.gestaoAtribuirVendedora
+      ) {
+        // O TETO VEM ANTES DA CHAMADA, e nao depois: depois ja teria escrito.
+        if (tetos.carteirasAtribuidas >= MAX_CARTEIRAS_POR_TURNO) {
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: toolUse.id,
+            content:
+              `Voce ja atribuiu ${MAX_CARTEIRAS_POR_TURNO} carteiras nesta ` +
+              'mensagem, que e o limite. DIGA quais ficaram de fora e peca ' +
+              'para ela mandar os restantes numa proxima mensagem.',
+            is_error: true,
+          });
+        } else {
+          tetos.carteirasAtribuidas += 1;
+          toolResults.push(
+            await this.executarLeitura(toolUse, async () => {
+              const e = toolUse.input as {
+                cliente?: string;
+                vendedora?: string;
+              };
+              const r = await params.gestaoAtribuirVendedora!({
+                cliente: String(e.cliente ?? '').slice(0, 120),
+                vendedora: String(e.vendedora ?? '').slice(0, 80),
+              });
+              return `${r.mensagem}\n\nResponda com isso, sem alterar nomes.`;
+            }),
+          );
+        }
       } else if (
         toolUse.name === 'agendar_para_vendedora' &&
         params.gestaoAgendar
@@ -2091,17 +2491,27 @@ export class AnthropicClient implements ILlmClient {
       } else if (toolUse.name === 'guardar_lembrete' && params.guardarLembrete) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
-            // O TETO E DO TURNO. Ver `TetosPorTurno` — sem isto, um turno de
-            // cinco voltas guardaria cinco lembretes.
-            if (tetos.lembreteGuardado) {
-              return 'Voce ja guardou um lembrete neste turno. Confirme o que guardou e pergunte se ela quer marcar outro.';
+            // O TETO E DO TURNO, e e CONTADO. Ver `TetosPorTurno`: vinte,
+            // para a agenda de uma semana colada de uma vez caber.
+            //
+            // E ELE DIZ O QUE FALTOU. "Voce ja guardou um lembrete" fazia o
+            // modelo confirmar UM e calar sobre os outros seis; dizer quantos
+            // entraram e que o resto precisa de outra mensagem deixa a conta
+            // visivel para quem pediu.
+            if (tetos.lembretesGuardados >= MAX_LEMBRETES_POR_TURNO) {
+              return (
+                `Voce ja guardou ${MAX_LEMBRETES_POR_TURNO} lembretes nesta ` +
+                'mensagem, que e o maximo de uma vez. DIGA a ela quantos ' +
+                'foram guardados e QUAIS faltaram, e peca para mandar o resto ' +
+                'numa mensagem nova — nao finja que guardou tudo.'
+              );
             }
             const e = toolUse.input as { texto?: string; quandoIso?: string };
             const r = await params.guardarLembrete!({
               texto: String(e.texto ?? '').slice(0, 400),
               quandoIso: String(e.quandoIso ?? ''),
             });
-            tetos.lembreteGuardado = true;
+            tetos.lembretesGuardados += 1;
             return `${r.mensagem}\n\nResponda com isso, sem mudar o texto nem o horario.`;
           }),
         );
@@ -2387,18 +2797,19 @@ export class AnthropicClient implements ILlmClient {
       ) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
-            const { produtos } = await params.gestaoProdutos!({
-              busca: String(
-                (toolUse.input as { busca?: string }).busca ?? '',
-              ).slice(0, 120),
+            const entrada = toolUse.input as RecorteDeProduto;
+            const r = await params.gestaoProdutos!({
+              busca: String(entrada.busca ?? '').slice(0, 120),
+              incluirSemEstoque: entrada.incluir_sem_estoque === true,
+              categoria: entrada.categoria,
+              precoDe: entrada.preco_de,
+              precoAte: entrada.preco_ate,
+              aPartirDe: Number(entrada.a_partir_de) || 0,
+              comFoto: entrada.com_foto !== false,
+              soComFoto: entrada.so_com_foto === true,
             });
-            if (produtos.length === 0) {
-              return 'Nenhuma peca encontrada com esse termo. Diga isso e pergunte se quer procurar de outro jeito.';
-            }
-            return (
-              `Pecas encontradas:\n${produtos.map((p) => `- ${p.linha}`).join('\n')}\n\n` +
-              'Repasse os numeros exatamente como estao.'
-            );
+            fotos = r.fotos ?? fotos;
+            return textoDeProdutos(r, 'Repasse os numeros exatamente como estao.');
           }),
         );
       } else if (
@@ -2407,17 +2818,24 @@ export class AnthropicClient implements ILlmClient {
       ) {
         toolResults.push(
           await this.executarLeitura(toolUse, async () => {
-            const { produtos } = await params.consultarProdutos!({
-              busca: String(
-                (toolUse.input as { busca?: string }).busca ?? '',
-              ).slice(0, 120),
+            const entrada = toolUse.input as RecorteDeProduto;
+            const r = await params.consultarProdutos!({
+              categoria: entrada.categoria,
+              busca: String(entrada.busca ?? '').slice(0, 120),
+              // `=== true` e nao truthy: o modelo as vezes manda a string
+              // "false", que e truthy em JavaScript e ligaria o filtro ao
+              // contrario do que ele pediu.
+              incluirSemEstoque: entrada.incluir_sem_estoque === true,
+              precoDe: entrada.preco_de,
+              precoAte: entrada.preco_ate,
+              aPartirDe: Number(entrada.a_partir_de) || 0,
+              comFoto: entrada.com_foto !== false,
+              soComFoto: entrada.so_com_foto === true,
             });
-            if (produtos.length === 0) {
-              return 'Nenhuma peca encontrada com esse termo. Diga isso a ela e pergunte se quer procurar de outro jeito.';
-            }
-            return (
-              `Pecas encontradas:\n${produtos.map((p) => `- ${p.linha}`).join('\n')}\n\n` +
-              'Repasse os precos e quantidades exatamente como estao. Se ela pedir custo ou margem, diga que voce nao consegue ver isso.'
+            fotos = r.fotos ?? fotos;
+            return textoDeProdutos(
+              r,
+              'Repasse os precos exatamente como estao. Se ela pedir custo ou margem, diga que voce nao consegue ver isso.',
             );
           }),
         );
@@ -2487,9 +2905,22 @@ export class AnthropicClient implements ILlmClient {
                       : 'desses estao esperando o relato DELA'
                   } — e o que ela precisa resolver.`
                 : '';
+            // QUEM SAO, e nao so quantos — 08/10/2026. Nasceu do teste da
+            // Nathalia em PRODUCAO: ela perguntou "quem sao as clientes em
+            // negociacao?" e ouviu "o sistema so me da o numero (...) olhe
+            // direto no seu funil". O dado estava a um metodo de distancia.
+            const quemSao = r.clientes.length
+              ? `\n\nQUEM SAO:\n${r.clientes.map((c) => `- ${c}`).join('\n')}` +
+                (r.clientesOcultos
+                  ? `\n\nSAO ${r.total} NO TOTAL e esta lista traz ` +
+                    `${r.clientes.length}: DIGA isso e ofereca o resto.`
+                  : '') +
+                '\n\nQuando ela perguntar QUEM sao, responda com estes nomes — ' +
+                'NAO mande ela olhar no painel.'
+              : '';
             return (
               `Carteira dela AGORA: ${r.total} ${r.total === 1 ? 'cliente' : 'clientes'} ` +
-              `em atendimento em curso — ${r.linhas.join(', ')}.${espera}\n\n` +
+              `em atendimento em curso — ${r.linhas.join(', ')}.${espera}${quemSao}\n\n` +
               'Repasse os numeros exatamente como estao. Isto e o estado de agora, ' +
               'nao um recorte de periodo: nao diga "hoje" nem "esta semana".'
             );
@@ -2786,7 +3217,7 @@ export class AnthropicClient implements ILlmClient {
         : r,
     );
 
-    return { toolResults: resultadosSeguros, grafico };
+    return { toolResults: resultadosSeguros, grafico, fotos };
   }
 
 
@@ -3061,8 +3492,9 @@ export class AnthropicClient implements ILlmClient {
    */
   private toApiMessages(
     mensagens: ChatParams['mensagens'],
+    anexos?: ChatParams['anexos'],
   ): Anthropic.MessageParam[] {
-    return mensagens.map((m) => {
+    const api = mensagens.map((m) => {
       const vazio =
         typeof m.content === 'string' && m.content.trim() === '';
       if (vazio) {
@@ -3075,8 +3507,80 @@ export class AnthropicClient implements ILlmClient {
       return {
         role: m.role,
         content: vazio ? '(mensagem sem texto)' : m.content,
-      };
+      } as Anthropic.MessageParam;
     });
+
+    return anexos?.length ? this.comAnexos(api, anexos) : api;
+  }
+
+  /**
+   * COLA OS ANEXOS NO ULTIMO TURNO DA USUARIA — 08/10/2026. RF9.
+   *
+   * ======================================================================
+   * NO ULTIMO TURNO DELA, E NAO NUMA MENSAGEM NOVA.
+   *
+   * A API exige que turnos alternem usuaria/assistente. Empurrar o anexo
+   * como mensagem propria criaria dois turnos de usuaria em sequencia — que
+   * a API recusa — ou obrigaria a inventar um turno do assistente no meio,
+   * que e mentira dentro da conversa.
+   *
+   * E O TEXTO VEM PRIMEIRO, o anexo depois: o modelo le na ordem, e a
+   * pergunta dela ("qual o markup disso?") precisa chegar antes do arquivo
+   * para ele saber o que procurar nele.
+   *
+   * SEM TURNO DE USUARIA, O ANEXO NAO ENTRA — e isso e falha nossa, nao
+   * dela: quem chamou montou a conversa errada. Fica no log, porque o
+   * silencio aqui apareceria como "a agente ignorou minha planilha".
+   * ======================================================================
+   */
+  private comAnexos(
+    api: Anthropic.MessageParam[],
+    anexos: NonNullable<ChatParams['anexos']>,
+  ): Anthropic.MessageParam[] {
+    const ultimo = api.map((m) => m.role).lastIndexOf('user');
+    if (ultimo < 0) {
+      this.logger.warn(
+        `${anexos.length} anexo(s) descartado(s): a conversa nao tem turno de ` +
+          'usuaria onde pendura-los.',
+      );
+      return api;
+    }
+
+    const alvo = api[ultimo];
+    const texto = typeof alvo.content === 'string' ? alvo.content : '';
+    const blocos: Anthropic.ContentBlockParam[] = texto
+      ? [{ type: 'text', text: texto }]
+      : [];
+
+    for (const anexo of anexos) {
+      if (anexo.nome) {
+        blocos.push({ type: 'text', text: `Arquivo: ${anexo.nome}` });
+      }
+      blocos.push(
+        anexo.tipo === 'pdf'
+          ? {
+              type: 'document',
+              source: {
+                type: 'base64',
+                media_type: 'application/pdf',
+                data: anexo.base64,
+              },
+            }
+          : {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type:
+                  anexo.mime as Anthropic.Base64ImageSource['media_type'],
+                data: anexo.base64,
+              },
+            },
+      );
+    }
+
+    const comBlocos = [...api];
+    comBlocos[ultimo] = { role: 'user', content: blocos };
+    return comBlocos;
   }
 
   private extrairTexto(resp: Anthropic.Message): string {
@@ -3336,6 +3840,89 @@ function textoDoFunil(r: GestaoLeituraResultado & { total?: number }): string {
 }
 
 /**
+ * O QUE A AGENTE OUVE SOBRE OS CLIENTES OURO — 09/10/2026.
+ *
+ * ==========================================================================
+ * TRES COISAS QUE ESTE TEXTO TEM DE DIZER, E CADA UMA EVITA UM ERRO.
+ *
+ * 1. O CORTE, em palavras. Sem isso ela explicaria "Ouro e quem compra muito"
+ *    ou chutaria um numero — e a gestora compararia com o painel.
+ *
+ * 2. OS SEM VENDEDORA. Medido em 09/10: 19 dos 48 Ouro nao tem dona na
+ *    carteira. Somar "os Ouro de cada vendedora" da 29. O recorte que esconde
+ *    precisa dizer que escondeu.
+ *
+ * 3. O NIVEL QUE NAO EXISTE. Se ela escrever "Diamante", a resposta honesta e
+ *    dizer quais niveis existem — nunca uma lista vazia, que soa como "voce
+ *    nao tem nenhum cliente Diamante" e e falso.
+ * ==========================================================================
+ */
+function textoDaFidelidade(
+  r: FidelidadeLlmResultado & {
+    status?: string;
+    nomes?: string[];
+    vendedora?: string;
+  },
+  opcoes: { daLoja: boolean },
+): string {
+  // O NOME DA VENDEDORA VEM ANTES DE TUDO: sem resolver de quem e a pergunta,
+  // nao ha lista nenhuma a entregar.
+  if (r.status === 'AMBIGUA') {
+    return (
+      `Ha mais de uma vendedora com esse nome: ${r.nomes?.join(', ') ?? ''}. ` +
+      'Pergunte qual delas antes de consultar.'
+    );
+  }
+  if (r.status === 'NAO_ENCONTRADA') {
+    return (
+      'Nao encontrei essa vendedora' +
+      (r.nomes?.length ? `. Parecidas: ${r.nomes.join(', ')}` : '') +
+      '. Pergunte de quem e a lista, ou chame de novo SEM vendedora para a loja inteira.'
+    );
+  }
+
+  if (r.nivelDesconhecido) {
+    return (
+      `Esse nivel nao existe. Os que existem sao: ${NIVEIS_DE_FIDELIDADE.join(', ')} ` +
+      `— Ouro e ${nivelEmPalavras('Ouro')}. Diga isso e pergunte qual ela quer. ` +
+      'NAO responda que nao ha clientes nesse nivel: a lista nao foi consultada.'
+    );
+  }
+
+  const deQuem = r.vendedora
+    ? ` na carteira da ${r.vendedora}`
+    : opcoes.daLoja
+      ? ' na loja'
+      : '';
+
+  if (r.linhas.length === 0) {
+    return (
+      `Nenhum cliente${deQuem} com esse recorte (${r.cortes}). ` +
+      'Diga isso em uma frase, e diga qual era o corte.'
+    );
+  }
+
+  // OS SEM DONA SO IMPORTAM NA PERGUNTA DA LOJA. Na carteira de alguem, todo
+  // mundo da lista tem dona por definicao — avisar ali seria ruido.
+  const semDona =
+    opcoes.daLoja && r.semVendedora > 0
+      ? `${r.semVendedora} destes ${r.total} NAO tem vendedora na carteira. ` +
+        'Se perguntarem por vendedora, avise que a soma por vendedora NAO ' +
+        'fecha com este total, e que esses clientes estao sem dona.\n\n'
+      : '';
+
+  return (
+    `Clientes${deQuem} — o corte: ${r.cortes}.\n` +
+    `${r.linhas.map((l: string) => `- ${l}`).join('\n')}\n\n` +
+    faixaDaLista(r.deslocamento, r.linhas.length, r.total) +
+    semDona +
+    'Repasse os nomes e numeros exatamente como estao. O valor JA ABATE ' +
+    'devolucao, e a contagem de compras NAO abate — se perguntarem, e essa a ' +
+    'regra. Voce NAO tem o telefone deles.'
+  );
+}
+
+/**
  * "estes sao o 21o ao 40o de 97" — a frase que faz a lista longa andar.
  *
  * NASCEU DE UMA CONVERSA REAL, em 05/10/2026. A gestora pediu quem estava
@@ -3368,6 +3955,179 @@ function faixaDaLista(
     'se quer a continuacao — se disser que sim, chame a ferramenta de novo ' +
     `com a_partir_de = ${ultimo}. Nunca deixe parecer que a lista acabou.\n\n`
   );
+}
+
+/**
+ * O QUE A AGENTE OUVE DEPOIS DE UMA BUSCA DE PRODUTO — 07/10/2026.
+ *
+ * ==========================================================================
+ * DUAS RESPOSTAS ERRADAS DO MESMO DIA, no primeiro teste do filtro de saldo.
+ *
+ *   — "tem alguma esmeralda sem estoque?"
+ *   — "Nenhuma esmeralda esta sem estoque — todas as SEIS pecas que aparecem
+ *      no catalogo estao disponiveis."     (sao 112; 9 com saldo)
+ *
+ *   — "brinco de diamante"
+ *   — "Nao achei nenhum brinco de diamante em estoque."   (existem 22)
+ *
+ * Nos dois casos o modelo nao tinha como acertar: recebeu a lista JA CORTADA
+ * e nenhum numero em volta dela. Um teto sem total vira resposta confiante e
+ * errada — a mesma licao da carteira em 21/08, e da faixa da lista em 05/10.
+ *
+ * Entao o texto carrega os tres: as pecas, QUANTAS existem no recorte, e
+ * QUANTAS ficaram de fora por nao ter saldo. Com isso ela responde certo
+ * mesmo quando nao pensou em ligar o `incluir_sem_estoque`.
+ * ==========================================================================
+ */
+/**
+ * O recorte como o MODELO manda — nomes em snake_case e valores que podem
+ * vir como texto. A correcao fica em `faixaDePreco` e `categoriaDaBusca`.
+ */
+type RecorteDeProduto = {
+  busca?: string;
+  incluir_sem_estoque?: boolean;
+  categoria?: string;
+  preco_de?: unknown;
+  preco_ate?: unknown;
+  a_partir_de?: unknown;
+  com_foto?: boolean;
+  so_com_foto?: boolean;
+};
+
+export function textoDeProdutos(
+  r: {
+    produtos: { linha: string }[];
+    total: number;
+    semEstoque: number;
+    incluiuSemEstoque?: boolean;
+    categoria?: string;
+    foraDaCategoria?: number;
+    faixa?: { de?: number; ate?: number };
+    pulados?: number;
+    fotos?: { codigo: string }[];
+    tinhamFoto?: number;
+    soComFoto?: boolean;
+    naoConferidas?: number;
+  },
+  fecho: string,
+): string {
+  const foraDaCategoria = r.foraDaCategoria ?? 0;
+
+  // O QUE EXISTE E NAO ESTA NA LISTA, em uma frase por motivo. Os dois
+  // recortes escondem peca do mesmo jeito: o saldo e a categoria.
+  const escondidas: string[] = [];
+  if (r.semEstoque > 0 && !r.incluiuSemEstoque) {
+    escondidas.push(
+      `${r.semEstoque} existem mas estao SEM ESTOQUE — para ve-las, chame a ` +
+        'ferramenta de novo com incluir_sem_estoque',
+    );
+  }
+  if (foraDaCategoria > 0 && r.categoria) {
+    escondidas.push(
+      `${foraDaCategoria} existem em OUTRAS categorias, fora de ` +
+        `${categoriaEmPalavras(r.categoria)} — para ve-las, chame de novo com ` +
+        'categoria = TODAS, ou com a categoria certa',
+    );
+  }
+
+  if (r.produtos.length === 0) {
+    if (escondidas.length > 0) {
+      return (
+        'Nenhuma peca com esse termo DENTRO do recorte da busca — mas o ' +
+        `catalogo TEM pecas que casam: ${escondidas.join('; e ')}. NAO diga ` +
+        'que nao encontrou nada, porque encontrou: diga o que existe e ' +
+        'pergunte o que ela quer ver.'
+      );
+    }
+    return 'Nenhuma peca encontrada com esse termo. Diga isso e pergunte se quer procurar de outro jeito.';
+  }
+
+  const partes = [
+    `Pecas encontradas (${r.produtos.length} nesta lista — LISTE TODAS ELAS ` +
+      'na sua resposta; mostrar menos do que veio faz a continuacao pular ' +
+      `pecas sem ninguem perceber):\n${r.produtos
+        .map((p) => `- ${p.linha}`)
+        .join('\n')}`,
+  ];
+
+  const recortes: string[] = [];
+  if (r.categoria) recortes.push(categoriaEmPalavras(r.categoria));
+  const rotuloDaFaixa = r.faixa ? faixaEmPalavras(r.faixa) : '';
+  if (rotuloDaFaixa) recortes.push(rotuloDaFaixa);
+  if (recortes.length > 0) {
+    partes.push(`A lista esta recortada em ${recortes.join(', ')}.`);
+  }
+
+  // A MESMA FAIXA DA CARTEIRA, de 05/10 — e agora os produtos tambem tem como
+  // continuar. Ela diz onde a lista parou, quantas faltam e o valor exato do
+  // proximo `a_partir_de`; quando acaba, diz que acabou.
+  const faixaDaPagina = faixaDaLista(
+    r.pulados ?? 0,
+    r.produtos.length,
+    r.total,
+  ).trim();
+  if (faixaDaPagina) partes.push(faixaDaPagina);
+
+  if (r.semEstoque > 0 && r.incluiuSemEstoque) {
+    // A LISTA JA VEM ABERTA, e o numero muda de significado: nao e o que
+    // ficou de fora, e quantas das que casam com o termo estao zeradas.
+    //
+    // Corrigido no segundo teste de 07/10. Ela respondeu "as 6 primeiras
+    // estao todas com estoque, mas sao 112 no total — nao da para afirmar
+    // que nenhuma zerou", para uma pergunta que era exatamente essa. Sao
+    // 103 zeradas, e ela nao tinha esse numero.
+    partes.push(
+      `DESTAS ${r.total}, ${r.semEstoque} estao SEM ESTOQUE e ` +
+        `${Math.max(0, r.total - r.semEstoque)} tem saldo. A lista acima JA ` +
+        'INCLUI as zeradas, e cada linha diz qual e qual. Se ela perguntou ' +
+        'QUANTAS estao sem estoque, responda com esse numero — nao diga que ' +
+        'nao da para saber.',
+    );
+  }
+
+  for (const frase of escondidas) {
+    partes.push(`Fora da lista: ${frase}.`);
+  }
+
+  // A FOTO E EXCECAO, E O TEXTO TEM DE DIZER ISSO — 07/10/2026.
+  //
+  // Baixadas as 546 pecas com saldo, uma a uma: 196 tem foto (36%), e na
+  // JOIA sao 55 de 320 (17%). Prometer "mando as fotos" e quebrar a palavra
+  // em oito de cada dez pecas.
+  // A LISTA FILTRADA POR FOTO E OUTRA CONVERSA: aqui nao existe "peca sem
+  // foto nesta lista", porque todas tem. O que precisa ser dito e de onde
+  // elas sairam — senao "41 pecas" parece o catalogo, e sao 41 DE 169
+  // conferidas.
+  if (r.soComFoto) {
+    partes.push(
+      `Esta lista ja esta FILTRADA: so pecas com foto CONFERIDA na hora. ` +
+        `Sao ${r.total} com foto, de ${r.tinhamFoto ?? 0} candidatas que tinham ` +
+        'imagem cadastrada. Diga que a lista e so das que tem foto.' +
+        (r.naoConferidas
+          ? ` Outras ${r.naoConferidas} nao deu tempo de conferir — avise que ` +
+            'pode haver mais.'
+          : ''),
+    );
+  }
+
+  if (r.fotos && r.fotos.length > 0) {
+    const codigos = r.fotos.map((f) => f.codigo).filter(Boolean);
+    partes.push(
+      `VOU MANDAR ${r.fotos.length} foto(s) logo apos o seu texto` +
+        `${codigos.length ? ` — de ${codigos.join(', ')}` : ''}. Diga que a ` +
+        'foto vem junto SO dessas; as outras nao tem foto cadastrada. NAO ' +
+        'descreva a imagem, voce nao a viu.',
+    );
+  } else if (r.produtos.length > 0 && r.fotos && !r.soComFoto) {
+    partes.push(
+      'NENHUMA peca desta lista tem foto disponivel — a maioria do catalogo ' +
+        'nao tem. Se ela pediu foto, diga isso com todas as letras e NAO ' +
+        'prometa mandar depois.',
+    );
+  }
+
+  partes.push(fecho);
+  return partes.join('\n\n');
 }
 
 function textoDaLeituraDeGestao(

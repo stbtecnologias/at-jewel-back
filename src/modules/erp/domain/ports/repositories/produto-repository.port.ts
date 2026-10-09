@@ -5,6 +5,57 @@ export interface FiltroProduto {
   familia?: string;
   ativo?: boolean;
   /**
+   * SO O QUE DA PARA VENDER HOJE — saldo somado maior que zero.
+   *
+   * Decisao do Lucas em 07/10/2026, vinda da reuniao de 06/10: "a consulta
+   * retorna milhares de itens sem estoque". Sao 7.196 ativos para 546 com
+   * saldo — sem este filtro, nove de cada dez respostas sao peca que nao
+   * existe na loja.
+   *
+   * O CODIGO EXATO IGNORA ESTE FILTRO, de proposito: quem digita `AN24084`
+   * quer aquela peca, com ou sem estoque. Ver `findAll`.
+   */
+  apenasDisponiveis?: boolean;
+  /**
+   * A CATEGORIA QUE A PERGUNTA SUGERE — e que o codigo exato ignora.
+   *
+   * Irma do `apenasDisponiveis`, e pelo mesmo motivo: entra dentro do ramo
+   * das palavras, nao no topo. Quem digita `AN24084` quer aquela peca, mesmo
+   * que ela seja HOME e a pergunta parecesse de joia.
+   *
+   * Diferente do `categoria` acima, que e o filtro DURO da tela de Produtos:
+   * ali a pessoa escolheu a categoria num seletor, e nada deve furar isso.
+   */
+  categoriaSugerida?: string;
+  /**
+   * A FAIXA DE PRECO DA PERGUNTA, sobre `valor_venda`.
+   *
+   * Irmas do `categoriaSugerida`: entram no ramo das palavras, e o codigo
+   * exato passa por fora. Quem digita um codigo quer AQUELA peca, mesmo que
+   * ela custe mais do que a faixa que ele acabou de citar.
+   *
+   * A faixa nao e fixa — decisao do Lucas em 07/10: e o valor que ela disser.
+   */
+  precoDe?: number;
+  precoAte?: number;
+  /**
+   * Quantas PULAR antes de comecar a lista — a pagina seguinte.
+   *
+   * SO FUNCIONA COM ORDEM ESTAVEL, e e por isso que a ordenacao do `findAll`
+   * tem desempate por `id`. Sem o desempate, duas pecas empatadas trocam de
+   * lugar entre uma pagina e outra: uma repete e outra some, sem erro nenhum.
+   * Mesma armadilha da carteira em 05/10.
+   */
+  deslocamento?: number;
+  /**
+   * So as pecas que TEM URL de foto cadastrada.
+   *
+   * E o primeiro corte do "me mostra as que tem foto": tira em SQL, de graca,
+   * as que nem URL tem. O segundo corte — quais URLs respondem de verdade —
+   * nao cabe aqui, porque a resposta mora na Conexa: ver `quaisTemFoto`.
+   */
+  comFotoCadastrada?: boolean;
+  /**
    * Texto livre. Varre descricao, categoria, familia, colecao, pedra, cor e
    * codigo do ERP — as colunas por onde uma pessoa procura uma joia.
    *
@@ -103,6 +154,13 @@ export interface IProdutoRepository {
   /** Identidade no ERP — imutavel, ao contrario do `codigo_erp`. */
   findByIdErp(idErp: string): Promise<Produto | null>;
   findAll(filtros: FiltroProduto): Promise<Produto[]>;
+  /**
+   * Quantas o mesmo filtro acha, sem o teto do `limit`.
+   *
+   * O teto so e honesto acompanhado do total — ver o comentario na
+   * implementacao, e a mesma licao da carteira em 21/08/2026.
+   */
+  contar(filtros: FiltroProduto): Promise<number>;
   findById(id: string): Promise<Produto | null>;
   save(produto: Produto): Promise<Produto>;
   /**
