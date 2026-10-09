@@ -9,6 +9,7 @@ import {
   NIVEIS_DE_FIDELIDADE,
   nivelEmPalavras,
 } from '../../../../shared/clientes/fidelidade';
+import { siglasEmTexto } from '../../../../shared/catalogo/sinonimos';
 import { ConfigService } from '@nestjs/config';
 import type {
   ChatComFerramentasResultado,
@@ -208,6 +209,7 @@ const PRODUTOS_TOOL: Anthropic.Tool = {
         description:
           'O que procurar, nas palavras dela: nome da peca, categoria, familia, colecao, pedra, cor ou codigo do ERP. Ex.: "esmeralda", "alianca ouro 18k", "SEED-P0002".' +
           'Se ela citar um CODIGO ("An24084", "o CO24022"), mande SO o codigo neste campo — nao repita a frase dela em volta.' +
+          'AS SIGLAS DO CATALOGO SAO TERMO VALIDO, e sao o jeito que a equipe fala: OB e ouro branco, OA ouro amarelo, DTS e DMT sao diamante, ESM esmeralda. Se ela escrever uma sigla, MANDE A SIGLA neste campo e NAO pergunte o que significa — a busca entende. Sigla NAO e codigo do ERP. As que o catalogo conhece: ' + siglasEmTexto() + '. ' +
           'OMITA este campo quando a pergunta nao tiver termo — "uma tabela de pecas ate 20 mil", "o que temos em estoque", "as mais caras". NAO invente palavra generica como "peca" ou "joia": isso nao casa com nada e devolve lista vazia.',
       },
       incluir_sem_estoque: {
@@ -275,6 +277,7 @@ const GESTAO_PRODUTOS_TOOL: Anthropic.Tool = {
         description:
           'O que procurar: nome da peca, categoria, familia, colecao, pedra, cor ou codigo do ERP.' +
           'Se ela citar um CODIGO ("An24084", "o CO24022"), mande SO o codigo neste campo — nao repita a frase dela em volta.' +
+          'AS SIGLAS DO CATALOGO SAO TERMO VALIDO, e sao o jeito que a equipe fala: OB e ouro branco, OA ouro amarelo, DTS e DMT sao diamante, ESM esmeralda. Se ela escrever uma sigla, MANDE A SIGLA neste campo e NAO pergunte o que significa — a busca entende. Sigla NAO e codigo do ERP. As que o catalogo conhece: ' + siglasEmTexto() + '. ' +
           'OMITA este campo quando a pergunta nao tiver termo — "uma tabela de pecas ate 20 mil", "o que temos em estoque", "as mais caras". NAO invente palavra generica como "peca" ou "joia": isso nao casa com nada e devolve lista vazia.',
       },
       incluir_sem_estoque: {

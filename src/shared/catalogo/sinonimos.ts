@@ -198,6 +198,34 @@ function ehSigla(palavra: string): boolean {
   return SIGLAS_CONHECIDAS.has(palavra.toUpperCase());
 }
 
+/**
+ * AS SIGLAS, PARA A DESCRIÇÃO DA FERRAMENTA — 09/10/2026.
+ *
+ * ==========================================================================
+ * O DICIONÁRIO VIVIA NO SQL, E O MODELO NÃO SABIA QUE ELE EXISTIA.
+ *
+ * Consertei a busca para entender "OB" e fui testar: a agente continuou sem
+ * achar. Não era a busca — era que ela NUNCA CHAMAVA A FERRAMENTA:
+ *
+ *   — "Quais peças temos em OB"
+ *   — "OB não é um tipo de peça que eu reconheça — você quis dizer alguma
+ *      família específica, ou foi um código?"
+ *
+ * A descrição listava "nome, categoria, família, coleção, pedra, cor ou
+ * código do ERP" e não dizia uma palavra sobre sigla. Pior: falava em CÓDIGO,
+ * e foi para lá que o modelo foi — "um código que começa com OB?".
+ *
+ * Consertar o encanamento sem conferir se a água chega: a busca estava certa
+ * e nenhuma pergunta a alcançava.
+ * ==========================================================================
+ *
+ * A lista é GERADA da tabela, e não escrita na descrição: sigla nova passa a
+ * ser reconhecida pelo modelo no mesmo commit em que entra no dicionário.
+ */
+export function siglasEmTexto(): string {
+  return [...SIGLAS_CONHECIDAS].sort().join(', ');
+}
+
 export function gruposDaBusca(busca: string | undefined): GrupoDeBusca[] {
   const palavras = (busca ?? '')
     .trim()
