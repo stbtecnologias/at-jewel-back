@@ -1,5 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { categoriaDaBusca } from '../../../shared/catalogo/categorias';
+import {
+  linhaDoClienteFiel,
+  nivelDaPergunta,
+  nivelEmPalavras,
+} from '../../../shared/clientes/fidelidade';
 import { faixaDePreco } from '../../../shared/catalogo/faixa-de-preco';
 import { FotosDeProdutoService } from './fotos-de-produto.service';
 import { diasDeCalendario } from '../../../shared/tempo/dias-de-calendario';
@@ -10,6 +15,7 @@ import type {
   GestaoEpocaHandler,
   GestaoPorEmpresaHandler,
   GestaoVendasDetalhadasHandler,
+  GestaoFidelidadeHandler,
   GestaoMelhoresHandler,
   GestaoAgendarHandler,
   GestaoCarteiraDoClienteHandler,
@@ -245,6 +251,8 @@ export interface FerramentasGestao {
   gestaoPorEmpresa: GestaoPorEmpresaHandler;
   gestaoVendasDetalhadas: GestaoVendasDetalhadasHandler;
   gestaoMelhores: GestaoMelhoresHandler;
+  /** Os Ouro, Prata e Bronze — da loja, ou de uma vendedora. */
+  gestaoFidelidade: GestaoFidelidadeHandler;
   gestaoFeedbacks: GestaoFeedbacksHandler;
   gestaoDiaDaVendedora: GestaoDiaDaVendedoraHandler;
   gestaoConversasAgora: GestaoConversasAgoraHandler;
@@ -691,6 +699,103 @@ export class FerramentasGestaoService {
           );
         });
         return { ...r, total };
+      },
+
+      /**
+       * OS CLIENTES OURO DA LOJA — 09/10/2026.
+       *
+       * ==================================================================
+       * A ÚNICA FERRAMENTA DE GESTÃO EM QUE A VENDEDORA É OPCIONAL.
+       *
+       * "Me lista os clientes Ouro" é pergunta da LOJA, e foi assim que a
+       * gestora pediu. As outras exigem o nome porque a pergunta é sempre
+       * sobre alguém; esta não, e exigir faria o modelo inventar um nome.
+       *
+       * Com nome, o escopo passa pelo `comVendedora` — que resolve apelido,
+       * recusa quem está fora da equipe e devolve AMBIGUA quando há duas. Sem
+       * nome, `{ tipo: 'LOJA' }` escrito à mão: nunca derivado de ausência.
+       * ==================================================================
+       *
+       * E A RESPOSTA DIZ QUANTOS NÃO TÊM DONA. Medido em 09/10: 19 dos 48
+       * Ouro estão sem `vendedora_codigo_erp`, somando metade do valor. A
+       * soma por vendedora dá 29 — quem lê precisa saber que faltam 19, ou
+       * vai embora achando que viu a loja inteira.
+       */
+      gestaoFidelidade: async ({
+        nivel,
+        vendedora,
+        mesesSemComprar,
+        aPartirDe,
+      }) => {
+        const pedido = nivelDaPergunta(nivel);
+        const vazio = {
+          linhas: [] as string[],
+          total: 0,
+          deslocamento: 0,
+          semVendedora: 0,
+        };
+        // NÍVEL ESCRITO E NÃO RECONHECIDO: não consulta nada. Ver o gêmeo na
+        // `ferramentas-vendedora.service.ts`.
+        if (nivel && !pedido) {
+          return {
+            ...vazio,
+            cortes: nivelEmPalavras('Ouro'),
+            nivelDesconhecido: true,
+          };
+        }
+        const cortes = pedido
+          ? `${pedido}, ${nivelEmPalavras(pedido)}`
+          : `todos os níveis — Ouro é ${nivelEmPalavras('Ouro')}`;
+
+        // SEM NOME: a loja. O escopo é escrito, e não derivado da ausência.
+        if (!vendedora) {
+          const r = await this.carteira.porFidelidade({
+            escopo: { tipo: 'LOJA' },
+            nivel: pedido ?? undefined,
+            mesesSemComprar,
+            deslocamento: aPartirDe,
+          });
+          return {
+            linhas: r.clientes.map(linhaDoClienteFiel),
+            total: r.total,
+            deslocamento: r.deslocamento,
+            semVendedora: r.semVendedora,
+            cortes,
+            status: 'OK',
+          };
+        }
+
+        let pagina: { total: number; deslocamento: number } | null = null;
+        const r = await this.comVendedora(
+          equipe,
+          vendedora,
+          async (_id, codigoErp) => {
+            // Vendedora sem cadastro no ERP não tem carteira. Lista vazia, e
+            // não a loja: ver `ConsultarCarteiraVendedoraUseCase`.
+            if (!codigoErp) return [];
+            const p = await this.carteira.porFidelidade({
+              escopo: { tipo: 'CARTEIRA', vendedoraCodigoErp: codigoErp },
+              nivel: pedido ?? undefined,
+              mesesSemComprar,
+              deslocamento: aPartirDe,
+            });
+            pagina = { total: p.total, deslocamento: p.deslocamento };
+            return p.clientes.map(linhaDoClienteFiel);
+          },
+        );
+        const p = pagina as { total: number; deslocamento: number } | null;
+        return {
+          linhas: r.linhas,
+          total: p?.total ?? 0,
+          deslocamento: p?.deslocamento ?? 0,
+          // NA CARTEIRA DE ALGUÉM, TODO MUNDO TEM DONA por definição — avisar
+          // "zero sem vendedora" aqui seria ruído.
+          semVendedora: 0,
+          cortes,
+          status: r.status,
+          nomes: r.nomes,
+          vendedora: r.status === 'OK' ? r.vendedora : undefined,
+        };
       },
 
       // A PECA NO CATALOGO, COM A QUANTIDADE — 25/09/2026.

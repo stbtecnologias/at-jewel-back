@@ -5,12 +5,17 @@ import {
   categoriaEmPalavras,
 } from '../../../../shared/catalogo/categorias';
 import { faixaEmPalavras } from '../../../../shared/catalogo/faixa-de-preco';
+import {
+  NIVEIS_DE_FIDELIDADE,
+  nivelEmPalavras,
+} from '../../../../shared/clientes/fidelidade';
 import { ConfigService } from '@nestjs/config';
 import type {
   ChatComFerramentasResultado,
   ChatParams,
   GestaoLeituraResultado,
   ChatResultado,
+  FidelidadeLlmResultado,
   FotoDeProdutoLlm,
   GraficoDinamico,
   ILlmClient,
@@ -455,6 +460,74 @@ const MELHORES_TOOL: Anthropic.Tool = {
       },
     },
   },
+};
+
+/**
+ * OS CAMPOS DA FIDELIDADE, compartilhados pelos dois canais — 09/10/2026.
+ *
+ * ==========================================================================
+ * O ENUM SAI DA CONSTANTE, E NAO DE UMA LISTA ESCRITA A MAO AQUI.
+ *
+ * Se amanha nascer um nivel, ou um sumir, o schema acompanha no mesmo commit.
+ * Enum de schema que diverge do codigo e o defeito que nao da erro: o modelo
+ * escreve um valor que a consulta nao conhece, o filtro nao casa nada, e lista
+ * vazia e indistinguivel de "nao ha nenhum".
+ * ==========================================================================
+ */
+const CAMPOS_DE_FIDELIDADE = {
+  nivel: {
+    type: 'string' as const,
+    enum: [...NIVEIS_DE_FIDELIDADE],
+    description:
+      'O nivel pedido. Omita para trazer todos, do mais fiel para o menos. ' +
+      `Ouro e ${nivelEmPalavras('Ouro')}, Prata ${nivelEmPalavras('Prata')}, ` +
+      `Bronze ${nivelEmPalavras('Bronze')}.`,
+  },
+  meses_sem_comprar: {
+    type: 'integer' as const,
+    description:
+      'So quem NAO compra ha pelo menos tantos meses — o cliente adormecido. ' +
+      'Use para "quais Ouro pararam de comprar", "quem nao compra ha mais de ' +
+      'seis meses". Quem nunca comprou nunca entra aqui. Omita para todos.',
+  },
+  a_partir_de: {
+    type: 'integer' as const,
+    description:
+      'Quantos ja foram mostrados, para pedir a pagina seguinte. O despacho ' +
+      'diz o valor exato. Omita na primeira chamada.',
+  },
+};
+
+/**
+ * OS CLIENTES OURO DA CARTEIRA DELA — 09/10/2026.
+ *
+ * A VERSAO DA VENDEDORA nao tem escopo nenhum no schema, de proposito: a
+ * carteira dela e decidida pelo telefone antes da conversa comecar, e nao por
+ * um parametro que o modelo possa escrever.
+ *
+ * ==========================================================================
+ * "MEUS" NO NOME, E NAO O MESMO NOME DA DE GESTAO — e isso e deliberado.
+ *
+ * A Nathalia e gerente de vendas E vendedora, com um numero so: ela recebe os
+ * DOIS conjuntos de ferramentas. Com o mesmo nome, as duas versoes seriam
+ * declaradas de uma vez e o conjunto teria nome repetido. O
+ * `clientes_por_epoca` e o `consultar_produtos` resolvem isso DESLIGANDO uma
+ * das duas — e aqui isso custaria metade da pergunta dela: ou a carteira
+ * dela, ou a loja, nunca as duas.
+ *
+ * Com nomes distintos ela tem as duas, e o modelo escolhe pela palavra que
+ * ela usou: "meus clientes Ouro" ou "os clientes Ouro da loja". E o mesmo par
+ * que `melhores_clientes` e `melhores_da_vendedora` ja formam.
+ * ==========================================================================
+ */
+const FIDELIDADE_TOOL: Anthropic.Tool = {
+  name: 'meus_clientes_por_fidelidade',
+  description:
+    'Lista os clientes DA CARTEIRA DELA por nivel de fidelidade — Ouro, Prata, Bronze — com quantas compras, quanto ja gastou e quando comprou pela ultima vez. ' +
+    `O nivel e por NUMERO DE COMPRAS: Ouro e ${nivelEmPalavras('Ouro')}. E a mesma classificacao do painel. ` +
+    'Use para "quais sao meus clientes Ouro", "quem sao meus melhores clientes por fidelidade", "algum Ouro parou de comprar". ' +
+    'O valor mostrado JA ABATE devolucao. Nao traz telefone.',
+  input_schema: { type: 'object', properties: { ...CAMPOS_DE_FIDELIDADE } },
 };
 
 // ===========================================================================
@@ -986,6 +1059,44 @@ const GESTAO_MELHORES_TOOL: Anthropic.Tool = {
       },
     },
     required: ['vendedora'],
+  },
+};
+
+/**
+ * OS CLIENTES OURO DA LOJA — 09/10/2026.
+ *
+ * ==========================================================================
+ * `vendedora` E OPCIONAL AQUI, AO CONTRARIO DAS OUTRAS DA GESTAO.
+ *
+ * "Me lista os clientes Ouro" e uma pergunta da LOJA, e foi assim que a
+ * gestora pediu. As outras ferramentas de gestao exigem o nome porque a
+ * pergunta e sempre sobre alguem; esta nao. Exigir o nome aqui faria o modelo
+ * INVENTAR uma vendedora para poder chamar a ferramenta.
+ * ==========================================================================
+ *
+ * E O DESPACHO DIZ QUANTOS NAO TEM VENDEDORA: medido em 09/10, 19 dos 48
+ * clientes Ouro nao tem dona na carteira — 40% deles, e metade do valor.
+ * Somar "os Ouro de cada vendedora" da 29. Sem esse numero a resposta
+ * pareceria completa e estaria errada.
+ */
+const GESTAO_FIDELIDADE_TOOL: Anthropic.Tool = {
+  name: 'clientes_por_fidelidade',
+  description:
+    'Lista os clientes da loja por nivel de fidelidade — Ouro, Prata, Bronze — com quantas compras, quanto ja gastou, quando comprou pela ultima vez e de qual vendedora e a carteira. ' +
+    `O nivel e por NUMERO DE COMPRAS: Ouro e ${nivelEmPalavras('Ouro')}. E a MESMA classificacao do cartao "Clientes Ouro" do painel, e o numero bate com ele. ` +
+    'Use para "me lista os clientes Ouro", "quem sao os clientes mais fieis", "quais Ouro pararam de comprar", "os Ouro da Marina". ' +
+    'Sem nome de vendedora traz a LOJA INTEIRA. O valor mostrado JA ABATE devolucao. Nao traz telefone.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      ...CAMPOS_DE_FIDELIDADE,
+      vendedora: {
+        type: 'string',
+        description:
+          'Nome da vendedora, como falado, para ver so a carteira dela. ' +
+          'OMITA para a loja inteira — e o padrao, e a maioria das perguntas.',
+      },
+    },
   },
 };
 
@@ -1642,6 +1753,7 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoLeads) tools.push(GESTAO_LEADS_TOOL);
     if (params.gestaoCarteira) tools.push(GESTAO_CARTEIRA_TOOL);
     if (params.gestaoMelhores) tools.push(GESTAO_MELHORES_TOOL);
+    if (params.gestaoFidelidade) tools.push(GESTAO_FIDELIDADE_TOOL);
     if (params.gestaoAgendar) tools.push(GESTAO_AGENDAR_TOOL);
     if (params.gestaoFeedbacks) tools.push(GESTAO_FEEDBACKS_TOOL);
     if (params.gestaoFunil) tools.push(GESTAO_FUNIL_TOOL);
@@ -1664,6 +1776,7 @@ export class AnthropicClient implements ILlmClient {
     if (params.clientesSemComprar) tools.push(SEM_COMPRAR_TOOL);
     if (params.clientesPorEpoca) tools.push(EPOCA_TOOL);
     if (params.melhoresClientes) tools.push(MELHORES_TOOL);
+    if (params.clientesPorFidelidade) tools.push(FIDELIDADE_TOOL);
     if (params.agendarContato) tools.push(AGENDAR_TOOL);
 
     const first = await this.client.messages.create({
@@ -1889,6 +2002,53 @@ export class AnthropicClient implements ILlmClient {
                 ultimosMeses: e.ultimos_meses,
               }),
               'comprador',
+            );
+          }),
+        );
+      } else if (
+        toolUse.name === 'clientes_por_fidelidade' &&
+        params.gestaoFidelidade
+      ) {
+        // DOIS NOMES, E O DESPACHO RAMIFICA PELO NOME — nao por qual handler
+        // existe. A Nathalia tem OS DOIS, e um `if` por handler sempre
+        // escolheria o mesmo, mandando "meus clientes Ouro" para a loja.
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as {
+              nivel?: string;
+              vendedora?: string;
+              meses_sem_comprar?: number;
+              a_partir_de?: number;
+            };
+            const r = await params.gestaoFidelidade!({
+              nivel: e.nivel,
+              mesesSemComprar: e.meses_sem_comprar,
+              aPartirDe: e.a_partir_de,
+              vendedora: e.vendedora
+                ? String(e.vendedora).slice(0, 80)
+                : undefined,
+            });
+            return textoDaFidelidade(r, { daLoja: !e.vendedora });
+          }),
+        );
+      } else if (
+        toolUse.name === 'meus_clientes_por_fidelidade' &&
+        params.clientesPorFidelidade
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as {
+              nivel?: string;
+              meses_sem_comprar?: number;
+              a_partir_de?: number;
+            };
+            return textoDaFidelidade(
+              await params.clientesPorFidelidade!({
+                nivel: e.nivel,
+                mesesSemComprar: e.meses_sem_comprar,
+                aPartirDe: e.a_partir_de,
+              }),
+              { daLoja: false },
             );
           }),
         );
@@ -3589,6 +3749,89 @@ function textoDoFunil(r: GestaoLeituraResultado & { total?: number }): string {
     '\n\nRepasse os numeros exatamente como estao. Isto e o estado de agora, ' +
     'nao um recorte de periodo: nao diga "hoje" nem "esta semana". Nao ha ' +
     'valor de venda nestes dados — nao some dinheiro a esta resposta.'
+  );
+}
+
+/**
+ * O QUE A AGENTE OUVE SOBRE OS CLIENTES OURO — 09/10/2026.
+ *
+ * ==========================================================================
+ * TRES COISAS QUE ESTE TEXTO TEM DE DIZER, E CADA UMA EVITA UM ERRO.
+ *
+ * 1. O CORTE, em palavras. Sem isso ela explicaria "Ouro e quem compra muito"
+ *    ou chutaria um numero — e a gestora compararia com o painel.
+ *
+ * 2. OS SEM VENDEDORA. Medido em 09/10: 19 dos 48 Ouro nao tem dona na
+ *    carteira. Somar "os Ouro de cada vendedora" da 29. O recorte que esconde
+ *    precisa dizer que escondeu.
+ *
+ * 3. O NIVEL QUE NAO EXISTE. Se ela escrever "Diamante", a resposta honesta e
+ *    dizer quais niveis existem — nunca uma lista vazia, que soa como "voce
+ *    nao tem nenhum cliente Diamante" e e falso.
+ * ==========================================================================
+ */
+function textoDaFidelidade(
+  r: FidelidadeLlmResultado & {
+    status?: string;
+    nomes?: string[];
+    vendedora?: string;
+  },
+  opcoes: { daLoja: boolean },
+): string {
+  // O NOME DA VENDEDORA VEM ANTES DE TUDO: sem resolver de quem e a pergunta,
+  // nao ha lista nenhuma a entregar.
+  if (r.status === 'AMBIGUA') {
+    return (
+      `Ha mais de uma vendedora com esse nome: ${r.nomes?.join(', ') ?? ''}. ` +
+      'Pergunte qual delas antes de consultar.'
+    );
+  }
+  if (r.status === 'NAO_ENCONTRADA') {
+    return (
+      'Nao encontrei essa vendedora' +
+      (r.nomes?.length ? `. Parecidas: ${r.nomes.join(', ')}` : '') +
+      '. Pergunte de quem e a lista, ou chame de novo SEM vendedora para a loja inteira.'
+    );
+  }
+
+  if (r.nivelDesconhecido) {
+    return (
+      `Esse nivel nao existe. Os que existem sao: ${NIVEIS_DE_FIDELIDADE.join(', ')} ` +
+      `— Ouro e ${nivelEmPalavras('Ouro')}. Diga isso e pergunte qual ela quer. ` +
+      'NAO responda que nao ha clientes nesse nivel: a lista nao foi consultada.'
+    );
+  }
+
+  const deQuem = r.vendedora
+    ? ` na carteira da ${r.vendedora}`
+    : opcoes.daLoja
+      ? ' na loja'
+      : '';
+
+  if (r.linhas.length === 0) {
+    return (
+      `Nenhum cliente${deQuem} com esse recorte (${r.cortes}). ` +
+      'Diga isso em uma frase, e diga qual era o corte.'
+    );
+  }
+
+  // OS SEM DONA SO IMPORTAM NA PERGUNTA DA LOJA. Na carteira de alguem, todo
+  // mundo da lista tem dona por definicao — avisar ali seria ruido.
+  const semDona =
+    opcoes.daLoja && r.semVendedora > 0
+      ? `${r.semVendedora} destes ${r.total} NAO tem vendedora na carteira. ` +
+        'Se perguntarem por vendedora, avise que a soma por vendedora NAO ' +
+        'fecha com este total, e que esses clientes estao sem dona.\n\n'
+      : '';
+
+  return (
+    `Clientes${deQuem} — o corte: ${r.cortes}.\n` +
+    `${r.linhas.map((l: string) => `- ${l}`).join('\n')}\n\n` +
+    faixaDaLista(r.deslocamento, r.linhas.length, r.total) +
+    semDona +
+    'Repasse os nomes e numeros exatamente como estao. O valor JA ABATE ' +
+    'devolucao, e a contagem de compras NAO abate — se perguntarem, e essa a ' +
+    'regra. Voce NAO tem o telefone deles.'
   );
 }
 

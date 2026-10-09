@@ -140,3 +140,141 @@ describe('as ferramentas declaradas ao modelo', () => {
     });
   });
 });
+
+/**
+ * ============================================================================
+ * NOME REPETIDO SO VALE COM GUARDA DE EXCLUSAO — 09/10/2026.
+ *
+ * Duas ferramentas podem compartilhar nome de proposito: `consultar_produtos`
+ * e `itens_mais_vendidos` tem uma versao por canal. Isso FUNCIONA porque a
+ * registracao da versao de gestao carrega `&& !params.<chave da vendedora>` —
+ * sem a guarda, as duas entram no mesmo array e a API recebe o mesmo nome
+ * duas vezes.
+ *
+ * ACHADO ESCREVENDO O `clientes_por_fidelidade`, em 09/10. Eu dei o mesmo
+ * nome as duas versoes e esqueci a guarda. Nao quebrou `tsc`, nao quebrou
+ * teste nenhum, e so apareceria com a NATHALIA — a unica pessoa que recebe os
+ * dois conjuntos, porque e gerente de vendas e vendedora com um numero so.
+ * Para as outras seis vendedoras e para a gestao, cada canal recebe um
+ * conjunto, e o defeito seria invisivel.
+ *
+ * A correcao foi dar nomes distintos (`meus_clientes_por_fidelidade` para a
+ * carteira dela), que e melhor que a guarda: com a guarda ela perderia uma
+ * das duas perguntas. Este teste aceita os dois caminhos — o que ele nao
+ * aceita e nome repetido SEM nenhum dos dois.
+ * ============================================================================
+ */
+describe('nome de ferramenta repetido', () => {
+  const arquivo = fs.readFileSync(
+    path.join(__dirname, 'anthropic.client.ts'),
+    'utf8',
+  );
+  const linhas = arquivo.split('\n');
+
+  /** Cada constante `X_TOOL` e o `name:` que ela declara. */
+  const nomePorConstante = new Map<string, string>();
+  for (const m of arquivo.matchAll(
+    /const (\w+_TOOL): Anthropic\.Tool = \{\s*\n\s*name:\s*'([a-z_]+)'/g,
+  )) {
+    nomePorConstante.set(m[1], m[2]);
+  }
+
+  /**
+   * ONDE cada constante e empurrada, e sob qual `if`.
+   *
+   * ======================================================================
+   * DUAS FORMAS DE EXCLUSAO CONVIVEM NESTE ARQUIVO, e as duas valem:
+   *
+   *   GUARDA   `if (params.gestaoProdutos && !params.consultarProdutos)` —
+   *            separa CANAIS. A de gestao nao entra quando a da vendedora
+   *            esta presente.
+   *
+   *   TERNARIO `tools.push(exige ? A_TOOL : B_TOOL)` — separa ESCOPOS dentro
+   *            do mesmo canal. Um `push` so, duas candidatas, uma entra.
+   *
+   * O primeiro resultado deste teste acusou o `itens_mais_vendidos`, que usa
+   * ternario e nao guarda. Nao era defeito: era o criterio estreito demais.
+   * ======================================================================
+   */
+  const sitesPorConstante = new Map<
+    string,
+    { site: number; guarda: string }[]
+  >();
+  linhas.forEach((linha, i) => {
+    if (!linha.includes('tools.push(')) return;
+
+    // A constante pode estar nas linhas SEGUINTES — o ternario quebra em tres.
+    const alcance = linhas.slice(i, i + 5).join(' ');
+    let guarda = '';
+    for (let j = i; j >= 0 && j > i - 8; j--) {
+      if (linhas[j].includes('if (params.')) {
+        guarda = linhas[j];
+        break;
+      }
+    }
+    for (const m of alcance.matchAll(/(\w+_TOOL)\b/g)) {
+      const lista = sitesPorConstante.get(m[1]) ?? [];
+      lista.push({ site: i, guarda });
+      sitesPorConstante.set(m[1], lista);
+    }
+  });
+
+  it('o teste está lendo as constantes de verdade', () => {
+    expect(nomePorConstante.size).toBeGreaterThan(20);
+    expect(sitesPorConstante.size).toBeGreaterThan(20);
+  });
+
+  /** Os nomes declarados por MAIS DE UMA constante. */
+  const nomes = [...nomePorConstante.values()];
+  const repetidos = [
+    ...new Set(nomes.filter((n) => nomes.filter((o) => o === n).length > 1)),
+  ];
+
+  it('há nomes repetidos para conferir (senão o teste não testa nada)', () => {
+    expect(repetidos.length).toBeGreaterThan(0);
+  });
+
+  /* ESTE É O TESTE. */
+  it.each(repetidos)(
+    'o nome repetido "%s" é exclusivo — por guarda ou por ternário',
+    (nome) => {
+      const constantes = [...nomePorConstante.entries()]
+        .filter(([, n]) => n === nome)
+        .map(([c]) => c);
+
+      for (const a of constantes) {
+        for (const b of constantes) {
+          if (a === b) continue;
+          const sitesA = sitesPorConstante.get(a) ?? [];
+          const sitesB = sitesPorConstante.get(b) ?? [];
+          // Mesmo `push`: o ternário escolhe uma e só uma.
+          const mesmoSite = sitesA.some((x) =>
+            sitesB.some((y) => y.site === x.site),
+          );
+          // Ou alguma das duas só entra quando a outra NÃO está.
+          const comGuarda = [...sitesA, ...sitesB].some((s) =>
+            s.guarda.includes('!params.'),
+          );
+          expect(mesmoSite || comGuarda).toBe(true);
+        }
+      }
+    },
+  );
+
+  /**
+   * E O CAMINHO QUE A FIDELIDADE ESCOLHEU: nenhum dos dois.
+   *
+   * Nomes DISTINTOS, para a Nathalia — que recebe os dois conjuntos — poder
+   * perguntar as duas coisas. Com guarda ela perderia uma delas; com o mesmo
+   * nome e sem guarda, o conjunto sairia com nome repetido, que foi o defeito
+   * que eu escrevi em 09/10 e este arquivo pegou.
+   */
+  it('as duas versões da fidelidade têm nomes DISTINTOS', () => {
+    expect(nomePorConstante.get('FIDELIDADE_TOOL')).toBe(
+      'meus_clientes_por_fidelidade',
+    );
+    expect(nomePorConstante.get('GESTAO_FIDELIDADE_TOOL')).toBe(
+      'clientes_por_fidelidade',
+    );
+  });
+});

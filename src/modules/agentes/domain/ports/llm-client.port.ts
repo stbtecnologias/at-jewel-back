@@ -401,6 +401,75 @@ export type MelhoresClientesHandler = (input: {
   ultimosMeses?: number;
 }) => Promise<ConsultarCarteiraLlmResultado>;
 
+/**
+ * OS CLIENTES OURO, PRATA E BRONZE — 09/10/2026.
+ *
+ * ==========================================================================
+ * A MESMA PALAVRA QUE O PAINEL USA, E O MESMO NUMERO.
+ *
+ * O cartao "Clientes Ouro" da tela de Clientes ja dizia QUANTOS. A gestora
+ * pediu QUEM, e a regra do nivel sai de `shared/clientes/fidelidade.ts`, de
+ * onde o SQL do cartao tambem sai desde hoje. Dois numeros para a mesma
+ * palavra seria pior do que nao ter a ferramenta.
+ * ==========================================================================
+ */
+export interface FidelidadeLlmResultado {
+  /** Linhas prontas: nome, nivel, compras, valor liquido, ultima compra. */
+  linhas: string[];
+  /** Quantos atendem ao recorte — nao quantos vieram. */
+  total: number;
+  /** Quantos foram pulados para montar esta pagina. */
+  deslocamento: number;
+  /**
+   * Quantos do recorte NAO tem vendedora na carteira.
+   *
+   * Vai ao modelo de proposito: medido em 09/10, 19 dos 48 clientes Ouro nao
+   * tem dona. Sem este numero, "os Ouro de cada vendedora" somaria 29 e a
+   * resposta pareceria completa.
+   */
+  semVendedora: number;
+  /** O corte em palavras — "6 compras ou mais". Para ela nao chutar o numero. */
+  cortes: string;
+  /**
+   * O nivel pedido nao existe.
+   *
+   * O modelo escreve o valor do enum e pode escrever "Diamante". Filtrar por
+   * nivel inexistente devolveria lista vazia, e vazio e indistinguivel de
+   * "nao ha nenhum" — a forma de erro mais cara deste projeto.
+   */
+  nivelDesconhecido?: boolean;
+}
+
+/** Da VENDEDORA: so a carteira dela, e sem parametro de escopo nenhum. */
+export type ClientesPorFidelidadeHandler = (input: {
+  nivel?: string;
+  mesesSemComprar?: number;
+  aPartirDe?: number;
+}) => Promise<FidelidadeLlmResultado>;
+
+/**
+ * Da GESTAO: a loja inteira, ou uma vendedora quando ela disser o nome.
+ *
+ * `vendedora` e OPCIONAL aqui, ao contrario das outras ferramentas de gestao:
+ * "me lista os clientes Ouro" e uma pergunta da LOJA, e exigir o nome faria o
+ * modelo inventar um.
+ */
+export type GestaoFidelidadeHandler = (input: {
+  nivel?: string;
+  vendedora?: string;
+  mesesSemComprar?: number;
+  aPartirDe?: number;
+}) => Promise<
+  FidelidadeLlmResultado & {
+    /** 'OK' | 'AMBIGUA' | 'NAO_ENCONTRADA' — so quando veio nome. */
+    status?: string;
+    /** As candidatas, quando o nome ficou ambiguo. */
+    nomes?: string[];
+    /** O nome resolvido, para a resposta citar de quem e a lista. */
+    vendedora?: string;
+  }
+>;
+
 // Handler da tool `agendar_contato`, do canal INTERNO. UNICA ferramenta do
 // canal que ESCREVE — por isso o resultado e fechado, com um status por
 // caminho, e a frase de volta e montada pelo servidor.
@@ -1138,6 +1207,8 @@ export interface ChatParams {
   /** Espelha o `gestaoItensExigeVendedora`: sem `verLoja`, o schema obriga. */
   gestaoEpocaExigeVendedora?: boolean;
   melhoresClientes?: MelhoresClientesHandler;
+  // Idem para `clientes_por_fidelidade` — os Ouro, Prata e Bronze da carteira.
+  clientesPorFidelidade?: ClientesPorFidelidadeHandler;
   // Idem para `agendar_contato` — a unica que escreve.
   agendarContato?: AgendarContatoHandler;
   // Canal da GESTAO. Nunca convivem com os de cima: quem monta os handlers e o
@@ -1173,6 +1244,8 @@ export interface ChatParams {
   gestaoLeads?: GestaoLeadsHandler;
   gestaoCarteira?: GestaoCarteiraHandler;
   gestaoMelhores?: GestaoMelhoresHandler;
+  // Idem para `clientes_por_fidelidade` da gestao: a loja, ou uma vendedora.
+  gestaoFidelidade?: GestaoFidelidadeHandler;
   gestaoAgendar?: GestaoAgendarHandler;
   gestaoFeedbacks?: GestaoFeedbacksHandler;
   gestaoDiaDaVendedora?: GestaoDiaDaVendedoraHandler;

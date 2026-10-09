@@ -1,9 +1,15 @@
 import { datasDeRecorte } from '../../../shared/tempo/recorte-de-datas';
+import {
+  linhaDoClienteFiel,
+  nivelDaPergunta,
+  nivelEmPalavras,
+} from '../../../shared/clientes/fidelidade';
 import { Inject, Injectable } from '@nestjs/common';
 import type {
   AgendarContatoHandler,
   AtualizarLeadHandler,
   ClientesPorEpocaHandler,
+  ClientesPorFidelidadeHandler,
   ClientesSemComprarHandler,
   ConsultarAgendaHandler,
   ConsultarMetasHandler,
@@ -109,6 +115,8 @@ export interface FerramentasVendedora {
   clientesSemComprar: ClientesSemComprarHandler;
   clientesPorEpoca: ClientesPorEpocaHandler;
   melhoresClientes: MelhoresClientesHandler;
+  /** Os Ouro, Prata e Bronze da carteira dela — a mesma regra do painel. */
+  clientesPorFidelidade: ClientesPorFidelidadeHandler;
   agendarContato: AgendarContatoHandler;
   /** So existe quando ha mensagem original para extrair — ver `montar`. */
   registrarRelato?: RegistrarRelatoHandler;
@@ -560,6 +568,59 @@ export class FerramentasVendedoraService {
             linha: `${c.nome} — ${c.quantidade} ${c.quantidade === 1 ? unidade : unidade + 's'}, ${moeda(c.valorTotal)}`,
           })),
           total,
+        };
+      },
+
+      /**
+       * OS CLIENTES OURO DA CARTEIRA DELA — 09/10/2026.
+       *
+       * ================================================================
+       * SEM `codigo_erp` NAO HA CARTEIRA, E A RESPOSTA E VAZIA — NAO A LOJA.
+       *
+       * O escopo e escrito como `{ tipo: 'CARTEIRA' }`, nunca derivado de um
+       * valor ausente: vendedora sem cadastro no ERP chega aqui com
+       * `codigoErp` nulo, e "nulo = a loja" faria ela ver a base inteira sem
+       * ninguem ter decidido isso.
+       * ================================================================
+       */
+      clientesPorFidelidade: async ({ nivel, mesesSemComprar, aPartirDe }) => {
+        const pedido = nivelDaPergunta(nivel);
+        // NIVEL ESCRITO E NAO RECONHECIDO: nao consulta. Filtrar por um nivel
+        // inexistente devolveria lista vazia, e vazio soa como "voce nao tem
+        // nenhum" — que e falso.
+        if (nivel && !pedido) {
+          return {
+            linhas: [],
+            total: 0,
+            deslocamento: 0,
+            semVendedora: 0,
+            cortes: nivelEmPalavras('Ouro'),
+            nivelDesconhecido: true,
+          };
+        }
+        if (!codigoErp) {
+          return {
+            linhas: [],
+            total: 0,
+            deslocamento: 0,
+            semVendedora: 0,
+            cortes: nivelEmPalavras(pedido ?? 'Ouro'),
+          };
+        }
+        const r = await this.carteira.porFidelidade({
+          escopo: { tipo: 'CARTEIRA', vendedoraCodigoErp: codigoErp },
+          nivel: pedido ?? undefined,
+          mesesSemComprar,
+          deslocamento: aPartirDe,
+        });
+        return {
+          linhas: r.clientes.map(linhaDoClienteFiel),
+          total: r.total,
+          deslocamento: r.deslocamento,
+          semVendedora: r.semVendedora,
+          cortes: pedido
+            ? `${pedido}, ${nivelEmPalavras(pedido)}`
+            : `todos os niveis — Ouro e ${nivelEmPalavras('Ouro')}`,
         };
       },
 
