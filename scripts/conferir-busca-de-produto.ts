@@ -267,6 +267,48 @@ async function main() {
     `${comQuilate} anéis com quilatagem e saldo`,
   );
 
+  // =========================================================================
+  // A SIGLA DIGITADA DIRETO — 09/10/2026, achado em PRODUÇÃO.
+  //
+  // "Tem peças OB?" devolvia o CATÁLOGO INTEIRO: duas letras não passavam
+  // pelo corte que tira "de"/"do"/"e", e sem grupo não há filtro nenhum. O
+  // 7.196 no rótulo é o que a busca devolvia ANTES — se alguém desfizer o
+  // conserto, a conta volta para ele e isto falha.
+  // =========================================================================
+  console.log('\nA sigla que ela digita');
+  for (const [termo, esperado] of [
+    ['OB', 3452],
+    ['OA', 2607],
+    ['DMT', 851],
+    // DTS CAIU DE 3.925 PARA 3.745, e a queda é o conserto. Como `termo` ela
+    // ia num ILIKE '%DTS%' e pegava 180 peças onde "DTS" está colado em
+    // outra coisa; como sigla, casa por palavra inteira. Menos achados e
+    // mais certos — o oposto do que o número sugere à primeira vista.
+    ['DTS', 3745],
+  ] as const) {
+    const n = await repo.contar({ busca: termo, ativo: true });
+    conferir(
+      `"${termo}"`,
+      n === esperado,
+      `${n} no catálogo — antes eram 7.196, o catálogo inteiro`,
+    );
+  }
+
+  // AS DUAS JUNTAS, que foi o pedido: "quero peças DMT e OA".
+  for (const [termo, esperado] of [
+    ['DMT OA', 349],
+    ['anel OB', 895],
+    ['brinco DTS OB', 767],
+  ] as const) {
+    const n = await repo.contar({ busca: termo, ativo: true });
+    conferir(`"${termo}" combina as condições`, n === esperado, `${n} no catálogo`);
+  }
+
+  // E A FRONTEIRA CONTINUA SEGURANDO: `OB` como substring casaria "cobre",
+  // "objeto", "globo". Zero aqui prova que a sigla não virou ILIKE.
+  const cobre = await repo.contar({ busca: 'cobre', ativo: true });
+  conferir('"cobre" NÃO é confundido com a sigla OB', cobre === 0, `${cobre} peças`);
+
   // AS FOTOS, CONTRA A CONEXA DE VERDADE. O serviço é o mesmo que o canal
   // usa; o que se mede aqui é quanta foto existe, que é o que decide se a
   // resposta da agente sai com imagem ou com desculpa.

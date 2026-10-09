@@ -157,12 +157,53 @@ const MAXIMO_DE_GRUPOS = 4;
  * Mantém as duas regras que já valiam: palavra de até dois caracteres sai
  * ("de", "do", "e" casam com quase tudo) e o corte em quatro grupos, para uma
  * frase longa não virar oito condições no banco.
+ *
+ * ==========================================================================
+ * E O CAMINHO DE VOLTA: A SIGLA DIGITADA DIRETO — 09/10/2026.
+ *
+ * O dicionário só sabia ir de palavra para sigla. Quem escreve a SIGLA — e
+ * elas estão na ponta da língua de quem vende — não era atendido:
+ *
+ *   "Tem peças OB?"  ->  grupos []  ->  NENHUM filtro  ->  o catálogo
+ *                                        inteiro, 546 peças com saldo
+ *
+ * E o caso pior é silencioso: "anel OB" virava só `[anel]`. A vendedora
+ * receberia TODOS os anéis, e nada na resposta diria que o OB foi ignorado.
+ * Em produção a agente se salvou perguntando "você quer dizer um código que
+ * começa com OB?" — mas isso foi sorte do modelo, não do código.
+ *
+ * Duas letras não passavam pelo corte, e OB e OA são justamente as duas mais
+ * usadas no catálogo: 3.057 e 2.222 peças.
+ *
+ * AGORA A SIGLA CONHECIDA SOBREVIVE AO CORTE, e entra como SIGLA e não como
+ * palavra — ou seja, com fronteira de palavra. É a diferença entre achar
+ * `OB 18K` e achar "cOBre", "OBjeto", "ONça": o `~* '\mOB\M'` casa só a
+ * palavra inteira, e um ILIKE '%ob%' traria milhares por engano.
+ * ==========================================================================
  */
+
+/**
+ * Toda sigla que a tabela conhece, para reconhecer quem a digita.
+ *
+ * Montado da PRÓPRIA tabela, e não escrito à mão: sigla nova passa a valer
+ * nos dois sentidos no mesmo commit. Hoje são 41, nove delas com duas letras
+ * — CT, FY, OA, OB, ON, OR, PT, TP, TQ —, que são as que o corte comia.
+ */
+const SIGLAS_CONHECIDAS: ReadonlySet<string> = new Set(
+  Object.values(SINONIMOS).flatMap((s) => [...s]),
+);
+
+/** A palavra é uma sigla do catálogo? Compara em caixa alta. */
+function ehSigla(palavra: string): boolean {
+  return SIGLAS_CONHECIDAS.has(palavra.toUpperCase());
+}
+
 export function gruposDaBusca(busca: string | undefined): GrupoDeBusca[] {
   const palavras = (busca ?? '')
     .trim()
     .split(/\s+/)
-    .filter((p) => p.length > 2);
+    // O corte de duas letras continua valendo, MENOS para sigla conhecida.
+    .filter((p) => p.length > 2 || ehSigla(p));
 
   const grupos: GrupoDeBusca[] = [];
   let i = 0;
@@ -179,6 +220,16 @@ export function gruposDaBusca(busca: string | undefined): GrupoDeBusca[] {
     }
 
     const palavra = palavras[i];
+
+    // A SIGLA DIGITADA DIRETO VIRA SIGLA, e não termo: `termos` vazio e o
+    // casamento por fronteira de palavra. Pôr "OB" em `termos` faria um
+    // ILIKE '%OB%' e traria "cobre", "objeto" — o oposto do que ela pediu.
+    if (ehSigla(palavra)) {
+      grupos.push({ termos: [], siglas: [palavra.toUpperCase()] });
+      i += 1;
+      continue;
+    }
+
     const siglas = SINONIMOS[semAcento(palavra)] ?? [];
     grupos.push({ termos: [palavra], siglas: [...siglas] });
     i += 1;
