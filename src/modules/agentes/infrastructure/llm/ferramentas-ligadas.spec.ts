@@ -278,3 +278,73 @@ describe('nome de ferramenta repetido', () => {
     );
   });
 });
+
+/**
+ * ============================================================================
+ * O QUE A BUSCA ENTENDE, A DESCRIÇÃO PRECISA DIZER — 09/10/2026.
+ *
+ * Em 08/10 o dicionário ensinou a busca a traduzir "ouro branco" em OB. Em
+ * 09/10 o caminho de volta: digitar "OB" passou a achar 3.452 peças. Fui
+ * testar e a agente continuou sem achar:
+ *
+ *   — "Quais peças temos em OB"
+ *   — "OB não é um tipo de peça que eu reconheça — você quis dizer alguma
+ *      família específica, ou foi um código?"
+ *
+ * NÃO ERA A BUSCA. Ela nunca chamava a ferramenta. A descrição listava
+ * "nome, categoria, família, coleção, pedra, cor ou código do ERP" e não
+ * dizia uma palavra sobre sigla — pior, falava em CÓDIGO, e foi para lá que
+ * o modelo foi.
+ *
+ * Consertar o encanamento sem conferir se a água chega. Três testes meus
+ * passavam, a conferência contra a base passava, e nenhuma pergunta real
+ * alcançava o conserto.
+ *
+ * ESTE TESTE LIGA OS DOIS LADOS: o que a busca implementa tem de aparecer na
+ * descrição que o modelo lê.
+ * ============================================================================
+ */
+describe('a descrição conta ao modelo o que a busca sabe', () => {
+  const arquivo = fs.readFileSync(
+    path.join(__dirname, 'anthropic.client.ts'),
+    'utf8',
+  );
+
+  /** As descrições do campo `busca`, nas duas ferramentas de produto. */
+  const descricoesDeBusca = [
+    ...arquivo.matchAll(/busca: \{\s*\n\s*type: 'string',\s*\n\s*description:([\s\S]*?)\n\s*\},/g),
+  ].map((m) => m[1]);
+
+  it('as duas ferramentas de produto têm campo de busca', () => {
+    expect(descricoesDeBusca.length).toBe(2);
+  });
+
+  /* ESTE É O TESTE. */
+  it.each([0, 1])('a descrição %i fala em SIGLA', (i) => {
+    expect(descricoesDeBusca[i].toUpperCase()).toContain('SIGLA');
+  });
+
+  it('e manda MANDAR a sigla, em vez de perguntar o que é', () => {
+    // Sem isto o modelo pergunta — foi exatamente o que ele fez três vezes
+    // em produção, com três frases diferentes.
+    for (const d of descricoesDeBusca) {
+      expect(d).toMatch(/NAO pergunte/i);
+    }
+  });
+
+  it('a lista de siglas é GERADA, e não escrita na descrição', () => {
+    // Escrita à mão, ela envelhece: sigla nova entraria no dicionário e o
+    // modelo continuaria sem saber. `siglasEmTexto()` sai da tabela.
+    for (const d of descricoesDeBusca) {
+      expect(d).toContain('siglasEmTexto()');
+    }
+  });
+
+  it('separa sigla de CÓDIGO DO ERP — a confusão que o modelo fez', () => {
+    // "Você quer dizer um código que começa com OB?" foi a primeira
+    // resposta em produção. A descrição falava em código e não em sigla.
+    for (const d of descricoesDeBusca) {
+      expect(d).toMatch(/Sigla NAO e codigo/i);
+    }
+  });
+});
