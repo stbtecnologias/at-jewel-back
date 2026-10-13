@@ -19,7 +19,9 @@ import type {
   ItemMaisVendido,
   VendedoraPorFamilia,
   VendedoraPorFamiliaNoAno,
+  FaixaDeValor,
   JanelaDeVendas,
+  PecasNaFaixa,
   ResumoDeVendas,
   VendedoraNoRanking,
 } from '../../../../domain/ports/repositories/vendas-movimentacao-repository.port';
@@ -366,6 +368,125 @@ export class VendasMovimentacaoRepository
         quantidade: Number(f.quantidade),
       })),
     }));
+  }
+
+  async pecasPorFaixaDeValor(
+    janela: JanelaDeVendas,
+    faixa: FaixaDeValor,
+    limite: number,
+    deslocamento: number,
+    vendedoraId?: string | null,
+  ): Promise<PecasNaFaixa> {
+    // TRES CONSULTAS PEQUENAS, e nao uma esperta: o total, a quebra por
+    // vendedora e as linhas respondem a perguntas diferentes e tem recortes
+    // diferentes (so as linhas tem teto). Espremer as tres numa so
+    // economizaria uma ida ao banco e custaria a leitura.
+    const p = [
+      janela.de,
+      janela.ate,
+      faixa.minimo ?? null,
+      faixa.maximo ?? null,
+      vendedoraId ?? null,
+    ];
+
+    // A FAIXA E DO `valor_unitario` — ver o porque no port.
+    const ONDE = `
+       WHERE m.ativo
+         AND i.ativo
+         AND m.data_movimentacao >= $1
+         AND m.data_movimentacao <= $2
+         AND ($3::numeric IS NULL OR i.valor_unitario >= $3::numeric)
+         AND ($4::numeric IS NULL OR i.valor_unitario <= $4::numeric)
+         AND ($5::uuid IS NULL OR m.vendedora_id = $5::uuid)`;
+
+    const [totais] = await this.ds.query<{ pecas: string; valor: string }[]>(
+      `SELECT COALESCE(sum(i.quantidade), 0)                    AS pecas,
+              COALESCE(sum(i.quantidade * i.valor_unitario), 0) AS valor
+         FROM movimentacoes_itens i
+         JOIN movimentacoes m ON m.id = i.movimentacao_id
+         ${ONDE} AND m.saida`,
+      p,
+    );
+
+    // AS DEVOLVIDAS, da mesma faixa e do mesmo periodo. NAO entram na
+    // contagem; entram na resposta.
+    const [devolvidas] = await this.ds.query<{ pecas: string }[]>(
+      `SELECT COALESCE(sum(i.quantidade), 0) AS pecas
+         FROM movimentacoes_itens i
+         JOIN movimentacoes m ON m.id = i.movimentacao_id
+         ${ONDE} AND m.entrada`,
+      p,
+    );
+
+    const porVendedora = await this.ds.query<
+      { nome: string | null; pecas: string; valor: string }[]
+    >(
+      `SELECT v.nome                                            AS nome,
+              COALESCE(sum(i.quantidade), 0)                    AS pecas,
+              COALESCE(sum(i.quantidade * i.valor_unitario), 0) AS valor
+         FROM movimentacoes_itens i
+         JOIN movimentacoes m ON m.id = i.movimentacao_id
+         LEFT JOIN vendedoras v ON v.id = m.vendedora_id
+         ${ONDE} AND m.saida
+        GROUP BY v.nome
+        ORDER BY pecas DESC, valor DESC`,
+      p,
+    );
+
+    const linhas = await this.ds.query<
+      {
+        codigo_erp: string | null;
+        descricao: string | null;
+        valor_unitario: string;
+        quantidade: string;
+        quando: Date;
+        cliente_nome: string | null;
+        vendedora_nome: string | null;
+        total: string;
+      }[]
+    >(
+      `SELECT pr.codigo_erp         AS codigo_erp,
+              pr.descricao_etiqueta AS descricao,
+              i.valor_unitario      AS valor_unitario,
+              i.quantidade          AS quantidade,
+              m.data_movimentacao   AS quando,
+              c.nome                AS cliente_nome,
+              v.nome                AS vendedora_nome,
+              COUNT(*) OVER ()      AS total
+         FROM movimentacoes_itens i
+         JOIN movimentacoes m ON m.id = i.movimentacao_id
+         LEFT JOIN produtos pr  ON pr.id = i.produto_id
+         LEFT JOIN clientes c   ON c.id = m.cliente_id
+         LEFT JOIN vendedoras v ON v.id = m.vendedora_id
+         ${ONDE} AND m.saida
+        -- O DESEMPATE POR DATA E CODIGO existe para paginar: so por valor,
+        -- duas pecas do mesmo preco trocam de lugar entre as paginas e uma
+        -- delas some. Mesma licao de 05/10.
+        ORDER BY i.valor_unitario DESC, m.data_movimentacao DESC, pr.codigo_erp
+        LIMIT $6 OFFSET $7`,
+      [...p, limite, deslocamento],
+    );
+
+    return {
+      pecas: Number(totais?.pecas ?? 0),
+      valor: Number(totais?.valor ?? 0),
+      devolvidas: Number(devolvidas?.pecas ?? 0),
+      porVendedora: porVendedora.map((r) => ({
+        nome: r.nome ?? 'sem vendedora',
+        pecas: Number(r.pecas),
+        valor: Number(r.valor),
+      })),
+      linhas: linhas.map((l) => ({
+        codigoErp: l.codigo_erp,
+        descricao: l.descricao,
+        valorUnitario: Number(l.valor_unitario),
+        quantidade: Number(l.quantidade),
+        quando: l.quando,
+        clienteNome: l.cliente_nome,
+        vendedoraNome: l.vendedora_nome,
+      })),
+      totalDeLinhas: Number(linhas[0]?.total ?? 0),
+    };
   }
 
   async itensMaisVendidos(

@@ -10,6 +10,7 @@ import type {
   AtualizarLeadHandler,
   ClientesPorEpocaHandler,
   ClientesPorFidelidadeHandler,
+  MinhasPecasPorValorHandler,
   ClientesSemComprarHandler,
   ConsultarAgendaHandler,
   ConsultarMetasHandler,
@@ -23,6 +24,13 @@ import type {
 import { AgendarContatoVendedoraUseCase } from './use-cases/agendar-contato-vendedora.use-case';
 import { ConsultarAgendaVendedoraUseCase } from './use-cases/consultar-agenda-vendedora.use-case';
 import { ConsultarCarteiraVendedoraUseCase } from './use-cases/consultar-carteira-vendedora.use-case';
+import { ConsultarVendasUseCase } from '../../movimentacoes/application/use-cases/consultar-vendas.use-case';
+import {
+  FAIXA_INVALIDA,
+  janelaDaFaixa,
+  pecasParaOModelo,
+  recorteEmPalavras,
+} from './pecas-por-valor';
 import { dataDeCorte } from '../../../shared/tempo/recorte-de-datas';
 import type { NomeComemorativo } from '../../../shared/tempo/datas-comemorativas';
 import { ConsultarDesempenhoVendedoraUseCase } from './use-cases/consultar-desempenho-vendedora.use-case';
@@ -117,6 +125,8 @@ export interface FerramentasVendedora {
   melhoresClientes: MelhoresClientesHandler;
   /** Os Ouro, Prata e Bronze da carteira dela — a mesma regra do painel. */
   clientesPorFidelidade: ClientesPorFidelidadeHandler;
+  /** As pecas que ELA vendeu numa faixa de valor. */
+  minhasPecasPorValor: MinhasPecasPorValorHandler;
   agendarContato: AgendarContatoHandler;
   /** So existe quando ha mensagem original para extrair — ver `montar`. */
   registrarRelato?: RegistrarRelatoHandler;
@@ -228,6 +238,9 @@ export class FerramentasVendedoraService {
     @Inject(LEAD_REPOSITORY)
     private readonly leads: ILeadRepository,
     private readonly atualizarStatusLead: AtualizarStatusLeadUseCase,
+    // A FAIXA DE VALOR (13/10) entra no FIM de proposito: posicao nova no
+    // meio deslocaria todos os dubles dos specs em silencio.
+    private readonly vendas: ConsultarVendasUseCase,
   ) {}
 
   /**
@@ -622,6 +635,40 @@ export class FerramentasVendedoraService {
             ? `${pedido}, ${nivelEmPalavras(pedido)}`
             : `todos os niveis — Ouro e ${nivelEmPalavras('Ouro')}`,
         };
+      },
+
+      /**
+       * AS PECAS QUE ELA VENDEU NUMA FAIXA DE VALOR — 13/10/2026.
+       *
+       * ================================================================
+       * SEM `vendedoraId` NAO HA VENDA DELA, E A RESPOSTA E VAZIA.
+       *
+       * O escopo e escrito — `vendedoraId` vem por closure, do telefone
+       * resolvido antes da conversa. Nao existe caminho em que ele caia e
+       * a consulta passe a ver a loja: o repositorio recebe o id e, se
+       * ele fosse nulo, o `$5::uuid IS NULL` abriria o filtro inteiro.
+       * Por isso o nulo e barrado AQUI, e nao la.
+       * ================================================================
+       */
+      minhasPecasPorValor: async ({
+        valorMinimo,
+        valorMaximo,
+        de,
+        ate,
+        aPartirDe,
+      }) => {
+        const janela = janelaDaFaixa(de, ate);
+        const faixa = { minimo: valorMinimo, maximo: valorMaximo };
+        if (!vendedoraId) return FAIXA_INVALIDA;
+
+        const r = await this.vendas.pecasPorFaixa({
+          janela,
+          faixa,
+          deslocamento: aPartirDe,
+          vendedoraId,
+        });
+        if (!r) return FAIXA_INVALIDA;
+        return pecasParaOModelo(r, recorteEmPalavras(faixa, janela));
       },
 
       agendarContato: async ({ cliente, quandoIso }) => {

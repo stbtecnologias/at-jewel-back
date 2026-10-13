@@ -32,6 +32,56 @@ export interface JanelaDeVendas {
   ate: Date;
 }
 
+/**
+ * O corte por valor DA PECA — 13/10/2026.
+ *
+ * Os dois sao opcionais e cada combinacao e uma pergunta: so `minimo` e
+ * "acima de X", so `maximo` e "ate X", os dois e "entre X e Y". Nenhum dos
+ * dois nao e pergunta nenhuma, e quem chama recusa antes de consultar.
+ */
+export interface FaixaDeValor {
+  minimo?: number;
+  maximo?: number;
+}
+
+/** Uma peca vendida na faixa, com de quem foi e por quem. */
+export interface PecaNaFaixa {
+  codigoErp: string | null;
+  descricao: string | null;
+  /** O valor DA PECA, que e o que a faixa filtra. */
+  valorUnitario: number;
+  quantidade: number;
+  quando: Date;
+  clienteNome: string | null;
+  vendedoraNome: string | null;
+}
+
+/** Quanto a vendedora fez na faixa — para "quem vendeu mais acima de X". */
+export interface VendedoraNaFaixa {
+  nome: string;
+  pecas: number;
+  valor: number;
+}
+
+export interface PecasNaFaixa {
+  /** Soma de `quantidade`, e nao contagem de linhas. */
+  pecas: number;
+  valor: number;
+  /**
+   * Quantas pecas da MESMA faixa voltaram por devolucao no periodo.
+   *
+   * NAO foi descontado de `pecas` — a contagem de venda nao abate, pela
+   * convencao do `receitaLiquida`. Esta aqui para a resposta poder dizer.
+   */
+  devolvidas: number;
+  /** Uma linha por vendedora, da que mais vendeu para a que menos. */
+  porVendedora: VendedoraNaFaixa[];
+  /** As maiores da faixa, cortadas pelo teto. */
+  linhas: PecaNaFaixa[];
+  /** Quantas linhas existem antes do teto — o teto precisa se anunciar. */
+  totalDeLinhas: number;
+}
+
 export interface ResumoDeVendas {
   /** Documentos de VENDA no periodo. */
   quantidade: number;
@@ -267,6 +317,40 @@ export interface IVendasMovimentacaoRepository {
     vendedoraId?: string | null,
     familia?: string | null,
   ): Promise<ItemMaisVendido[]>;
+
+  /**
+   * AS PECAS VENDIDAS NUMA FAIXA DE VALOR — 13/10/2026.
+   *
+   * ========================================================================
+   * "QUANTAS PECAS ACIMA DE 100 MIL FORAM VENDIDAS EM 2025?"
+   *
+   * A Anastasia respondeu, corretamente, que nao conseguia: havia total,
+   * ranking e as vendas por cliente ou vendedora, e nenhum corte por FAIXA
+   * DE VALOR no historico. O filtro de preco so existia no catalogo, que e
+   * o estoque de hoje — outra pergunta.
+   * ========================================================================
+   *
+   * A FAIXA E DO `valor_unitario`, e nao do documento. "Peca acima de 100
+   * mil" e a PECA: um documento de 120 mil com duas pecas de 60 nao tem
+   * nenhuma peca acima de 100 mil, e conta-lo seria responder outra coisa.
+   *
+   * CONTA PECA, e nao linha: `sum(quantidade)`. Medido em 13/10, na faixa
+   * acima de 100 mil as duas contas dao igual (146 e 146) porque peca cara
+   * sai uma a uma — mas ha linhas com quantidade ate 8 na base, e numa faixa
+   * mais baixa a diferenca apareceria.
+   *
+   * A DEVOLUCAO NAO ABATE A CONTAGEM, pela mesma razao do `itensMaisVendidos`
+   * acima e do `receitaLiquida`: ela volta o documento inteiro, e descontar
+   * peca a peca misturaria duas perguntas. O resultado traz `devolvidas` ao
+   * lado, para quem le saber que existem — sao 8 das 146 na base de hoje.
+   */
+  pecasPorFaixaDeValor(
+    janela: JanelaDeVendas,
+    faixa: FaixaDeValor,
+    limite: number,
+    deslocamento: number,
+    vendedoraId?: string | null,
+  ): Promise<PecasNaFaixa>;
 
   /**
    * QUEM MAIS VENDEU UM TIPO DE PECA — 28/09/2026.
