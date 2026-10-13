@@ -17,6 +17,7 @@ import type {
   GestaoLeituraResultado,
   ChatResultado,
   FidelidadeLlmResultado,
+  PecasPorValorLlmResultado,
   FotoDeProdutoLlm,
   GraficoDinamico,
   ILlmClient,
@@ -1143,6 +1144,93 @@ const GESTAO_ATRIBUIR_VENDEDORA_TOOL: Anthropic.Tool = {
   },
 };
 
+/**
+ * OS CAMPOS DA FAIXA DE VALOR, dos dois canais — 13/10/2026.
+ *
+ * O PERIODO E EM DATAS, e nao num enum de "trimestre"/"semestre": o modelo ja
+ * converte "primeiro trimestre de 2025" em 01/01 e 31/03, do mesmo jeito que
+ * converte "amanha as 17h" para agendar. Um enum novo cobriria quatro casos e
+ * deixaria de fora "de maio a setembro", que e a mesma pergunta.
+ */
+const CAMPOS_DE_FAIXA_DE_VALOR = {
+  valor_minimo: {
+    type: 'integer' as const,
+    description:
+      'Valor minimo DA PECA, em reais. "acima de 100 mil" e 100000. A faixa e da PECA e nao da venda: um documento de 120 mil com duas pecas de 60 NAO tem peca acima de 100 mil.',
+  },
+  valor_maximo: {
+    type: 'integer' as const,
+    description:
+      'Valor maximo DA PECA, em reais. Use junto com o minimo para "entre 50 e 100 mil", ou sozinho para "ate 50 mil".',
+  },
+  de: {
+    type: 'string' as const,
+    description:
+      'Inicio do periodo, AAAA-MM-DD. Converta o que ela disser: "2025" comeca em 2025-01-01, "agosto de 2024" em 2024-08-01, "primeiro trimestre de 2025" em 2025-01-01, "segundo semestre de 2024" em 2024-07-01. SEMPRE junto com o fim.',
+  },
+  ate: {
+    type: 'string' as const,
+    description:
+      'Fim do periodo, AAAA-MM-DD, INCLUSIVO. "2025" termina em 2025-12-31, "agosto de 2024" em 2024-08-31, "primeiro trimestre" em 2025-03-31, "primeiro semestre" em 2025-06-30. SEMPRE junto com o inicio.',
+  },
+  a_partir_de: {
+    type: 'integer' as const,
+    description:
+      'Quantas pecas ja foram mostradas, para pedir a pagina seguinte. O despacho diz o valor exato. Omita na primeira chamada.',
+  },
+};
+
+/**
+ * AS PECAS DELA NUMA FAIXA DE VALOR — 13/10/2026.
+ *
+ * Sem escopo no schema, como as outras da vendedora: o recorte vem do telefone
+ * dela, resolvido antes de a conversa comecar.
+ */
+const MINHAS_PECAS_POR_VALOR_TOOL: Anthropic.Tool = {
+  name: 'minhas_pecas_por_valor',
+  description:
+    'Conta e lista as PECAS QUE ELA VENDEU numa faixa de valor, num periodo. Use para "quantas pecas acima de 100 mil eu vendi em 2025", "minhas vendas acima de 50 mil no primeiro trimestre". ' +
+    'A faixa e do valor DA PECA. Diz quantas pecas, quanto somaram e quantas voltaram por devolucao. So enxerga as vendas dela.',
+  input_schema: {
+    type: 'object',
+    properties: { ...CAMPOS_DE_FAIXA_DE_VALOR },
+  },
+};
+
+/**
+ * AS PECAS DA LOJA NUMA FAIXA DE VALOR — 13/10/2026.
+ *
+ * ==========================================================================
+ * UMA FERRAMENTA, DUAS PERGUNTAS — e e de proposito.
+ *
+ * "Quantas pecas acima de 100 mil vendemos em 2025" e "qual vendedora vendeu
+ * mais pecas acima de 150 mil" sao a MESMA consulta vista de dois angulos. Por
+ * isso a resposta traz SEMPRE a quebra por vendedora junto do total: duas
+ * ferramentas para isso seriam duas chances de divergir no mesmo numero.
+ *
+ * E `vendedora` e OPCIONAL, como no `clientes_por_fidelidade`: a pergunta da
+ * loja e a mais comum, e exigir o nome faria o modelo inventar um.
+ * ==========================================================================
+ */
+const GESTAO_PECAS_POR_VALOR_TOOL: Anthropic.Tool = {
+  name: 'pecas_por_valor',
+  description:
+    'Conta e lista as PECAS VENDIDAS numa faixa de valor, num periodo, e quebra por vendedora. Use para "quantas pecas acima de 100 mil vendemos em 2025", "qual vendedora vendeu mais pecas acima de 150 mil", "pecas entre 50 e 100 mil em agosto de 2024". ' +
+    'A faixa e do valor DA PECA, e nao do documento. Diz quantas pecas, quanto somaram, quantas voltaram por devolucao e quanto cada vendedora fez. ' +
+    'Sem nome de vendedora traz a LOJA INTEIRA — e e assim na maioria das perguntas.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      ...CAMPOS_DE_FAIXA_DE_VALOR,
+      vendedora: {
+        type: 'string',
+        description:
+          'Nome da vendedora, como falado, para ver so as vendas dela. OMITA para a loja inteira.',
+      },
+    },
+  },
+};
+
 const GESTAO_LEADS_TOOL: Anthropic.Tool = {
   name: 'listar_leads',
   description:
@@ -1826,6 +1914,7 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoCarteira) tools.push(GESTAO_CARTEIRA_TOOL);
     if (params.gestaoMelhores) tools.push(GESTAO_MELHORES_TOOL);
     if (params.gestaoFidelidade) tools.push(GESTAO_FIDELIDADE_TOOL);
+    if (params.gestaoPecasPorValor) tools.push(GESTAO_PECAS_POR_VALOR_TOOL);
     if (params.gestaoAtribuirVendedora)
       tools.push(GESTAO_ATRIBUIR_VENDEDORA_TOOL);
     if (params.gestaoAgendar) tools.push(GESTAO_AGENDAR_TOOL);
@@ -1851,6 +1940,7 @@ export class AnthropicClient implements ILlmClient {
     if (params.clientesPorEpoca) tools.push(EPOCA_TOOL);
     if (params.melhoresClientes) tools.push(MELHORES_TOOL);
     if (params.clientesPorFidelidade) tools.push(FIDELIDADE_TOOL);
+    if (params.minhasPecasPorValor) tools.push(MINHAS_PECAS_POR_VALOR_TOOL);
     if (params.agendarContato) tools.push(AGENDAR_TOOL);
 
     const first = await this.client.messages.create({
@@ -2168,6 +2258,61 @@ export class AnthropicClient implements ILlmClient {
             }),
           );
         }
+      } else if (
+        toolUse.name === 'pecas_por_valor' &&
+        params.gestaoPecasPorValor
+      ) {
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as {
+              valor_minimo?: number;
+              valor_maximo?: number;
+              de?: string;
+              ate?: string;
+              vendedora?: string;
+              a_partir_de?: number;
+            };
+            const r = await params.gestaoPecasPorValor!({
+              valorMinimo: e.valor_minimo,
+              valorMaximo: e.valor_maximo,
+              de: e.de,
+              ate: e.ate,
+              aPartirDe: e.a_partir_de,
+              vendedora: e.vendedora
+                ? String(e.vendedora).slice(0, 80)
+                : undefined,
+            });
+            return textoDasPecasPorValor(r, { daLoja: !e.vendedora });
+          }),
+        );
+      } else if (
+        toolUse.name === 'minhas_pecas_por_valor' &&
+        params.minhasPecasPorValor
+      ) {
+        // DOIS NOMES, e o despacho ramifica pelo NOME — a Nathalia tem os
+        // dois conjuntos, e um `if` por handler sempre escolheria o mesmo.
+        // Mesma decisao do `clientes_por_fidelidade`, em 09/10.
+        toolResults.push(
+          await this.executarLeitura(toolUse, async () => {
+            const e = toolUse.input as {
+              valor_minimo?: number;
+              valor_maximo?: number;
+              de?: string;
+              ate?: string;
+              a_partir_de?: number;
+            };
+            return textoDasPecasPorValor(
+              await params.minhasPecasPorValor!({
+                valorMinimo: e.valor_minimo,
+                valorMaximo: e.valor_maximo,
+                de: e.de,
+                ate: e.ate,
+                aPartirDe: e.a_partir_de,
+              }),
+              { daLoja: false },
+            );
+          }),
+        );
       } else if (
         toolUse.name === 'agendar_para_vendedora' &&
         params.gestaoAgendar
@@ -3948,6 +4093,100 @@ function textoDaFidelidade(
     'Repasse os nomes e numeros exatamente como estao. O valor JA ABATE ' +
     'devolucao, e a contagem de compras NAO abate — se perguntarem, e essa a ' +
     'regra. Voce NAO tem o telefone deles.'
+  );
+}
+
+/**
+ * O QUE A AGENTE OUVE SOBRE AS PECAS DE UMA FAIXA DE VALOR — 13/10/2026.
+ *
+ * ==========================================================================
+ * QUATRO COISAS, E CADA UMA EVITA UM ERRO.
+ *
+ * 1. O RECORTE EM PALAVRAS. "59 pecas" sem dizer de que faixa e de que
+ *    periodo e um numero solto: a gestora compara com outro mes e nao sabe
+ *    que mudou o corte.
+ *
+ * 2. AS DEVOLVIDAS. Sao 3 das 59 em 2025. A contagem NAO as desconta, pela
+ *    convencao do `receitaLiquida` — mas omitir seria esconder.
+ *
+ * 3. A QUEBRA POR VENDEDORA, sempre. "Qual vendedora vendeu mais acima de
+ *    150 mil" e a mesma consulta, e vem junto para nao haver duas respostas
+ *    para o mesmo numero.
+ *
+ * 4. A FAIXA QUE NAO FICOU DE PE. Sem valor nenhum, a consulta nao roda — a
+ *    resposta honesta e pedir o valor, nao devolver o historico inteiro como
+ *    se alguem tivesse perguntado isso.
+ * ==========================================================================
+ */
+function textoDasPecasPorValor(
+  r: PecasPorValorLlmResultado & {
+    status?: string;
+    nomes?: string[];
+    vendedora?: string;
+  },
+  opcoes: { daLoja: boolean },
+): string {
+  if (r.status === 'AMBIGUA') {
+    return (
+      `Ha mais de uma vendedora com esse nome: ${(r.nomes ?? []).join(', ')}. ` +
+      'Pergunte qual delas antes de consultar.'
+    );
+  }
+  if (r.status === 'NAO_ENCONTRADA') {
+    return (
+      'Nao encontrei essa vendedora' +
+      ((r.nomes ?? []).length ? `. Parecidas: ${(r.nomes ?? []).join(', ')}` : '') +
+      '. Pergunte de quem e, ou chame de novo SEM vendedora para a loja inteira.'
+    );
+  }
+
+  if (r.faixaInvalida) {
+    return (
+      'Faltou o valor da faixa, ou ele veio invertido. PERGUNTE a partir de ' +
+      'quanto ela quer contar ("acima de 100 mil", "entre 50 e 100 mil") e ' +
+      'chame de novo. NAO responda com numero nenhum: a consulta nao rodou.'
+    );
+  }
+
+  const deQuem = r.vendedora
+    ? ` da ${r.vendedora}`
+    : opcoes.daLoja
+      ? ' da loja'
+      : '';
+
+  if (r.pecas === 0) {
+    return (
+      `Nenhuma peca${deQuem} ${r.recorte}. Diga isso em uma frase, e DIGA O ` +
+      'RECORTE — qual faixa e qual periodo —, porque "nenhuma" sem o corte ' +
+      'soa como "a loja nao vendeu nada".'
+    );
+  }
+
+  const devolvidas =
+    r.devolvidas > 0
+      ? `E ${r.devolvidas} peca(s) da MESMA faixa voltaram por devolucao no ` +
+        'periodo. Esse numero NAO esta descontado da contagem acima — se ' +
+        'perguntarem, e essa a regra.\n\n'
+      : '';
+
+  const porVendedora =
+    opcoes.daLoja && r.porVendedora.length > 0
+      ? `Por vendedora:\n${r.porVendedora.map((l) => `- ${l}`).join('\n')}\n\n`
+      : '';
+
+  const lista =
+    r.linhas.length > 0
+      ? `As maiores:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n`
+      : '';
+
+  return (
+    `${r.pecas} peca(s)${deQuem} ${r.recorte}, somando ${r.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}.\n\n` +
+    devolvidas +
+    porVendedora +
+    lista +
+    faixaDaLista(r.deslocamento, r.linhas.length, r.totalDeLinhas) +
+    'Repasse os numeros exatamente como estao, e DIGA O RECORTE na resposta ' +
+    '— a faixa e o periodo. O valor da peca e o unitario, nao o do documento.'
   );
 }
 

@@ -43,6 +43,9 @@ describe('ConsultarVendasUseCase', () => {
       // no duble porque a porta a exige.
       listarDetalhadas: jest.fn().mockResolvedValue({ vendas: [], total: 0 }),
       receitaPorEmpresa: jest.fn().mockResolvedValue([]),
+      // A faixa de valor (13/10) tambem nao e exercitada aqui — entra no
+      // duble porque a porta a exige.
+      pecasPorFaixaDeValor: jest.fn(),
       resumo: jest.fn(async (j) => {
         janelas.push(j);
         return { ...VAZIO, quantidade: 3, receita: 300, ticketMedio: 100 };

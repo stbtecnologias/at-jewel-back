@@ -1226,6 +1226,8 @@ export interface ChatParams {
   melhoresClientes?: MelhoresClientesHandler;
   // Idem para `clientes_por_fidelidade` — os Ouro, Prata e Bronze da carteira.
   clientesPorFidelidade?: ClientesPorFidelidadeHandler;
+  // Idem para `minhas_pecas_por_valor` — so as vendas dela.
+  minhasPecasPorValor?: MinhasPecasPorValorHandler;
   // Idem para `agendar_contato` — a unica que escreve.
   agendarContato?: AgendarContatoHandler;
   // Canal da GESTAO. Nunca convivem com os de cima: quem monta os handlers e o
@@ -1263,6 +1265,8 @@ export interface ChatParams {
   gestaoMelhores?: GestaoMelhoresHandler;
   // Idem para `clientes_por_fidelidade` da gestao: a loja, ou uma vendedora.
   gestaoFidelidade?: GestaoFidelidadeHandler;
+  // Idem para `pecas_por_valor` da gestao: a loja, ou uma vendedora.
+  gestaoPecasPorValor?: GestaoPecasPorValorHandler;
   // Idem para `atribuir_vendedora_ao_cliente` — a escrita de carteira.
   gestaoAtribuirVendedora?: GestaoAtribuirVendedoraHandler;
   gestaoAgendar?: GestaoAgendarHandler;
@@ -1328,6 +1332,75 @@ export interface ChatComFerramentasResultado extends ChatResultado {
    */
   semTexto?: 'max_tokens' | 'refusal' | 'outro';
 }
+
+
+/**
+ * AS PECAS VENDIDAS NUMA FAIXA DE VALOR — 13/10/2026.
+ *
+ * ==========================================================================
+ * "QUANTAS PECAS ACIMA DE 100 MIL FORAM VENDIDAS EM 2025?"
+ *
+ * A Anastasia respondeu que nao conseguia, e estava certa: havia total,
+ * ranking e as vendas por cliente ou vendedora, e nenhum corte por FAIXA DE
+ * VALOR no historico. O filtro de preco so existia no catalogo — o estoque
+ * de hoje, que e outra pergunta.
+ * ==========================================================================
+ *
+ * A FAIXA E DO VALOR DA PECA, e nao do documento: um documento de 120 mil
+ * com duas pecas de 60 nao tem nenhuma peca acima de 100 mil.
+ *
+ * O PERIODO VEM EM DATAS, que o modelo converte — "2025", "agosto de 2024",
+ * "primeiro trimestre" viram `de` e `ate`. E o mesmo caminho das outras
+ * ferramentas, e por isso trimestre e semestre nao precisam de campo proprio.
+ */
+export interface PecasPorValorLlmResultado {
+  /** Soma de quantidade, e nao de linhas. */
+  pecas: number;
+  valor: number;
+  /**
+   * Quantas pecas da mesma faixa voltaram no periodo.
+   *
+   * NAO foi descontado de `pecas`: a contagem de venda nao abate, pela
+   * convencao do `receitaLiquida`. Vai ao modelo para a resposta poder dizer
+   * — sao 3 das 59 em 2025, e omitir isso seria esconder.
+   */
+  devolvidas: number;
+  /** Uma linha por vendedora, da que mais vendeu para a que menos. */
+  porVendedora: string[];
+  /** As maiores da faixa, ja formatadas. */
+  linhas: string[];
+  totalDeLinhas: number;
+  deslocamento: number;
+  /** O recorte em palavras, para a resposta dizer o que foi medido. */
+  recorte: string;
+  /** A faixa nao ficou de pe — sem valor nenhum, ou invertida. */
+  faixaInvalida?: boolean;
+}
+
+/** Da VENDEDORA: so as vendas dela, sem parametro de escopo. */
+export type MinhasPecasPorValorHandler = (input: {
+  valorMinimo?: number;
+  valorMaximo?: number;
+  de?: string;
+  ate?: string;
+  aPartirDe?: number;
+}) => Promise<PecasPorValorLlmResultado>;
+
+/** Da GESTAO: a loja, ou uma vendedora quando ela disser o nome. */
+export type GestaoPecasPorValorHandler = (input: {
+  valorMinimo?: number;
+  valorMaximo?: number;
+  de?: string;
+  ate?: string;
+  vendedora?: string;
+  aPartirDe?: number;
+}) => Promise<
+  PecasPorValorLlmResultado & {
+    status?: string;
+    nomes?: string[];
+    vendedora?: string;
+  }
+>;
 
 /** Uma foto pronta para enviar, com a legenda que acompanha a peca. */
 export interface FotoDeProdutoLlm {

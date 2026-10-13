@@ -87,6 +87,9 @@ describe('os leads da vendedora (Elena)', () => {
       { resumo: jest.fn() } as never,
       leads as never,
       statusLead as never,
+      // A consulta de vendas (13/10) nao e exercitada aqui — entra no duble
+      // porque o construtor a exige.
+      { pecasPorFaixa: jest.fn() } as never,
     );
   });
 

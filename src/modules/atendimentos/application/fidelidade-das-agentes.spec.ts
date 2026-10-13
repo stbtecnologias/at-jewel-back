@@ -66,6 +66,9 @@ describe('os clientes por fidelidade', () => {
         { resumo: jest.fn(), listar: jest.fn() } as never,
         { listarPorVendedora: jest.fn().mockResolvedValue([]) } as never,
         { execute: jest.fn() } as never,
+      // A consulta de vendas (13/10) nao e exercitada aqui — entra no duble
+      // porque o construtor a exige.
+      { pecasPorFaixa: jest.fn() } as never,
       );
     });
 

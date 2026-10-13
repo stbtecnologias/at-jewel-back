@@ -1,5 +1,12 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { categoriaDaBusca } from '../../../shared/catalogo/categorias';
+import type { PecasNaFaixa } from '../../movimentacoes/domain/ports/repositories/vendas-movimentacao-repository.port';
+import {
+  FAIXA_INVALIDA,
+  janelaDaFaixa,
+  pecasParaOModelo,
+  recorteEmPalavras,
+} from './pecas-por-valor';
 import {
   linhaDoClienteFiel,
   nivelDaPergunta,
@@ -17,6 +24,7 @@ import type {
   GestaoVendasDetalhadasHandler,
   GestaoAtribuirVendedoraHandler,
   GestaoFidelidadeHandler,
+  GestaoPecasPorValorHandler,
   GestaoMelhoresHandler,
   GestaoAgendarHandler,
   GestaoCarteiraDoClienteHandler,
@@ -254,6 +262,8 @@ export interface FerramentasGestao {
   gestaoMelhores: GestaoMelhoresHandler;
   /** Os Ouro, Prata e Bronze — da loja, ou de uma vendedora. */
   gestaoFidelidade: GestaoFidelidadeHandler;
+  /** As pecas vendidas numa faixa de valor — da loja ou de uma vendedora. */
+  gestaoPecasPorValor: GestaoPecasPorValorHandler;
   /**
    * A UNICA ESCRITA DA GESTAO SOBRE CADASTRO DE CLIENTE — 09/10/2026.
    *
@@ -750,6 +760,71 @@ export class FerramentasGestaoService {
        * soma por vendedora dá 29 — quem lê precisa saber que faltam 19, ou
        * vai embora achando que viu a loja inteira.
        */
+      /**
+       * AS PECAS VENDIDAS NUMA FAIXA DE VALOR — 13/10/2026.
+       *
+       * ==================================================================
+       * A PERGUNTA QUE A ANASTASIA NAO CONSEGUIA RESPONDER.
+       *
+       *   — "Quantas pecas acima de 100 mil foram vendidas em 2025?"
+       *   — "Essa eu nao consigo puxar — nao tenho como filtrar as vendas
+       *      por valor nem varrer o ano inteiro venda a venda."
+       *
+       * Ela estava certa: o filtro de preco so existia no CATALOGO, que e o
+       * estoque de hoje. No historico havia total, ranking e as vendas por
+       * cliente ou vendedora, e faixa de valor nenhuma.
+       * ==================================================================
+       *
+       * A QUEBRA POR VENDEDORA VEM SEMPRE, e por isso nao ha uma segunda
+       * ferramenta para "qual vendedora vendeu mais acima de 150 mil": e a
+       * mesma consulta vista de outro angulo, e duas ferramentas seriam duas
+       * chances de os numeros divergirem.
+       *
+       * `vendedora` e opcional, como no `clientes_por_fidelidade`: a pergunta
+       * da loja e a mais comum, e exigir o nome faria o modelo inventar um.
+       */
+      gestaoPecasPorValor: async ({
+        valorMinimo,
+        valorMaximo,
+        de,
+        ate,
+        vendedora,
+        aPartirDe,
+      }) => {
+        const janela = janelaDaFaixa(de, ate);
+        const faixa = { minimo: valorMinimo, maximo: valorMaximo };
+        const recorte = recorteEmPalavras(faixa, janela);
+
+        // SEM NOME: a loja. O escopo e escrito, nunca derivado de ausencia.
+        if (!vendedora) {
+          const r = await this.consultarVendas.pecasPorFaixa({ janela, faixa });
+          if (!r) return FAIXA_INVALIDA;
+          return { ...pecasParaOModelo(r, recorte), status: 'OK' };
+        }
+
+        let pagina: (PecasNaFaixa & { deslocamento: number }) | null = null;
+        const r = await this.comVendedora(equipe, vendedora, async (id) => {
+          pagina = await this.consultarVendas.pecasPorFaixa({
+            janela,
+            faixa,
+            deslocamento: aPartirDe,
+            vendedoraId: id,
+          });
+          return [];
+        });
+
+        const p = pagina as (PecasNaFaixa & { deslocamento: number }) | null;
+        if (r.status !== 'OK') {
+          return { ...FAIXA_INVALIDA, faixaInvalida: undefined, status: r.status, nomes: r.nomes };
+        }
+        if (!p) return FAIXA_INVALIDA;
+        return {
+          ...pecasParaOModelo(p, recorte),
+          status: 'OK',
+          vendedora: r.vendedora,
+        };
+      },
+
       gestaoFidelidade: async ({
         nivel,
         vendedora,

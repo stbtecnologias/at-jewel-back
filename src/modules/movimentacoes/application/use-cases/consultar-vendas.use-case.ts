@@ -7,6 +7,8 @@ import {
   type VendaDetalhada,
   type VendasDeUmaEmpresa,
   type JanelaDeVendas,
+  type FaixaDeValor,
+  type PecasNaFaixa,
   type ResumoDeVendas,
   type VendedoraNoRanking,
 } from '../../domain/ports/repositories/vendas-movimentacao-repository.port';
@@ -80,6 +82,48 @@ export class ConsultarVendasUseCase {
       limitar(limite),
     );
     return { linhas, ...janela };
+  }
+
+  /**
+   * AS PECAS VENDIDAS NUMA FAIXA DE VALOR — 13/10/2026.
+   *
+   * ========================================================================
+   * FAIXA VAZIA NAO CONSULTA, E ISSO E A REGRA.
+   *
+   * Sem minimo e sem maximo, a "faixa" e o historico inteiro — e a resposta
+   * seria "2.037 pecas", verdadeira e inutil, apresentada como se alguem
+   * tivesse perguntado isso. O modelo escreve estes campos; quando ele
+   * esquecer os dois, a resposta honesta e pedir o valor, nao inventar um.
+   * ========================================================================
+   *
+   * A JANELA VEM PRONTA de quem chama — por atalho (`ANO`) ou por datas que o
+   * modelo converteu ("primeiro trimestre de 2025"). Aqui nao se interpreta
+   * periodo: isso e do `datasDeRecorte`, que ja serve as duas agentes.
+   */
+  async pecasPorFaixa(opcoes: {
+    janela: JanelaDeVendas;
+    faixa: FaixaDeValor;
+    limite?: number;
+    deslocamento?: number;
+    vendedoraId?: string | null;
+  }): Promise<(PecasNaFaixa & { deslocamento: number }) | null> {
+    const { minimo, maximo } = opcoes.faixa;
+    if (minimo === undefined && maximo === undefined) return null;
+    // Invertida devolveria vazio EM SILENCIO — o mesmo erro que o
+    // `datasDeRecorte` recusa nas datas.
+    if (minimo !== undefined && maximo !== undefined && minimo > maximo) {
+      return null;
+    }
+
+    const deslocamento = opcoes.deslocamento ?? 0;
+    const r = await this.vendas.pecasPorFaixaDeValor(
+      opcoes.janela,
+      opcoes.faixa,
+      limitar(opcoes.limite ?? LIMITE_PADRAO),
+      deslocamento,
+      opcoes.vendedoraId,
+    );
+    return { ...r, deslocamento };
   }
 
   async itens(
