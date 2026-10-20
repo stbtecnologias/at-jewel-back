@@ -16,6 +16,9 @@ const SEM_FOTO_DE_PECA = {
   anexarPenduradas: jest.fn().mockResolvedValue(null),
   quais: jest.fn().mockResolvedValue(null),
   mirar: jest.fn().mockResolvedValue(null),
+  // A DEDUCAO tambem calada por padrao: ela so entra quando nenhum padrao
+  // pegou, e nenhum destes testes e sobre ela.
+  pedido: jest.fn().mockResolvedValue(null),
   foto: jest.fn().mockResolvedValue(null),
 } as never;
 
@@ -1696,6 +1699,99 @@ describe('RotearMensagemInternaUseCase', () => {
 
       expect(daPeca.foto).not.toHaveBeenCalled();
       expect(r.motivo).toBe('ignorado_foto_sem_permissao');
+    });
+
+    /**
+     * A FRASE QUE CAIU NO CATÁLOGO — 20/10/2026.
+     *
+     * *"Me envia as fotos que você tem da referência BR26318"* não casou com
+     * padrão nenhum e desceu até o catálogo, que respondeu *"pode mandar, de
+     * qual catálogo é?"* — oferecendo catálogo a quem não ia mandar nada.
+     *
+     * Este teste protege o DEGRAU NOVO: o roteador tem de chamar a dedução
+     * quando `quais` e `mirar` deram null, e devolver o que ela disser.
+     */
+    it('a frase que nenhum padrão pega chega na dedução, e não no catálogo', async () => {
+      identificarAdmin.execute.mockResolvedValue({
+        id: 'ad-9',
+        nome: 'Yerlon Braga',
+        role: 'ADMIN',
+      });
+      const daPeca = {
+        temPecaMirada: () => false,
+        anexarPenduradas: jest.fn().mockResolvedValue(null),
+        quais: jest.fn().mockResolvedValue(null),
+        mirar: jest.fn().mockResolvedValue(null),
+        pedido: jest.fn().mockResolvedValue({
+          resposta: 'BR26318 — BRINCO OA 18K — R$ 36.000\n2 fotos, vão aí.',
+          motivo: 'fotos_da_peca',
+        }),
+        foto: jest.fn(),
+      };
+      const comDeducao = new RotearMensagemInternaUseCase(
+        identificarVendedora as never,
+        identificarAdmin as never,
+        canalVendedora as never,
+        canalGestao as never,
+        canalCatalogo as never,
+        new RecepcionarUseCase(new RecepcaoService()),
+        whatsapp as never,
+        { disponivel: () => false, transcrever: jest.fn() } as never,
+        new MemoriaDeGrupoService(),
+        { ler: jest.fn() } as never,
+        { analisar: jest.fn() } as never,
+        daPeca as never,
+      );
+
+      const r = await comDeducao.execute({
+        de: '558586467241@c.us',
+        texto: 'Me envia as fotos que você tem da referência BR26318',
+      });
+
+      expect(daPeca.pedido).toHaveBeenCalled();
+      expect(r.motivo).toBe('fotos_da_peca');
+      // E O CATÁLOGO NÃO FOI CONSULTADO: era ele quem respondia errado.
+      expect(canalCatalogo.intencao).not.toHaveBeenCalled();
+    });
+
+    /** O modelo só entra quando os padrões falham — ele custa uma chamada. */
+    it('o padrão que PEGA não paga o modelo', async () => {
+      identificarAdmin.execute.mockResolvedValue({
+        id: 'ad-9',
+        nome: 'Yerlon Braga',
+        role: 'ADMIN',
+      });
+      const daPeca = {
+        temPecaMirada: () => false,
+        anexarPenduradas: jest.fn().mockResolvedValue(null),
+        quais: jest
+          .fn()
+          .mockResolvedValue({ resposta: '3 fotos, vão aí.', motivo: 'fotos_da_peca' }),
+        mirar: jest.fn().mockResolvedValue(null),
+        pedido: jest.fn().mockResolvedValue(null),
+        foto: jest.fn(),
+      };
+      const comAtalho = new RotearMensagemInternaUseCase(
+        identificarVendedora as never,
+        identificarAdmin as never,
+        canalVendedora as never,
+        canalGestao as never,
+        canalCatalogo as never,
+        new RecepcionarUseCase(new RecepcaoService()),
+        whatsapp as never,
+        { disponivel: () => false, transcrever: jest.fn() } as never,
+        new MemoriaDeGrupoService(),
+        { ler: jest.fn() } as never,
+        { analisar: jest.fn() } as never,
+        daPeca as never,
+      );
+
+      await comAtalho.execute({
+        de: '558586467241@c.us',
+        texto: 'fotos do produto BR26396',
+      });
+
+      expect(daPeca.pedido).not.toHaveBeenCalled();
     });
 
     /**

@@ -256,6 +256,15 @@ export class ClienteRepository implements IClienteRepository {
     return row ? this.toDomain(row) : null;
   }
 
+  /** A lista inteira, para quem precisa VER a ambiguidade. Ver o port. */
+  async listarPorTelefone1Hash(hash: string): Promise<Cliente[]> {
+    const rows = await this.repo.find({
+      where: { telefone1Hash: hash },
+      order: { criadoEm: 'ASC' },
+    });
+    return rows.map((r) => this.toDomain(r));
+  }
+
   /** Mesma ressalva do telefone: nao e mais unico desde a migracao 36. */
   async buscarPorEmailHash(hash: string): Promise<Cliente | null> {
     const row = await this.repo.findOne({

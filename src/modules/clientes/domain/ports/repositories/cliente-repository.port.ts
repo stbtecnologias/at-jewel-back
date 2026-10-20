@@ -304,6 +304,29 @@ export interface IClienteRepository {
     limite: number,
   ): Promise<{ clientes: ClienteDaEpoca[]; total: number }>;
   buscarPorTelefone1Hash(hash: string): Promise<Cliente | null>;
+
+  /**
+   * TODOS os clientes com aquele telefone — RF41, 20/10/2026.
+   *
+   * ========================================================================
+   * EXISTE PORQUE `buscarPorTelefone1Hash` NAO SERVE PARA DECIDIR DE QUEM E
+   * UMA MENSAGEM — e o aviso dela mesma diz isso: desde a migracao 36 a
+   * coluna nao e unica, e ela devolve o MAIS ANTIGO so para ser
+   * deterministica.
+   *
+   * Medido na copia de producao em 20/10: dos 774 clientes com telefone, 728
+   * tem numero exclusivo — mas 19 numeros servem a mais de um cliente, e um
+   * deles serve a OITO. Nenhum e lixo de cadastro: conferidos um a um, todos
+   * tem aparencia de numero real (mae e filha, fixo da empresa).
+   *
+   * Com a LISTA, quem reconhece pode tratar N > 1 como AMBIGUIDADE em vez de
+   * escolher o mais antigo e atribuir a conversa a pessoa errada.
+   * ========================================================================
+   *
+   * Do mais antigo para o mais novo, como a busca unitaria.
+   */
+  listarPorTelefone1Hash(hash: string): Promise<Cliente[]>;
+
   buscarPorEmailHash(hash: string): Promise<Cliente | null>;
 
   /**

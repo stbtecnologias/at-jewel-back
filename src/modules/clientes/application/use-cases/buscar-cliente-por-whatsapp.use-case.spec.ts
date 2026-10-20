@@ -12,10 +12,26 @@ function makeClienteRepoMock(): jest.Mocked<IClienteRepository> {
     buscarPorId: jest.fn(),
     buscarPorCodigoErp: jest.fn(),
     buscarPorTelefone1Hash: jest.fn(),
+    // O PADRAO E "NAO ACHOU": desde o RF41 o caminho do telefone de cadastro
+    // roda SEMPRE que o `whatsapp_hash` falha, entao todo teste antigo passa
+    // por aqui. Sem o padrao eles quebrariam por mock faltando, e nao por
+    // comportamento.
+    listarPorTelefone1Hash: jest.fn().mockResolvedValue([]),
     buscarPorEmailHash: jest.fn(),
     listar: jest.fn(),
     atualizar: jest.fn(),
   } as unknown as jest.Mocked<IClienteRepository>;
+}
+
+/** Um cliente qualquer, para quando o teste so precisa de id e nome. */
+function umCliente(id: string, nome = 'Maria'): Cliente {
+  return Cliente.create({
+    id,
+    nome,
+    tipoPessoa: 'fisica',
+    tabelaPreco: 'varejo',
+    ativo: true,
+  });
 }
 
 function makePerfilRepoMock(): jest.Mocked<IClientePerfilRepository> {
@@ -94,7 +110,10 @@ describe('BuscarClientePorWhatsappUseCase', () => {
   it('encontra o cliente cadastrado COM nono digito quando o WhatsApp manda SEM', async () => {
     const clienteRepo = makeClienteRepoMock();
     const perfilRepo = makePerfilRepoMock();
-    const useCase = new BuscarClientePorWhatsappUseCase(clienteRepo, perfilRepo);
+    const useCase = new BuscarClientePorWhatsappUseCase(
+      clienteRepo,
+      perfilRepo,
+    );
 
     const hashCadastrado = hashField('5585986467241');
     const perfil = ClientePerfil.create({
@@ -126,7 +145,10 @@ describe('BuscarClientePorWhatsappUseCase', () => {
   it('encontra o cliente cadastrado SEM DDI quando a busca vem COM DDI', async () => {
     const clienteRepo = makeClienteRepoMock();
     const perfilRepo = makePerfilRepoMock();
-    const useCase = new BuscarClientePorWhatsappUseCase(clienteRepo, perfilRepo);
+    const useCase = new BuscarClientePorWhatsappUseCase(
+      clienteRepo,
+      perfilRepo,
+    );
 
     const hashCadastrado = hashField('85986467241');
     const perfil = ClientePerfil.create({
@@ -155,11 +177,135 @@ describe('BuscarClientePorWhatsappUseCase', () => {
   it('numero realmente desconhecido continua devolvendo null', async () => {
     const clienteRepo = makeClienteRepoMock();
     const perfilRepo = makePerfilRepoMock();
-    const useCase = new BuscarClientePorWhatsappUseCase(clienteRepo, perfilRepo);
+    const useCase = new BuscarClientePorWhatsappUseCase(
+      clienteRepo,
+      perfilRepo,
+    );
 
     perfilRepo.buscarPorWhatsappHash.mockResolvedValue(null);
 
     expect(await useCase.execute('5511999990000')).toBeNull();
     expect(clienteRepo.buscarPorId).not.toHaveBeenCalled();
+  });
+
+  // ==========================================================================
+  // O TELEFONE DO CADASTRO — RF41, 20/10/2026.
+  //
+  // Em producao `clientes_perfil` tem 0 linhas e `clientes.telefone_1_hash`
+  // esta preenchida em 774 de 1.110. Olhando so a primeira, o reconhecimento
+  // nunca achava ninguem — e a conversa de cliente que existe no ERP tomava o
+  // galho do lead.
+  // ==========================================================================
+  describe('a queda para o telefone do cadastro', () => {
+    it('acha o cliente por `telefone_1_hash` quando nao ha perfil nenhum', async () => {
+      perfilRepo.buscarPorWhatsappHash.mockResolvedValue(null);
+      const cliente = umCliente('uuid-cliente');
+      clienteRepo.listarPorTelefone1Hash.mockImplementation(
+        async (hash: string) =>
+          hash === hashField('5585986467241') ? [cliente] : [],
+      );
+      clienteRepo.buscarPorId.mockResolvedValue(cliente);
+
+      expect(await useCase.execute('5585986467241')).toBe(cliente);
+      // DE NOVO POR ID, para vir com perfil como no caminho do WhatsApp: quem
+      // chama recebe a mesma coisa, venha de onde vier.
+      expect(clienteRepo.buscarPorId).toHaveBeenCalledWith('uuid-cliente', {
+        incluirPerfil: true,
+      });
+    });
+
+    it('tenta as variantes tambem no telefone — cadastro SEM DDI, WhatsApp COM', async () => {
+      perfilRepo.buscarPorWhatsappHash.mockResolvedValue(null);
+      const cliente = umCliente('uuid-cliente');
+      clienteRepo.listarPorTelefone1Hash.mockImplementation(
+        async (hash: string) =>
+          hash === hashField('85986467241') ? [cliente] : [],
+      );
+      clienteRepo.buscarPorId.mockResolvedValue(cliente);
+
+      expect(await useCase.execute('5585986467241')).toBe(cliente);
+    });
+
+    // ========================================================================
+    // E AQUI ELE NAO ADIVINHA.
+    //
+    // A coluna nao e unica desde a migracao 36: medido em 20/10, 19 numeros
+    // servem a mais de um cliente e um deles serve a OITO — todos com
+    // aparencia de numero real, conferidos um a um (mae e filha, fixo da
+    // empresa). `buscarPorTelefone1Hash` devolveria o MAIS ANTIGO, e a
+    // conversa iria para a pessoa errada em silencio.
+    // ========================================================================
+    it('telefone que serve a dois clientes e AMBIGUIDADE, e devolve null', async () => {
+      perfilRepo.buscarPorWhatsappHash.mockResolvedValue(null);
+      clienteRepo.listarPorTelefone1Hash.mockResolvedValue([
+        umCliente('mais-antigo', 'Maria'),
+        umCliente('mais-novo', 'Joana'),
+      ]);
+
+      expect(await useCase.execute('5585986467241')).toBeNull();
+      // Nem o mais antigo: nao houve escolha nenhuma.
+      expect(clienteRepo.buscarPorId).not.toHaveBeenCalled();
+    });
+
+    it('variantes diferentes apontando para clientes diferentes tambem e ambiguidade', async () => {
+      perfilRepo.buscarPorWhatsappHash.mockResolvedValue(null);
+      // O MOTIVO DE VARRER TODAS ANTES DE DECIDIR: parando na primeira que
+      // acha, o resultado dependeria da ordem das variantes — e seria um
+      // cliente legitimo, escolhido por acidente de ordenacao.
+      clienteRepo.listarPorTelefone1Hash.mockImplementation(
+        async (hash: string) => {
+          if (hash === hashField('5585986467241'))
+            return [umCliente('com-ddi')];
+          if (hash === hashField('85986467241')) return [umCliente('sem-ddi')];
+          return [];
+        },
+      );
+
+      expect(await useCase.execute('5585986467241')).toBeNull();
+    });
+
+    it('o mesmo cliente achado por duas variantes NAO e ambiguidade', async () => {
+      perfilRepo.buscarPorWhatsappHash.mockResolvedValue(null);
+      const cliente = umCliente('uuid-cliente');
+      // As quatro formas do mesmo numero podem cair no mesmo registro; isso e
+      // o caso COMUM, e nao conflito. A deduplicacao e por `id`.
+      clienteRepo.listarPorTelefone1Hash.mockResolvedValue([cliente]);
+      clienteRepo.buscarPorId.mockResolvedValue(cliente);
+
+      expect(await useCase.execute('5585986467241')).toBe(cliente);
+    });
+
+    it('o `whatsapp_hash` ganha: achando por ele, nao olha o telefone', async () => {
+      const perfil = ClientePerfil.create({
+        clienteId: 'uuid-cliente',
+        whatsapp: '5585986467241',
+        whatsappHash: hashField('5585986467241'),
+        estadoConversa: 'TRIAGE_IN_PROGRESS',
+      });
+      const cliente = umCliente('uuid-cliente');
+      perfilRepo.buscarPorWhatsappHash.mockResolvedValue(perfil);
+      clienteRepo.buscarPorId.mockResolvedValue(cliente);
+
+      expect(await useCase.execute('5585986467241')).toBe(cliente);
+      // O numero que a pessoa USA para falar com a loja e unico por perfil:
+      // achando por ele, nao existe ambiguidade a consultar.
+      expect(clienteRepo.listarPorTelefone1Hash).not.toHaveBeenCalled();
+    });
+
+    it('cliente sem id na entidade nao conta como achado', async () => {
+      perfilRepo.buscarPorWhatsappHash.mockResolvedValue(null);
+      // `id` so existe depois de persistida; sem ele nao ha o que vincular.
+      clienteRepo.listarPorTelefone1Hash.mockResolvedValue([
+        Cliente.create({
+          nome: 'Maria',
+          tipoPessoa: 'fisica',
+          tabelaPreco: 'varejo',
+          ativo: true,
+        }),
+      ]);
+
+      expect(await useCase.execute('5585986467241')).toBeNull();
+      expect(clienteRepo.buscarPorId).not.toHaveBeenCalled();
+    });
   });
 });

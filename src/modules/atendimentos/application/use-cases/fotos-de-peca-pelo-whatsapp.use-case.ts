@@ -6,6 +6,9 @@ import type { IProdutoRepository } from '../../../erp/domain/ports/repositories/
 import { FotosDaPecaUseCase } from '../../../produtos/application/use-cases/fotos-da-peca.use-case';
 import { SessaoCatalogoService } from '../sessao-catalogo.service';
 import { FotosDeProdutoService } from '../fotos-de-produto.service';
+// O MESMO formatador que a agente ja usa nas listas: o valor da peca tem de
+// sair escrito do mesmo jeito em todo lugar do canal.
+import { moeda } from '../ferramentas-gestao.service';
 import {
   CATALOGO_REPOSITORY,
   INTERPRETADOR_DESTINO,
@@ -155,13 +158,53 @@ export class FotosDePecaPeloWhatsappUseCase {
       .find((c) => !!c)
       ?.toUpperCase();
     if (!codigo) return null;
+    return this.asFotosDaPeca(de, codigo);
+  }
 
+  /**
+   * AS FOTOS DE UM CÓDIGO JÁ RESOLVIDO.
+   *
+   * Separado de `quais` porque o código chega por dois caminhos: o do regex,
+   * que é o atalho do caso óbvio, e o da dedução, quando a frase não casou com
+   * nenhum padrão. A resposta tem de ser a MESMA pelos dois.
+   */
+  async asFotosDaPeca(de: string, codigo: string): Promise<RespostaFoto | null> {
     const produto = await this.produtos.findByCodigoErp(codigo);
     if (!produto?.id) return null;
 
     const nossas = await this.fotos.listar(produto.id);
     const nome = produto.descricaoEtiqueta?.trim();
     const rotulo = nome ? `${codigo} — ${nome}` : codigo;
+
+    // ======================================================================
+    // O TEXTO DESCREVE, AS FOTOS VÃO LIMPAS — pedido do Lucas em 20/10/2026.
+    //
+    // Antes cada imagem levava legenda, e a legenda era a MESMA em todas: as
+    // duas fotos da mesma peça chegavam carimbadas com a mesma frase. Para
+    // quem recebe isso é ruído — e é foto que ela vai repassar para cliente.
+    //
+    // Então a descrição e o valor ficam numa mensagem SÓ, que vem antes, e as
+    // imagens vão sem caption nenhum.
+    //
+    // E a palavra "capa" saiu junto: é vocabulário NOSSO. A capa continua
+    // existindo — é a primeira da lista, e se define no painel.
+    //
+    // `valorVenda` é o preço À VISTA do ERP, o mesmo número que a agente já
+    // diz nas listas. Peça sem valor sai sem a linha, em vez de "R$ 0".
+    // ======================================================================
+    // A ORDEM É A QUE O LUCAS PEDIU, e ela cabe numa linha:
+    //
+    //   referência — descrição — valor
+    //
+    // `valorVenda` é o preço à vista; não escrevo "à vista" porque a ficha é
+    // para quem já sabe disso e vai copiar o número.
+    const ficha =
+      produto.valorVenda > 0
+        ? `${rotulo} — ${moeda(produto.valorVenda)}`
+        : rotulo;
+
+    /** As fotos vão limpas — quem descreve é o texto, uma vez só. */
+    const SEM_LEGENDA = '';
 
     // FALAMOS DESTA PEÇA. Não muda o destino das fotos — serve para a pergunta
     // de destino ter a opção certa, se uma imagem chegar em seguida.
@@ -175,18 +218,25 @@ export class FotosDePecaPeloWhatsappUseCase {
       // SEM FOTO NOSSA, A DO ERP AINDA PODE EXISTIR — e ela vai, para a
       // resposta não ser um "não tem" que a peça desmente no painel.
       const doErp = await this.imagens.buscar(
-        [{ codigo, chave: null, url: produto.fotoUrl ?? null, legenda: rotulo }],
+        [
+          {
+            codigo,
+            chave: null,
+            url: produto.fotoUrl ?? null,
+            legenda: SEM_LEGENDA,
+          },
+        ],
         ELA_PEDIU,
       );
       if (doErp.fotos.length > 0) {
         return {
-          resposta: `${rotulo}\nNão tem foto nossa ainda — essa é a do ERP. Me diz "produto ${codigo}" e manda as suas.`,
+          resposta: `${ficha}\nNão tem foto nossa ainda — essa é a do ERP. Me diz "produto ${codigo}" e manda as suas.`,
           motivo: 'fotos_da_peca_so_erp',
           fotos: doErp.fotos,
         };
       }
       return {
-        resposta: `${rotulo}\nEssa peça não tem nenhuma foto. Me diz "produto ${codigo}" e manda as suas.`,
+        resposta: `${ficha}\nEssa peça não tem nenhuma foto. Me diz "produto ${codigo}" e manda as suas.`,
         motivo: 'fotos_da_peca_nenhuma',
       };
     }
@@ -196,23 +246,29 @@ export class FotosDePecaPeloWhatsappUseCase {
         codigo: `${codigo}-${i + 1}`,
         chave: f.arquivoId,
         url: null,
-        legenda: f.capa ? `${rotulo} — capa` : rotulo,
+        legenda: SEM_LEGENDA,
       })),
       ELA_PEDIU,
     );
 
-    // O RECORTE QUE ESCONDE DIZ QUE ESCONDEU. Mandar 10 de 14 e calar faria a
-    // peça parecer ter 10.
+    // ======================================================================
+    // A FICHA, E SÓ ELA — pedido do Lucas em 20/10.
+    //
+    // O "2 fotos, vão aí" saiu: as fotos chegam logo abaixo e se anunciam
+    // sozinhas. Contar o que a pessoa está vendo é conversa que não acrescenta
+    // — e esta mensagem ela repassa.
+    //
+    // COM UMA EXCEÇÃO, E ELA NÃO É TAGARELICE: quando nem todas couberam, a
+    // frase volta. Mandar 10 de 14 e calar faria a peça PARECER ter 10, e
+    // quem recebe não tem como desconfiar. O recorte que esconde diz que
+    // escondeu.
+    // ======================================================================
     const faltam = nossas.length - baixadas.fotos.length;
-    const quantas = `${nossas.length} ${nossas.length === 1 ? 'foto' : 'fotos'}`;
     return {
       resposta:
-        `${rotulo}\n${quantas}` +
-        (faltam > 0
-          ? `, e eu mando ${baixadas.fotos.length} aqui — as outras ${faltam} ficam no painel.`
-          : nossas.length === 1
-            ? ', vai aí.'
-            : ', vão aí — a capa é a primeira.'),
+        faltam > 0
+          ? `${ficha}\nSão ${nossas.length} fotos; mando ${baixadas.fotos.length} aqui, e as outras ${faltam} ficam no painel.`
+          : ficha,
       motivo: 'fotos_da_peca',
       fotos: baixadas.fotos,
     };
@@ -245,7 +301,16 @@ export class FotosDePecaPeloWhatsappUseCase {
     const m = t.match(RE_MIRAR);
     if (!m) return null;
 
-    const codigo = m[1].trim().toUpperCase();
+    return this.mirarCodigo(de, m[1].trim().toUpperCase());
+  }
+
+  /**
+   * MIRA UM CÓDIGO JÁ RESOLVIDO — o par de `asFotosDaPeca`.
+   *
+   * Separado pelo mesmo motivo: o código chega pelo regex ou pela dedução, e a
+   * resposta tem de ser a mesma pelos dois caminhos.
+   */
+  async mirarCodigo(de: string, codigo: string): Promise<RespostaFoto | null> {
     const produto = await this.produtos.findByCodigoErp(codigo);
     if (!produto?.id) {
       // NÃO MIRA NADA, e diz o código que tentou: "não achei" sem o código
@@ -276,6 +341,87 @@ export class FotosDePecaPeloWhatsappUseCase {
         'todas entram nessa peça.\nQuando terminar, me diz "pronto" ou o código da próxima.',
       motivo: 'peca_mirada',
     };
+  }
+
+  /**
+   * O TEXTO FALA DE FOTO E DE UMA PEÇA, mesmo sem casar com comando nenhum?
+   *
+   * ==========================================================================
+   * É A CATRACA DA DEDUÇÃO, e ela é de assunto, não de fórmula.
+   *
+   * Duas condições, as duas baratas e nenhuma delas uma palavra mágica: a
+   * mensagem fala em FOTO (ou imagem), que é o assunto, e traz algo com cara
+   * de código de peça. Sem as duas, não há o que deduzir — e "quanto custa o
+   * BR26318?" continua sendo pergunta da agente, porque não fala de foto.
+   *
+   * A existência da peça NÃO se decide aqui: formato não é existência, e quem
+   * confere é o ERP, em `pedido`.
+   * ==========================================================================
+   */
+  static pareceSobreFotoDePeca(texto: string | null | undefined): boolean {
+    const t = (texto ?? '').trim();
+    if (t.length === 0) return false;
+    return /\b(fotos?|imagens?|imagem)\b/i.test(t) && RE_CODIGO_NA_RESPOSTA.test(t);
+  }
+
+  /**
+   * VER OU MANDAR — a frase que nenhum padrão pegou.
+   *
+   * ==========================================================================
+   * O CASO QUE ABRIU ISTO, em 20/10/2026:
+   *
+   *   *"Me envia as fotos que você tem da referência BR26318"*
+   *
+   * é um PEDIDO, e a agente respondeu *"pode mandar, de qual catálogo é?"* —
+   * ofereceu catálogo a quem não ia mandar nada. O padrão não casou porque
+   * entre "fotos" e o código havia "que você tem da referência", e padrão
+   * nenhum vai cobrir todos os jeitos de dizer a mesma coisa.
+   *
+   * **O atalho do caso óbvio não pode ser a regra.** A mesma lição de hoje
+   * cedo, com outra roupa.
+   * ==========================================================================
+   *
+   * A ORDEM É: achar o código, CONFERIR NO ERP, e só então perguntar ao
+   * modelo. Conferindo antes, a pergunta é sobre uma peça que existe e o
+   * modelo só decide a direção da frase — que é o que ele faz bem.
+   *
+   * E sem provedor ela não fica muda: cai em VER, porque mandar as fotos de
+   * volta se desfaz sozinho e abrir destino errado arquiva a próxima foto na
+   * peça errada, calada.
+   */
+  async pedido(de: string, texto: string): Promise<RespostaFoto | null> {
+    const codigo = texto.match(RE_CODIGO_NA_RESPOSTA)?.[1]?.toUpperCase();
+    if (!codigo) return null;
+
+    const produto = await this.produtos.findByCodigoErp(codigo);
+    if (!produto?.id) return null;
+
+    const intencao = await this.intencaoSobreAPeca(texto, {
+      codigo,
+      descricao: produto.descricaoEtiqueta?.trim() ?? null,
+    });
+
+    if (intencao === 'ENVIAR') return this.mirarCodigo(de, codigo);
+    if (intencao === 'VER') return this.asFotosDaPeca(de, codigo);
+    return null;
+  }
+
+  /** O que o modelo disse, VALIDADO — nunca convertido. */
+  private async intencaoSobreAPeca(
+    texto: string,
+    peca: { codigo: string; descricao: string | null },
+  ): Promise<'VER' | 'ENVIAR' | null> {
+    if (!this.destino.disponivel()) return 'VER';
+
+    const cru = await this.destino.interpretarPedido(texto, peca);
+    if (cru === null) return 'VER';
+
+    const dito = (cru as { intencao?: unknown }).intencao;
+    // VALIDADO, E NAO CONVERTIDO: intencao inventada pelo modelo nao vira
+    // comando. Qualquer coisa fora das duas conhecidas e "nao decidi".
+    if (dito === 'VER') return 'VER';
+    if (dito === 'ENVIAR') return 'ENVIAR';
+    return null;
   }
 
   /**

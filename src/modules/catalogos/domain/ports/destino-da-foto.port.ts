@@ -36,4 +36,28 @@ export interface IInterpretadorDeDestino {
    * @returns o objeto que o modelo devolveu, ou `null` quando falhou.
    */
   interpretar(texto: string, opcoes: OpcoesDeDestino): Promise<unknown>;
+
+  /**
+   * VER OU MANDAR? — 20/10/2026, e pela MESMA razão da dedução acima.
+   *
+   * ========================================================================
+   * *"Me envia as fotos que você tem da referência BR26318"* é um PEDIDO, e
+   * foi lido como aviso de que uma foto ia chegar: a agente respondeu "pode
+   * mandar, de qual catálogo é?". Quem pediu não pediu nada daquilo.
+   *
+   * O padrão de texto não casou porque entre "fotos" e o código havia "que
+   * você tem da referência" — e padrão nenhum vai cobrir todas as maneiras de
+   * dizer a mesma coisa. **O atalho do caso óbvio não pode ser a regra.**
+   * ========================================================================
+   *
+   * A pergunta é fechada e sobre UMA peça que já foi encontrada no ERP: ela
+   * quer ver as fotos que existem, ou avisar que vai mandar fotos novas?
+   *
+   * Devolve o JSON cru. Quem valida é a aplicação — o provedor interpreta,
+   * nunca decide o que vale.
+   */
+  interpretarPedido(
+    texto: string,
+    peca: { codigo: string; descricao: string | null },
+  ): Promise<unknown>;
 }

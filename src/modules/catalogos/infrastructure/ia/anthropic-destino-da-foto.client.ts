@@ -55,6 +55,24 @@ export class AnthropicDestinoDaFotoClient implements IInterpretadorDeDestino {
     texto: string,
     opcoes: OpcoesDeDestino,
   ): Promise<unknown> {
+    return this.perguntarAoModelo(this.pergunta(texto, opcoes), 'Destino da foto');
+  }
+
+  /** VER ou MANDAR — a mesma chamada, outra pergunta. Ver o port. */
+  async interpretarPedido(
+    texto: string,
+    peca: { codigo: string; descricao: string | null },
+  ): Promise<unknown> {
+    return this.perguntarAoModelo(
+      this.perguntaDoPedido(texto, peca),
+      'Pedido sobre a peca',
+    );
+  }
+
+  private async perguntarAoModelo(
+    pergunta: string,
+    rotulo: string,
+  ): Promise<unknown> {
     const chave = this.config.get<string>('ANTHROPIC_API_KEY');
     if (!chave) return null;
 
@@ -73,15 +91,13 @@ export class AnthropicDestinoDaFotoClient implements IInterpretadorDeDestino {
             MODELO_PADRAO,
           ),
           max_tokens: MAX_TOKENS,
-          messages: [
-            { role: 'user', content: this.pergunta(texto, opcoes) },
-          ],
+          messages: [{ role: 'user', content: pergunta }],
         }),
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
 
       if (!resp.ok) {
-        this.logger.warn(`Destino da foto: ${resp.status}`);
+        this.logger.warn(`${rotulo}: ${resp.status}`);
         return null;
       }
 
@@ -94,9 +110,42 @@ export class AnthropicDestinoDaFotoClient implements IInterpretadorDeDestino {
     } catch (e) {
       // Indisponibilidade do provedor NAO pode fechar o canal: quem chama cai
       // no caminho deterministico.
-      this.logger.warn(`Destino da foto nao interpretado: ${(e as Error).message}`);
+      this.logger.warn(`${rotulo} nao interpretado: ${(e as Error).message}`);
       return null;
     }
+  }
+
+  /**
+   * A PERGUNTA É DE DUAS SAÍDAS, e por isso ela é fácil de acertar.
+   *
+   * A peça já foi encontrada no ERP antes de chegar aqui — então o modelo não
+   * decide QUAL peça, nem SE ela existe. Decide só a direção da frase: quem
+   * pede para ver, ou quem avisa que vai mandar.
+   */
+  private perguntaDoPedido(
+    texto: string,
+    peca: { codigo: string; descricao: string | null },
+  ): string {
+    return (
+      'Uma pessoa do estoque escreveu uma mensagem sobre a peça de código ' +
+      `"${peca.codigo}"` +
+      (peca.descricao ? `, que é "${peca.descricao}"` : '') +
+      '.\n\n' +
+      `Ela escreveu: "${texto}"\n\n` +
+      'Responda SÓ com JSON, sem texto em volta:\n' +
+      '{"intencao": "VER"|"ENVIAR"|"NENHUM"}\n\n' +
+      'Critério:\n' +
+      '- "VER" quando ela quer RECEBER as fotos que já existem dessa peça: ' +
+      '"me manda as fotos que você tem", "quais fotos tem", "quero ver as ' +
+      'imagens", "tem foto dessa referência?".\n' +
+      '- "ENVIAR" quando ela avisa que VAI MANDAR fotos novas para essa peça: ' +
+      '"vou mandar as fotos", "as próximas são dessa", "sobe essas aqui nela".\n' +
+      '- "NENHUM" quando a mensagem não é sobre as fotos dessa peça — preço, ' +
+      'estoque, outro assunto, ou algo que não dá para decidir.\n\n' +
+      'NA DÚVIDA entre VER e ENVIAR, responda "VER": mandar as fotos de volta ' +
+      'se desfaz sozinho, e abrir destino errado faz a próxima foto ser ' +
+      'arquivada na peça errada, calada.'
+    );
   }
 
   private pergunta(texto: string, opcoes: OpcoesDeDestino): string {

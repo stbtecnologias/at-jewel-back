@@ -31,6 +31,9 @@ describe('as fotos da peça pelo WhatsApp', () => {
     id: 'p-1',
     codigoErp: 'BR26396',
     descricaoEtiqueta: 'BRINCO DTS 0.25 CTS OB 18K',
+    // O VALOR entra na legenda desde 20/10 — pedido do Lucas, que viu a foto
+    // chegar marcada "capa" e sem o preço, que é o que ele usa.
+    valorVenda: 18500,
   };
   const IMAGEM = { url: 'http://waha/files/a.jpg', mimetype: 'image/jpeg' };
 
@@ -43,7 +46,11 @@ describe('as fotos da peça pelo WhatsApp', () => {
   let whatsapp: { baixarMidia: jest.Mock };
   let imagens: { buscar: jest.Mock };
   /** O interpretador MUDO é o padrão: o atalho determinístico resolve. */
-  let destino: { disponivel: jest.Mock; interpretar: jest.Mock };
+  let destino: {
+    disponivel: jest.Mock;
+    interpretar: jest.Mock;
+    interpretarPedido: jest.Mock;
+  };
   let sessao: SessaoCatalogoService;
   let useCase: FotosDePecaPeloWhatsappUseCase;
 
@@ -78,6 +85,7 @@ describe('as fotos da peça pelo WhatsApp', () => {
     destino = {
       disponivel: jest.fn(() => false),
       interpretar: jest.fn().mockResolvedValue(null),
+      interpretarPedido: jest.fn().mockResolvedValue(null),
     };
     sessao = new SessaoCatalogoService();
 
@@ -261,9 +269,63 @@ describe('as fotos da peça pelo WhatsApp', () => {
 
       const r = await useCase.quais(DE, 'quais fotos tem o BR26396?');
 
-      expect(r?.resposta).toContain('3 fotos');
-      expect(r?.resposta).toContain('capa é a primeira');
       expect(r?.fotos).toHaveLength(3);
+    });
+
+    // A FICHA, E SÓ ELA — 20/10: *"tira isso de 'vão aí', deixe apenas as
+    // fotos"*. As imagens chegam logo abaixo e se anunciam sozinhas.
+    it('o texto é só a ficha — nada de "2 fotos, vão aí"', async () => {
+      fotos.listar.mockResolvedValue(TRES);
+      imagens.buscar.mockResolvedValue(baixadas(3));
+
+      const r = await useCase.quais(DE, 'quais fotos tem o BR26396?');
+
+      expect(r?.resposta?.split('\n')).toHaveLength(1);
+      expect(r?.resposta).not.toContain('vão aí');
+      expect(r?.resposta).not.toContain('3 fotos');
+    });
+
+    // ========================================================================
+    // O TEXTO DESCREVE, AS FOTOS VÃO LIMPAS — pedido do Lucas em 20/10.
+    //
+    // A legenda vinha em TODAS as imagens, e era a mesma frase: duas fotos da
+    // mesma peça chegavam carimbadas igual. Para quem recebe isso é ruído, e é
+    // foto que ela vai repassar para cliente.
+    // ========================================================================
+    it('as fotos vão SEM legenda — a descrição é do texto, uma vez só', async () => {
+      fotos.listar.mockResolvedValue(TRES);
+      imagens.buscar.mockResolvedValue(baixadas(3));
+
+      await useCase.quais(DE, 'quais fotos tem o BR26396?');
+
+      const pedidos = imagens.buscar.mock.calls[0][0] as { legenda: string }[];
+      for (const p of pedidos) expect(p.legenda).toBe('');
+    });
+
+    // A ORDEM PEDIDA: referência — descrição — valor, e então as fotos.
+    it('e o TEXTO leva referência, descrição e valor, sem a palavra "capa"', async () => {
+      fotos.listar.mockResolvedValue(TRES);
+      imagens.buscar.mockResolvedValue(baixadas(3));
+
+      const r = await useCase.quais(DE, 'quais fotos tem o BR26396?');
+
+      // O ` `: `toLocaleString` separa "R$" do número com espaço que NÃO
+      // quebra linha. Comparar com espaço comum falha por um caractere
+      // invisível — já perdi tempo com isso aqui.
+      const primeira = r?.resposta?.split('\n')[0].replace(/ /g, ' ');
+      expect(primeira).toBe('BR26396 — BRINCO DTS 0.25 CTS OB 18K — R$ 18.500');
+      expect(r?.resposta).not.toContain('capa');
+    });
+
+    it('peça sem valor sai sem a linha do preço, e não com "R$ 0"', async () => {
+      produtos.findByCodigoErp.mockResolvedValue({ ...PECA, valorVenda: 0 });
+      fotos.listar.mockResolvedValue(TRES);
+      imagens.buscar.mockResolvedValue(baixadas(3));
+
+      const r = await useCase.quais(DE, 'quais fotos tem o BR26396?');
+
+      expect(r?.resposta).toContain('BR26396 — BRINCO DTS 0.25 CTS OB 18K');
+      expect(r?.resposta).not.toContain('R$');
     });
 
     it('o que NÃO coube é dito — o recorte que esconde se anuncia', async () => {
@@ -563,6 +625,121 @@ describe('as fotos da peça pelo WhatsApp', () => {
 
       expect(r?.motivo).toBe('foto_de_peca_falhou');
       expect(r?.resposta).toContain('BR26396');
+    });
+  });
+
+  // ==========================================================================
+  // A FRASE QUE NENHUM PADRÃO PEGOU — 20/10/2026.
+  //
+  // *"Me envia as fotos que você tem da referência BR26318"* é um PEDIDO, e a
+  // agente respondeu "pode mandar, de qual catálogo é?". Entre "fotos" e o
+  // código havia "que você tem da referência", e o padrão quer os dois
+  // colados.
+  //
+  // O conserto não é um padrão maior: é perguntar ao modelo, depois de
+  // CONFERIR a peça no ERP.
+  // ==========================================================================
+  describe('deduzir quando o padrão não pega', () => {
+    const FRASE = 'Me envia as fotos que você tem da referência BR26396';
+
+    const TRES = [
+      { id: 'f-1', arquivoId: 'produtos/BR26396/a.jpg', capa: true },
+      { id: 'f-2', arquivoId: 'produtos/BR26396/b.jpg', capa: false },
+      { id: 'f-3', arquivoId: 'produtos/BR26396/c.jpg', capa: false },
+    ];
+
+    it('a frase do caso real NÃO casa com os padrões — era por isso que caía no catálogo', () => {
+      expect(FotosDePecaPeloWhatsappUseCase.pareceComando(FRASE)).toBe(false);
+    });
+
+    it('mas ela FALA de foto e de peça, e isso a catraca pega', () => {
+      expect(FotosDePecaPeloWhatsappUseCase.pareceSobreFotoDePeca(FRASE)).toBe(true);
+    });
+
+    // A CATRACA É DE ASSUNTO, E NÃO DE FÓRMULA: sem a palavra foto não há o
+    // que deduzir, e a pergunta de preço continua sendo da agente.
+    it.each([
+      ['quanto custa o BR26396?', false],
+      ['me manda umas fotos aí', false],
+      ['tem foto dessa referência BR26396?', true],
+      ['as imagens do BR26396, por favor', true],
+    ])('catraca em "%s" → %s', (texto, esperado) => {
+      expect(FotosDePecaPeloWhatsappUseCase.pareceSobreFotoDePeca(texto as string)).toBe(
+        esperado,
+      );
+    });
+
+    it('o modelo diz VER, e as fotos vão', async () => {
+      destino.disponivel.mockReturnValue(true);
+      destino.interpretarPedido.mockResolvedValue({ intencao: 'VER' });
+      fotos.listar.mockResolvedValue(TRES);
+      imagens.buscar.mockResolvedValue({
+        fotos: TRES.map((_, i) => ({
+          codigo: `BR26396-${i + 1}`,
+          legenda: 'x',
+          conteudo: Buffer.from('jpeg'),
+          mime: 'image/jpeg',
+        })),
+        tinhamUrl: 3,
+        cortadas: 0,
+      });
+
+      const r = await useCase.pedido(DE, FRASE);
+
+      expect(r?.motivo).toBe('fotos_da_peca');
+      expect(r?.fotos).toHaveLength(3);
+      // VER NÃO MIRA: a próxima foto continua sendo do catálogo.
+      expect(useCase.temPecaMirada(DE)).toBe(false);
+    });
+
+    it('o modelo diz ENVIAR, e a peça é mirada', async () => {
+      destino.disponivel.mockReturnValue(true);
+      destino.interpretarPedido.mockResolvedValue({ intencao: 'ENVIAR' });
+
+      const r = await useCase.pedido(DE, 'as próximas fotos são do BR26396');
+
+      expect(r?.motivo).toBe('peca_mirada');
+      expect(useCase.temPecaMirada(DE)).toBe(true);
+    });
+
+    // O FORMATO NÃO É A EXISTÊNCIA: quem confere é o ERP, e antes do modelo.
+    it('código que não existe no ERP não vira pergunta ao modelo', async () => {
+      destino.disponivel.mockReturnValue(true);
+      produtos.findByCodigoErp.mockResolvedValue(null);
+
+      expect(await useCase.pedido(DE, 'fotos da referência ZZ99999')).toBeNull();
+      expect(destino.interpretarPedido).not.toHaveBeenCalled();
+    });
+
+    it('intenção inventada pelo modelo não vira comando', async () => {
+      destino.disponivel.mockReturnValue(true);
+      destino.interpretarPedido.mockResolvedValue({ intencao: 'APAGAR' });
+
+      expect(await useCase.pedido(DE, FRASE)).toBeNull();
+      expect(useCase.temPecaMirada(DE)).toBe(false);
+    });
+
+    // SEM PROVEDOR ELA NÃO EMUDECE — e cai para o lado que se desfaz sozinho.
+    it('sem provedor, cai em VER', async () => {
+      destino.disponivel.mockReturnValue(false);
+      fotos.listar.mockResolvedValue([]);
+      imagens.buscar.mockResolvedValue({ fotos: [], tinhamUrl: 0, cortadas: 0 });
+
+      const r = await useCase.pedido(DE, FRASE);
+
+      expect(r?.motivo).toBe('fotos_da_peca_nenhuma');
+      expect(useCase.temPecaMirada(DE)).toBe(false);
+    });
+
+    it('provedor fora do ar também cai em VER, e não derruba o canal', async () => {
+      destino.disponivel.mockReturnValue(true);
+      destino.interpretarPedido.mockResolvedValue(null);
+      fotos.listar.mockResolvedValue([]);
+      imagens.buscar.mockResolvedValue({ fotos: [], tinhamUrl: 0, cortadas: 0 });
+
+      const r = await useCase.pedido(DE, FRASE);
+
+      expect(r?.motivo).toBe('fotos_da_peca_nenhuma');
     });
   });
 });
