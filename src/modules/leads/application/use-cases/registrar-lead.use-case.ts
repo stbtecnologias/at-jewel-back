@@ -5,8 +5,6 @@ import {
   normalizarTelefone,
   variantesTelefone,
 } from '../../../clientes/application/utils/normalizadores';
-import { CLIENTE_REPOSITORY } from '../../../clientes/domain/ports/injection-tokens';
-import type { IClienteRepository } from '../../../clientes/domain/ports/repositories/cliente-repository.port';
 import { LEAD_REPOSITORY } from '../../domain/ports/injection-tokens';
 import { AvisarGestaoDeLeadUseCase } from './avisar-gestao-de-lead.use-case';
 import { EncaminharPelaCarteiraUseCase } from './encaminhar-pela-carteira.use-case';
@@ -81,8 +79,9 @@ export class RegistrarLeadUseCase {
   constructor(
     @Inject(LEAD_REPOSITORY)
     private readonly leads: ILeadRepository,
-    @Inject(CLIENTE_REPOSITORY)
-    private readonly clientes: IClienteRepository,
+    // O repositorio de clientes SAIU daqui no RF41 (20/10/2026): com a queda
+    // para `telefone_1_hash` dentro do use case de busca, este caso de uso nao
+    // fala mais com a tabela de clientes — ele pergunta a quem sabe perguntar.
     private readonly buscarClientePorWhatsapp: BuscarClientePorWhatsappUseCase,
     private readonly avisarGestao: AvisarGestaoDeLeadUseCase,
     private readonly encaminharPelaCarteira: EncaminharPelaCarteiraUseCase,
@@ -261,29 +260,32 @@ export class RegistrarLeadUseCase {
   }
 
   /**
-   * O lookup do cliente tenta `whatsapp_hash` (via use case existente) e, se
-   * nao achar, `telefone1_hash`.
+   * O lookup do cliente, inteiro dentro do `BuscarClientePorWhatsappUseCase`.
    *
-   * O segundo passo existe porque `clientes_perfil` — onde mora o
-   * `whatsapp_hash` — SO NASCE se o cliente tiver WhatsApp no cadastro. Quem
-   * veio do Safira com `telefone1` e sem WhatsApp nao seria encontrado nunca,
-   * ainda que o numero fosse o mesmo.
+   * ========================================================================
+   * A QUEDA PARA `telefone_1_hash` SAIU DAQUI — RF41, 20/10/2026.
+   *
+   * Ela nasceu certa e no lugar errado: `clientes_perfil`, onde mora o
+   * `whatsapp_hash`, SO NASCE se o cliente tiver WhatsApp no cadastro, e quem
+   * veio do Safira com `telefone1` e sem WhatsApp nao seria achado nunca. So
+   * que estando AQUI, os outros quatro chamadores do use case nao herdavam —
+   * inclusive o `LerConversaWhatsappUseCase`, que e quem decide se a conversa
+   * vira RELATO do cliente ou LEAD. O lead nascia ja sabendo de quem era, e
+   * nascia do mesmo jeito.
+   *
+   * E ela ADIVINHAVA: `buscarPorTelefone1Hash` devolve o cliente mais antigo,
+   * e a coluna nao e unica desde a migracao 36. Agora a decisao e do use
+   * case, que trata N > 1 como ambiguidade.
+   * ========================================================================
    */
   private async buscarCliente(
     variantes: string[],
   ): Promise<{ id: string; nome: string } | null> {
     for (const variante of variantes) {
-      const porWhatsapp = await this.buscarClientePorWhatsapp.execute(variante);
+      const cliente = await this.buscarClientePorWhatsapp.execute(variante);
       // `id` e opcional na entidade de dominio (so existe depois de persistida).
       // Sem ele nao ha o que vincular — segue para a proxima variante.
-      if (porWhatsapp?.id)
-        return { id: porWhatsapp.id, nome: porWhatsapp.nome };
-
-      const porTelefone = await this.clientes.buscarPorTelefone1Hash(
-        hashField(variante),
-      );
-      if (porTelefone?.id)
-        return { id: porTelefone.id, nome: porTelefone.nome };
+      if (cliente?.id) return { id: cliente.id, nome: cliente.nome };
     }
     return null;
   }

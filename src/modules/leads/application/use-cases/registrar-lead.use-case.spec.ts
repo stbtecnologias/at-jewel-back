@@ -1,6 +1,5 @@
 import { randomBytes } from 'crypto';
 import { BuscarClientePorWhatsappUseCase } from '../../../clientes/application/use-cases/buscar-cliente-por-whatsapp.use-case';
-import { IClienteRepository } from '../../../clientes/domain/ports/repositories/cliente-repository.port';
 import type {
   ILeadRepository,
   Lead,
@@ -55,7 +54,6 @@ describe('RegistrarLeadUseCase', () => {
   const ORIGINAL_ENV = { ...process.env };
   let useCase: RegistrarLeadUseCase;
   let leads: jest.Mocked<ILeadRepository>;
-  let clientes: jest.Mocked<IClienteRepository>;
   let buscarCliente: jest.Mocked<BuscarClientePorWhatsappUseCase>;
   let avisarGestao: jest.Mocked<AvisarGestaoDeLeadUseCase>;
   let encaminharPelaCarteira: jest.Mocked<EncaminharPelaCarteiraUseCase>;
@@ -66,9 +64,6 @@ describe('RegistrarLeadUseCase', () => {
     process.env.ENCRYPTION_KEY = randomBytes(32).toString('hex');
 
     leads = makeLeadRepo();
-    clientes = {
-      buscarPorTelefone1Hash: jest.fn().mockResolvedValue(null),
-    } as unknown as jest.Mocked<IClienteRepository>;
     buscarCliente = {
       execute: jest.fn().mockResolvedValue(null),
     } as unknown as jest.Mocked<BuscarClientePorWhatsappUseCase>;
@@ -87,7 +82,6 @@ describe('RegistrarLeadUseCase', () => {
 
     useCase = new RegistrarLeadUseCase(
       leads,
-      clientes,
       buscarCliente,
       avisarGestao,
       encaminharPelaCarteira,
@@ -165,12 +159,15 @@ describe('RegistrarLeadUseCase', () => {
     );
   });
 
-  it('acha o cliente por telefone1 quando ele nao tem WhatsApp no cadastro', async () => {
-    // `clientes_perfil` — onde mora o whatsapp_hash — so nasce se o cliente
-    // tiver WhatsApp. Sem este fallback, quem veio do Safira so com telefone1
-    // jamais seria reconhecido.
-    buscarCliente.execute.mockResolvedValue(null);
-    clientes.buscarPorTelefone1Hash.mockResolvedValue({
+  // A QUEDA PARA `telefone_1_hash` SAIU DAQUI — RF41, 20/10/2026.
+  //
+  // `clientes_perfil` — onde mora o whatsapp_hash — so nasce se o cliente
+  // tiver WhatsApp, e quem veio do Safira so com telefone1 nao seria achado
+  // nunca. Isso continua valendo; o que mudou e QUEM resolve: a queda agora e
+  // do `BuscarClientePorWhatsappUseCase`, para os cinco chamadores herdarem.
+  // O comportamento de la esta coberto no spec dele, inclusive a ambiguidade.
+  it('reconhece quem o use case de busca achou, venha do WhatsApp ou do cadastro', async () => {
+    buscarCliente.execute.mockResolvedValue({
       id: 'cli-7',
       nome: 'Helena',
     } as never);
@@ -241,7 +238,10 @@ describe('RegistrarLeadUseCase', () => {
     /* Quem trava a repeticao passa a ser o CARIMBO, e nao o estado: no funil
      * novo nao existe estado para "a gestao ja foi avisada". */
     it('NAO avisa de novo se o lead ja subiu — o atwpp repete o sinal a cada mensagem', async () => {
-      const jaSubiu = { estado: 'NOVO' as const, direcionadoGestaoEm: new Date('2026-09-28T10:00:00Z') };
+      const jaSubiu = {
+        estado: 'NOVO' as const,
+        direcionadoGestaoEm: new Date('2026-09-28T10:00:00Z'),
+      };
       leads.buscarAbertoPorHash.mockResolvedValue(leadFake(jaSubiu));
       leads.atualizar.mockResolvedValue(leadFake(jaSubiu));
 
@@ -283,7 +283,9 @@ describe('RegistrarLeadUseCase', () => {
    */
   describe('quando a cliente ja tem dona', () => {
     beforeEach(() => {
-      leads.buscarAbertoPorHash.mockResolvedValue(leadFake({ nome: 'Ana Livia' }));
+      leads.buscarAbertoPorHash.mockResolvedValue(
+        leadFake({ nome: 'Ana Livia' }),
+      );
       leads.buscarPorId.mockResolvedValue(leadFake({ nome: 'Ana Livia' }));
     });
 
@@ -296,7 +298,10 @@ describe('RegistrarLeadUseCase', () => {
         avisada: true,
       });
 
-      await useCase.execute({ whatsapp: '85999990001', prontoParaEncaminhar: true });
+      await useCase.execute({
+        whatsapp: '85999990001',
+        prontoParaEncaminhar: true,
+      });
 
       expect(avisarGestao.avisarEncaminhadoPelaCarteira).toHaveBeenCalledWith(
         expect.anything(),
@@ -319,7 +324,10 @@ describe('RegistrarLeadUseCase', () => {
         motivo: 'está inativa',
       });
 
-      await useCase.execute({ whatsapp: '85999990001', prontoParaEncaminhar: true });
+      await useCase.execute({
+        whatsapp: '85999990001',
+        prontoParaEncaminhar: true,
+      });
 
       expect(avisarGestao.avisarDonaIndisponivel).toHaveBeenCalledWith(
         expect.anything(),
@@ -331,7 +339,10 @@ describe('RegistrarLeadUseCase', () => {
 
     /** Sem dona, o caminho de sempre: a gestao escolhe. */
     it('sem dona, a gestao continua escolhendo', async () => {
-      await useCase.execute({ whatsapp: '85999990001', prontoParaEncaminhar: true });
+      await useCase.execute({
+        whatsapp: '85999990001',
+        prontoParaEncaminhar: true,
+      });
 
       expect(avisarGestao.execute).toHaveBeenCalledTimes(1);
       expect(avisarGestao.avisarEncaminhadoPelaCarteira).not.toHaveBeenCalled();
@@ -351,7 +362,10 @@ describe('RegistrarLeadUseCase', () => {
         avisada: false,
       });
 
-      await useCase.execute({ whatsapp: '85999990001', prontoParaEncaminhar: true });
+      await useCase.execute({
+        whatsapp: '85999990001',
+        prontoParaEncaminhar: true,
+      });
 
       expect(leads.buscarPorId).toHaveBeenCalled();
     });
