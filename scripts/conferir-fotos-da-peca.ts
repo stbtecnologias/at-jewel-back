@@ -140,11 +140,73 @@ async function main() {
       `${naLista?.fotoArquivoId}`,
     );
 
+    // ======================================================================
+    // A RAJADA — dez fotos de uma vez, pedido do Lucas em 20/10/2026.
+    //
+    // O WhatsApp não manda álbum: dez imagens são dez eventos, e eles chegam
+    // JUNTOS. Numa peça vazia não há linha para o lock travar, então as dez
+    // podem ler "não tem capa" ao mesmo tempo.
+    //
+    // Sem o conserto, o índice parcial recusa as perdedoras e a foto SE PERDE
+    // — a pessoa manda dez e entram três, sem saber quais.
+    // ======================================================================
+    console.log('\nDez de uma vez, na peça vazia');
+    for (const f of await repo.listar(b.id)) {
+      await uc.excluir(b.id, f.id).catch(() => undefined);
+    }
+    const rajada = await Promise.all(
+      Array.from({ length: 10 }, (_, i) =>
+        repo
+          .adicionar({
+            produtoId: b.id,
+            arquivoId: `produtos/RAJADA/${i}.jpg`,
+            mime: 'image/jpeg',
+            bytes: 10,
+            origem: 'WHATSAPP',
+            enviadoPor: 'Conferencia',
+          })
+          .then(() => true)
+          .catch(() => false),
+      ),
+    );
+    const daRajada = await repo.listar(b.id);
+    conferir(
+      'as dez entraram',
+      rajada.filter(Boolean).length === 10 && daRajada.length === 10,
+      `${rajada.filter(Boolean).length} aceitas, ${daRajada.length} na peça`,
+    );
+    conferir(
+      'e UMA capa, nem zero nem duas',
+      daRajada.filter((f) => f.capa).length === 1,
+      `${daRajada.filter((f) => f.capa).length} capa(s)`,
+    );
+    conferir(
+      'sem posição repetida',
+      new Set(daRajada.map((f) => f.posicao)).size === daRajada.length,
+      daRajada
+        .map((f) => f.posicao)
+        .sort((x, y) => x - y)
+        .join(','),
+    );
+
     console.log('\nO que a peça recusa');
+    // AUTOSSUFICIENTE: a rajada acima limpou a peça B, então a linha que este
+    // teste duplica é criada aqui mesmo. Teste que depende do estado deixado
+    // por outro passa a mentir quando alguém reordena os passos — foi o que
+    // aconteceu na primeira versão.
+    const repetida = 'produtos/REPETIDA/x.jpg';
+    await repo.adicionar({
+      produtoId: b.id,
+      arquivoId: repetida,
+      mime: 'image/jpeg',
+      bytes: 20,
+      origem: 'PAINEL',
+      enviadoPor: 'Conferencia',
+    });
     try {
       await repo.adicionar({
         produtoId: b.id,
-        arquivoId: chave,
+        arquivoId: repetida,
         mime: 'image/jpeg',
         bytes: 20,
         origem: 'PAINEL',

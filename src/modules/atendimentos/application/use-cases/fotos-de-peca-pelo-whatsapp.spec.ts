@@ -137,6 +137,22 @@ describe('as fotos da peça pelo WhatsApp', () => {
       expect(useCase.temPecaMirada(DE)).toBe(false);
     });
 
+    /**
+     * O FECHO NÃO PODE FECHAR PORTA QUE NÃO PRECISA — reparo do Lucas em
+     * 20/10/2026, olhando o próprio teste.
+     *
+     * "voltam a ser do catálogo" sugeria que a conversa de peça tinha acabado.
+     * Não acabou: a próxima foto pode ser de outra joia, e é só dizer qual.
+     */
+    it('o fecho oferece as DUAS saídas: catálogo ou outra peça', async () => {
+      await useCase.mirar(DE, 'produto BR26396');
+
+      const r = await useCase.mirar(DE, 'pronto');
+
+      expect(r?.resposta).toContain('catálogo');
+      expect(r?.resposta).toContain('outra peça');
+    });
+
     it('"pronto" encerra — e só responde se havia algo mirado', async () => {
       expect(await useCase.mirar(DE, 'pronto')).toBeNull();
 
@@ -453,18 +469,38 @@ describe('as fotos da peça pelo WhatsApp', () => {
       );
     });
 
-    /* A RAJADA: uma mirada, N fotos. É o pedido literal do Lucas. */
-    it('a rajada inteira vai para a mesma peça, e a contagem sobe', async () => {
+    /**
+     * A RAJADA: uma mirada, N fotos. É o pedido literal do Lucas — *"o
+     * importante é o que ela mandar, você faz um jeito para entrar tudo"*.
+     *
+     * TODAS ENTRAM. O que se corta é a TAGARELICE: `LimiteDeEnvioService`
+     * para em 30 mensagens por hora para o mesmo destino, e uma confirmação
+     * por foto faria a agente emudecer no meio de uma rajada grande — e a
+     * mensagem cortada seria qualquer uma, inclusive a resposta de outra
+     * pergunta.
+     *
+     * Então: confirma a primeira, depois a cada cinco. O total vem no
+     * "pronto".
+     */
+    it('a rajada inteira entra, e a confirmação sai a cada cinco', async () => {
       await useCase.mirar(DE, 'produto BR26396');
 
-      const primeira = await mandarFoto();
-      await mandarFoto();
-      const terceira = await mandarFoto();
+      const r: (string | null | undefined)[] = [];
+      for (let i = 0; i < 12; i++) r.push((await mandarFoto())?.resposta);
 
-      expect(fotos.adicionar).toHaveBeenCalledTimes(3);
-      expect(primeira?.resposta).toContain('Primeira foto');
-      expect(primeira?.resposta).toContain('capa');
-      expect(terceira?.resposta).toContain('3ª foto');
+      // AS DOZE ENTRARAM — isto é o que não pode falhar.
+      expect(fotos.adicionar).toHaveBeenCalledTimes(12);
+
+      expect(r[0]).toContain('Primeira foto');
+      expect(r[0]).toContain('a cada cinco');
+      expect(r[4]).toContain('5 fotos');
+      expect(r[9]).toContain('10 fotos');
+      // As do meio não falam: o recibo do WhatsApp já diz que chegou.
+      expect(r[1]).toBeNull();
+      expect(r[7]).toBeNull();
+
+      // Doze fotos custaram TRÊS mensagens, e não doze.
+      expect(r.filter((x) => x !== null).length).toBe(3);
     });
 
     it('o que foi recusado é DITO, com o motivo', async () => {

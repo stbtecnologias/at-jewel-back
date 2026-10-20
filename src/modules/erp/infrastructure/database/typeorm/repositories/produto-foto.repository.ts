@@ -41,14 +41,26 @@ export class ProdutoFotoRepository implements IProdutoFotoRepository {
     return this.dataSource.transaction(async (m) => {
       const repo = m.getRepository(ProdutoFotoOrmEntity);
 
-      // `pessimistic_write` na peca inteira: e o que serializa a rajada. O
-      // lock e por linha de `produto_fotos`, entao a primeira foto de uma peca
-      // nova nao tem o que travar — e ai o indice unico e quem decide.
-      const existentes = await repo
-        .createQueryBuilder('f')
-        .setLock('pessimistic_write')
-        .where('f.produto_id = :produtoId', { produtoId: nova.produtoId })
-        .getMany();
+      // ==================================================================
+      // O LOCK E NA PECA, E NAO NAS FOTOS DELA — 20/10/2026.
+      //
+      // A primeira versao travava as linhas de `produto_fotos`. Serializava a
+      // rajada quando ja havia foto — e nao serializava NADA na peca vazia,
+      // porque nao havia linha para travar.
+      //
+      // Medido com dez insercoes simultaneas numa peca vazia: as posicoes
+      // sairam `0,1,1,1,1,1,1,1,1,2`. Oito fotos na mesma posicao.
+      //
+      // `produtos` sempre tem a linha. Travando ELA, a capa e a posicao saem
+      // certas no vazio e no cheio.
+      // ==================================================================
+      await m.query('SELECT 1 FROM produtos WHERE id = $1 FOR UPDATE', [
+        nova.produtoId,
+      ]);
+
+      const existentes = await repo.find({
+        where: { produtoId: nova.produtoId },
+      });
 
       const temCapa = existentes.some((f) => f.capa);
       const ultima = existentes.reduce((n, f) => Math.max(n, f.posicao), -1);
@@ -63,7 +75,29 @@ export class ProdutoFotoRepository implements IProdutoFotoRepository {
         capa: !temCapa,
         posicao: ultima + 1,
       });
-      return paraDominio(await repo.save(linha));
+
+      try {
+        return paraDominio(await repo.save(linha));
+      } catch (e) {
+        // ==================================================================
+        // A CORRIDA DA PRIMEIRA FOTO — 20/10/2026.
+        //
+        // O lock acima serializa a rajada, MAS so quando ja ha linha para
+        // travar. Na peca vazia nao ha: dez fotos chegando juntas pelo
+        // WhatsApp — dez eventos separados — podem ler "nao tem capa" ao
+        // mesmo tempo e tentar nascer capa todas.
+        //
+        // Ai o indice `idx_produto_fotos_uma_capa` recusa as perdedoras, e sem
+        // isto a foto SE PERDIA com um erro — a pessoa mandou dez e entraram
+        // tres, sem saber quais.
+        //
+        // Perder a corrida da capa nao e erro: e so nao ser a primeira. Entao
+        // a foto entra como as outras.
+        // ==================================================================
+        if (!linha.capa || !ehCapaDuplicada(e)) throw e;
+        linha.capa = false;
+        return paraDominio(await repo.save(linha));
+      }
     });
   }
 
@@ -122,6 +156,12 @@ export class ProdutoFotoRepository implements IProdutoFotoRepository {
     });
     return new Map(linhas.map((l) => [l.produtoId, l.arquivoId]));
   }
+}
+
+/** O Postgres recusou por JA EXISTIR capa nesta peca? */
+function ehCapaDuplicada(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  return /idx_produto_fotos_uma_capa/.test(msg);
 }
 
 function paraDominio(l: ProdutoFotoOrmEntity): FotoDaPeca {

@@ -111,8 +111,18 @@ export const LIMITE_BYTES = 12 * 1024 * 1024;
  */
 export const LIMITE_FOTO_PECA_BYTES = 16 * 1024 * 1024;
 
-/** Teto de fotos por peca. Provisorio, para dimensionar o disco. */
-export const MAX_FOTOS_POR_PECA = 20;
+/**
+ * Teto de fotos por peca — GUARDA-CORPO, e nao regra.
+ *
+ * Nasceu 20 em 20/10/2026, "so para dimensionar". No mesmo dia o Lucas
+ * corrigiu: *"10 foi uma estimativa, pode ser mais; o importante e o que ela
+ * mandar voce faz um jeito para entrar tudo"*.
+ *
+ * Entao subiu para 50 — folgado o bastante para nao atrapalhar ninguem, e
+ * ainda assim um numero, porque sem teto nenhum um defeito enche o bucket
+ * calado. Quando ele corta, a resposta DIZ que cortou.
+ */
+export const MAX_FOTOS_POR_PECA = 50;
 
 export const MIMES_IMAGEM = ['image/jpeg', 'image/png', 'image/webp'] as const;
 

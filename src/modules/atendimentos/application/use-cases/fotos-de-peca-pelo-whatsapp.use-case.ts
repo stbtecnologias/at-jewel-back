@@ -232,8 +232,12 @@ export class FotosDePecaPeloWhatsappUseCase {
       // é conversa normal e tem de seguir para a agente.
       if (!this.sessao.pecaMirada(de)) return null;
       this.sessao.esquecerPeca(de);
+      // NAO FECHA PORTA QUE NAO PRECISA FECHAR — reparo do Lucas em 20/10.
+      // "voltam a ser do catalogo" sugere que acabou a conversa de peca, e nao
+      // acabou: a proxima foto pode ser de outra joia, e e so dizer qual.
       return {
-        resposta: 'Fechado — as próximas fotos voltam a ser do catálogo.',
+        resposta:
+          'Fechado. A próxima foto eu pergunto para onde vai — catálogo ou outra peça.',
         motivo: 'peca_encerrada',
       };
     }
@@ -352,7 +356,8 @@ export class FotosDePecaPeloWhatsappUseCase {
       resposta:
         `${entraram.length === 1 ? 'Anexada' : `${entraram.length} anexadas`} em ` +
         `${peca.codigoErp} — ela tem ${total} agora.${faltou}\n` +
-        'As próximas fotos vão para ela também. "pronto" quando terminar.',
+        'As próximas vão para ela também. Quando terminar, me diz "pronto" — ' +
+        'ou o código de outra peça.',
       motivo: 'anexo_na_peca',
     };
   }
@@ -463,17 +468,40 @@ export class FotosDePecaPeloWhatsappUseCase {
         };
       }
 
-      // A CONTAGEM EM TODA RESPOSTA, e é o que dá para conferir no fim da
-      // rajada: dez fotos mandadas e "10ª foto" na última é a prova de que
-      // nenhuma se perdeu no caminho.
-      const ordinal = `${r.total}ª foto`;
-      return {
-        resposta:
-          r.total === 1
-            ? `Primeira foto de ${peca.codigoErp} — ela já é a capa.`
-            : `${ordinal} de ${peca.codigoErp}.`,
-        motivo: 'foto_de_peca_guardada',
-      };
+      // ====================================================================
+      // UMA CONFIRMAÇÃO POR FOTO ESTOURA O LIMITE DE ENVIO — 20/10/2026.
+      //
+      // `LimiteDeEnvioService` corta em **30 mensagens por hora** para o mesmo
+      // destino. Trinta fotos numa rajada viram trinta confirmações, e a
+      // trigésima primeira mensagem — qualquer uma, inclusive a resposta de
+      // outra pergunta — não sai. A agente emudece sem ninguém entender.
+      //
+      // O Lucas pediu que entre tudo, "do jeito que for". Entra: o que se
+      // corta é a TAGARELICE, não a foto.
+      //
+      // Então confirma a primeira, depois a cada cinco — e o total vem no
+      // "pronto". A primeira resposta DIZ essa regra, senão o silêncio entre
+      // a 2ª e a 5ª parece engasgo.
+      // ====================================================================
+      if (r.total === 1) {
+        return {
+          resposta:
+            `Primeira foto de ${peca.codigoErp} — ela já é a capa.\n` +
+            'Pode mandar quantas quiser; eu confirmo a cada cinco e dou o ' +
+            'total quando você disser "pronto".',
+          motivo: 'foto_de_peca_guardada',
+        };
+      }
+      if (r.total % 5 === 0) {
+        return {
+          resposta: `${r.total} fotos em ${peca.codigoErp}.`,
+          motivo: 'foto_de_peca_guardada',
+        };
+      }
+      // SEM TEXTO, E NAO E SILENCIO DE DEFEITO: a foto entrou, e o webhook
+      // trata `null` como "nao ha o que responder". O recibo do WhatsApp ja
+      // diz que chegou; o que estava faltando era o numero, e ele vem.
+      return { resposta: null, motivo: 'foto_de_peca_guardada' };
     } catch (e) {
       this.logger.warn(
         `Foto de peça ${peca.codigoErp} não entrou: ${(e as Error).message}`,
