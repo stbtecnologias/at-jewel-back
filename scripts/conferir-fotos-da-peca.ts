@@ -23,6 +23,7 @@ import { AppModule } from '../src/app.module';
 import { FotosDaPecaUseCase } from '../src/modules/produtos/application/use-cases/fotos-da-peca.use-case';
 import { PRODUTO_FOTO_REPOSITORY } from '../src/modules/erp/domain/ports/injection-tokens';
 import { ARMAZENAMENTO } from '../src/modules/catalogos/domain/ports/injection-tokens';
+import { ListarProdutosUseCase } from '../src/modules/produtos/application/use-cases/listar-produtos.use-case';
 import type { IProdutoFotoRepository } from '../src/modules/erp/domain/ports/repositories/produto-foto-repository.port';
 import { DataSource } from 'typeorm';
 
@@ -118,6 +119,25 @@ async function main() {
       'e o ARQUIVO sobreviveu, porque a outra ainda o usa',
       (await arq.ler(chave)) !== null,
       chave,
+    );
+
+    // ======================================================================
+    // A ÁGUA CHEGA? — a lição de 09/10.
+    //
+    // De nada adianta a foto estar guardada se a LISTA continua mostrando a do
+    // ERP. É por `ListarProdutosUseCase` que o painel, o canal da vendedora e
+    // o catálogo leem a peça — se a capa não sair por ali, ninguém a vê.
+    // ======================================================================
+    console.log('\nA capa chega na listagem');
+    const listar = app.get(ListarProdutosUseCase);
+    const naLista = (
+      await listar.execute({ busca: a.codigo_erp, ativo: true, limit: 5 } as never)
+    ).find((p) => p.id === a.id);
+    const capaAgora = (await repo.listar(a.id)).find((f) => f.capa)?.arquivoId;
+    conferir(
+      'a lista devolve a CAPA em `fotoArquivoId`',
+      !!capaAgora && naLista?.fotoArquivoId === capaAgora,
+      `${naLista?.fotoArquivoId}`,
     );
 
     console.log('\nO que a peça recusa');

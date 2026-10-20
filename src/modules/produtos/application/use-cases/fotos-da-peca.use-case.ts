@@ -26,6 +26,8 @@ import type { ArquivoRecebido } from './foto-produto.use-case';
 /** O que o painel e o WhatsApp recebem de volta. */
 export interface FotoDaPecaDto {
   id: string;
+  /** A chave no armazenamento — o painel monta `/midia/<chave>` com ela. */
+  arquivoId: string;
   caminho: string | null;
   capa: boolean;
   posicao: number;
@@ -198,6 +200,7 @@ export class FotosDaPecaUseCase {
   private paraDto(f: FotoDaPeca): FotoDaPecaDto {
     return {
       id: f.id,
+      arquivoId: f.arquivoId,
       caminho: this.armazenamento.caminhoPublico(f.arquivoId),
       capa: f.capa,
       posicao: f.posicao,
