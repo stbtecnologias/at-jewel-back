@@ -6,6 +6,18 @@ import { RecepcionarUseCase } from './recepcionar.use-case';
 import { MemoriaDeGrupoService } from '../memoria-de-grupo.service';
 
 /**
+ * O canal de foto de PEÇA, mudo — RF33, 20/10/2026.
+ *
+ * `temPecaMirada` em `false` é o valor certo para todo teste que não é sobre
+ * ele: sem peça mirada, a imagem segue o caminho de sempre, que é o catálogo.
+ */
+const SEM_FOTO_DE_PECA = {
+  temPecaMirada: () => false,
+  mirar: jest.fn().mockResolvedValue(null),
+  foto: jest.fn().mockResolvedValue(null),
+} as never;
+
+/**
  * A conferencia da foto NAO participa destes testes: null quer dizer "nao
  * deu para conferir", e nesse caso a foto segue o caminho de sempre. Os testes
  * da recusa ficam no bloco proprio, mais abaixo.
@@ -176,6 +188,7 @@ describe('RotearMensagemInternaUseCase', () => {
       new MemoriaDeGrupoService(),
       leitor as never,
       analise as never,
+      SEM_FOTO_DE_PECA,
     );
   });
 
@@ -1637,6 +1650,55 @@ describe('RotearMensagemInternaUseCase', () => {
       expect(canalCatalogo.foto).not.toHaveBeenCalled();
     });
 
+    /**
+     * RF33, 20/10/2026 — A FOTO DE PEÇA NÃO DESVIA.
+     *
+     * O catálogo mora na Elena desde 25/09, e a imagem que chega na Anastasia
+     * é mandada para lá. Foto de PEÇA não é catálogo: por decisão do Lucas ela
+     * vale nos dois números, e por isso o ramo dela vem ANTES do desvio.
+     *
+     * Este teste cai no instante em que alguém mover o trecho para depois.
+     */
+    it('COM peça mirada, a foto na Anastasia vai para a peça — e não desvia', async () => {
+      identificarAdmin.execute.mockResolvedValue({
+        id: 'ad-9',
+        nome: 'Yerlon Braga',
+        role: 'ADMIN',
+      });
+      const daPeca = {
+        temPecaMirada: () => true,
+        mirar: jest.fn().mockResolvedValue(null),
+        foto: jest
+          .fn()
+          .mockResolvedValue({ resposta: '2ª foto de BR26396.', motivo: 'foto_de_peca_guardada' }),
+      };
+      const comPeca = new RotearMensagemInternaUseCase(
+        identificarVendedora as never,
+        identificarAdmin as never,
+        canalVendedora as never,
+        canalGestao as never,
+        canalCatalogo as never,
+        new RecepcionarUseCase(new RecepcaoService()),
+        whatsapp as never,
+        { disponivel: () => false, transcrever: jest.fn() } as never,
+        new MemoriaDeGrupoService(),
+        { ler: jest.fn() } as never,
+        { analisar: jest.fn() } as never,
+        daPeca as never,
+      );
+
+      const r = await comPeca.execute({
+        de: '558586467241@c.us',
+        texto: '',
+        agente: 'ANASTASIA',
+        imagem: { url: 'http://x/y.jpg', mimetype: 'image/jpeg' },
+      });
+
+      expect(r.motivo).toBe('foto_de_peca_guardada');
+      expect(daPeca.foto).toHaveBeenCalled();
+      expect(canalCatalogo.foto).not.toHaveBeenCalled();
+    });
+
     it('foto no numero da Elena segue para o catalogo, como sempre', async () => {
       identificarAdmin.execute.mockResolvedValue({
         id: 'ad-9',
@@ -1758,6 +1820,7 @@ describe('RotearMensagemInternaUseCase — a conversa do Yerlon, de ponta a pont
       new MemoriaDeGrupoService(),
       { ler: jest.fn() } as never,
       { analisar: jest.fn() } as never,
+      SEM_FOTO_DE_PECA,
     );
     const falar = (texto: string, extra: object = {}) =>
       roteador.execute({ de: DE, texto, em: Date.now(), ...extra });
@@ -1908,6 +1971,7 @@ describe('RotearMensagemInternaUseCase — a consulta do Lucas, de ponta a ponta
       new MemoriaDeGrupoService(),
       { ler: jest.fn() } as never,
       { analisar: jest.fn() } as never,
+      SEM_FOTO_DE_PECA,
     );
     const falar = (texto: string) =>
       roteador.execute({ de: DE, texto, em: Date.now() });

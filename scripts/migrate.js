@@ -126,6 +126,7 @@ const MANIFESTO = {
   '63_operacao_id_erp_bruto.sql':          { tipo: 'coluna',     alvo: 'operacoes.id_erp_bruto' },
   '64_interacao_abertura.sql':            { tipo: 'enum',       alvo: 'tipo_interacao|ABERTURA' },
   '74_produto_fotos.sql':                 { tipo: 'tabela',     alvo: 'produto_fotos' },
+  '75_gerente_vendas_foto.sql':           { tipo: 'permissao',  alvo: 'GERENTE_VENDAS|produtos:foto' },
   // Migracao de DADOS: nao cria objeto, preenche coluna. Nenhum marcador do
   // manifesto descreve isso — fica de fora pelo mesmo motivo da 50.
   // 50 nao cria objeto nenhum: so troca o COMMENT de uma coluna. Fica de fora

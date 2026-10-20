@@ -1,6 +1,18 @@
 import { RotearMensagemInternaUseCase } from './rotear-mensagem-interna.use-case';
 
 /**
+ * O canal de foto de PEÇA, mudo — RF33, 20/10/2026.
+ *
+ * `temPecaMirada` em `false` é o valor certo para todo teste que não é sobre
+ * ele: sem peça mirada, a imagem segue o caminho de sempre, que é o catálogo.
+ */
+const SEM_FOTO_DE_PECA = {
+  temPecaMirada: () => false,
+  mirar: jest.fn().mockResolvedValue(null),
+  foto: jest.fn().mockResolvedValue(null),
+} as never;
+
+/**
  * ==========================================================================
  * QUEM GERENCIA E VENDE TEM UM NUMERO SO — 07/10/2026.
  *
@@ -83,6 +95,7 @@ describe('o gerente de vendas na Helena', () => {
       // na analise quando a mensagem traz um.
       naoParaTudo(),
       naoParaTudo(),
+      SEM_FOTO_DE_PECA,
     );
   });
 

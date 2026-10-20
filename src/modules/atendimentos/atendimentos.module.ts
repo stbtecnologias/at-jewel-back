@@ -29,6 +29,7 @@ import { ProcessarMensagemGestaoUseCase } from './application/use-cases/processa
 import { ProcessarMensagemInternaUseCase } from './application/use-cases/processar-mensagem-interna.use-case';
 import { EncaminharLeadUseCase } from './application/use-cases/encaminhar-lead.use-case';
 import { ProcessarFotoCatalogoUseCase } from './application/use-cases/processar-foto-catalogo.use-case';
+import { FotosDePecaPeloWhatsappUseCase } from './application/use-cases/fotos-de-peca-pelo-whatsapp.use-case';
 import { ResolverVendedoraPorNomeUseCase } from './application/use-cases/resolver-vendedora-por-nome.use-case';
 import { RotearMensagemInternaUseCase } from './application/use-cases/rotear-mensagem-interna.use-case';
 import { ConsultarAuditoriaUseCase } from './application/use-cases/consultar-auditoria.use-case';
@@ -165,6 +166,10 @@ import { AnalisarTomUseCase } from '../atendimento/application/analisar-tom.use-
     SessaoCatalogoService,
     EncaminharLeadUseCase,
     ProcessarFotoCatalogoUseCase,
+    // RF33 — a foto que vai para a PECA, e nao para o catalogo. Divide a
+    // sessao com o canal do catalogo porque e a mesma conversa; o que muda e
+    // o destino da imagem.
+    FotosDePecaPeloWhatsappUseCase,
     ResolverVendedoraPorNomeUseCase,
     ProcessarMensagemGestaoUseCase,
     // A recepcao: o menu do perfil e a memoria do numero digitado depois dele.

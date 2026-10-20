@@ -107,6 +107,25 @@ export interface FotoComFalha {
 }
 
 /**
+ * A PECA MIRADA — RF33, 20/10/2026.
+ *
+ * "produto BR26396" e entao a rajada de fotos. O WhatsApp nao manda album: as
+ * dez imagens chegam como dez eventos separados, sem legenda nenhuma depois da
+ * primeira. Entao o destino tem de viver FORA da foto — e e isto aqui.
+ *
+ * Enquanto houver peca mirada, imagem que chega vai para ELA e nao para o
+ * catalogo. Vale nos DOIS numeros, por decisao do Lucas: o catalogo mora na
+ * Elena, mas foto de peca nao e catalogo.
+ */
+export interface PecaMirada {
+  produtoId: string;
+  codigoErp: string;
+  /** `BR26396 — BRINCO DTS 0.25 CTS OB 18K`, para a resposta dizer a peca. */
+  rotulo: string;
+  em: number;
+}
+
+/**
  * A ultima foto guardada por este remetente — o alvo do "trata".
  *
  * Desde 20/10/2026 a foto entra no catalogo CRUA, e o tratamento so acontece
@@ -217,6 +236,8 @@ export class SessaoCatalogoService {
   private readonly falhas = new Map<string, FotoComFalha>();
   /** A ultima foto guardada, esperando um eventual "trata". */
   private readonly guardadas = new Map<string, FotoGuardada>();
+  /** A peca para onde as fotos estao indo — RF33. */
+  private readonly miradas = new Map<string, PecaMirada>();
 
   /** Catalogo lembrado da ultima vez, se ainda dentro da janela. */
   catalogoAtual(
@@ -472,6 +493,38 @@ export class SessaoCatalogoService {
 
   esquecerFotoGuardada(chave: string): void {
     this.guardadas.delete(chave);
+  }
+
+  // ---------------------------------------------------------------------------
+  // A peca mirada — RF33, 20/10/2026.
+  //
+  // FORA DA SESSAO DE CATALOGO, como a falha e a consulta: mirar uma peca nao
+  // pode abrir conversa de catalogo, e muito menos herdar o catalogo lembrado.
+  // Sao dois destinos diferentes para a mesma imagem.
+  // ---------------------------------------------------------------------------
+
+  /** As proximas fotos vao para esta peca. Substitui a anterior. */
+  mirarPeca(chave: string, peca: Omit<PecaMirada, 'em'>): void {
+    this.miradas.set(chave, { ...peca, em: Date.now() });
+  }
+
+  /** Para onde as fotos estao indo, se ainda dentro da janela. */
+  pecaMirada(chave: string): PecaMirada | null {
+    const p = this.miradas.get(chave);
+    if (!p) return null;
+    if (Date.now() - p.em > JANELA_MS) {
+      this.miradas.delete(chave);
+      return null;
+    }
+    // A JANELA CONTA DA ULTIMA FOTO, e nao do comando: quem fotografa vinte
+    // pecas leva mais que trinta minutos, e perder o destino no meio mandaria
+    // o resto para o catalogo sem ninguem perceber.
+    p.em = Date.now();
+    return p;
+  }
+
+  esquecerPeca(chave: string): void {
+    this.miradas.delete(chave);
   }
 
   /** Guarda o codigo que chegou antes da foto. Substitui o anterior. */

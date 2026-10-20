@@ -49,6 +49,10 @@ import {
   ProcessarFotoCatalogoUseCase,
   type ImagemInterna,
 } from './processar-foto-catalogo.use-case';
+import {
+  PERMISSAO_FOTO_DE_PECA,
+  FotosDePecaPeloWhatsappUseCase,
+} from './fotos-de-peca-pelo-whatsapp.use-case';
 
 export interface MensagemDoCanal {
   /**
@@ -217,6 +221,12 @@ export class RotearMensagemInternaUseCase {
     // arquivo, a analise o le ATRAS DE UMA PORTA SEM FERRAMENTA.
     private readonly leitor: LeitorDeArquivoService,
     private readonly analise: AnalisarArquivoService,
+    // RF33 — as fotos que vao para a PECA, e nao para o catalogo. Entra antes
+    // do catalogo no ramo da imagem, e vale nos dois numeros.
+    //
+    // NO FIM DA LISTA de proposito: parametro novo no meio quebra todo teste
+    // que constroi este use case a mao, e foram quatro da ultima vez.
+    private readonly fotosDePeca: FotosDePecaPeloWhatsappUseCase,
   ) {}
 
   async execute(msg: MensagemDoCanal): Promise<RespostaDoCanal> {
@@ -272,6 +282,31 @@ export class RotearMensagemInternaUseCase {
     // dado de venda.
     // ---------------------------------------------------------------------
     if (msg.imagem) {
+      // ====================================================================
+      // A FOTO DA PECA VEM ANTES DO CATALOGO — RF33, 20/10/2026.
+      //
+      // Com uma peca mirada ("produto BR26396"), a imagem e DELA. E vale nos
+      // DOIS numeros: o catalogo mora na Elena por decisao de 25/09, mas foto
+      // de peca nao e catalogo — entao este trecho fica ANTES do desvio.
+      //
+      // A permissao tambem e outra: `produtos:foto`, e nao a do catalogo.
+      // ====================================================================
+      if (this.fotosDePeca.temPecaMirada(msg.de)) {
+        const dona = await this.identificarAdmin.execute(
+          telefone,
+          PERMISSAO_FOTO_DE_PECA,
+        );
+        if (dona) {
+          const guardada = await this.fotosDePeca.foto({
+            de: msg.de,
+            nomeRemetente: dona.nome ?? '',
+            legenda: msg.texto ?? '',
+            imagem: msg.imagem,
+          });
+          if (guardada) return guardada;
+        }
+      }
+
       const quem = await this.identificarAdmin.execute(
         telefone,
         PERMISSAO_CATALOGO,
@@ -322,6 +357,26 @@ export class RotearMensagemInternaUseCase {
     // Nada de catalogo acontece fora do numero da Elena — nem as conversas
     // que ficaram abertas. Os testes abaixo sao consultas em memoria, e sem
     // esta linha eles rodariam a toa no numero da gestao.
+    // ---------------------------------------------------------------------
+    // "PRODUTO BR26396" — o comando que mira a peca, RF33.
+    //
+    // O TESTE BARATO VEM PRIMEIRO, e e a mesma regra das condicoes abaixo:
+    // sem `pareceComando`, todo texto do canal faria um lookup de admin antes
+    // do de vendedora, e a ordem vendedora-antes-de-gestao se perderia.
+    //
+    // Vale nos dois numeros, como a foto.
+    // ---------------------------------------------------------------------
+    if (FotosDePecaPeloWhatsappUseCase.pareceComando(msg.texto)) {
+      const dona = await this.identificarAdmin.execute(
+        telefone,
+        PERMISSAO_FOTO_DE_PECA,
+      );
+      if (dona) {
+        const mirada = await this.fotosDePeca.mirar(msg.de, msg.texto ?? '');
+        if (mirada) return mirada;
+      }
+    }
+
     const noCatalogo = msg.agente !== 'ANASTASIA';
     const esperandoCatalogo = noCatalogo && this.canalCatalogo.temFotoEsperando(msg.de);
     const esperandoCodigo = noCatalogo && this.canalCatalogo.temCodigoEsperando(msg.de);
