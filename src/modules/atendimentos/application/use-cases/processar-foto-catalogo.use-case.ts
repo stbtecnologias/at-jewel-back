@@ -2629,8 +2629,11 @@ export class ProcessarFotoCatalogoUseCase {
   private perguntarCatalogo(abertos: CatalogoAberto[], de?: string): string {
     const lista = abertos.map((c) => `#${c.numero} — ${c.nome}`).join('\n');
     const peca = de ? this.sessao.pecaFalada(de) : null;
+    // NADA DE PALAVRA MAGICA na pergunta — decisao do Lucas em 20/10/2026. A
+    // resposta e interpretada pelo modelo (`IInterpretadorDeDestino`), entao
+    // ensinar um comando aqui seria estreitar o que ela ja pode dizer.
     const ouAPeca = peca
-      ? `\n\nOu é para a peça ${peca.codigoErp}? Responde "peça" que eu anexo nela.`
+      ? `\n\nOu é para a peça ${peca.codigoErp}, de que estávamos falando?`
       : '';
     return `De qual catálogo é?\n${lista}\n\nResponde com o número ou o nome.${ouAPeca}`;
   }

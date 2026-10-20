@@ -39,6 +39,8 @@ describe('as fotos da peça pelo WhatsApp', () => {
   };
   let whatsapp: { baixarMidia: jest.Mock };
   let imagens: { buscar: jest.Mock };
+  /** O interpretador MUDO é o padrão: o atalho determinístico resolve. */
+  let destino: { disponivel: jest.Mock; interpretar: jest.Mock };
   let sessao: SessaoCatalogoService;
   let useCase: FotosDePecaPeloWhatsappUseCase;
 
@@ -70,6 +72,10 @@ describe('as fotos da peça pelo WhatsApp', () => {
         .fn()
         .mockResolvedValue({ fotos: [], tinhamUrl: 0, cortadas: 0 }),
     };
+    destino = {
+      disponivel: jest.fn(() => false),
+      interpretar: jest.fn().mockResolvedValue(null),
+    };
     sessao = new SessaoCatalogoService();
 
     useCase = new FotosDePecaPeloWhatsappUseCase(
@@ -78,6 +84,8 @@ describe('as fotos da peça pelo WhatsApp', () => {
       produtos as never,
       whatsapp as never,
       imagens as never,
+      destino as never,
+      { listarAbertos: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 
@@ -312,6 +320,62 @@ describe('as fotos da peça pelo WhatsApp', () => {
 
     it('"#0001" NÃO é resposta de peça — segue para o catálogo', async () => {
       expect(await useCase.anexarPenduradas(DE, '#0001', QUEM)).toBeNull();
+    });
+
+    /**
+     * DEDUZIR, E NÃO EXIGIR A PALAVRA CERTA — decisão do Lucas em 20/10/2026.
+     *
+     * *"Não vamos deixar essa coisa padrão de peça, produto; você tem que
+     * deduzir pelo que ela falar."* O atalho determinístico continua, mas é só
+     * o caso óbvio resolvido de graça — o resto vai para o modelo.
+     */
+    it('"é daquele brinco que você mostrou" anexa, pelo modelo', async () => {
+      destino.disponivel.mockReturnValue(true);
+      destino.interpretar.mockResolvedValue({ destino: 'PECA', numero: null });
+
+      const r = await useCase.anexarPenduradas(
+        DE,
+        'é daquele brinco que você me mostrou',
+        QUEM,
+      );
+
+      expect(r?.motivo).toBe('anexo_na_peca');
+      expect(destino.interpretar).toHaveBeenCalled();
+    });
+
+    it('o modelo dizendo CATALOGO não anexa — segue para o catálogo', async () => {
+      destino.disponivel.mockReturnValue(true);
+      destino.interpretar.mockResolvedValue({ destino: 'CATALOGO', numero: '0001' });
+
+      expect(
+        await useCase.anexarPenduradas(DE, 'manda pro under 25', QUEM),
+      ).toBeNull();
+      expect(fotos.anexarExistente).not.toHaveBeenCalled();
+    });
+
+    /* O retorno do modelo é VALIDADO, nunca convertido. */
+    it.each([
+      { destino: 'peca' },
+      { destino: 'PECA ' },
+      { outra: 'coisa' },
+      'PECA',
+      null,
+    ])('retorno torto do modelo NÃO anexa: %p', async (cru) => {
+      destino.disponivel.mockReturnValue(true);
+      destino.interpretar.mockResolvedValue(cru);
+
+      expect(
+        await useCase.anexarPenduradas(DE, 'qualquer coisa', QUEM),
+      ).toBeNull();
+    });
+
+    it('sem modelo disponível, o atalho ainda resolve o óbvio', async () => {
+      destino.disponivel.mockReturnValue(false);
+
+      const r = await useCase.anexarPenduradas(DE, 'peça', QUEM);
+
+      expect(r?.motivo).toBe('anexo_na_peca');
+      expect(destino.interpretar).not.toHaveBeenCalled();
     });
 
     it('sem foto pendurada não há o que anexar', async () => {

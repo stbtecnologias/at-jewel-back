@@ -6,6 +6,12 @@ import type { IProdutoRepository } from '../../../erp/domain/ports/repositories/
 import { FotosDaPecaUseCase } from '../../../produtos/application/use-cases/fotos-da-peca.use-case';
 import { SessaoCatalogoService } from '../sessao-catalogo.service';
 import { FotosDeProdutoService } from '../fotos-de-produto.service';
+import {
+  CATALOGO_REPOSITORY,
+  INTERPRETADOR_DESTINO,
+} from '../../../catalogos/domain/ports/injection-tokens';
+import type { IInterpretadorDeDestino } from '../../../catalogos/domain/ports/destino-da-foto.port';
+import type { ICatalogoRepository } from '../../../catalogos/domain/ports/repositories/catalogo-repository.port';
 import type { FotoDoCanal, RespostaFoto } from './processar-foto-catalogo.use-case';
 
 /**
@@ -99,6 +105,11 @@ export class FotosDePecaPeloWhatsappUseCase {
     // Quem BAIXA a imagem para mandar de volta. Desde o RF33 ele le a nossa
     // do armazenamento quando ha `chave`, e so cai na Conexa sem ela.
     private readonly imagens: FotosDeProdutoService,
+    // Quem DEDUZ o destino da foto pendurada, em vez de exigir palavra certa.
+    @Inject(INTERPRETADOR_DESTINO)
+    private readonly destino: IInterpretadorDeDestino,
+    @Inject(CATALOGO_REPOSITORY)
+    private readonly catalogos: ICatalogoRepository,
   ) {}
 
   /** Vale olhar a imagem que chegou como foto de peça? Só a catraca. */
@@ -278,9 +289,22 @@ export class FotosDePecaPeloWhatsappUseCase {
     if (!peca) return null;
 
     const t = texto.trim();
-    const ehDela =
+    if (!this.sessao.temPendentes(de)) return null;
+
+    // ======================================================================
+    // DEDUZIR, E NAO EXIGIR A PALAVRA CERTA — decisao do Lucas em 20/10/2026.
+    //
+    // O atalho deterministico continua, e ele e de graca: "peca", "produto",
+    // o proprio codigo. Mas ele nao e a regra — e so o caso obvio resolvido
+    // sem chamada. Tudo que nao for obvio vai para o modelo, que escolhe
+    // DENTRE OS DESTINOS QUE EXISTEM.
+    //
+    // Sem modelo disponivel, sobra o atalho: pior que deduzir, melhor que
+    // fechar o canal.
+    // ======================================================================
+    const obvio =
       RE_E_DA_PECA.test(t) || t.toUpperCase() === peca.codigoErp.toUpperCase();
-    if (!ehDela) return null;
+    if (!obvio && !(await this.ehDaPecaPeloModelo(t, peca))) return null;
 
     const penduradas = this.sessao.recolherPendentes(de);
     if (penduradas.length === 0) return null;
@@ -317,6 +341,39 @@ export class FotosDePecaPeloWhatsappUseCase {
         'As próximas fotos vão para ela também. "pronto" quando terminar.',
       motivo: 'anexo_na_peca',
     };
+  }
+
+  /**
+   * O modelo escolhe DENTRE OS DESTINOS QUE EXISTEM — e nada além.
+   *
+   * O retorno é VALIDADO, nunca convertido: o modelo pode escrever qualquer
+   * coisa, e só `destino === 'PECA'` conta. Qualquer outra forma — `CATALOGO`,
+   * `NENHUM`, campo ausente, JSON torto — devolve `false`, e a resposta segue
+   * para o catálogo, que é o caminho de sempre.
+   *
+   * NA DÚVIDA, NÃO. Perguntar de novo é barato; publicar no lugar errado não
+   * se desfaz sozinho.
+   */
+  private async ehDaPecaPeloModelo(
+    texto: string,
+    peca: { codigoErp: string; rotulo: string },
+  ): Promise<boolean> {
+    if (!this.destino.disponivel()) return false;
+
+    const abertos = await this.catalogos.listarAbertos();
+    const cru = await this.destino.interpretar(texto, {
+      catalogos: abertos.map((c) => ({ numero: c.numero, nome: c.nome })),
+      peca: {
+        codigo: peca.codigoErp,
+        descricao: peca.rotulo.split('—')[1]?.trim() ?? null,
+      },
+    });
+
+    return (
+      typeof cru === 'object' &&
+      cru !== null &&
+      (cru as { destino?: unknown }).destino === 'PECA'
+    );
   }
 
   /**

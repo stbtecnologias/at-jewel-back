@@ -25,6 +25,7 @@ import {
   ARMAZENAMENTO,
   CATALOGO_REPOSITORY,
   CONFERENCIA_FOTO,
+  INTERPRETADOR_DESTINO,
   ESTILO_CATALOGO,
   INTERPRETADOR_AJUSTE,
   TRATAMENTO_IMAGEM,
@@ -33,6 +34,7 @@ import { DiscoArmazenamento } from './infrastructure/armazenamento/disco.armazen
 import { S3Armazenamento } from './infrastructure/armazenamento/s3.armazenamento';
 import { OpenaiTratamentoImagemClient } from './infrastructure/ia/openai-tratamento-imagem.client';
 import { AnthropicConferenciaFotoClient } from './infrastructure/ia/anthropic-conferencia-foto.client';
+import { AnthropicDestinoDaFotoClient } from './infrastructure/ia/anthropic-destino-da-foto.client';
 import { AnthropicEstiloCatalogoClient } from './infrastructure/ia/anthropic-estilo-catalogo.client';
 import { AnthropicInterpretadorDeAjusteClient } from './infrastructure/ia/anthropic-interpretador-ajuste.client';
 import { EstiloDoCatalogoService } from './application/estilo-do-catalogo.service';
@@ -89,6 +91,9 @@ import { MidiaController } from './infrastructure/http/controllers/midia.control
     // Quem OLHA a foto antes de gerar. Ver o cabecalho da porta: sem ela, a
     // foto de um teclado voltava como uma joia inventada.
     { provide: CONFERENCIA_FOTO, useClass: AnthropicConferenciaFotoClient },
+    // Quem DEDUZ para onde vai a foto que esta esperando — 20/10/2026. Ver
+    // a porta: nada de palavra magica, a pessoa responde como falaria.
+    { provide: INTERPRETADOR_DESTINO, useClass: AnthropicDestinoDaFotoClient },
     // Quem LE as paginas de referencia, e o cache que evita reler a cada foto.
     { provide: ESTILO_CATALOGO, useClass: AnthropicEstiloCatalogoClient },
     EstiloDoCatalogoService,
@@ -118,6 +123,7 @@ import { MidiaController } from './infrastructure/http/controllers/midia.control
     // atendimentos — a conferencia acontece na CHEGADA da foto, antes de ela
     // ser gravada.
     CONFERENCIA_FOTO,
+    INTERPRETADOR_DESTINO,
   ],
 })
 export class CatalogosModule {}
