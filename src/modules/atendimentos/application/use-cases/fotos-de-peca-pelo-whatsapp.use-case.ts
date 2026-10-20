@@ -177,20 +177,34 @@ export class FotosDePecaPeloWhatsappUseCase {
     const rotulo = nome ? `${codigo} — ${nome}` : codigo;
 
     // ======================================================================
-    // A LEGENDA LEVA O VALOR, E NÃO A PALAVRA "CAPA" — pedido do Lucas em
-    // 20/10/2026.
+    // O TEXTO DESCREVE, AS FOTOS VÃO LIMPAS — pedido do Lucas em 20/10/2026.
     //
-    // "Capa" é vocabulário NOSSO: quem recebe a foto no WhatsApp está
-    // decidindo se mostra a peça para alguém, e para isso o preço vale e a
-    // ordem interna não. A capa continua existindo — ela é a primeira da
-    // lista e se define no painel —, só não aparece escrita.
+    // Antes cada imagem levava legenda, e a legenda era a MESMA em todas: as
+    // duas fotos da mesma peça chegavam carimbadas com a mesma frase. Para
+    // quem recebe isso é ruído — e é foto que ela vai repassar para cliente.
     //
-    // `valorVenda` é o preço À VISTA do ERP, e é o mesmo número que a agente
-    // já diz nas listas. Peça sem valor sai só com o rótulo, em vez de
-    // mostrar "R$ 0".
+    // Então a descrição e o valor ficam numa mensagem SÓ, que vem antes, e as
+    // imagens vão sem caption nenhum.
+    //
+    // E a palavra "capa" saiu junto: é vocabulário NOSSO. A capa continua
+    // existindo — é a primeira da lista, e se define no painel.
+    //
+    // `valorVenda` é o preço À VISTA do ERP, o mesmo número que a agente já
+    // diz nas listas. Peça sem valor sai sem a linha, em vez de "R$ 0".
     // ======================================================================
-    const comValor =
-      produto.valorVenda > 0 ? `${rotulo} — ${moeda(produto.valorVenda)}` : rotulo;
+    // A ORDEM É A QUE O LUCAS PEDIU, e ela cabe numa linha:
+    //
+    //   referência — descrição — valor
+    //
+    // `valorVenda` é o preço à vista; não escrevo "à vista" porque a ficha é
+    // para quem já sabe disso e vai copiar o número.
+    const ficha =
+      produto.valorVenda > 0
+        ? `${rotulo} — ${moeda(produto.valorVenda)}`
+        : rotulo;
+
+    /** As fotos vão limpas — quem descreve é o texto, uma vez só. */
+    const SEM_LEGENDA = '';
 
     // FALAMOS DESTA PEÇA. Não muda o destino das fotos — serve para a pergunta
     // de destino ter a opção certa, se uma imagem chegar em seguida.
@@ -204,18 +218,25 @@ export class FotosDePecaPeloWhatsappUseCase {
       // SEM FOTO NOSSA, A DO ERP AINDA PODE EXISTIR — e ela vai, para a
       // resposta não ser um "não tem" que a peça desmente no painel.
       const doErp = await this.imagens.buscar(
-        [{ codigo, chave: null, url: produto.fotoUrl ?? null, legenda: comValor }],
+        [
+          {
+            codigo,
+            chave: null,
+            url: produto.fotoUrl ?? null,
+            legenda: SEM_LEGENDA,
+          },
+        ],
         ELA_PEDIU,
       );
       if (doErp.fotos.length > 0) {
         return {
-          resposta: `${comValor}\nNão tem foto nossa ainda — essa é a do ERP. Me diz "produto ${codigo}" e manda as suas.`,
+          resposta: `${ficha}\nNão tem foto nossa ainda — essa é a do ERP. Me diz "produto ${codigo}" e manda as suas.`,
           motivo: 'fotos_da_peca_so_erp',
           fotos: doErp.fotos,
         };
       }
       return {
-        resposta: `${comValor}\nEssa peça não tem nenhuma foto. Me diz "produto ${codigo}" e manda as suas.`,
+        resposta: `${ficha}\nEssa peça não tem nenhuma foto. Me diz "produto ${codigo}" e manda as suas.`,
         motivo: 'fotos_da_peca_nenhuma',
       };
     }
@@ -225,7 +246,7 @@ export class FotosDePecaPeloWhatsappUseCase {
         codigo: `${codigo}-${i + 1}`,
         chave: f.arquivoId,
         url: null,
-        legenda: comValor,
+        legenda: SEM_LEGENDA,
       })),
       ELA_PEDIU,
     );
@@ -236,7 +257,7 @@ export class FotosDePecaPeloWhatsappUseCase {
     const quantas = `${nossas.length} ${nossas.length === 1 ? 'foto' : 'fotos'}`;
     return {
       resposta:
-        `${comValor}\n${quantas}` +
+        `${ficha}\n${quantas}` +
         (faltam > 0
           ? `, e eu mando ${baixadas.fotos.length} aqui — as outras ${faltam} ficam no painel.`
           : nossas.length === 1

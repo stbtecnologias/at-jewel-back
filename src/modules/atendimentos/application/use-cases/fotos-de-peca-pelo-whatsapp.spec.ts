@@ -274,35 +274,46 @@ describe('as fotos da peça pelo WhatsApp', () => {
     });
 
     // ========================================================================
-    // A LEGENDA — pedido do Lucas em 20/10, olhando a foto que chegou.
+    // O TEXTO DESCREVE, AS FOTOS VÃO LIMPAS — pedido do Lucas em 20/10.
     //
-    // Ela dizia "BR26318 — BRINCO ... — capa". "Capa" é vocabulário nosso e
-    // não serve a quem recebe; o preço serve, porque é com ele que a pessoa
-    // decide mostrar a peça.
+    // A legenda vinha em TODAS as imagens, e era a mesma frase: duas fotos da
+    // mesma peça chegavam carimbadas igual. Para quem recebe isso é ruído, e é
+    // foto que ela vai repassar para cliente.
     // ========================================================================
-    it('a legenda leva o VALOR da peça, e não a palavra "capa"', async () => {
+    it('as fotos vão SEM legenda — a descrição é do texto, uma vez só', async () => {
       fotos.listar.mockResolvedValue(TRES);
       imagens.buscar.mockResolvedValue(baixadas(3));
 
       await useCase.quais(DE, 'quais fotos tem o BR26396?');
 
       const pedidos = imagens.buscar.mock.calls[0][0] as { legenda: string }[];
-      for (const p of pedidos) {
-        expect(p.legenda).toContain('R$');
-        expect(p.legenda).toContain('18.500');
-        expect(p.legenda).not.toContain('capa');
-      }
+      for (const p of pedidos) expect(p.legenda).toBe('');
     });
 
-    it('peça sem valor sai só com o rótulo, e não com "R$ 0"', async () => {
+    // A ORDEM PEDIDA: referência — descrição — valor, e então as fotos.
+    it('e o TEXTO leva referência, descrição e valor, sem a palavra "capa"', async () => {
+      fotos.listar.mockResolvedValue(TRES);
+      imagens.buscar.mockResolvedValue(baixadas(3));
+
+      const r = await useCase.quais(DE, 'quais fotos tem o BR26396?');
+
+      // O ` `: `toLocaleString` separa "R$" do número com espaço que NÃO
+      // quebra linha. Comparar com espaço comum falha por um caractere
+      // invisível — já perdi tempo com isso aqui.
+      const primeira = r?.resposta.split('\n')[0].replace(/ /g, ' ');
+      expect(primeira).toBe('BR26396 — BRINCO DTS 0.25 CTS OB 18K — R$ 18.500');
+      expect(r?.resposta).not.toContain('capa');
+    });
+
+    it('peça sem valor sai sem a linha do preço, e não com "R$ 0"', async () => {
       produtos.findByCodigoErp.mockResolvedValue({ ...PECA, valorVenda: 0 });
       fotos.listar.mockResolvedValue(TRES);
       imagens.buscar.mockResolvedValue(baixadas(3));
 
-      await useCase.quais(DE, 'quais fotos tem o BR26396?');
+      const r = await useCase.quais(DE, 'quais fotos tem o BR26396?');
 
-      const pedidos = imagens.buscar.mock.calls[0][0] as { legenda: string }[];
-      expect(pedidos[0].legenda).toBe('BR26396 — BRINCO DTS 0.25 CTS OB 18K');
+      expect(r?.resposta).toContain('BR26396 — BRINCO DTS 0.25 CTS OB 18K');
+      expect(r?.resposta).not.toContain('R$');
     });
 
     it('o que NÃO coube é dito — o recorte que esconde se anuncia', async () => {
