@@ -265,6 +265,21 @@ export class ClienteRepository implements IClienteRepository {
     return rows.map((r) => this.toDomain(r));
   }
 
+  /** Quais clientes têm um destes telefones. Ver o port. */
+  async idsComTelefoneEm(
+    hashes: string[],
+  ): Promise<{ id: string; telefone1Hash: string }[]> {
+    // LISTA VAZIA NAO VIRA CONSULTA: `= ANY('{}')` e valido e devolve nada,
+    // mas pagar ida e volta para saber disso e desperdicio.
+    if (hashes.length === 0) return [];
+    return this.repo.query<{ id: string; telefone1Hash: string }[]>(
+      `SELECT id, telefone_1_hash AS "telefone1Hash"
+         FROM clientes
+        WHERE telefone_1_hash = ANY($1::text[])`,
+      [hashes],
+    );
+  }
+
   /** Mesma ressalva do telefone: nao e mais unico desde a migracao 36. */
   async buscarPorEmailHash(hash: string): Promise<Cliente | null> {
     const row = await this.repo.findOne({

@@ -327,6 +327,27 @@ export interface IClienteRepository {
    */
   listarPorTelefone1Hash(hash: string): Promise<Cliente[]>;
 
+  /**
+   * QUAIS CLIENTES TEM UM DESTES TELEFONES — RF30, 20/10/2026.
+   *
+   * ========================================================================
+   * EXISTE PARA A TIMELINE SABER QUEM E GENTE DA CASA.
+   *
+   * Gente de dentro aparece na timeline porque TEM FICHA DE CLIENTE: medido
+   * em 20/10, 6 clientes sao da casa, e e por eles que 53 dos 96 RELATOs
+   * entram como se fossem feedback de cliente.
+   *
+   * Devolve o `telefone_1_hash` junto porque quem perguntou sabe de qual
+   * pessoa cada hash e — e e assim que o RELATO ganha o rotulo certo
+   * (vendedora, admin, gerente) sem uma segunda consulta.
+   * ========================================================================
+   *
+   * Uma consulta so, com `= ANY`. Lista vazia devolve lista vazia.
+   */
+  idsComTelefoneEm(
+    hashes: string[],
+  ): Promise<{ id: string; telefone1Hash: string }[]>;
+
   buscarPorEmailHash(hash: string): Promise<Cliente | null>;
 
   /**

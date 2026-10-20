@@ -439,6 +439,28 @@ export interface PontoDaLinha {
   relato: string | null;
 
   /**
+   * ISTO E CONVERSA ENTRE GENTE DA CASA? — RF29 e RF30, 20/10/2026.
+   *
+   * ====================================================================
+   * DERIVADO NA LEITURA, E NAO GRAVADO.
+   *
+   * O ponto nao nasce sabendo disto: quem decide e o telefone do outro lado,
+   * cruzado com os tres lugares onde mora numero de gente da casa. Por ser
+   * derivado, vale para o que JA ESTA na base — medido em 20/10, 53 dos 96
+   * RELATOs — e passa a valer para telefone cadastrado hoje, sem migracao e
+   * sem backfill.
+   *
+   * `papelInterno` diz QUEM: vendedora, admin, gerente. Null quando o ponto
+   * nao e de gente da casa, e e assim que a tela sabe o que esconder.
+   *
+   * Sai do repositorio SEMPRE indefinido: quem marca e
+   * `ConsultarLinhaDoTempoUseCase`, que e quem tem o mapa.
+   * ====================================================================
+   */
+  interno?: boolean;
+  papelInterno?: string | null;
+
+  /**
    * EM QUE PE ESTA O EPISODIO DE ONDE ESTE PONTO SAIU — 22/09/2026.
    *
    * ====================================================================

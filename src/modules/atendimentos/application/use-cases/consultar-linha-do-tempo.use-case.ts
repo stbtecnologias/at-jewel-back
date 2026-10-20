@@ -1,6 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { VENDEDORA_REPOSITORY } from '../../../vendedoras/domain/ports/injection-tokens';
 import type { IVendedoraRepository } from '../../../vendedoras/domain/ports/repositories/vendedora-repository.port';
+import { CLIENTE_REPOSITORY } from '../../../clientes/domain/ports/injection-tokens';
+import type { IClienteRepository } from '../../../clientes/domain/ports/repositories/cliente-repository.port';
+import { GenteDaCasaService } from '../gente-da-casa.service';
 import { janelaDoDia } from '../../../../shared/tempo/janela-do-dia';
 import { ATENDIMENTO_REPOSITORY } from '../../domain/ports/injection-tokens';
 import {
@@ -67,7 +70,54 @@ export class ConsultarLinhaDoTempoUseCase {
     private readonly repo: IAtendimentoRepository,
     @Inject(VENDEDORA_REPOSITORY)
     private readonly vendedoras: IVendedoraRepository,
+    // OS DOIS ULTIMOS, e no FIM da lista de proposito: parametro novo no meio
+    // quebra todo spec que constroi este use case por posicao.
+    private readonly genteDaCasa: GenteDaCasaService,
+    @Inject(CLIENTE_REPOSITORY)
+    private readonly clientes: IClienteRepository,
   ) {}
+
+  /**
+   * MARCA O QUE E CONVERSA ENTRE GENTE DA CASA — RF29 e RF30, 20/10/2026.
+   *
+   * ========================================================================
+   * SAO DOIS CAMINHOS ATE A MESMA PESSOA, e os dois precisam existir.
+   *
+   *   pelo CLIENTE  — gente de dentro que tem ficha de cliente. E por aqui
+   *                   que o RELATO entra na timeline, e e a maioria: 53 dos
+   *                   96 em 20/10.
+   *   pelo CHAT     — a conversa cujo numero e de gente da casa, mesmo sem
+   *                   ficha nenhuma.
+   *
+   * Um ponto pode ter cliente e nao ter chat (agendamento), ou ter chat e nao
+   * ter cliente (numero desconhecido). Olhar so um deles deixaria metade
+   * passando.
+   * ========================================================================
+   *
+   * NAO FILTRA NADA. Quem esconde e a tela, com o alternador — e essa divisao
+   * e de proposito: o back nunca decide sozinho sumir com registro, porque
+   * registro que some sem ninguem pedir e indistinguivel de registro perdido.
+   */
+  private async marcarGenteDaCasa(pontos: PontoDaLinha[]): Promise<void> {
+    const mapa = await this.genteDaCasa.mapa();
+    if (mapa.vazio()) return;
+
+    const comTelefone = await this.clientes.idsComTelefoneEm(mapa.hashes());
+    const papelDoCliente = new Map<string, string>();
+    for (const c of comTelefone) {
+      const papel = mapa.papelDoHash(c.telefone1Hash);
+      if (papel) papelDoCliente.set(c.id, papel);
+    }
+
+    for (const p of pontos) {
+      const papel =
+        (p.clienteId ? papelDoCliente.get(p.clienteId) : undefined) ??
+        mapa.papelDoChat(p.chatId) ??
+        null;
+      p.interno = papel !== null;
+      p.papelInterno = papel;
+    }
+  }
 
   /**
    * @param dia `YYYY-MM-DD`. Sem ele, HOJE — sempre.
@@ -89,6 +139,7 @@ export class ConsultarLinhaDoTempoUseCase {
   async execute(dia?: string): Promise<LinhaDoTempo> {
     const { de: alvo, ate } = janelaDoDia(dia);
     const pontos = await this.repo.linhaDoTempo(alvo, ate);
+    await this.marcarGenteDaCasa(pontos);
 
     const ativas = await this.vendedoras.listar({ ativo: true });
 
@@ -152,7 +203,11 @@ export class ConsultarLinhaDoTempoUseCase {
   async doDia(vendedoraId: string, dia?: string): Promise<PontoDaLinha[]> {
     const { de: alvo, ate } = janelaDoDia(dia);
     const pontos = await this.repo.linhaDoTempo(alvo, ate);
-    return pontos.filter((p) => p.vendedoraId === vendedoraId);
+    const dela = pontos.filter((p) => p.vendedoraId === vendedoraId);
+    // MARCA SO OS DELA: o mapa custa duas consultas, e cruzar os pontos do
+    // dia inteiro para devolver os de uma pessoa seria pagar pelo resto.
+    await this.marcarGenteDaCasa(dela);
+    return dela;
   }
 }
 

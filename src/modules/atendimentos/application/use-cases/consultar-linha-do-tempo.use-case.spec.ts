@@ -17,6 +17,8 @@ describe('ConsultarLinhaDoTempoUseCase', () => {
 
   let repo: { linhaDoTempo: jest.Mock; ultimoDiaComMovimento: jest.Mock };
   let vendedoras: { listar: jest.Mock };
+  let genteDaCasa: { mapa: jest.Mock };
+  let clientes: { idsComTelefoneEm: jest.Mock };
   let uc: ConsultarLinhaDoTempoUseCase;
 
   function ponto(
@@ -52,7 +54,23 @@ describe('ConsultarLinhaDoTempoUseCase', () => {
       ultimoDiaComMovimento: jest.fn().mockResolvedValue(null),
     };
     vendedoras = { listar: jest.fn().mockResolvedValue([]) };
-    uc = new ConsultarLinhaDoTempoUseCase(repo as never, vendedoras as never);
+    // NINGUEM DA CASA POR PADRAO: assim todo teste que nao e sobre a etiqueta
+    // segue valendo exatamente o que valia. Os da etiqueta trocam estes dois.
+    genteDaCasa = {
+      mapa: jest.fn().mockResolvedValue({
+        vazio: () => true,
+        hashes: () => [],
+        papelDoHash: () => null,
+        papelDoChat: () => null,
+      }),
+    };
+    clientes = { idsComTelefoneEm: jest.fn().mockResolvedValue([]) };
+    uc = new ConsultarLinhaDoTempoUseCase(
+      repo as never,
+      vendedoras as never,
+      genteDaCasa as never,
+      clientes as never,
+    );
   });
 
   afterEach(() => jest.useRealTimers());
@@ -280,6 +298,138 @@ describe('ConsultarLinhaDoTempoUseCase', () => {
       expect(r.faixas.reduce((n, f) => n + f.atendimentos, 0)).toBe(
         r.atendimentos,
       );
+    });
+  });
+
+  // ==========================================================================
+  // A ETIQUETA DE GENTE DA CASA — RF29 e RF30, 20/10/2026.
+  //
+  // Medido na base no mesmo dia: 53 dos 96 RELATOs da timeline sao conversa
+  // entre gente de dentro. Sao DOIS caminhos ate a mesma pessoa, e os dois
+  // precisam existir — pelo CLIENTE (quem tem ficha) e pelo CHAT (o numero).
+  // ==========================================================================
+  describe('gente da casa', () => {
+    const comMapa = (opcoes: {
+      hashes?: string[];
+      porHash?: Record<string, string>;
+      porChat?: Record<string, string>;
+      clientes?: { id: string; telefone1Hash: string }[];
+    }) => {
+      genteDaCasa.mapa.mockResolvedValue({
+        vazio: () => false,
+        hashes: () => opcoes.hashes ?? [],
+        papelDoHash: (h: string) => opcoes.porHash?.[h] ?? null,
+        papelDoChat: (c: string | null) => (c ? (opcoes.porChat?.[c] ?? null) : null),
+      });
+      clientes.idsComTelefoneEm.mockResolvedValue(opcoes.clientes ?? []);
+    };
+
+    it('marca pelo CLIENTE — é por aí que o RELATO entra na timeline', async () => {
+      repo.linhaDoTempo.mockResolvedValue([
+        ponto('v-1', 'Ana', 9, { clienteId: 'cli-interno' }),
+        ponto('v-1', 'Ana', 10, { clienteId: 'cli-de-fora' }),
+      ]);
+      comMapa({
+        hashes: ['h1'],
+        porHash: { h1: 'VENDEDORA' },
+        clientes: [{ id: 'cli-interno', telefone1Hash: 'h1' }],
+      });
+
+      const r = await uc.execute();
+      const pontos = r.faixas.flatMap((f) => f.pontos);
+
+      expect(pontos.find((p) => p.clienteId === 'cli-interno')?.interno).toBe(true);
+      expect(pontos.find((p) => p.clienteId === 'cli-interno')?.papelInterno).toBe(
+        'VENDEDORA',
+      );
+      expect(pontos.find((p) => p.clienteId === 'cli-de-fora')?.interno).toBe(false);
+    });
+
+    it('marca pelo CHAT quando não há cliente nenhum', async () => {
+      repo.linhaDoTempo.mockResolvedValue([
+        ponto('v-1', 'Ana', 9, { clienteId: null, chatId: '5585999999999@c.us' }),
+      ]);
+      comMapa({ porChat: { '5585999999999@c.us': 'GERENTE_VENDAS' } });
+
+      const r = await uc.execute();
+
+      expect(r.faixas[0].pontos[0].papelInterno).toBe('GERENTE_VENDAS');
+    });
+
+    // UM PONTO PODE TER CLIENTE E NAO TER CHAT (agendamento), OU O CONTRARIO.
+    // Olhar so um dos dois deixaria metade passando.
+    it('o cliente ganha do chat quando os dois existem', async () => {
+      repo.linhaDoTempo.mockResolvedValue([
+        ponto('v-1', 'Ana', 9, {
+          clienteId: 'cli-interno',
+          chatId: '5585999999999@c.us',
+        }),
+      ]);
+      comMapa({
+        hashes: ['h1'],
+        porHash: { h1: 'ADMIN' },
+        porChat: { '5585999999999@c.us': 'VENDEDORA' },
+        clientes: [{ id: 'cli-interno', telefone1Hash: 'h1' }],
+      });
+
+      const r = await uc.execute();
+
+      expect(r.faixas[0].pontos[0].papelInterno).toBe('ADMIN');
+    });
+
+    // ========================================================================
+    // E NAO FILTRA NADA. Quem esconde e a tela.
+    //
+    // Back que some com registro sem ninguem pedir e indistinguivel de back
+    // que perdeu registro — e o funil continua contando o que aconteceu.
+    // ========================================================================
+    it('NÃO esconde o ponto interno, e o funil continua contando', async () => {
+      repo.linhaDoTempo.mockResolvedValue([
+        ponto('v-1', 'Ana', 9, {
+          clienteId: 'cli-interno',
+          atendimentoId: 'at-1',
+          etapa: 'EM_NEGOCIACAO',
+        }),
+      ]);
+      comMapa({
+        hashes: ['h1'],
+        porHash: { h1: 'VENDEDORA' },
+        clientes: [{ id: 'cli-interno', telefone1Hash: 'h1' }],
+      });
+
+      const r = await uc.execute();
+
+      expect(r.faixas[0].pontos).toHaveLength(1);
+      expect(r.atendimentos).toBe(1);
+      expect(r.porEtapa.EM_NEGOCIACAO).toBe(1);
+    });
+
+    it('ninguém com telefone cadastrado: não marca, e não consulta clientes', async () => {
+      repo.linhaDoTempo.mockResolvedValue([
+        ponto('v-1', 'Ana', 9, { clienteId: 'cli-1' }),
+      ]);
+
+      const r = await uc.execute();
+
+      expect(r.faixas[0].pontos[0].interno).toBeUndefined();
+      expect(clientes.idsComTelefoneEm).not.toHaveBeenCalled();
+    });
+
+    it('`doDia` também marca — é a mesma tela, vista de outro ângulo', async () => {
+      repo.linhaDoTempo.mockResolvedValue([
+        ponto('v-1', 'Ana', 9, { clienteId: 'cli-interno' }),
+        ponto('v-2', 'Bia', 9, { clienteId: 'cli-interno' }),
+      ]);
+      comMapa({
+        hashes: ['h1'],
+        porHash: { h1: 'VENDEDORA' },
+        clientes: [{ id: 'cli-interno', telefone1Hash: 'h1' }],
+      });
+
+      const pontos = await uc.doDia('v-1');
+
+      expect(pontos).toHaveLength(1);
+      expect(pontos[0].interno).toBe(true);
     });
   });
 });
