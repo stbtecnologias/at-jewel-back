@@ -83,6 +83,7 @@ describe('atribuir vendedora ao cliente', () => {
       clientes as never,
       { listarAguardandoGestao: jest.fn() } as never,
       { entre: jest.fn().mockResolvedValue([]) } as never,
+      { listar: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 

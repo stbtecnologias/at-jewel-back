@@ -118,6 +118,7 @@ describe('itens_mais_vendidos e o escopo de quem pergunta', () => {
       // O ponteiro de conversas vivas (29/09) — dublado: estes testes
       // descrevem o roteamento das ferramentas, nao a consulta.
       { entre: jest.fn().mockResolvedValue([]) } as never,
+      { listar: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 
@@ -263,6 +264,7 @@ describe('consultar_produtos da gestao e a quantidade', () => {
       // O ponteiro de conversas vivas (29/09) — dublado: estes testes
       // descrevem o roteamento das ferramentas, nao a consulta.
       { entre: jest.fn().mockResolvedValue([]) } as never,
+      { listar: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 
@@ -419,6 +421,7 @@ describe('o recorte de equipe nas ferramentas de gestao', () => {
       // O ponteiro de conversas vivas (29/09) — dublado: estes testes
       // descrevem o roteamento das ferramentas, nao a consulta.
       { entre: jest.fn().mockResolvedValue([]) } as never,
+      { listar: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 
@@ -733,6 +736,7 @@ describe('o periodo livre nas ferramentas de venda', () => {
       // O ponteiro de conversas vivas (29/09) — dublado: estes testes
       // descrevem o roteamento das ferramentas, nao a consulta.
       { entre: jest.fn().mockResolvedValue([]) } as never,
+      { listar: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 
@@ -887,6 +891,7 @@ describe('o ranking por tipo de peça', () => {
       // O ponteiro de conversas vivas (29/09) — dublado: estes testes
       // descrevem o roteamento das ferramentas, nao a consulta.
       { entre: jest.fn().mockResolvedValue([]) } as never,
+      { listar: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 

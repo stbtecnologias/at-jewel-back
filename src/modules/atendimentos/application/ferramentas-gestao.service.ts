@@ -14,6 +14,7 @@ import {
 } from '../../../shared/clientes/fidelidade';
 import { faixaDePreco } from '../../../shared/catalogo/faixa-de-preco';
 import { FotosDeProdutoService } from './fotos-de-produto.service';
+import { FotosDaPecaUseCase } from '../../produtos/application/use-cases/fotos-da-peca.use-case';
 import { diasDeCalendario } from '../../../shared/tempo/dias-de-calendario';
 import { dataDeCorte, datasDeRecorte } from '../../../shared/tempo/recorte-de-datas';
 import type { NomeComemorativo } from '../../../shared/tempo/datas-comemorativas';
@@ -428,6 +429,11 @@ export class FerramentasGestaoService {
     private readonly leads: ILeadRepository,
     @Inject(CONVERSA_WHATSAPP_REPOSITORY)
     private readonly conversas: IConversaWhatsappRepository,
+    // RF33 — as fotos da PECA, para quando a busca resolve em uma so.
+    //
+    // NO FIM DA LISTA, como o `ConsultarVendasUseCase` em 13/10: parametro
+    // novo no meio quebra todo teste que constroi este servico a mao.
+    private readonly fotosDaPeca: FotosDaPecaUseCase,
   ) {}
 
   /**
@@ -1035,19 +1041,52 @@ export class FerramentasGestaoService {
         // As fotos sao baixadas ANTES de o modelo escrever — so quem baixou
         // sabe quais das URLs respondem (metade da joia nao responde), e a
         // agente precisa do numero para nao prometer o que nao vai mandar.
+        // ================================================================
+        // UMA PECA SO: VAO TODAS AS FOTOS DELA — 20/10/2026.
+        //
+        // "foto da produtos BR26396" devolvia UMA, porque a consulta manda a
+        // capa de cada peca. Quando a busca resolve em uma so, a pergunta e
+        // sobre ELA: nao ha lista para ilustrar, ha uma joia para ver.
+        //
+        // Depende do RESULTADO, e nao de vocabulario — que e o que sobra
+        // quando a frase pode vir de qualquer jeito.
+        // ================================================================
+        const umaSo =
+          comFoto !== false && achados.length === 1 && achados[0].id
+            ? await this.fotosDaPeca.listar(achados[0].id).catch(() => [])
+            : [];
+
         const { fotos, tinhamUrl } =
-          comFoto !== false
-            ? await this.fotosDeProduto.buscar(
-                achados.map((p) => ({
-                  codigo: p.codigoErp ?? '',
-                  chave: p.fotoArquivoId ?? null,
-                  url: p.fotoUrl ?? null,
-                  legenda:
-                    `${p.descricaoEtiqueta ?? `${p.categoria} ${p.familia}`}` +
-                    `${p.codigoErp ? ` — ${p.codigoErp}` : ''}`,
-                })),
-              )
-            : { fotos: [], tinhamUrl: 0 };
+          umaSo.length > 1
+            ? {
+                fotos: (
+                  await this.fotosDeProduto.buscar(
+                    umaSo.map((f, i) => ({
+                      codigo: `${achados[0].codigoErp ?? ''}-${i + 1}`,
+                      chave: f.arquivoId,
+                      url: null,
+                      legenda:
+                        `${achados[0].descricaoEtiqueta ?? `${achados[0].categoria} ${achados[0].familia}`}` +
+                        `${achados[0].codigoErp ? ` — ${achados[0].codigoErp}` : ''}` +
+                        `${f.capa ? ' (capa)' : ''}`,
+                    })),
+                    true,
+                  )
+                ).fotos,
+                tinhamUrl: umaSo.length,
+              }
+            : comFoto !== false
+              ? await this.fotosDeProduto.buscar(
+                  achados.map((p) => ({
+                    codigo: p.codigoErp ?? '',
+                    chave: p.fotoArquivoId ?? null,
+                    url: p.fotoUrl ?? null,
+                    legenda:
+                      `${p.descricaoEtiqueta ?? `${p.categoria} ${p.familia}`}` +
+                      `${p.codigoErp ? ` — ${p.codigoErp}` : ''}`,
+                  })),
+                )
+              : { fotos: [], tinhamUrl: 0 };
 
         return {
           total,

@@ -9,6 +9,7 @@ import {
   type Faixa,
 } from '../../../../shared/catalogo/faixa-de-preco';
 import { ListarProdutosUseCase } from '../../../produtos/application/use-cases/listar-produtos.use-case';
+import { FotosDaPecaUseCase } from '../../../produtos/application/use-cases/fotos-da-peca.use-case';
 
 /**
  * Teto de resultados, e agora com como pedir o resto.
@@ -135,6 +136,8 @@ export class ConsultarProdutosVendedoraUseCase {
   constructor(
     private readonly listar: ListarProdutosUseCase,
     private readonly fotos: FotosDeProdutoService,
+    // RF33 — as fotos da PECA, para quando a busca resolve em uma so.
+    private readonly fotosDaPeca: FotosDaPecaUseCase,
   ) {}
 
   /**
@@ -220,6 +223,48 @@ export class ConsultarProdutosVendedoraUseCase {
       fotoChave: p.fotoArquivoId ?? null,
       fotoUrl: p.fotoUrl ?? null,
     }));
+
+    // ======================================================================
+    // UMA PECA SO: VAO TODAS AS FOTOS DELA — 20/10/2026.
+    //
+    // O Lucas perguntou "foto da produtos BR26396" e recebeu UMA, porque a
+    // consulta manda a capa de cada peca. Com tres guardadas, faltaram duas —
+    // e ele perguntou "e as outras 2?".
+    //
+    // QUANDO A BUSCA RESOLVE EM UMA PECA SO, a pergunta e sobre ELA: nao ha
+    // lista para ilustrar, ha uma joia para ver. E isso nao depende de
+    // vocabulario nenhum — depende do RESULTADO, que e o que sobra quando a
+    // frase pode vir de qualquer jeito.
+    // ======================================================================
+    if (comFoto && produtos.length === 1 && produtos[0].id) {
+      const todas = await this.fotosDaPeca
+        .listar(produtos[0].id)
+        .catch(() => []);
+      if (todas.length > 1) {
+        const l = linhas[0];
+        const { fotos } = await this.fotos.buscar(
+          todas.map((f, i) => ({
+            codigo: `${l.codigo ?? ''}-${i + 1}`,
+            chave: f.arquivoId,
+            url: null,
+            legenda: `${l.descricao}${l.codigo ? ` — ${l.codigo}` : ''}${f.capa ? ' (capa)' : ''}`,
+          })),
+          true,
+        );
+        return {
+          produtos: linhas,
+          total,
+          semEstoque: Math.max(0, noCatalogo - comSaldo),
+          incluiuSemEstoque: incluirSemEstoque,
+          categoria,
+          foraDaCategoria: Math.max(0, semRecorte - total),
+          faixa,
+          pulados,
+          fotos,
+          tinhamFoto: todas.length,
+        };
+      }
+    }
 
     // AS FOTOS SAO BAIXADAS AQUI, antes de o modelo escrever — e nao depois.
     // So quem baixou sabe quais das URLs respondem de verdade (metade da
