@@ -103,6 +103,17 @@ export const PASTA_PENDENTES = 'catalogo/pendentes';
 /** Teto por arquivo. Packshot de joia em 1600px fica bem abaixo disso. */
 export const LIMITE_BYTES = 12 * 1024 * 1024;
 
+/**
+ * Teto da FOTO DE PECA — RF33, 20/10/2026.
+ *
+ * Maior que o das outras porque aqui a imagem e profissional, e nao um
+ * packshot de celular: decisao do Lucas ao dimensionar o requisito.
+ */
+export const LIMITE_FOTO_PECA_BYTES = 16 * 1024 * 1024;
+
+/** Teto de fotos por peca. Provisorio, para dimensionar o disco. */
+export const MAX_FOTOS_POR_PECA = 20;
+
 export const MIMES_IMAGEM = ['image/jpeg', 'image/png', 'image/webp'] as const;
 
 /**

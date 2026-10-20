@@ -13,11 +13,17 @@ import {
   Query,
   Request,
   UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { LIMITE_BYTES } from '../../../../catalogos/domain/ports/armazenamento.port';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+import {
+  LIMITE_BYTES,
+  LIMITE_FOTO_PECA_BYTES,
+  MAX_FOTOS_POR_PECA,
+} from '../../../../catalogos/domain/ports/armazenamento.port';
+import { FotosDaPecaUseCase } from '../../../application/use-cases/fotos-da-peca.use-case';
 import { Permissions } from '../../../../auth/infrastructure/http/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../../../auth/infrastructure/http/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../../../auth/infrastructure/http/guards/permissions.guard';
@@ -61,6 +67,7 @@ export class ProdutosController {
     private readonly alertasEstoque: AlertasEstoqueUseCase,
     private readonly saldoDoProduto: SaldoDoProdutoUseCase,
     private readonly fotoProduto: FotoProdutoUseCase,
+    private readonly fotosDaPeca: FotosDaPecaUseCase,
     private readonly escopo: EscopoProdutosService,
   ) {}
 
@@ -277,6 +284,70 @@ export class ProdutosController {
   @Permissions('produtos:foto')
   async removerFoto(@Param('id', ParseUUIDPipe) id: string) {
     return this.fotoProduto.remover(id);
+  }
+
+  // ---------------------------------------------------------------------------
+  // AS FOTOS DA PECA — RF33, 20/10/2026.
+  //
+  // Guarda de painel, como o `subirFoto` acima e pelo mesmo motivo: nao ha
+  // integracao que suba foto, e o `JwtOrApiKeyGuard` com `@Permissions` teria
+  // um buraco no ramo da chave.
+  // ---------------------------------------------------------------------------
+
+  @Get(':id/fotos')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('produtos:read')
+  async listarFotos(@Param('id', ParseUUIDPipe) id: string) {
+    return this.fotosDaPeca.listar(id);
+  }
+
+  /**
+   * Varias de uma vez — ate o teto por peca.
+   *
+   * `limits` no interceptor porque sem ele o multer le os arquivos inteiros
+   * para a memoria antes de qualquer validacao nossa. O `files` acompanha o
+   * teto da peca: mandar mais do que cabe nao chega nem a ser lido.
+   */
+  @Post(':id/fotos')
+  @HttpCode(HttpStatus.CREATED)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('produtos:foto')
+  @UseInterceptors(
+    FilesInterceptor('arquivos', MAX_FOTOS_POR_PECA, {
+      limits: { fileSize: LIMITE_FOTO_PECA_BYTES },
+    }),
+  )
+  async subirFotos(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFiles() arquivos: ArquivoRecebido[] | undefined,
+    @Request() req: { user?: { nome?: string; email?: string } },
+  ) {
+    return this.fotosDaPeca.adicionar(
+      id,
+      arquivos ?? [],
+      req.user?.nome ?? req.user?.email ?? null,
+      'PAINEL',
+    );
+  }
+
+  @Patch(':id/fotos/:fotoId/capa')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('produtos:foto')
+  async definirCapa(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('fotoId', ParseUUIDPipe) fotoId: string,
+  ) {
+    return this.fotosDaPeca.definirCapa(id, fotoId);
+  }
+
+  @Delete(':id/fotos/:fotoId')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('produtos:foto')
+  async excluirFoto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('fotoId', ParseUUIDPipe) fotoId: string,
+  ) {
+    return this.fotosDaPeca.excluir(id, fotoId);
   }
 
   @Delete(':id')
