@@ -269,8 +269,20 @@ describe('as fotos da peça pelo WhatsApp', () => {
 
       const r = await useCase.quais(DE, 'quais fotos tem o BR26396?');
 
-      expect(r?.resposta).toContain('3 fotos');
       expect(r?.fotos).toHaveLength(3);
+    });
+
+    // A FICHA, E SÓ ELA — 20/10: *"tira isso de 'vão aí', deixe apenas as
+    // fotos"*. As imagens chegam logo abaixo e se anunciam sozinhas.
+    it('o texto é só a ficha — nada de "2 fotos, vão aí"', async () => {
+      fotos.listar.mockResolvedValue(TRES);
+      imagens.buscar.mockResolvedValue(baixadas(3));
+
+      const r = await useCase.quais(DE, 'quais fotos tem o BR26396?');
+
+      expect(r?.resposta?.split('\n')).toHaveLength(1);
+      expect(r?.resposta).not.toContain('vão aí');
+      expect(r?.resposta).not.toContain('3 fotos');
     });
 
     // ========================================================================
@@ -300,7 +312,7 @@ describe('as fotos da peça pelo WhatsApp', () => {
       // O ` `: `toLocaleString` separa "R$" do número com espaço que NÃO
       // quebra linha. Comparar com espaço comum falha por um caractere
       // invisível — já perdi tempo com isso aqui.
-      const primeira = r?.resposta.split('\n')[0].replace(/ /g, ' ');
+      const primeira = r?.resposta?.split('\n')[0].replace(/ /g, ' ');
       expect(primeira).toBe('BR26396 — BRINCO DTS 0.25 CTS OB 18K — R$ 18.500');
       expect(r?.resposta).not.toContain('capa');
     });

@@ -251,18 +251,24 @@ export class FotosDePecaPeloWhatsappUseCase {
       ELA_PEDIU,
     );
 
-    // O RECORTE QUE ESCONDE DIZ QUE ESCONDEU. Mandar 10 de 14 e calar faria a
-    // peça parecer ter 10.
+    // ======================================================================
+    // A FICHA, E SÓ ELA — pedido do Lucas em 20/10.
+    //
+    // O "2 fotos, vão aí" saiu: as fotos chegam logo abaixo e se anunciam
+    // sozinhas. Contar o que a pessoa está vendo é conversa que não acrescenta
+    // — e esta mensagem ela repassa.
+    //
+    // COM UMA EXCEÇÃO, E ELA NÃO É TAGARELICE: quando nem todas couberam, a
+    // frase volta. Mandar 10 de 14 e calar faria a peça PARECER ter 10, e
+    // quem recebe não tem como desconfiar. O recorte que esconde diz que
+    // escondeu.
+    // ======================================================================
     const faltam = nossas.length - baixadas.fotos.length;
-    const quantas = `${nossas.length} ${nossas.length === 1 ? 'foto' : 'fotos'}`;
     return {
       resposta:
-        `${ficha}\n${quantas}` +
-        (faltam > 0
-          ? `, e eu mando ${baixadas.fotos.length} aqui — as outras ${faltam} ficam no painel.`
-          : nossas.length === 1
-            ? ', vai aí.'
-            : ', vão aí.'),
+        faltam > 0
+          ? `${ficha}\nSão ${nossas.length} fotos; mando ${baixadas.fotos.length} aqui, e as outras ${faltam} ficam no painel.`
+          : ficha,
       motivo: 'fotos_da_peca',
       fotos: baixadas.fotos,
     };
