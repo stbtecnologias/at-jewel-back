@@ -1,4 +1,7 @@
-import { FotosDePecaPeloWhatsappUseCase } from './fotos-de-peca-pelo-whatsapp.use-case';
+import {
+  FotosDePecaPeloWhatsappUseCase,
+  PERMISSAO_FOTO_DE_PECA,
+} from './fotos-de-peca-pelo-whatsapp.use-case';
 import { SessaoCatalogoService } from '../sessao-catalogo.service';
 
 /**
@@ -87,6 +90,29 @@ describe('as fotos da peça pelo WhatsApp', () => {
       destino as never,
       { listarAbertos: jest.fn().mockResolvedValue([]) } as never,
     );
+  });
+
+  /**
+   * QUEM MANDA E QUEM VÊ — regra do Lucas, 20/10/2026.
+   *
+   * *"Quem pode enviar as fotos para o produto: todos menos as vendedoras.
+   * Mas ela pode pedir as fotos das peças."*
+   *
+   * Medido na base no mesmo dia:
+   *
+   *   produtos:foto  → ADMIN, ESTOQUISTA, GERENTE, GERENTE_VENDAS, MARKETING
+   *   produtos:read  → os mesmos **e** VENDEDORA
+   *
+   * E há uma segunda barreira, mais forte que a permissão: o caminho da foto
+   * procura em `admin_users`, e nenhuma das 7 vendedoras tem conta de painel.
+   *
+   * ESTE TESTE GUARDA A PRIMEIRA. Permissão é dado, e dado muda — trocar a
+   * constante por `produtos:read` ou `catalogo:write` abriria o envio para
+   * quem não deve, sem quebrar mais nada.
+   */
+  it('mandar foto para a peça exige `produtos:foto` — a de VER é outra', () => {
+    expect(PERMISSAO_FOTO_DE_PECA).toBe('produtos:foto');
+    expect(PERMISSAO_FOTO_DE_PECA).not.toBe('produtos:read');
   });
 
   describe('mirar a peça', () => {

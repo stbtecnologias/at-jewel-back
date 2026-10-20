@@ -1653,6 +1653,52 @@ describe('RotearMensagemInternaUseCase', () => {
     });
 
     /**
+     * A VENDEDORA NÃO MANDA FOTO PARA A PEÇA — regra do Lucas, 20/10/2026.
+     *
+     * *"Todos menos as vendedoras. Mas ela pode pedir as fotos das peças."*
+     *
+     * A barreira não é um `if` no serviço: é o RECONHECIMENTO. O caminho da
+     * foto procura em `admin_users` com `produtos:foto`, e quem não está lá
+     * não é encontrado.
+     *
+     * Medido em 20/10: nenhuma das 7 vendedoras tem conta de painel, e
+     * `produtos:foto` não está no papel VENDEDORA.
+     */
+    it('sem `produtos:foto`, a foto NÃO vai para a peça', async () => {
+      identificarAdmin.execute.mockResolvedValue(null);
+      const daPeca = {
+        temPecaMirada: () => true,
+        anexarPenduradas: jest.fn().mockResolvedValue(null),
+        quais: jest.fn().mockResolvedValue(null),
+        mirar: jest.fn().mockResolvedValue(null),
+        foto: jest.fn(),
+      };
+      const semPermissao = new RotearMensagemInternaUseCase(
+        identificarVendedora as never,
+        identificarAdmin as never,
+        canalVendedora as never,
+        canalGestao as never,
+        canalCatalogo as never,
+        new RecepcionarUseCase(new RecepcaoService()),
+        whatsapp as never,
+        { disponivel: () => false, transcrever: jest.fn() } as never,
+        new MemoriaDeGrupoService(),
+        { ler: jest.fn() } as never,
+        { analisar: jest.fn() } as never,
+        daPeca as never,
+      );
+
+      const r = await semPermissao.execute({
+        de: '558586467241@c.us',
+        texto: '',
+        imagem: { url: 'http://x/y.jpg', mimetype: 'image/jpeg' },
+      });
+
+      expect(daPeca.foto).not.toHaveBeenCalled();
+      expect(r.motivo).toBe('ignorado_foto_sem_permissao');
+    });
+
+    /**
      * RF33, 20/10/2026 — A FOTO DE PEÇA NÃO DESVIA.
      *
      * O catálogo mora na Elena desde 25/09, e a imagem que chega na Anastasia
