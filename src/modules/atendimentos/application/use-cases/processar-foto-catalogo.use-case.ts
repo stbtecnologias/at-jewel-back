@@ -854,7 +854,23 @@ export class ProcessarFotoCatalogoUseCase {
     );
 
     const analise = await this.lerLegenda(msg.legenda, abertos);
-    const catalogo = analise.catalogo ?? this.sessao.catalogoAtual(msg.de);
+    // ======================================================================
+    // O CATALOGO LEMBRADO NAO GANHA DE UMA PECA EM CONVERSA — 20/10/2026.
+    //
+    // Lembrar o ultimo catalogo existe para a RAJADA: vinte fotos da mesma
+    // colecao, uma resposta so. Mas se a conversa acabou de falar de uma peca,
+    // o destino deixou de ser obvio — e o atalho vira adivinhacao.
+    //
+    // E foi exatamente o que o Lucas viu: pediu as fotos do BR26396, mandou
+    // uma imagem, e ela foi para o catalogo sem pergunta nenhuma.
+    //
+    // O QUE ELA ESCREVEU NA LEGENDA CONTINUA MANDANDO: ali ela disse o
+    // catalogo, e dito nao e adivinhado.
+    // ======================================================================
+    const lembrado = this.sessao.catalogoAtual(msg.de);
+    const pecaNaConversa = this.sessao.pecaFalada(msg.de) !== null;
+    const catalogo =
+      analise.catalogo ?? (pecaNaConversa ? null : lembrado);
 
     // O CODIGO QUE CHEGOU ANTES DA FOTO — "CO26185" mandado sozinho, com a
     // conversa aberta. Vale so quando a legenda nao trouxe um: o que vem
