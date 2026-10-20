@@ -963,6 +963,7 @@ export class FerramentasGestaoService {
           const conferencia = await this.fotosDeProduto.quaisTemFoto(
             candidatas.map((p) => ({
               codigo: p.codigoErp ?? p.id ?? '',
+              chave: p.fotoArquivoId ?? null,
               url: p.fotoUrl ?? null,
               legenda: '',
             })),
@@ -977,6 +978,7 @@ export class FerramentasGestaoService {
           const comImagem = await this.fotosDeProduto.buscar(
             pagina.map((p) => ({
               codigo: p.codigoErp ?? '',
+              chave: p.fotoArquivoId ?? null,
               url: p.fotoUrl ?? null,
               legenda:
                 `${p.descricaoEtiqueta ?? `${p.categoria} ${p.familia}`}` +
@@ -1038,6 +1040,7 @@ export class FerramentasGestaoService {
             ? await this.fotosDeProduto.buscar(
                 achados.map((p) => ({
                   codigo: p.codigoErp ?? '',
+                  chave: p.fotoArquivoId ?? null,
                   url: p.fotoUrl ?? null,
                   legenda:
                     `${p.descricaoEtiqueta ?? `${p.categoria} ${p.familia}`}` +

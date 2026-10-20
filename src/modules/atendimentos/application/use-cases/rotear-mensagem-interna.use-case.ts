@@ -372,6 +372,12 @@ export class RotearMensagemInternaUseCase {
         PERMISSAO_FOTO_DE_PECA,
       );
       if (dona) {
+        // VER VEM ANTES DE MIRAR, e a diferenca e a preposicao: "fotos DO
+        // produto X" e pedido, "fotos PARA a peca X" e destino. Invertendo a
+        // ordem, quem pede para ver abriria destino sem querer.
+        const vendo = await this.fotosDePeca.quais(msg.de, msg.texto ?? '');
+        if (vendo) return vendo;
+
         const mirada = await this.fotosDePeca.mirar(msg.de, msg.texto ?? '');
         if (mirada) return mirada;
       }

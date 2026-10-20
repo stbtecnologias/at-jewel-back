@@ -27,6 +27,7 @@ import type {
 import { PRODUTO_REPOSITORY } from '../../../erp/domain/ports/injection-tokens';
 import type { IProdutoRepository } from '../../../erp/domain/ports/repositories/produto-repository.port';
 import { ListarProdutosUseCase } from '../../../produtos/application/use-cases/listar-produtos.use-case';
+import type { FotoDeProduto } from '../fotos-de-produto.service';
 import {
   SessaoCatalogoService,
   type CodigoEsperado,
@@ -604,6 +605,13 @@ export interface FotoDoCanal {
 export interface RespostaFoto {
   resposta: string | null;
   motivo: string;
+  /**
+   * Imagens que saem DEPOIS do texto — RF33, 20/10/2026.
+   *
+   * Quem envia e o webhook, e e ele que garante a ordem: primeiro a frase,
+   * depois as fotos. Mandar daqui as poria ANTES do texto.
+   */
+  fotos?: FotoDeProduto[];
 }
 
 /**

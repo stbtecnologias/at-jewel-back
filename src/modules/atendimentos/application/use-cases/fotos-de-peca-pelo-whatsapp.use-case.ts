@@ -5,6 +5,7 @@ import { PRODUTO_REPOSITORY } from '../../../erp/domain/ports/injection-tokens';
 import type { IProdutoRepository } from '../../../erp/domain/ports/repositories/produto-repository.port';
 import { FotosDaPecaUseCase } from '../../../produtos/application/use-cases/fotos-da-peca.use-case';
 import { SessaoCatalogoService } from '../sessao-catalogo.service';
+import { FotosDeProdutoService } from '../fotos-de-produto.service';
 import type { FotoDoCanal, RespostaFoto } from './processar-foto-catalogo.use-case';
 
 /**
@@ -34,6 +35,31 @@ const RE_PARAR =
   /^(?:pronto|acabou|terminei|fim|chega|parar?|cancelar?|sai|sair)\s*$/i;
 
 /**
+ * O PEDIDO DE VER AS FOTOS — e a diferença dele para o de MIRAR é a preposição.
+ *
+ *   "fotos DO produto BR26396"    → ver     (de)
+ *   "fotos PARA a peça BR26396"   → mirar   (destino)
+ *   "produto BR26396"             → mirar
+ *
+ * É a distinção que o português já faz, e por isso ela é fácil de lembrar e de
+ * explicar. O pedido é testado ANTES do mirar, senão "fotos do produto X"
+ * abriria destino em vez de responder.
+ */
+const RE_QUAIS = [
+  // "quais fotos o produto BR26396 tem?", "quantas fotos tem a peça BR26396"
+  //
+  // EXIGE A PALAVRA `fotos` E UM CODIGO DE VERDADE (duas letras e digitos).
+  // Sem as duas coisas, "quantas pecas vendemos hoje?" casaria — e roubaria
+  // da Anastasia uma pergunta que e dela.
+  /^(?:quais|quantas|que)\s+(?:as\s+)?fotos?\b[^?]*?\b([A-Za-z]{2}\d{3,})\b[^?]*\??$/i,
+  // "fotos do produto BR26396", "me manda as fotos da peça BR26396"
+  /^(?:(?:me\s+)?(?:manda(?:r)?|mostra(?:r)?|envia(?:r)?|ver|lista(?:r)?|quero)\s+)?(?:as\s+)?fotos?\s+d[oa]s?\s+(?:[ao]s?\s+)?(?:produto|pe[cç]a|item|ref(?:erencia|erência)?)?\s*:?\s*([A-Za-z0-9][A-Za-z0-9._-]{2,30})\s*\??$/i,
+];
+
+/** Teto do que ela recebe de volta. Ela PEDIU, então vale o teto maior. */
+const ELA_PEDIU = true;
+
+/**
  * AS FOTOS DA PEÇA PELO WHATSAPP — RF33, pedido do Lucas em 20/10/2026.
  *
  * ==========================================================================
@@ -61,6 +87,9 @@ export class FotosDePecaPeloWhatsappUseCase {
     private readonly produtos: IProdutoRepository,
     @Inject(WHATSAPP_GATEWAY)
     private readonly whatsapp: IWhatsappGateway,
+    // Quem BAIXA a imagem para mandar de volta. Desde o RF33 ele le a nossa
+    // do armazenamento quando ha `chave`, e so cai na Conexa sem ela.
+    private readonly imagens: FotosDeProdutoService,
   ) {}
 
   /** Vale olhar a imagem que chegou como foto de peça? Só a catraca. */
@@ -68,10 +97,88 @@ export class FotosDePecaPeloWhatsappUseCase {
     return this.sessao.pecaMirada(de) !== null;
   }
 
-  /** O texto PARECE um comando de mirar? Teste barato, sem tocar no banco. */
+  /** O texto PARECE um comando? Teste barato, sem tocar no banco. */
   static pareceComando(texto: string | null | undefined): boolean {
     const t = (texto ?? '').trim();
-    return t.length > 0 && (RE_MIRAR.test(t) || RE_PARAR.test(t));
+    if (t.length === 0) return false;
+    return (
+      RE_MIRAR.test(t) || RE_PARAR.test(t) || RE_QUAIS.some((r) => r.test(t))
+    );
+  }
+
+  /**
+   * "QUAIS FOTOS O PRODUTO BR26396 TEM?" — e as fotos vão junto.
+   *
+   * ==========================================================================
+   * AS IMAGENS SAEM DEPOIS DO TEXTO, e quem as envia é o webhook. Devolvê-las
+   * em `fotos` é o que garante a ordem: a frase diz quantas são, e aí elas
+   * chegam. Mandá-las daqui as poria ANTES, e a pessoa veria quatro imagens
+   * sem saber de que peça.
+   *
+   * A FOTO DO ERP TAMBÉM CONTA, e é dita como tal: a peça pode não ter
+   * nenhuma nossa e ter a da Conexa — e aí a resposta não pode ser "não tem
+   * foto".
+   * ==========================================================================
+   */
+  async quais(de: string, texto: string): Promise<RespostaFoto | null> {
+    const t = texto.trim();
+    const codigo = RE_QUAIS.map((r) => t.match(r)?.[1])
+      .find((c) => !!c)
+      ?.toUpperCase();
+    if (!codigo) return null;
+
+    const produto = await this.produtos.findByCodigoErp(codigo);
+    if (!produto?.id) return null;
+
+    const nossas = await this.fotos.listar(produto.id);
+    const nome = produto.descricaoEtiqueta?.trim();
+    const rotulo = nome ? `${codigo} — ${nome}` : codigo;
+
+    if (nossas.length === 0) {
+      // SEM FOTO NOSSA, A DO ERP AINDA PODE EXISTIR — e ela vai, para a
+      // resposta não ser um "não tem" que a peça desmente no painel.
+      const doErp = await this.imagens.buscar(
+        [{ codigo, chave: null, url: produto.fotoUrl ?? null, legenda: rotulo }],
+        ELA_PEDIU,
+      );
+      if (doErp.fotos.length > 0) {
+        return {
+          resposta: `${rotulo}\nNão tem foto nossa ainda — essa é a do ERP. Me diz "produto ${codigo}" e manda as suas.`,
+          motivo: 'fotos_da_peca_so_erp',
+          fotos: doErp.fotos,
+        };
+      }
+      return {
+        resposta: `${rotulo}\nEssa peça não tem nenhuma foto. Me diz "produto ${codigo}" e manda as suas.`,
+        motivo: 'fotos_da_peca_nenhuma',
+      };
+    }
+
+    const baixadas = await this.imagens.buscar(
+      nossas.map((f, i) => ({
+        codigo: `${codigo}-${i + 1}`,
+        chave: f.arquivoId,
+        url: null,
+        legenda: f.capa ? `${rotulo} — capa` : rotulo,
+      })),
+      ELA_PEDIU,
+    );
+
+    // O RECORTE QUE ESCONDE DIZ QUE ESCONDEU. Mandar 10 de 14 e calar faria a
+    // peça parecer ter 10.
+    const faltam = nossas.length - baixadas.fotos.length;
+    const quantas = `${nossas.length} ${nossas.length === 1 ? 'foto' : 'fotos'}`;
+    return {
+      resposta:
+        `${rotulo}\n${quantas}` +
+        (faltam > 0
+          ? `, e eu mando ${baixadas.fotos.length} aqui — as outras ${faltam} ficam no painel.`
+          : nossas.length === 1
+            ? ', vai aí.'
+            : ', vão aí — a capa é a primeira.'),
+      motivo: 'fotos_da_peca',
+      fotos: baixadas.fotos,
+    };
   }
 
   /**

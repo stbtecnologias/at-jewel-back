@@ -216,6 +216,8 @@ export class ConsultarProdutosVendedoraUseCase {
       // O saldo vem da tabela `estoque` (ver `saldo-do-produto.ts`), e vira
       // um SIM ou NAO aqui — o numero nao atravessa esta fronteira.
       disponivel: p.estoqueAtual > 0,
+      // A NOSSA, se houver — desde o RF33 `fotoArquivoId` carrega a CAPA.
+      fotoChave: p.fotoArquivoId ?? null,
       fotoUrl: p.fotoUrl ?? null,
     }));
 
@@ -227,6 +229,7 @@ export class ConsultarProdutosVendedoraUseCase {
       ? await this.fotos.buscar(
           linhas.map((l) => ({
             codigo: l.codigo ?? '',
+        chave: l.fotoChave,
             url: l.fotoUrl,
             legenda: `${l.descricao}${l.codigo ? ` — ${l.codigo}` : ''}`,
           })),
@@ -277,6 +280,8 @@ export class ConsultarProdutosVendedoraUseCase {
     const { comFoto: confirmadas, cortadas } = await this.fotos.quaisTemFoto(
       candidatas.map((p) => ({
         codigo: p.codigoErp ?? p.id ?? '',
+        // A NOSSA GANHA, e nem precisa de conferencia — RF33.
+        chave: p.fotoArquivoId ?? null,
         url: p.fotoUrl ?? null,
         legenda: '',
       })),
@@ -297,6 +302,7 @@ export class ConsultarProdutosVendedoraUseCase {
       codigo: p.codigoErp,
       precoVenda: p.valorVenda,
       disponivel: p.estoqueAtual > 0,
+      fotoChave: p.fotoArquivoId ?? null,
       fotoUrl: p.fotoUrl ?? null,
     }));
 
@@ -305,6 +311,7 @@ export class ConsultarProdutosVendedoraUseCase {
     const { fotos } = await this.fotos.buscar(
       linhas.map((l) => ({
         codigo: l.codigo ?? '',
+        chave: l.fotoChave,
         url: l.fotoUrl,
         legenda: `${l.descricao}${l.codigo ? ` — ${l.codigo}` : ''}`,
       })),
