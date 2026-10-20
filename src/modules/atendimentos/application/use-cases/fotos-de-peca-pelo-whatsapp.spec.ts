@@ -384,10 +384,42 @@ describe('as fotos da peça pelo WhatsApp', () => {
       expect(await useCase.anexarPenduradas(DE, 'peça', QUEM)).toBeNull();
     });
 
-    it('sem peça falada, a resposta não é comigo', async () => {
+    it('sem peça falada e sem código, a resposta não é comigo', async () => {
       sessao.esquecerPecaFalada(DE);
 
       expect(await useCase.anexarPenduradas(DE, 'peça', QUEM)).toBeNull();
+    });
+
+    /**
+     * O RESTART NÃO PODE MATAR O RECURSO — 20/10/2026.
+     *
+     * A memória da sessão vive em RAM. O Lucas reiniciou o back, mandou a
+     * foto e a pergunta voltou com uma opção só: do ponto de vista dele, o
+     * recurso não existia. Estava "certo" e era inútil.
+     *
+     * Agora o código digitado na resposta vale igual — e é conferido contra o
+     * ERP antes de valer, porque formato não é existência.
+     */
+    it('sem peça falada, o CÓDIGO na resposta serve', async () => {
+      sessao.esquecerPecaFalada(DE);
+
+      const r = await useCase.anexarPenduradas(DE, 'BR26396', QUEM);
+
+      expect(r?.motivo).toBe('anexo_na_peca');
+      expect(fotos.anexarExistente).toHaveBeenCalledWith(
+        'p-1',
+        'catalogo/pendentes/a.jpg',
+        'image/jpeg',
+        QUEM,
+      );
+    });
+
+    it('código que NÃO existe no ERP não anexa', async () => {
+      sessao.esquecerPecaFalada(DE);
+      produtos.findByCodigoErp.mockResolvedValue(null);
+
+      expect(await useCase.anexarPenduradas(DE, 'BR99999', QUEM)).toBeNull();
+      expect(fotos.anexarExistente).not.toHaveBeenCalled();
     });
 
     it('arquivo que sumiu da espera é DITO, e não vira linha fantasma', async () => {

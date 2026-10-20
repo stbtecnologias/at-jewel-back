@@ -75,6 +75,15 @@ const RE_E_DA_PECA =
   /^(?:(?:e|é|sim),?\s*)?(?:(?:par[ao]|d[ao]|n[ao])\s+)?(?:[ao]s?\s+)?(?:pe[cç]a|produto|item)\s*\.?$/i;
 
 /**
+ * O CODIGO DA PECA DENTRO DA RESPOSTA — `BR26396`, duas letras e digitos.
+ *
+ * E a unica parte que nao se deduz: catalogo tem numero de 4 digitos e nome,
+ * peca tem esse formato. Mesmo assim ele e CONFERIDO contra o ERP antes de
+ * valer — formato nao e existencia.
+ */
+const RE_CODIGO_NA_RESPOSTA = /\b([A-Za-z]{2}\d{3,})\b/;
+
+/**
  * AS FOTOS DA PEÇA PELO WHATSAPP — RF33, pedido do Lucas em 20/10/2026.
  *
  * ==========================================================================
@@ -285,11 +294,16 @@ export class FotosDePecaPeloWhatsappUseCase {
     texto: string,
     nomeRemetente: string,
   ): Promise<RespostaFoto | null> {
-    const peca = this.sessao.pecaFalada(de);
-    if (!peca) return null;
+    if (!this.sessao.temPendentes(de)) return null;
 
     const t = texto.trim();
-    if (!this.sessao.temPendentes(de)) return null;
+    // A PECA PODE VIR DA CONVERSA OU DA PROPRIA RESPOSTA — 20/10/2026.
+    //
+    // A memoria da sessao vive em RAM e morre em todo restart. Depender so
+    // dela fazia o recurso sumir depois de subir codigo novo — foi o que o
+    // Lucas viu. O codigo digitado na resposta vale igual.
+    const peca = this.sessao.pecaFalada(de) ?? (await this.pecaDoTexto(t));
+    if (!peca) return null;
 
     // ======================================================================
     // DEDUZIR, E NAO EXIGIR A PALAVRA CERTA — decisao do Lucas em 20/10/2026.
@@ -340,6 +354,30 @@ export class FotosDePecaPeloWhatsappUseCase {
         `${peca.codigoErp} — ela tem ${total} agora.${faltou}\n` +
         'As próximas fotos vão para ela também. "pronto" quando terminar.',
       motivo: 'anexo_na_peca',
+    };
+  }
+
+  /**
+   * A peça que ela citou NA PRÓPRIA RESPOSTA.
+   *
+   * "BR26396", "é do BR26396", "do brinco BR26396" — o código é a única parte
+   * que não se adivinha, e ele é conferido contra o ERP. Código que não existe
+   * devolve `null`, e a resposta segue para o catálogo.
+   */
+  private async pecaDoTexto(
+    texto: string,
+  ): Promise<{ produtoId: string; codigoErp: string; rotulo: string } | null> {
+    const codigo = texto.match(RE_CODIGO_NA_RESPOSTA)?.[1]?.toUpperCase();
+    if (!codigo) return null;
+
+    const produto = await this.produtos.findByCodigoErp(codigo);
+    if (!produto?.id) return null;
+
+    const nome = produto.descricaoEtiqueta?.trim();
+    return {
+      produtoId: produto.id,
+      codigoErp: codigo,
+      rotulo: nome ? `${codigo} — ${nome}` : codigo,
     };
   }
 

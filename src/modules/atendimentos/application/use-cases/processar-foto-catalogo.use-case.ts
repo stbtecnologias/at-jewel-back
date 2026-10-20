@@ -2629,12 +2629,24 @@ export class ProcessarFotoCatalogoUseCase {
   private perguntarCatalogo(abertos: CatalogoAberto[], de?: string): string {
     const lista = abertos.map((c) => `#${c.numero} — ${c.nome}`).join('\n');
     const peca = de ? this.sessao.pecaFalada(de) : null;
+    // ======================================================================
+    // A OPCAO DA PECA NAO DEPENDE DE A CONVERSA TER SOBREVIVIDO.
+    //
+    // A primeira versao so oferecia a peca quando havia uma `pecaFalada` — e
+    // essa memoria vive em RAM. O Lucas reiniciou o back, mandou a foto, e a
+    // pergunta voltou com uma opcao so: do ponto de vista dele, o recurso nao
+    // existia. Estava "certo" e era inutil.
+    //
+    // Entao a peca e SEMPRE oferecida: com codigo quando ela esta na conversa,
+    // e pedindo o codigo quando nao esta.
+    // ======================================================================
+    //
     // NADA DE PALAVRA MAGICA na pergunta — decisao do Lucas em 20/10/2026. A
     // resposta e interpretada pelo modelo (`IInterpretadorDeDestino`), entao
     // ensinar um comando aqui seria estreitar o que ela ja pode dizer.
     const ouAPeca = peca
       ? `\n\nOu é para a peça ${peca.codigoErp}, de que estávamos falando?`
-      : '';
+      : '\n\nOu é para uma peça? Me diz o código dela.';
     return `De qual catálogo é?\n${lista}\n\nResponde com o número ou o nome.${ouAPeca}`;
   }
 
