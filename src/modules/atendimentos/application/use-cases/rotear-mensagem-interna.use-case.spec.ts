@@ -57,6 +57,8 @@ describe('RotearMensagemInternaUseCase', () => {
     fotosPendentes: jest.Mock;
     temFotoComFalha: jest.Mock;
     tentarDeNovo: jest.Mock;
+    temFotoTratavel: jest.Mock;
+    tratarAPedido: jest.Mock;
     aprovacao: jest.Mock;
     temCodigoEsperando: jest.Mock;
     esperandoConsulta: jest.Mock;
@@ -116,6 +118,8 @@ describe('RotearMensagemInternaUseCase', () => {
       fotosPendentes: jest.fn(),
       temFotoComFalha: jest.fn(() => false),
       tentarDeNovo: jest.fn().mockResolvedValue(null),
+      temFotoTratavel: jest.fn(() => false),
+      tratarAPedido: jest.fn().mockResolvedValue(null),
       aprovacao: jest.fn().mockResolvedValue(null),
       temCodigoEsperando: jest.fn(() => false),
       esperandoConsulta: jest.fn(() => false),
@@ -1683,6 +1687,10 @@ describe('RotearMensagemInternaUseCase — a conversa do Yerlon, de ponta a pont
       listarEmAprovacao: jest.fn().mockResolvedValue([]),
       criarFoto: jest.fn().mockResolvedValue({ id: 'f-1' }),
       atualizarFoto: jest.fn().mockResolvedValue({ status: 'EM_APROVACAO' }),
+      // Desde o RF31 o "trata" le a foto antes de mandar para a IA.
+      buscarFotoPorId: jest
+        .fn()
+        .mockResolvedValue({ id: 'f-1', status: 'RECEBIDA', codigoErp: null }),
     };
     const armazenamento = {
       guardar: jest.fn().mockResolvedValue('catalogo/pendentes/a.jpg'),
@@ -1768,6 +1776,11 @@ describe('RotearMensagemInternaUseCase — a conversa do Yerlon, de ponta a pont
     expect(foto.motivo).toBe('foto_guardada');
     expect(foto.resposta).toContain('#0001');
 
+    // O TRATAMENTO AGORA E PEDIDO — RF31, 20/10/2026. Ate aqui a foto ia para
+    // a IA sozinha; o resto desta conversa so existe porque ela pediu.
+    const pedido = await falar('trata');
+    expect(pedido.motivo).toBe('foto_em_tratamento');
+
     // 13:33 — "Ok" com a foto tratada AINDA A CAMINHO. E recibo: nao aprova,
     // e nao chega na Anastasia.
     const ok = await falar('Ok');
@@ -1789,7 +1802,7 @@ describe('RotearMensagemInternaUseCase — a conversa do Yerlon, de ponta a pont
     // O codigo chega: anota e publica de uma vez, sem pedir "aprovo" de novo.
     const codigo = await falar('AN24435');
     expect(codigo.motivo).toBe('foto_aprovada');
-    expect(codigo.resposta).toContain('já está no catálogo');
+    expect(codigo.resposta).toContain('á está no catálogo');
     expect(catalogos.atualizarFoto).toHaveBeenLastCalledWith(
       'f-1',
       expect.objectContaining({

@@ -327,11 +327,15 @@ export class RotearMensagemInternaUseCase {
     const esperandoCodigo = noCatalogo && this.canalCatalogo.temCodigoEsperando(msg.de);
     const esperandoConsulta = noCatalogo && this.canalCatalogo.esperandoConsulta(msg.de);
     const fotoComFalha = noCatalogo && this.canalCatalogo.temFotoComFalha(msg.de);
+    // Desde o RF31 a foto entra crua e o tratamento virou pedido — entao uma
+    // foto guardada ha pouco faz o canal escutar o "trata" que pode vir.
+    const fotoTratavel = noCatalogo && this.canalCatalogo.temFotoTratavel(msg.de);
     if (
       esperandoCatalogo ||
       esperandoCodigo ||
       esperandoConsulta ||
       fotoComFalha ||
+      fotoTratavel ||
       (noCatalogo && this.canalCatalogo.temFotoEmAprovacao(msg.de)) ||
       (noCatalogo && this.canalCatalogo.conversaAberta(msg.de))
     ) {
@@ -369,6 +373,19 @@ export class RotearMensagemInternaUseCase {
               textoResolvido,
             );
             if (refeita) return refeita;
+          }
+
+          // "TRATA" — o pedido de tratamento do RF31, logo depois do "tenta
+          // de novo" e pelo mesmo motivo: a frase nunca e codigo nem
+          // veredito, e e curta o bastante para a dica da aprovacao engoli-la
+          // se viesse depois. O `tentarDeNovo` vem antes porque "trata de
+          // novo" e refazer, e nao tratar.
+          if (fotoTratavel) {
+            const tratando = await this.canalCatalogo.tratarAPedido(
+              msg.de,
+              textoResolvido,
+            );
+            if (tratando) return tratando;
           }
 
           // O CODIGO ANTES DA APROVACAO: "BR26252" nao e veredito, e sem esta

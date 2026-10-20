@@ -106,6 +106,23 @@ export interface FotoComFalha {
   em: number;
 }
 
+/**
+ * A ultima foto guardada por este remetente — o alvo do "trata".
+ *
+ * Desde 20/10/2026 a foto entra no catalogo CRUA, e o tratamento so acontece
+ * se ela pedir. O pedido vem depois, em outra mensagem, e precisa saber sobre
+ * qual foto e: e esta.
+ *
+ * FORA DA SESSAO, como a falha e a consulta: lembrar a ultima foto nao pode,
+ * sozinho, abrir conversa de catalogo.
+ */
+export interface FotoGuardada {
+  fotoId: string;
+  /** `#0004 Holiday` ou `BR26252`, para a resposta dizer qual foto e. */
+  rotulo: string;
+  em: number;
+}
+
 /** O codigo mandado antes da foto, com o que veio junto dele. */
 export interface CodigoAdiantado {
   codigoErp: string;
@@ -198,6 +215,8 @@ export class SessaoCatalogoService {
   private readonly consultas = new Map<string, number>();
   /** A foto cujo tratamento falhou, esperando o "tenta de novo". */
   private readonly falhas = new Map<string, FotoComFalha>();
+  /** A ultima foto guardada, esperando um eventual "trata". */
+  private readonly guardadas = new Map<string, FotoGuardada>();
 
   /** Catalogo lembrado da ultima vez, se ainda dentro da janela. */
   catalogoAtual(
@@ -422,6 +441,37 @@ export class SessaoCatalogoService {
 
   esquecerFalha(chave: string): void {
     this.falhas.delete(chave);
+  }
+
+  // ---------------------------------------------------------------------------
+  // A ultima foto guardada — desde 20/10/2026, com o RF31.
+  //
+  // A foto passou a entrar no catalogo sem tratamento, e o tratamento virou
+  // pedido. "trata essa foto" chega numa mensagem seguinte, sem dizer qual —
+  // entao o alvo e a ultima que ela guardou.
+  //
+  // E SO A ULTIMA, de proposito: "essa foto" nunca significa a terceira de
+  // tras para frente. Quem quer outra manda o codigo dela.
+  // ---------------------------------------------------------------------------
+
+  /** Guardei esta foto; fica anotada para um eventual "trata". */
+  lembrarFotoGuardada(chave: string, fotoId: string, rotulo: string): void {
+    this.guardadas.set(chave, { fotoId, rotulo, em: Date.now() });
+  }
+
+  /** A ultima foto guardada, se ainda dentro da janela. */
+  fotoGuardada(chave: string): FotoGuardada | null {
+    const f = this.guardadas.get(chave);
+    if (!f) return null;
+    if (Date.now() - f.em > JANELA_MS) {
+      this.guardadas.delete(chave);
+      return null;
+    }
+    return f;
+  }
+
+  esquecerFotoGuardada(chave: string): void {
+    this.guardadas.delete(chave);
   }
 
   /** Guarda o codigo que chegou antes da foto. Substitui o anterior. */

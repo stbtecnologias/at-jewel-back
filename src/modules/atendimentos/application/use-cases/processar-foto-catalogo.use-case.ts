@@ -120,6 +120,23 @@ const TENTA_DE_NOVO = 'tenta de novo';
 const RE_TENTA_DE_NOVO =
   /^(pode )?(tenta|tente|tentar|tentando|refaz|refazer|faz|faca|trata|tratar) ?(de novo|novamente|outra vez|denovo)( por favor| pf| pfv)?$|^(de novo|denovo|novamente)$/;
 
+/**
+ * O PEDIDO DE TRATAMENTO — 20/10/2026, RF31.
+ *
+ * A foto passou a entrar no catalogo crua, e a IA so age quando ela pede. O
+ * que vier depois do comando e o pedido de estilo, e segue inteiro para o
+ * tratamento: *"trata deixando o fundo branco"*.
+ *
+ * NAO COLIDE COM O `tenta de novo`, que refaz a foto cujo tratamento falhou:
+ * aquele e lido ANTES, no roteador, e aqui o resto "de novo" e recusado de
+ * proposito — ver `RE_SO_DE_NOVO`.
+ */
+const RE_TRATA =
+  /^(pode |podes |poderia |vc |voce |por favor )*(trata|tratar|trate|tratando|melhora|melhorar|melhore)\b ?(a foto|essa foto|esta foto|a imagem|essa imagem|esta imagem|ela|essa|esta|isso)? ?(.*)$/;
+
+/** O que, sozinho depois do comando, significa "refaz" e nao "trata". */
+const RE_SO_DE_NOVO = /^(de novo|denovo|novamente|outra vez)$/;
+
 /** `2`, `#2` — o numero da opcao na lista que eu acabei de mostrar. */
 const RE_ESCOLHA = /^#?(\d{1,2})\b/;
 
@@ -670,6 +687,28 @@ export class ProcessarFotoCatalogoUseCase {
       // do painel, e o unico jeito era mandar outra. Ver `tentarDeNovo`.
       if (r.foto.status === 'RECEBIDA') {
         this.sessao.marcarFalha(chat, fotoId, pedidoDeEstilo);
+        // ====================================================================
+        // FALHA DA IA NAO TIRA DO CATALOGO O QUE JA ESTAVA LA — 20/10/2026.
+        //
+        // Desde o RF31 a foto com codigo entra crua. Pedir tratamento a leva
+        // para PROCESSANDO, e falhar a deixaria em RECEBIDA: ela SUMIRIA do
+        // catalogo por causa de um erro de provedor, calada.
+        //
+        // So volta quem tem codigo E ainda esta com a imagem ORIGINAL. Se ja
+        // houvesse uma versao tratada no lugar, publicar agora poria no
+        // catalogo uma imagem que ninguem aprovou.
+        // ====================================================================
+        if (
+          r.foto.codigoErp &&
+          r.foto.arquivoId &&
+          r.foto.arquivoId === r.foto.arquivoOriginalId
+        ) {
+          await this.catalogos.atualizarFoto(fotoId, {
+            status: 'APROVADA',
+            aprovadoPor: r.foto.aprovadoPor ?? r.foto.remetente,
+            aprovadoEm: new Date(),
+          });
+        }
       }
 
       if (r.recado) {
@@ -1504,7 +1543,17 @@ export class ProcessarFotoCatalogoUseCase {
 
     this.sessao.esquecerFalha(de);
     const foto = await this.catalogos.buscarFotoPorId(falha.fotoId);
-    if (!foto || foto.status !== 'RECEBIDA') {
+    // A FOTO CRUA TAMBEM SE REFAZ — 20/10/2026. Antes do RF31 a que falhou
+    // ficava em RECEBIDA e so ela valia aqui; agora a que tem codigo volta
+    // para APROVADA, com a imagem original, e continua sendo alvo legitimo do
+    // "tenta de novo". O que nunca vale e refazer por cima de uma versao
+    // tratada: ai `arquivoId` ja nao e o original.
+    const podeRefazer =
+      !!foto &&
+      (foto.status === 'RECEBIDA' ||
+        (foto.status === 'APROVADA' &&
+          foto.arquivoId === foto.arquivoOriginalId));
+    if (!podeRefazer) {
       return {
         resposta: 'Essa foto já não está esperando — manda de novo se ainda precisar.',
         motivo: 'refazer_sem_foto',
@@ -1515,6 +1564,87 @@ export class ProcessarFotoCatalogoUseCase {
     return {
       resposta: 'Tentando de novo — te mando em instantes.',
       motivo: 'foto_refazendo',
+    };
+  }
+
+  /**
+   * Vale a pena olhar o proximo texto como pedido de tratamento?
+   *
+   * So a catraca de memoria — quem decide e `tratarAPedido`, contra o banco.
+   */
+  temFotoTratavel(de: string): boolean {
+    return this.sessao.fotoGuardada(de) !== null;
+  }
+
+  /**
+   * O PEDIDO DE TRATAMENTO — 20/10/2026, RF31.
+   *
+   * ==========================================================================
+   * A IA SO AGE QUANDO ELA PEDE — decisao do Lucas em 20/10/2026.
+   *
+   * Ate aqui toda foto era tratada sozinha, e so a versao gerada entrava no
+   * catalogo. Agora a foto dela entra crua, e isto e o caminho de volta para
+   * quem quiser o tratamento numa peca especifica.
+   *
+   * O ALVO E A ULTIMA FOTO GUARDADA. "trata essa foto" chega numa mensagem
+   * seguinte, sem dizer qual — e "essa" nunca significa a terceira de tras
+   * para frente.
+   *
+   * O QUE VEM DEPOIS DO COMANDO E O ESTILO, inteiro: "trata deixando o fundo
+   * branco" vai para o tratamento como pedido.
+   * ==========================================================================
+   *
+   * Devolve `null` quando o texto nao era pedido de tratamento — e esse null
+   * e o contrato com o roteador: segue para os agentes, como qualquer outro
+   * texto.
+   */
+  async tratarAPedido(de: string, texto: string): Promise<RespostaFoto | null> {
+    const guardada = this.sessao.fotoGuardada(de);
+    if (!guardada) return null;
+
+    const m = normalizar(texto).match(RE_TRATA);
+    if (!m) return null;
+
+    // "trata de novo" e refazer, e quem responde e o `tentarDeNovo`.
+    const resto = (m[4] ?? '').trim();
+    if (RE_SO_DE_NOVO.test(resto)) return null;
+
+    const foto = await this.catalogos.buscarFotoPorId(guardada.fotoId);
+    if (!foto) {
+      this.sessao.esquecerFotoGuardada(de);
+      return {
+        resposta: 'Não achei essa foto aqui — me manda ela de novo.',
+        motivo: 'tratar_sem_foto',
+      };
+    }
+
+    // JA ESTA NA MAO DA IA. Sem isto, dois "trata" seguidos gastariam duas
+    // geracoes sobre a mesma peca — e cada uma custa dinheiro e 20 segundos.
+    if (foto.status === 'PROCESSANDO' || foto.status === 'EM_APROVACAO') {
+      return {
+        resposta: `${guardada.rotulo} já está comigo — te mando a versão tratada em instantes.`,
+        motivo: 'tratar_em_andamento',
+      };
+    }
+
+    // A FOTO CONTINUA LEMBRADA, e e isso que faz o segundo "trata" cair na
+    // guarda acima em vez de virar uma segunda geracao — ou, pior, de sumir
+    // para os agentes e voltar como "nao entendi". A janela da sessao expira
+    // sozinha.
+    void this.tratarEAvisar(foto.id, limparPedido(resto), de);
+
+    // ==========================================================================
+    // O QUE O TRATAMENTO CUSTA, DITO ANTES — o status e um so por linha, entao
+    // a foto SAI do catalogo enquanto a versao nova espera veredito. Esconder
+    // isso seria a peca desaparecer da montagem sem ninguem entender por que.
+    // ==========================================================================
+    const saiDoCatalogo =
+      foto.status === 'APROVADA'
+        ? ' Ela sai do catálogo até você aprovar a versão nova.'
+        : '';
+    return {
+      resposta: `Tratando ${guardada.rotulo} — te mando em instantes.${saiDoCatalogo}`,
+      motivo: 'foto_em_tratamento',
     };
   }
 
@@ -2032,37 +2162,56 @@ export class ProcessarFotoCatalogoUseCase {
       origem: 'WHATSAPP',
       remetente,
       arquivoOriginalId: arquivoId,
-      // Aponta para o ORIGINAL ate a IA responder. Se o tratamento falhar, a
-      // tela mostra o packshot cru — que ja serve para conferir enquadramento
-      // e se a peca certa foi fotografada.
+      // A FOTO QUE ENTRA E A QUE ELA MANDOU — 20/10/2026, RF31. As duas
+      // colunas continuam existindo porque o tratamento, quando pedido,
+      // precisa gerar A PARTIR DO ORIGINAL; enquanto ninguem pede, as duas
+      // apontam para a mesma imagem, que e a dela.
       arquivoId,
       mime: foto.mime,
-      status: 'RECEBIDA',
+      // ======================================================================
+      // POR PADRAO A FOTO NAO E TRATADA — decisao do Lucas em 20/10/2026.
+      //
+      // Ate aqui toda foto ia para a IA sozinha e so entrava no catalogo
+      // depois de a pessoa aprovar a versao gerada. A aprovacao existia porque
+      // a IA inventava uma imagem NOVA, e ninguem publica o que nao viu.
+      //
+      // Sem tratamento nao ha o que conferir: a foto e a que ela mesma mandou
+      // e escolheu mandar. Entao, com o codigo em maos, ela JA ENTRA — e o
+      // `aprovadoPor` registra quem mandou, que e quem responde por ela.
+      //
+      // O tratamento continua inteiro, e virou pedido: ver `tratarAPedido`.
+      // ======================================================================
+      status: foto.codigoErp ? 'APROVADA' : 'RECEBIDA',
+      ...(foto.codigoErp
+        ? { aprovadoPor: remetente, aprovadoEm: new Date() }
+        : {}),
     });
 
-    // O TRATAMENTO NAO SEGURA A RESPOSTA. Gerar imagem leva 10 a 30 segundos, e
-    // a pessoa fica olhando o WhatsApp — ela recebe "guardei" agora e a versao
-    // tratada quando ficar pronta, podendo mandar a proxima peca no intervalo.
-    void this.tratarEAvisar(criada.id, foto.pedidoDeEstilo ?? null, chat);
-
-    // O AVISO DE QUE ALGO ESTA ACONTECENDO. Entre o "guardei" e a imagem
-    // tratada passam de 10 a 60 segundos, e minuto calado no WhatsApp e lido
-    // como "deu errado" — a pessoa reenvia a mesma foto, que entra duas vezes.
-    // Uma linha resolve, e ela ja sai daqui sabendo o que esperar.
-    const tratando = '\nEstou tratando a imagem, já te mando.';
-
     const alvo = `#${catalogo.numero} ${catalogo.nome}`;
+
+    // O ALVO DO "TRATA", que vem na mensagem seguinte e nao diz qual foto e.
+    // Vale tambem para a que ainda espera codigo: tratar nao depende dele.
+    this.sessao.lembrarFotoGuardada(
+      chat,
+      criada.id,
+      foto.codigoErp ? `${alvo} — ${foto.codigoErp}` : alvo,
+    );
+
+    // O CONVITE AO TRATAMENTO, uma linha. Sem ele a opcao existe e ninguem
+    // sabe — e o pedido do Lucas foi "ela PODE pedir", nao "ela adivinha".
+    const podeTratar = '\nSe quiser que eu trate a imagem, responde "trata".';
+
     if (!foto.codigoErp) {
       // O CONVITE SÓ VALE SE ALGUÉM ESCUTAR. Marcar aqui é o que faz o
       // `BR26252` digitado em seguida encontrar esta foto — sem isto ele cai
       // nos agentes, e a Anastasia responde que o código não diz nada.
       this.sessao.esperarCodigo(chat, criada.id, alvo);
-      return `Foto guardada em ${alvo}. Se quiser, me manda o código da peça — ou descreve ela ("anel de esmeralda"), que eu procuro.${tratando}`;
+      return `Foto guardada em ${alvo} — ela entra no catálogo assim que tiver o código. Me manda o código da peça, ou descreve ela ("anel de esmeralda"), que eu procuro.${podeTratar}`;
     }
     if (!descricao) {
-      return `Foto guardada em ${alvo} com o código ${foto.codigoErp} — essa peça ainda não está no sistema, então ficou sem descrição e sem preço.${tratando}`;
+      return `Foto no catálogo ${alvo} com o código ${foto.codigoErp} — essa peça ainda não está no sistema, então ficou sem descrição e sem preço.${podeTratar}`;
     }
-    return `Foto guardada em ${alvo}.\n${foto.codigoErp} · ${descricao}\n${this.emReais(preco)} à vista${tratando}`;
+    return `Foto no catálogo ${alvo}.\n${foto.codigoErp} · ${descricao}\n${this.emReais(preco)} à vista${podeTratar}`;
   }
 
   /**
@@ -2279,7 +2428,21 @@ export class ProcessarFotoCatalogoUseCase {
     // pessoa pode ter mandado refazer, e ai a imagem de agora nao e a que ela
     // aprovou. So publica o que ainda esta EM_APROVACAO.
     // ==========================================================================
-    const publicar = pendente.aprovada && anotada?.status === 'EM_APROVACAO';
+    // ==========================================================================
+    // O CODIGO QUE COMPLETA A FOTO TAMBEM A PUBLICA — 20/10/2026, RF31.
+    //
+    // Desde que a foto entra CRUA, a unica coisa que falta para ela estar no
+    // catalogo e o codigo. Chegou o codigo, entrou — sem pedir aprovacao de
+    // uma imagem que ninguem gerou.
+    //
+    // O OUTRO CAMINHO CONTINUA IGUAL: foto TRATADA esperando veredito so
+    // publica com o "aprovo" que chegou adiantado, e so enquanto ainda estiver
+    // EM_APROVACAO — entre o "aprovo" e o codigo ela pode ter mandado refazer,
+    // e ai a imagem de agora nao e a que ela aprovou.
+    // ==========================================================================
+    const publicar =
+      anotada?.status === 'RECEBIDA' ||
+      (pendente.aprovada === true && anotada?.status === 'EM_APROVACAO');
     if (publicar) {
       await this.catalogos.atualizarFoto(pendente.fotoId, {
         status: 'APROVADA',
@@ -2287,15 +2450,15 @@ export class ProcessarFotoCatalogoUseCase {
         aprovadoEm: new Date(),
       });
     }
-    // O CODIGO DA FOTO QUE A IA NAO TRATOU — 16/09/2026. Ele fica anotado nela
-    // (e a foto certa: e a que a pessoa mandou), mas a foto nao anda sozinha.
-    // Sem este aviso, quem mandou o codigo achava que a peca ja estava a
-    // caminho do catalogo.
+    // O TRATAMENTO QUE FALHOU CONTINUA OFERECIDO — 16/09/2026, e agora sem
+    // segurar a foto: ela ja esta no catalogo com a imagem original, e o
+    // "tenta de novo" refaz a versao tratada se ela ainda quiser.
+    const falhou = this.sessao.fotoComFalha(de) !== null;
     const fecho = publicar
-      ? '\nAprovada — já está no catálogo.'
-      : anotada?.status === 'RECEBIDA' && this.sessao.fotoComFalha(de)
-        ? `\nA foto ainda não foi tratada — responde "${TENTA_DE_NOVO}" que eu refaço.`
-        : '';
+      ? falhou
+        ? `\nJá está no catálogo, com a imagem original — responde "${TENTA_DE_NOVO}" se quiser que eu tente tratar outra vez.`
+        : '\nJá está no catálogo.'
+      : '';
 
     if (!descricao) {
       return {
