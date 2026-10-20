@@ -1,5 +1,8 @@
 import { FotosDeProdutoService } from './fotos-de-produto.service';
 
+/** O armazenamento nao participa destes testes: aqui a foto vem da Conexa. */
+const ARMAZENAMENTO_MUDO = { ler: jest.fn().mockResolvedValue(null) } as never;
+
 /**
  * ==========================================================================
  * A URL EXISTE; A FOTO, QUASE NUNCA — medido em 07/10/2026.
@@ -53,7 +56,7 @@ describe('FotosDeProdutoService', () => {
   const original = global.fetch;
 
   beforeEach(() => {
-    servico = new FotosDeProdutoService();
+    servico = new FotosDeProdutoService(ARMAZENAMENTO_MUDO);
   });
 
   afterEach(() => {
@@ -184,7 +187,7 @@ describe('FotosDeProdutoService — quais têm foto', () => {
   const original = global.fetch;
 
   beforeEach(() => {
-    servico = new FotosDeProdutoService();
+    servico = new FotosDeProdutoService(ARMAZENAMENTO_MUDO);
   });
 
   afterEach(() => {
@@ -286,7 +289,7 @@ describe('FotosDeProdutoService — quantas imagens vão', () => {
   const original = global.fetch;
 
   beforeEach(() => {
-    servico = new FotosDeProdutoService();
+    servico = new FotosDeProdutoService(ARMAZENAMENTO_MUDO);
     const mapa: Record<string, Resposta> = {};
     for (let i = 1; i <= 12; i += 1) mapa[`http://conexa/P${i}.png`] = imagem();
     global.fetch = conexaQueResponde(mapa);

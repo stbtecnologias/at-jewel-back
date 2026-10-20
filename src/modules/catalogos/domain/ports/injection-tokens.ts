@@ -26,3 +26,4 @@ export const ESTILO_CATALOGO = Symbol('IEstiloCatalogo');
 
 /** Quem traduz "na página 4, a modelo sorrindo" em ações — desde 16/09/2026. */
 export const INTERPRETADOR_AJUSTE = Symbol('IInterpretadorDeAjuste');
+export const INTERPRETADOR_DESTINO = Symbol('IInterpretadorDeDestino');

@@ -185,6 +185,7 @@ describe('os clientes por fidelidade', () => {
         { buscarPorNomeParcial: jest.fn() } as never,
         { listarAguardandoGestao: jest.fn() } as never,
         { entre: jest.fn().mockResolvedValue([]) } as never,
+      { listar: jest.fn().mockResolvedValue([]) } as never,
       );
     });
 

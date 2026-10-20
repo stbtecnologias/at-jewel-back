@@ -313,7 +313,7 @@ async function main() {
   // usa; o que se mede aqui é quanta foto existe, que é o que decide se a
   // resposta da agente sai com imagem ou com desculpa.
   console.log('\nAs fotos, pela Conexa');
-  const fotos = new FotosDeProdutoService();
+  const fotos = new FotosDeProdutoService({ ler: async () => null } as never);
   const comSaldo = await repo.findAll({
     ativo: true,
     apenasDisponiveis: true,

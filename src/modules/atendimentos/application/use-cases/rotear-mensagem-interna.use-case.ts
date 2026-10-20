@@ -49,6 +49,10 @@ import {
   ProcessarFotoCatalogoUseCase,
   type ImagemInterna,
 } from './processar-foto-catalogo.use-case';
+import {
+  PERMISSAO_FOTO_DE_PECA,
+  FotosDePecaPeloWhatsappUseCase,
+} from './fotos-de-peca-pelo-whatsapp.use-case';
 
 export interface MensagemDoCanal {
   /**
@@ -217,6 +221,12 @@ export class RotearMensagemInternaUseCase {
     // arquivo, a analise o le ATRAS DE UMA PORTA SEM FERRAMENTA.
     private readonly leitor: LeitorDeArquivoService,
     private readonly analise: AnalisarArquivoService,
+    // RF33 — as fotos que vao para a PECA, e nao para o catalogo. Entra antes
+    // do catalogo no ramo da imagem, e vale nos dois numeros.
+    //
+    // NO FIM DA LISTA de proposito: parametro novo no meio quebra todo teste
+    // que constroi este use case a mao, e foram quatro da ultima vez.
+    private readonly fotosDePeca: FotosDePecaPeloWhatsappUseCase,
   ) {}
 
   async execute(msg: MensagemDoCanal): Promise<RespostaDoCanal> {
@@ -272,6 +282,31 @@ export class RotearMensagemInternaUseCase {
     // dado de venda.
     // ---------------------------------------------------------------------
     if (msg.imagem) {
+      // ====================================================================
+      // A FOTO DA PECA VEM ANTES DO CATALOGO — RF33, 20/10/2026.
+      //
+      // Com uma peca mirada ("produto BR26396"), a imagem e DELA. E vale nos
+      // DOIS numeros: o catalogo mora na Elena por decisao de 25/09, mas foto
+      // de peca nao e catalogo — entao este trecho fica ANTES do desvio.
+      //
+      // A permissao tambem e outra: `produtos:foto`, e nao a do catalogo.
+      // ====================================================================
+      if (this.fotosDePeca.temPecaMirada(msg.de)) {
+        const dona = await this.identificarAdmin.execute(
+          telefone,
+          PERMISSAO_FOTO_DE_PECA,
+        );
+        if (dona) {
+          const guardada = await this.fotosDePeca.foto({
+            de: msg.de,
+            nomeRemetente: dona.nome ?? '',
+            legenda: msg.texto ?? '',
+            imagem: msg.imagem,
+          });
+          if (guardada) return guardada;
+        }
+      }
+
       const quem = await this.identificarAdmin.execute(
         telefone,
         PERMISSAO_CATALOGO,
@@ -322,16 +357,46 @@ export class RotearMensagemInternaUseCase {
     // Nada de catalogo acontece fora do numero da Elena — nem as conversas
     // que ficaram abertas. Os testes abaixo sao consultas em memoria, e sem
     // esta linha eles rodariam a toa no numero da gestao.
+    // ---------------------------------------------------------------------
+    // "PRODUTO BR26396" — o comando que mira a peca, RF33.
+    //
+    // O TESTE BARATO VEM PRIMEIRO, e e a mesma regra das condicoes abaixo:
+    // sem `pareceComando`, todo texto do canal faria um lookup de admin antes
+    // do de vendedora, e a ordem vendedora-antes-de-gestao se perderia.
+    //
+    // Vale nos dois numeros, como a foto.
+    // ---------------------------------------------------------------------
+    if (FotosDePecaPeloWhatsappUseCase.pareceComando(msg.texto)) {
+      const dona = await this.identificarAdmin.execute(
+        telefone,
+        PERMISSAO_FOTO_DE_PECA,
+      );
+      if (dona) {
+        // VER VEM ANTES DE MIRAR, e a diferenca e a preposicao: "fotos DO
+        // produto X" e pedido, "fotos PARA a peca X" e destino. Invertendo a
+        // ordem, quem pede para ver abriria destino sem querer.
+        const vendo = await this.fotosDePeca.quais(msg.de, msg.texto ?? '');
+        if (vendo) return vendo;
+
+        const mirada = await this.fotosDePeca.mirar(msg.de, msg.texto ?? '');
+        if (mirada) return mirada;
+      }
+    }
+
     const noCatalogo = msg.agente !== 'ANASTASIA';
     const esperandoCatalogo = noCatalogo && this.canalCatalogo.temFotoEsperando(msg.de);
     const esperandoCodigo = noCatalogo && this.canalCatalogo.temCodigoEsperando(msg.de);
     const esperandoConsulta = noCatalogo && this.canalCatalogo.esperandoConsulta(msg.de);
     const fotoComFalha = noCatalogo && this.canalCatalogo.temFotoComFalha(msg.de);
+    // Desde o RF31 a foto entra crua e o tratamento virou pedido — entao uma
+    // foto guardada ha pouco faz o canal escutar o "trata" que pode vir.
+    const fotoTratavel = noCatalogo && this.canalCatalogo.temFotoTratavel(msg.de);
     if (
       esperandoCatalogo ||
       esperandoCodigo ||
       esperandoConsulta ||
       fotoComFalha ||
+      fotoTratavel ||
       (noCatalogo && this.canalCatalogo.temFotoEmAprovacao(msg.de)) ||
       (noCatalogo && this.canalCatalogo.conversaAberta(msg.de))
     ) {
@@ -344,6 +409,17 @@ export class RotearMensagemInternaUseCase {
         if (textoResolvido) {
           const nome = quem.nome ?? '';
           if (esperandoCatalogo) {
+            // "É DA PEÇA" — RF33, 20/10/2026. A pergunta de destino passou a
+            // oferecer a peça de que se falava; esta é a resposta dela, e tem
+            // de ser lida ANTES da do catálogo, que trataria "peça" como nome
+            // de catálogo não encontrado.
+            const naPeca = await this.fotosDePeca.anexarPenduradas(
+              msg.de,
+              textoResolvido,
+              nome,
+            );
+            if (naPeca) return naPeca;
+
             return this.canalCatalogo.resposta(msg.de, nome, textoResolvido);
           }
 
@@ -369,6 +445,19 @@ export class RotearMensagemInternaUseCase {
               textoResolvido,
             );
             if (refeita) return refeita;
+          }
+
+          // "TRATA" — o pedido de tratamento do RF31, logo depois do "tenta
+          // de novo" e pelo mesmo motivo: a frase nunca e codigo nem
+          // veredito, e e curta o bastante para a dica da aprovacao engoli-la
+          // se viesse depois. O `tentarDeNovo` vem antes porque "trata de
+          // novo" e refazer, e nao tratar.
+          if (fotoTratavel) {
+            const tratando = await this.canalCatalogo.tratarAPedido(
+              msg.de,
+              textoResolvido,
+            );
+            if (tratando) return tratando;
           }
 
           // O CODIGO ANTES DA APROVACAO: "BR26252" nao e veredito, e sem esta

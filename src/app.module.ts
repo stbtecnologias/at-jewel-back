@@ -48,6 +48,7 @@ import { ClientePerfilOrmEntity } from './modules/clientes/infrastructure/databa
 import { ErpModule } from './modules/erp/erp.module';
 import { ErpEventoOrmEntity } from './modules/erp/infrastructure/database/typeorm/entities/erp-evento.orm-entity';
 import { ProdutoOrmEntity } from './modules/erp/infrastructure/database/typeorm/entities/produto.orm-entity';
+import { ProdutoFotoOrmEntity } from './modules/erp/infrastructure/database/typeorm/entities/produto-foto.orm-entity';
 import { ProdutosModule } from './modules/produtos/produtos.module';
 import { VendedorasModule } from './modules/vendedoras/vendedoras.module';
 import { VendedoraOrmEntity } from './modules/vendedoras/infrastructure/database/typeorm/entities/vendedora.orm-entity';
@@ -91,6 +92,7 @@ import { AlertasModule } from './modules/alertas/alertas.module';
         url: config.getOrThrow<string>('DATABASE_URL'),
         entities: [
           ProdutoOrmEntity,
+          ProdutoFotoOrmEntity,
           ErpEventoOrmEntity,
           AdminUserOrmEntity,
           ApiKeyOrmEntity,

@@ -484,6 +484,7 @@ describe('o panorama de leads da gestao (Anastasia)', () => {
       // O ponteiro de conversas vivas (29/09) — dublado: estes testes
       // descrevem o roteamento das ferramentas, nao a consulta.
       { entre: jest.fn().mockResolvedValue([]) } as never,
+      { listar: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 

@@ -6,6 +6,20 @@ import { RecepcionarUseCase } from './recepcionar.use-case';
 import { MemoriaDeGrupoService } from '../memoria-de-grupo.service';
 
 /**
+ * O canal de foto de PEÇA, mudo — RF33, 20/10/2026.
+ *
+ * `temPecaMirada` em `false` é o valor certo para todo teste que não é sobre
+ * ele: sem peça mirada, a imagem segue o caminho de sempre, que é o catálogo.
+ */
+const SEM_FOTO_DE_PECA = {
+  temPecaMirada: () => false,
+  anexarPenduradas: jest.fn().mockResolvedValue(null),
+  quais: jest.fn().mockResolvedValue(null),
+  mirar: jest.fn().mockResolvedValue(null),
+  foto: jest.fn().mockResolvedValue(null),
+} as never;
+
+/**
  * A conferencia da foto NAO participa destes testes: null quer dizer "nao
  * deu para conferir", e nesse caso a foto segue o caminho de sempre. Os testes
  * da recusa ficam no bloco proprio, mais abaixo.
@@ -57,6 +71,8 @@ describe('RotearMensagemInternaUseCase', () => {
     fotosPendentes: jest.Mock;
     temFotoComFalha: jest.Mock;
     tentarDeNovo: jest.Mock;
+    temFotoTratavel: jest.Mock;
+    tratarAPedido: jest.Mock;
     aprovacao: jest.Mock;
     temCodigoEsperando: jest.Mock;
     esperandoConsulta: jest.Mock;
@@ -116,6 +132,8 @@ describe('RotearMensagemInternaUseCase', () => {
       fotosPendentes: jest.fn(),
       temFotoComFalha: jest.fn(() => false),
       tentarDeNovo: jest.fn().mockResolvedValue(null),
+      temFotoTratavel: jest.fn(() => false),
+      tratarAPedido: jest.fn().mockResolvedValue(null),
       aprovacao: jest.fn().mockResolvedValue(null),
       temCodigoEsperando: jest.fn(() => false),
       esperandoConsulta: jest.fn(() => false),
@@ -172,6 +190,7 @@ describe('RotearMensagemInternaUseCase', () => {
       new MemoriaDeGrupoService(),
       leitor as never,
       analise as never,
+      SEM_FOTO_DE_PECA,
     );
   });
 
@@ -1633,6 +1652,103 @@ describe('RotearMensagemInternaUseCase', () => {
       expect(canalCatalogo.foto).not.toHaveBeenCalled();
     });
 
+    /**
+     * A VENDEDORA NÃO MANDA FOTO PARA A PEÇA — regra do Lucas, 20/10/2026.
+     *
+     * *"Todos menos as vendedoras. Mas ela pode pedir as fotos das peças."*
+     *
+     * A barreira não é um `if` no serviço: é o RECONHECIMENTO. O caminho da
+     * foto procura em `admin_users` com `produtos:foto`, e quem não está lá
+     * não é encontrado.
+     *
+     * Medido em 20/10: nenhuma das 7 vendedoras tem conta de painel, e
+     * `produtos:foto` não está no papel VENDEDORA.
+     */
+    it('sem `produtos:foto`, a foto NÃO vai para a peça', async () => {
+      identificarAdmin.execute.mockResolvedValue(null);
+      const daPeca = {
+        temPecaMirada: () => true,
+        anexarPenduradas: jest.fn().mockResolvedValue(null),
+        quais: jest.fn().mockResolvedValue(null),
+        mirar: jest.fn().mockResolvedValue(null),
+        foto: jest.fn(),
+      };
+      const semPermissao = new RotearMensagemInternaUseCase(
+        identificarVendedora as never,
+        identificarAdmin as never,
+        canalVendedora as never,
+        canalGestao as never,
+        canalCatalogo as never,
+        new RecepcionarUseCase(new RecepcaoService()),
+        whatsapp as never,
+        { disponivel: () => false, transcrever: jest.fn() } as never,
+        new MemoriaDeGrupoService(),
+        { ler: jest.fn() } as never,
+        { analisar: jest.fn() } as never,
+        daPeca as never,
+      );
+
+      const r = await semPermissao.execute({
+        de: '558586467241@c.us',
+        texto: '',
+        imagem: { url: 'http://x/y.jpg', mimetype: 'image/jpeg' },
+      });
+
+      expect(daPeca.foto).not.toHaveBeenCalled();
+      expect(r.motivo).toBe('ignorado_foto_sem_permissao');
+    });
+
+    /**
+     * RF33, 20/10/2026 — A FOTO DE PEÇA NÃO DESVIA.
+     *
+     * O catálogo mora na Elena desde 25/09, e a imagem que chega na Anastasia
+     * é mandada para lá. Foto de PEÇA não é catálogo: por decisão do Lucas ela
+     * vale nos dois números, e por isso o ramo dela vem ANTES do desvio.
+     *
+     * Este teste cai no instante em que alguém mover o trecho para depois.
+     */
+    it('COM peça mirada, a foto na Anastasia vai para a peça — e não desvia', async () => {
+      identificarAdmin.execute.mockResolvedValue({
+        id: 'ad-9',
+        nome: 'Yerlon Braga',
+        role: 'ADMIN',
+      });
+      const daPeca = {
+        temPecaMirada: () => true,
+        anexarPenduradas: jest.fn().mockResolvedValue(null),
+        quais: jest.fn().mockResolvedValue(null),
+        mirar: jest.fn().mockResolvedValue(null),
+        foto: jest
+          .fn()
+          .mockResolvedValue({ resposta: '2ª foto de BR26396.', motivo: 'foto_de_peca_guardada' }),
+      };
+      const comPeca = new RotearMensagemInternaUseCase(
+        identificarVendedora as never,
+        identificarAdmin as never,
+        canalVendedora as never,
+        canalGestao as never,
+        canalCatalogo as never,
+        new RecepcionarUseCase(new RecepcaoService()),
+        whatsapp as never,
+        { disponivel: () => false, transcrever: jest.fn() } as never,
+        new MemoriaDeGrupoService(),
+        { ler: jest.fn() } as never,
+        { analisar: jest.fn() } as never,
+        daPeca as never,
+      );
+
+      const r = await comPeca.execute({
+        de: '558586467241@c.us',
+        texto: '',
+        agente: 'ANASTASIA',
+        imagem: { url: 'http://x/y.jpg', mimetype: 'image/jpeg' },
+      });
+
+      expect(r.motivo).toBe('foto_de_peca_guardada');
+      expect(daPeca.foto).toHaveBeenCalled();
+      expect(canalCatalogo.foto).not.toHaveBeenCalled();
+    });
+
     it('foto no numero da Elena segue para o catalogo, como sempre', async () => {
       identificarAdmin.execute.mockResolvedValue({
         id: 'ad-9',
@@ -1683,6 +1799,10 @@ describe('RotearMensagemInternaUseCase — a conversa do Yerlon, de ponta a pont
       listarEmAprovacao: jest.fn().mockResolvedValue([]),
       criarFoto: jest.fn().mockResolvedValue({ id: 'f-1' }),
       atualizarFoto: jest.fn().mockResolvedValue({ status: 'EM_APROVACAO' }),
+      // Desde o RF31 o "trata" le a foto antes de mandar para a IA.
+      buscarFotoPorId: jest
+        .fn()
+        .mockResolvedValue({ id: 'f-1', status: 'RECEBIDA', codigoErp: null }),
     };
     const armazenamento = {
       guardar: jest.fn().mockResolvedValue('catalogo/pendentes/a.jpg'),
@@ -1750,6 +1870,7 @@ describe('RotearMensagemInternaUseCase — a conversa do Yerlon, de ponta a pont
       new MemoriaDeGrupoService(),
       { ler: jest.fn() } as never,
       { analisar: jest.fn() } as never,
+      SEM_FOTO_DE_PECA,
     );
     const falar = (texto: string, extra: object = {}) =>
       roteador.execute({ de: DE, texto, em: Date.now(), ...extra });
@@ -1767,6 +1888,11 @@ describe('RotearMensagemInternaUseCase — a conversa do Yerlon, de ponta a pont
     });
     expect(foto.motivo).toBe('foto_guardada');
     expect(foto.resposta).toContain('#0001');
+
+    // O TRATAMENTO AGORA E PEDIDO — RF31, 20/10/2026. Ate aqui a foto ia para
+    // a IA sozinha; o resto desta conversa so existe porque ela pediu.
+    const pedido = await falar('trata');
+    expect(pedido.motivo).toBe('foto_em_tratamento');
 
     // 13:33 — "Ok" com a foto tratada AINDA A CAMINHO. E recibo: nao aprova,
     // e nao chega na Anastasia.
@@ -1789,7 +1915,7 @@ describe('RotearMensagemInternaUseCase — a conversa do Yerlon, de ponta a pont
     // O codigo chega: anota e publica de uma vez, sem pedir "aprovo" de novo.
     const codigo = await falar('AN24435');
     expect(codigo.motivo).toBe('foto_aprovada');
-    expect(codigo.resposta).toContain('já está no catálogo');
+    expect(codigo.resposta).toContain('á está no catálogo');
     expect(catalogos.atualizarFoto).toHaveBeenLastCalledWith(
       'f-1',
       expect.objectContaining({
@@ -1895,6 +2021,7 @@ describe('RotearMensagemInternaUseCase — a consulta do Lucas, de ponta a ponta
       new MemoriaDeGrupoService(),
       { ler: jest.fn() } as never,
       { analisar: jest.fn() } as never,
+      SEM_FOTO_DE_PECA,
     );
     const falar = (texto: string) =>
       roteador.execute({ de: DE, texto, em: Date.now() });

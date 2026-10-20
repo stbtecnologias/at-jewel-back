@@ -60,7 +60,12 @@ export class FotoProdutoUseCase {
     // A pasta sai do CODIGO. Sem codigo — peca cadastrada a mao, que existe —
     // cai no id: e feio no bucket, mas nunca colide, e a alternativa seria
     // recusar a foto de uma peca legitima.
-    const pasta = pastaDaFotoDeProduto(produto.codigoErp ?? id);
+    //
+    // `||` E NAO `??`: a base tem peca com `codigo_erp` STRING VAZIA, e o `??`
+    // so cobre o nulo — a chave saia `produtos//uuid.jpg`, com barra dupla, e
+    // todas as pecas sem codigo caiam na mesma pasta. Achado em 20/10, na
+    // conferencia do RF33.
+    const pasta = pastaDaFotoDeProduto(produto.codigoErp?.trim() || id);
     const chave = await this.armazenamento.guardar(
       {
         conteudo: arquivo.buffer,

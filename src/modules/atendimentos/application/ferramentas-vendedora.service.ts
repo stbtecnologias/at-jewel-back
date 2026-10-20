@@ -146,6 +146,17 @@ export interface ContextoVendedora {
   textoOriginal?: string;
   /** Chamado quando um relato foi mesmo gravado, para quem chama saber. */
   aoRegistrarRelato?: () => void;
+  /**
+   * Chamado quando a consulta resolveu em UMA peca — RF33, 20/10/2026.
+   *
+   * O caso de uso nao conhece a sessao do WhatsApp, e nao deve: quem sabe o
+   * chat e quem chama. Entao o contexto sobe por aqui, como o relato.
+   */
+  aoFalarDePeca?: (peca: {
+    produtoId: string;
+    codigoErp: string;
+    rotulo: string;
+  }) => void;
 }
 
 /**
@@ -498,6 +509,10 @@ export class FerramentasVendedoraService {
           comFoto,
           soComFoto,
         });
+        // A CONVERSA FALOU DESTA PECA — RF33, 20/10/2026. Quem chama registra
+        // o contexto; e por ele que a pergunta de destino da proxima foto sabe
+        // qual peca oferecer, em vez de pedir o codigo.
+        if (achados.pecaUnica) ctx.aoFalarDePeca?.(achados.pecaUnica);
         return {
           total: achados.total,
           semEstoque: achados.semEstoque,

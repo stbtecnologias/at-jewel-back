@@ -5,6 +5,9 @@ import { ConsultarProdutosVendedoraUseCase } from './use-cases/consultar-produto
  * A Conexa que nunca tem a foto — que e o caso comum: das 320 joias com
  * saldo, 55 tem foto (17%). Quem testa recorte nao testa foto.
  */
+/** A galeria da peca nao participa destes testes: aqui a busca traz lista. */
+const SEM_GALERIA = { listar: jest.fn().mockResolvedValue([]) } as never;
+
 const SEM_FOTOS = {
   buscar: async () => ({ fotos: [], tinhamUrl: 0, cortadas: 0 }),
 } as never;
@@ -56,7 +59,7 @@ function naoParaTudo(nome: string) {
 describe('o padrão é só o disponível — canal da vendedora', () => {
   it('sem pedir nada, a consulta vai filtrada', async () => {
     const listar = listarQueAnota();
-    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never, SEM_FOTOS);
+    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never, SEM_FOTOS, SEM_GALERIA);
 
     await uc.execute('anel de esmeralda');
 
@@ -66,7 +69,7 @@ describe('o padrão é só o disponível — canal da vendedora', () => {
   /* ESTE É O TESTE. O resto é contorno. */
   it('quando ela pede o indisponível, o filtro sai', async () => {
     const listar = listarQueAnota();
-    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never, SEM_FOTOS);
+    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never, SEM_FOTOS, SEM_GALERIA);
 
     await uc.execute('anel de esmeralda', { incluirSemEstoque: true });
 
@@ -135,6 +138,7 @@ describe('o número do que ficou de fora', () => {
     const uc = new ConsultarProdutosVendedoraUseCase(
       listarComDoisTotais() as never,
       SEM_FOTOS,
+      SEM_GALERIA,
     );
 
     const r = await uc.execute('esmeralda');
@@ -155,6 +159,7 @@ describe('o número do que ficou de fora', () => {
     const uc = new ConsultarProdutosVendedoraUseCase(
       listarComDoisTotais() as never,
       SEM_FOTOS,
+      SEM_GALERIA,
     );
 
     const r = await uc.execute('esmeralda', { incluirSemEstoque: true });
@@ -174,7 +179,7 @@ describe('o número do que ficou de fora', () => {
       execute: async () => [],
       contar: async (f: { apenasDisponiveis?: boolean }) =>
         f.apenasDisponiveis ? 50 : 10,
-    } as never, SEM_FOTOS);
+    } as never, SEM_FOTOS, SEM_GALERIA);
 
     const r = await uc.execute('esmeralda');
 
@@ -209,7 +214,7 @@ describe('a categoria da pergunta', () => {
 
   it('sem pedir nada, a consulta vai recortada em joia', async () => {
     const listar = listarPorCategoria();
-    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never, SEM_FOTOS);
+    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never, SEM_FOTOS, SEM_GALERIA);
 
     const r = await uc.execute('esmeralda');
 
@@ -220,7 +225,7 @@ describe('a categoria da pergunta', () => {
   /* ESTE É O TESTE. O resto é contorno. */
   it('conta quantas a categoria escondeu', async () => {
     const listar = listarPorCategoria();
-    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never, SEM_FOTOS);
+    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never, SEM_FOTOS, SEM_GALERIA);
 
     const r = await uc.execute('esmeralda');
 
@@ -231,7 +236,7 @@ describe('a categoria da pergunta', () => {
 
   it('TODAS desliga o recorte, e aí não há o que esconder', async () => {
     const listar = listarPorCategoria();
-    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never, SEM_FOTOS);
+    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never, SEM_FOTOS, SEM_GALERIA);
 
     const r = await uc.execute('esmeralda', { categoria: 'TODAS' });
 
@@ -242,7 +247,7 @@ describe('a categoria da pergunta', () => {
 
   it('a categoria pedida chega ao filtro', async () => {
     const listar = listarPorCategoria();
-    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never, SEM_FOTOS);
+    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never, SEM_FOTOS, SEM_GALERIA);
 
     await uc.execute('vaso', { categoria: 'HOME' });
 
@@ -275,7 +280,7 @@ describe('a faixa de preço e a continuação da lista', () => {
 
   it('a faixa chega ao filtro, lida do texto', async () => {
     const listar = listarQueAnota2();
-    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never, SEM_FOTOS);
+    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never, SEM_FOTOS, SEM_GALERIA);
 
     await uc.execute('colar', { precoAte: '20.000' });
 
@@ -285,7 +290,7 @@ describe('a faixa de preço e a continuação da lista', () => {
   /* ESTE É O TESTE. O resto é contorno. */
   it('a página seguinte vira deslocamento', async () => {
     const listar = listarQueAnota2();
-    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never, SEM_FOTOS);
+    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never, SEM_FOTOS, SEM_GALERIA);
 
     const r = await uc.execute('colar', { aPartirDe: 20 });
 
@@ -295,7 +300,7 @@ describe('a faixa de preço e a continuação da lista', () => {
 
   it('o teto da lista é 10 — nem 6, nem 20', async () => {
     const listar = listarQueAnota2();
-    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never, SEM_FOTOS);
+    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never, SEM_FOTOS, SEM_GALERIA);
 
     await uc.execute('colar');
 
@@ -304,7 +309,7 @@ describe('a faixa de preço e a continuação da lista', () => {
 
   it('página negativa não anda para trás', async () => {
     const listar = listarQueAnota2();
-    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never, SEM_FOTOS);
+    const uc = new ConsultarProdutosVendedoraUseCase(listar.uso as never, SEM_FOTOS, SEM_GALERIA);
 
     const r = await uc.execute('colar', { aPartirDe: -10 });
 

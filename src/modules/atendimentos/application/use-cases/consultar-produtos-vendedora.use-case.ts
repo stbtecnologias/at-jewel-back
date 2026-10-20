@@ -9,6 +9,7 @@ import {
   type Faixa,
 } from '../../../../shared/catalogo/faixa-de-preco';
 import { ListarProdutosUseCase } from '../../../produtos/application/use-cases/listar-produtos.use-case';
+import { FotosDaPecaUseCase } from '../../../produtos/application/use-cases/fotos-da-peca.use-case';
 
 /**
  * Teto de resultados, e agora com como pedir o resto.
@@ -94,6 +95,18 @@ export interface ResultadoDeProdutos {
   faixa: Faixa;
   /** Quantas foram puladas antes desta pagina. */
   pulados: number;
+  /**
+   * A PECA, quando a busca resolveu em UMA SO — 20/10/2026.
+   *
+   * Nao e dado de resposta: e CONTEXTO. Quem chama registra que a conversa
+   * falou desta peca, e e isso que faz a pergunta seguinte ("de qual catalogo
+   * e essa foto?") oferecer a peca certa em vez de pedir o codigo.
+   *
+   * Nasceu de um teste do Lucas: ele pediu as fotos do BR26396 pela agente,
+   * mandou uma imagem, e a pergunta veio generica — porque so o meu caminho
+   * deterministico registrava contexto, e o dela nao.
+   */
+  pecaUnica?: { produtoId: string; codigoErp: string; rotulo: string };
   /** As fotos que existem de verdade, ja baixadas. */
   fotos: FotoDeProduto[];
   /** Quantas da lista tinham URL cadastrada — nem toda URL vira foto. */
@@ -135,6 +148,8 @@ export class ConsultarProdutosVendedoraUseCase {
   constructor(
     private readonly listar: ListarProdutosUseCase,
     private readonly fotos: FotosDeProdutoService,
+    // RF33 — as fotos da PECA, para quando a busca resolve em uma so.
+    private readonly fotosDaPeca: FotosDaPecaUseCase,
   ) {}
 
   /**
@@ -216,8 +231,64 @@ export class ConsultarProdutosVendedoraUseCase {
       // O saldo vem da tabela `estoque` (ver `saldo-do-produto.ts`), e vira
       // um SIM ou NAO aqui — o numero nao atravessa esta fronteira.
       disponivel: p.estoqueAtual > 0,
+      // A NOSSA, se houver — desde o RF33 `fotoArquivoId` carrega a CAPA.
+      fotoChave: p.fotoArquivoId ?? null,
       fotoUrl: p.fotoUrl ?? null,
     }));
+
+    // ======================================================================
+    // UMA PECA SO: VAO TODAS AS FOTOS DELA — 20/10/2026.
+    //
+    // O Lucas perguntou "foto da produtos BR26396" e recebeu UMA, porque a
+    // consulta manda a capa de cada peca. Com tres guardadas, faltaram duas —
+    // e ele perguntou "e as outras 2?".
+    //
+    // QUANDO A BUSCA RESOLVE EM UMA PECA SO, a pergunta e sobre ELA: nao ha
+    // lista para ilustrar, ha uma joia para ver. E isso nao depende de
+    // vocabulario nenhum — depende do RESULTADO, que e o que sobra quando a
+    // frase pode vir de qualquer jeito.
+    // ======================================================================
+    // A CONVERSA FALOU DESTA PECA — e isso vale mesmo sem foto nenhuma, porque
+    // o que importa aqui e o CONTEXTO, nao a imagem.
+    const pecaUnica =
+      produtos.length === 1 && produtos[0].id && linhas[0].codigo
+        ? {
+            produtoId: produtos[0].id,
+            codigoErp: linhas[0].codigo,
+            rotulo: `${linhas[0].codigo} — ${linhas[0].descricao}`,
+          }
+        : undefined;
+
+    if (comFoto && produtos.length === 1 && produtos[0].id) {
+      const todas = await this.fotosDaPeca
+        .listar(produtos[0].id)
+        .catch(() => []);
+      if (todas.length > 1) {
+        const l = linhas[0];
+        const { fotos } = await this.fotos.buscar(
+          todas.map((f, i) => ({
+            codigo: `${l.codigo ?? ''}-${i + 1}`,
+            chave: f.arquivoId,
+            url: null,
+            legenda: `${l.descricao}${l.codigo ? ` — ${l.codigo}` : ''}${f.capa ? ' (capa)' : ''}`,
+          })),
+          true,
+        );
+        return {
+          produtos: linhas,
+          total,
+          semEstoque: Math.max(0, noCatalogo - comSaldo),
+          incluiuSemEstoque: incluirSemEstoque,
+          categoria,
+          foraDaCategoria: Math.max(0, semRecorte - total),
+          faixa,
+          pulados,
+          fotos,
+          tinhamFoto: todas.length,
+          pecaUnica,
+        };
+      }
+    }
 
     // AS FOTOS SAO BAIXADAS AQUI, antes de o modelo escrever — e nao depois.
     // So quem baixou sabe quais das URLs respondem de verdade (metade da
@@ -227,6 +298,7 @@ export class ConsultarProdutosVendedoraUseCase {
       ? await this.fotos.buscar(
           linhas.map((l) => ({
             codigo: l.codigo ?? '',
+        chave: l.fotoChave,
             url: l.fotoUrl,
             legenda: `${l.descricao}${l.codigo ? ` — ${l.codigo}` : ''}`,
           })),
@@ -244,6 +316,7 @@ export class ConsultarProdutosVendedoraUseCase {
       pulados,
       fotos,
       tinhamFoto: tinhamUrl,
+      pecaUnica,
     };
   }
 
@@ -277,6 +350,8 @@ export class ConsultarProdutosVendedoraUseCase {
     const { comFoto: confirmadas, cortadas } = await this.fotos.quaisTemFoto(
       candidatas.map((p) => ({
         codigo: p.codigoErp ?? p.id ?? '',
+        // A NOSSA GANHA, e nem precisa de conferencia — RF33.
+        chave: p.fotoArquivoId ?? null,
         url: p.fotoUrl ?? null,
         legenda: '',
       })),
@@ -297,6 +372,7 @@ export class ConsultarProdutosVendedoraUseCase {
       codigo: p.codigoErp,
       precoVenda: p.valorVenda,
       disponivel: p.estoqueAtual > 0,
+      fotoChave: p.fotoArquivoId ?? null,
       fotoUrl: p.fotoUrl ?? null,
     }));
 
@@ -305,6 +381,7 @@ export class ConsultarProdutosVendedoraUseCase {
     const { fotos } = await this.fotos.buscar(
       linhas.map((l) => ({
         codigo: l.codigo ?? '',
+        chave: l.fotoChave,
         url: l.fotoUrl,
         legenda: `${l.descricao}${l.codigo ? ` — ${l.codigo}` : ''}`,
       })),

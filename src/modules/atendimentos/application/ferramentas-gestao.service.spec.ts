@@ -148,6 +148,7 @@ describe('FerramentasGestaoService', () => {
       leads as never,
       // O ponteiro de conversas vivas (29/09) — o `conversas_agora`.
       conversas as never,
+      { listar: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 

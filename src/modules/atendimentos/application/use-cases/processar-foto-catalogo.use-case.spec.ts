@@ -1144,7 +1144,7 @@ describe('ProcessarFotoCatalogoUseCase — em qualquer ordem (o print do Yerlon)
     const depois = await useCase.codigo(DE, 'AN24435', QUEM);
 
     expect(depois?.motivo).toBe('foto_aprovada');
-    expect(depois?.resposta).toContain('já está no catálogo');
+    expect(depois?.resposta).toContain('á está no catálogo');
     expect(catalogos.atualizarFoto).toHaveBeenLastCalledWith(
       'f-1',
       expect.objectContaining({ status: 'APROVADA', aprovadoPor: QUEM }),
@@ -1234,17 +1234,22 @@ describe('ProcessarFotoCatalogoUseCase — em qualquer ordem (o print do Yerlon)
       expect(await useCase.tentarDeNovo(DE, 'tenta de novo')).toBeNull();
     });
 
-    it('o codigo da foto que falhou fica anotado — e a resposta diz como refazer', async () => {
+    // MUDOU COM O RF31, em 20/10/2026. Antes, a foto cujo tratamento falhou
+    // ficava fora do catalogo esperando o "tenta de novo" — o codigo so era
+    // anotado. Agora a imagem ORIGINAL ja e o que entra, entao o codigo que
+    // chega publica, e a oferta de refazer continua na mesma frase.
+    it('o codigo da foto que falhou PUBLICA — e a resposta ainda oferece refazer', async () => {
       await falhar();
       sessao.esperarCodigo(DE, 'f-9', '#0004 Holiday');
       catalogos.atualizarFoto.mockResolvedValue({ status: 'RECEBIDA' });
 
       const r = await useCase.codigo(DE, 'AN24435', QUEM);
 
-      expect(r?.motivo).toBe('codigo_anotado');
+      expect(r?.motivo).toBe('foto_aprovada');
       expect(r?.resposta).toContain('#0004 Holiday');
+      expect(r?.resposta).toContain('á está no catálogo');
       expect(r?.resposta).toContain('tenta de novo');
-      expect(aprovou()).toBe(false);
+      expect(aprovou()).toBe(true);
     });
   });
 
@@ -1900,3 +1905,4 @@ describe('ProcessarFotoCatalogoUseCase — a conferencia da foto', () => {
     expect(imagem.mime).toBe('image/jpeg');
   });
 });
+

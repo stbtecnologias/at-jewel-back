@@ -1,4 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { IArmazenamento } from '../../catalogos/domain/ports/armazenamento.port';
+import { ARMAZENAMENTO } from '../../catalogos/domain/ports/injection-tokens';
 
 /**
  * A FOTO DA PEÇA, BAIXADA DA CONEXA — 07/10/2026.
@@ -36,8 +38,22 @@ export interface FotoDeProduto {
 
 export interface PedidoDeFoto {
   codigo: string;
+  /**
+   * A CHAVE DA NOSSA FOTO, no armazenamento — RF33, 20/10/2026.
+   *
+   * Quando existe, ela GANHA da `url`: e a foto que a loja subiu, e ela nao
+   * da 404. Vem de `produtos.fotoArquivoId`, que desde o RF33 carrega a CAPA
+   * de `produto_fotos`.
+   */
+  chave?: string | null;
+  /** A URL da Conexa. So vale quando nao ha foto nossa. */
   url: string | null;
   legenda: string;
+}
+
+/** A peca tem de onde tirar imagem? A nossa primeiro. */
+function temDeOndeTirar(p: PedidoDeFoto): boolean {
+  return !!p.chave || !!p.url;
 }
 
 /**
@@ -85,6 +101,11 @@ const VALIDADE_DA_CONFERENCIA_MS = 6 * 60 * 60 * 1000;
 export class FotosDeProdutoService {
   private readonly logger = new Logger(FotosDeProdutoService.name);
 
+  constructor(
+    @Inject(ARMAZENAMENTO)
+    private readonly armazenamento: IArmazenamento,
+  ) {}
+
   /** O que a Conexa já respondeu: `url -> existe?`, com validade. */
   private readonly conhecidas = new Map<string, { existe: boolean; em: number }>();
 
@@ -103,7 +124,7 @@ export class FotosDeProdutoService {
     tinhamUrl: number;
     cortadas: number;
   }> {
-    const comUrl = pedidos.filter((p) => !!p.url);
+    const comUrl = pedidos.filter(temDeOndeTirar);
     const teto = elaPediuAsFotos ? TETO_QUANDO_ELA_PEDIU : TETO_DE_FOTOS;
     const fila = comUrl.slice(0, teto);
     const cortadas = comUrl.length - fila.length;
@@ -147,7 +168,7 @@ export class FotosDeProdutoService {
   async quaisTemFoto(
     pedidos: PedidoDeFoto[],
   ): Promise<{ comFoto: PedidoDeFoto[]; conferidas: number; cortadas: number }> {
-    const comUrl = pedidos.filter((p) => !!p.url);
+    const comUrl = pedidos.filter(temDeOndeTirar);
     const fila = comUrl.slice(0, TETO_DE_CONFERENCIA);
     const cortadas = comUrl.length - fila.length;
 
@@ -157,6 +178,15 @@ export class FotosDeProdutoService {
       for (;;) {
         const pedido = pendentes.shift();
         if (!pedido) return;
+        // A NOSSA NAO PRECISA DE CONFERENCIA: a linha em `produto_fotos` so
+        // existe porque o upload terminou, e o DELETE apaga as duas coisas
+        // juntas. Conferir seria baixar o objeto para saber o que o banco ja
+        // diz — e a conferencia existe por causa do 404 da Conexa, que e de
+        // quem nao controla o arquivo.
+        if (pedido.chave) {
+          achados.add(pedido.codigo);
+          continue;
+        }
         if (await this.existe(pedido.url!)) achados.add(pedido.codigo);
       }
     };
@@ -200,6 +230,37 @@ export class FotosDeProdutoService {
   }
 
   private async uma(pedido: PedidoDeFoto): Promise<FotoDeProduto | null> {
+    // ======================================================================
+    // A NOSSA FOTO GANHA — RF33, 20/10/2026.
+    //
+    // Ela vem do armazenamento, e nao da rede: nada de 404, nada de timeout,
+    // nada de pagina HTML chegando no lugar de imagem. Medido em 20/10: das
+    // 320 joias com saldo, 247 tem URL da Conexa e so 55 respondem.
+    // ======================================================================
+    if (pedido.chave) {
+      try {
+        const nossa = await this.armazenamento.ler(pedido.chave);
+        if (nossa && nossa.conteudo.length > 0) {
+          return {
+            codigo: pedido.codigo,
+            legenda: pedido.legenda,
+            conteudo: nossa.conteudo,
+            mime: nossa.mime,
+          };
+        }
+        // Linha sem objeto e inconsistencia nossa, nao caminho feliz: merece
+        // log, e a peca ainda tenta a do ERP em vez de ficar sem nenhuma.
+        this.logger.warn(
+          `Foto de ${pedido.codigo} esta na base e nao no armazenamento: ${pedido.chave}`,
+        );
+      } catch (e) {
+        this.logger.warn(
+          `Nao consegui ler a foto de ${pedido.codigo}: ${(e as Error).message}`,
+        );
+      }
+      if (!pedido.url) return null;
+    }
+
     try {
       const resp = await fetch(pedido.url!, {
         signal: AbortSignal.timeout(SEGUNDOS_DE_ESPERA * 1000),

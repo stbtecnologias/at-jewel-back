@@ -12,9 +12,15 @@ import { CriarProdutosLoteUseCase } from './application/use-cases/criar-produtos
 import { FacetasProdutosUseCase } from './application/use-cases/facetas-produtos.use-case';
 import { ListarProdutosUseCase } from './application/use-cases/listar-produtos.use-case';
 import { RemoverProdutoUseCase } from './application/use-cases/remover-produto.use-case';
-import { PRODUTO_REPOSITORY } from '../erp/domain/ports/injection-tokens';
+import {
+  PRODUTO_FOTO_REPOSITORY,
+  PRODUTO_REPOSITORY,
+} from '../erp/domain/ports/injection-tokens';
 import { ProdutoOrmEntity } from '../erp/infrastructure/database/typeorm/entities/produto.orm-entity';
+import { ProdutoFotoOrmEntity } from '../erp/infrastructure/database/typeorm/entities/produto-foto.orm-entity';
 import { ProdutoRepository } from '../erp/infrastructure/database/typeorm/repositories/produto.repository';
+import { ProdutoFotoRepository } from '../erp/infrastructure/database/typeorm/repositories/produto-foto.repository';
+import { FotosDaPecaUseCase } from './application/use-cases/fotos-da-peca.use-case';
 import { EscopoProdutosService } from './application/escopo-produtos.service';
 import { FotoProdutoUseCase } from './application/use-cases/foto-produto.use-case';
 import { FotoErpService } from './infrastructure/foto-erp/foto-erp.service';
@@ -27,7 +33,7 @@ import { ProdutosController } from './infrastructure/http/controllers/produtos.c
   // duplicar o provider aqui criaria um segundo cliente de S3 e uma segunda
   // decisao de disco-ou-bucket para manter em sincronia.
   imports: [
-    TypeOrmModule.forFeature([ProdutoOrmEntity]),
+    TypeOrmModule.forFeature([ProdutoOrmEntity, ProdutoFotoOrmEntity]),
     AuthModule,
     CatalogosModule,
   ],
@@ -44,17 +50,24 @@ import { ProdutosController } from './infrastructure/http/controllers/produtos.c
     AlertasEstoqueUseCase,
     SaldoDoProdutoUseCase,
     FotoProdutoUseCase,
+    // RF33 — a peca com varias fotos. Convive com o `FotoProdutoUseCase`, que
+    // cuida da foto unica de `produtos.foto_arquivo_id` (0 linhas em 20/10) e
+    // segue atendendo o painel antigo ate a modal nova substitui-lo.
+    FotosDaPecaUseCase,
     FotoErpService,
     // Decide QUE CAMPOS da peca saem pela API, por permissao — o irmao de
     // `EscopoVendasService` e `EscopoClientesService`. Ver `Produto.toPublic`.
     EscopoProdutosService,
     { provide: PRODUTO_REPOSITORY, useClass: ProdutoRepository },
+    { provide: PRODUTO_FOTO_REPOSITORY, useClass: ProdutoFotoRepository },
   ],
   // O canal interno de WhatsApp consulta catalogo pela vendedora.
   // O REPOSITORIO tambem sai: a foto que chega pelo WhatsApp traz o codigo da
   // peca, e o descritivo e preenchido por busca EXATA nele. A busca textual do
   // ListarProdutos serve para gente, nao para casar uma chave — e aqui errar a
   // peca significa publicar o preco de outra.
-  exports: [ListarProdutosUseCase, PRODUTO_REPOSITORY],
+  // `FotosDaPecaUseCase` sai porque o canal do WhatsApp tambem guarda foto na
+  // peca — e o mesmo caminho do painel, com `origem` diferente.
+  exports: [ListarProdutosUseCase, PRODUTO_REPOSITORY, FotosDaPecaUseCase],
 })
 export class ProdutosModule {}
