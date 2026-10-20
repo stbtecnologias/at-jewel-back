@@ -658,15 +658,70 @@ describe('as fotos da peça pelo WhatsApp', () => {
 
     // A CATRACA É DE ASSUNTO, E NÃO DE FÓRMULA: sem a palavra foto não há o
     // que deduzir, e a pergunta de preço continua sendo da agente.
+    //
+    // O CÓDIGO NÃO ENTRA NELA desde 20/10: "Só quero as fotos", logo depois de
+    // falar de uma peça, é o pedido mais claro do dia e não tem código nenhum.
+    // Quem resolve a peça é `pedido`, pela conversa.
     it.each([
       ['quanto custa o BR26396?', false],
-      ['me manda umas fotos aí', false],
+      ['e o saldo do BR26396?', false],
+      ['me manda umas fotos aí', true],
+      ['Só quero as fotos', true],
       ['tem foto dessa referência BR26396?', true],
       ['as imagens do BR26396, por favor', true],
     ])('catraca em "%s" → %s', (texto, esperado) => {
       expect(FotosDePecaPeloWhatsappUseCase.pareceSobreFotoDePeca(texto as string)).toBe(
         esperado,
       );
+    });
+
+    // ========================================================================
+    // "SÓ QUERO AS FOTOS" — o teste do Lucas em 20/10, 15:09.
+    //
+    // Ele falou da BR26127, a agente respondeu, e então ele escreveu isso. A
+    // frase não tem código — e exigir um seria exigir que ele repita o que
+    // acabou de dizer.
+    // ========================================================================
+    it('sem código, a peça é a da CONVERSA', async () => {
+      destino.disponivel.mockReturnValue(true);
+      destino.interpretarPedido.mockResolvedValue({ intencao: 'VER' });
+      sessao.lembrarPecaFalada(DE, {
+        produtoId: 'p-1',
+        codigoErp: 'BR26396',
+        rotulo: 'BR26396 — BRINCO',
+      });
+      fotos.listar.mockResolvedValue(TRES);
+      imagens.buscar.mockResolvedValue({
+        fotos: [{ codigo: 'x', legenda: '', conteudo: Buffer.from('j'), mime: 'image/jpeg' }],
+        tinhamUrl: 1,
+        cortadas: 0,
+      });
+
+      const r = await useCase.pedido(DE, 'Só quero as fotos');
+
+      expect(produtos.findByCodigoErp).toHaveBeenCalledWith('BR26396');
+      expect(r?.motivo).toBe('fotos_da_peca');
+    });
+
+    it('sem código e sem peça na conversa, não inventa nada', async () => {
+      destino.disponivel.mockReturnValue(true);
+
+      expect(await useCase.pedido(DE, 'me manda umas fotos aí')).toBeNull();
+      expect(destino.interpretarPedido).not.toHaveBeenCalled();
+    });
+
+    // O CATÁLOGO TEM PRIORIDADE QUANDO ESTÁ NO MEIO DE ALGO: ali "manda a
+    // foto" é dele, e puxá-la para a peça roubaria o fluxo.
+    it('sem contexto permitido, a peça da conversa não é usada', async () => {
+      destino.disponivel.mockReturnValue(true);
+      sessao.lembrarPecaFalada(DE, {
+        produtoId: 'p-1',
+        codigoErp: 'BR26396',
+        rotulo: 'BR26396 — BRINCO',
+      });
+
+      expect(await useCase.pedido(DE, 'Só quero as fotos', false)).toBeNull();
+      expect(destino.interpretarPedido).not.toHaveBeenCalled();
     });
 
     it('o modelo diz VER, e as fotos vão', async () => {

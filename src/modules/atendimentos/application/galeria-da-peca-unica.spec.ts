@@ -82,7 +82,14 @@ describe('a galeria quando a busca resolve em uma peça só', () => {
     expect(r.tinhamFoto).toBe(3);
   });
 
-  it('a capa vai MARCADA na legenda — a lista tem ordem e dono', async () => {
+  // ==========================================================================
+  // AS FOTOS DA PECA UNICA VAO LIMPAS — 20/10/2026.
+  //
+  // Antes a legenda ia em todas, e era a MESMA frase, com "(capa)" no fim: a
+  // peca chegava carimbada tres vezes. Agora a descricao e o valor vao UMA
+  // vez, no texto, por `fichaDaPeca`.
+  // ==========================================================================
+  it('vão SEM legenda, e a ficha volta pronta para o texto', async () => {
     comTresFotos();
     const uc = new ConsultarProdutosVendedoraUseCase(
       listar([PECA]) as never,
@@ -90,11 +97,13 @@ describe('a galeria quando a busca resolve em uma peça só', () => {
       galeria as never,
     );
 
-    await uc.execute('BR26396');
+    const r = await uc.execute('BR26396');
 
     const [pedidos] = fotos.buscar.mock.calls[0] as [{ legenda: string }[]];
-    expect(pedidos[0].legenda).toContain('(capa)');
-    expect(pedidos[1].legenda).not.toContain('(capa)');
+    for (const p of pedidos) expect(p.legenda).toBe('');
+
+    expect(r.fichaDaPeca).toContain('BR26396');
+    expect(r.fichaDaPeca).not.toContain('capa');
   });
 
   it('com DUAS peças, volta a ser uma foto por peça', async () => {

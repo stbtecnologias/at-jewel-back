@@ -10,6 +10,9 @@ import {
 } from '../../../../shared/catalogo/faixa-de-preco';
 import { ListarProdutosUseCase } from '../../../produtos/application/use-cases/listar-produtos.use-case';
 import { FotosDaPecaUseCase } from '../../../produtos/application/use-cases/fotos-da-peca.use-case';
+// O MESMO formatador do resto do canal: o valor da peca sai escrito igual em
+// todo lugar.
+import { moeda } from '../ferramentas-gestao.service';
 
 /**
  * Teto de resultados, e agora com como pedir o resto.
@@ -95,6 +98,19 @@ export interface ResultadoDeProdutos {
   faixa: Faixa;
   /** Quantas foram puladas antes desta pagina. */
   pulados: number;
+  /**
+   * A FICHA DA PECA, PRONTA PARA SER COPIADA — 20/10/2026.
+   *
+   * `REF — descricao — R$ valor`. So existe quando as fotos que vao junto sao
+   * de UMA peca — e e exatamente aí que a legenda delas sai, entao e aqui que
+   * a informacao precisa aparecer.
+   *
+   * A persona manda copiar esta linha e nao escrever mais nada: sem ela, o
+   * modelo parafraseia ("e o brinco solitario DTS 0,74ct — tem 2 fotos
+   * cadastradas, mandando logo abaixo"), e o formato que o Lucas pediu se
+   * perde.
+   */
+  fichaDaPeca?: string;
   /**
    * A PECA, quando a busca resolveu em UMA SO — 20/10/2026.
    *
@@ -265,18 +281,36 @@ export class ConsultarProdutosVendedoraUseCase {
         .catch(() => []);
       if (todas.length > 1) {
         const l = linhas[0];
+        // ==================================================================
+        // AS FOTOS DA PECA UNICA VAO LIMPAS — 20/10/2026, pedido do Lucas.
+        //
+        // Aqui elas iam com legenda, e a legenda era A MESMA em todas, com um
+        // "(capa)" no fim: a peca chegava carimbada tres vezes com a mesma
+        // frase e com vocabulario nosso.
+        //
+        // E ESTE E O TERCEIRO LUGAR QUE MANDA AS FOTOS DE UMA PECA — o
+        // deterministico, a ferramenta da gestao e este, o da vendedora. O
+        // Lucas pegou a diferenca em dois minutos: "apenas o primeiro foi, o
+        // segundo nao seguiu — e outra consulta?". Era.
+        //
+        // A ficha vai no TEXTO, e quem escreve o texto e o modelo — por isso
+        // ela volta pronta em `fichaDaPeca`, e a persona manda copiar.
+        // ==================================================================
         const { fotos } = await this.fotos.buscar(
           todas.map((f, i) => ({
             codigo: `${l.codigo ?? ''}-${i + 1}`,
             chave: f.arquivoId,
             url: null,
-            legenda: `${l.descricao}${l.codigo ? ` — ${l.codigo}` : ''}${f.capa ? ' (capa)' : ''}`,
+            legenda: '',
           })),
           true,
         );
         return {
           produtos: linhas,
           total,
+          fichaDaPeca:
+            `${l.codigo ?? ''} — ${l.descricao}` +
+            `${l.precoVenda > 0 ? ` — ${moeda(l.precoVenda)}` : ''}`,
           semEstoque: Math.max(0, noCatalogo - comSaldo),
           incluiuSemEstoque: incluirSemEstoque,
           categoria,

@@ -1079,6 +1079,23 @@ export class FerramentasGestaoService {
             ? await this.fotosDaPeca.listar(achados[0].id).catch(() => [])
             : [];
 
+        // ================================================================
+        // UMA PECA SO: AS FOTOS VAO LIMPAS — 20/10/2026, pedido do Lucas.
+        //
+        // Aqui elas iam com legenda, e a legenda era A MESMA em todas, com um
+        // "(capa)" no fim — a peca chegava carimbada tres vezes com a mesma
+        // frase e com vocabulario nosso.
+        //
+        // ESTE E O SEGUNDO CAMINHO DA MESMA COISA, e foi o Lucas que pegou:
+        // "apenas o primeiro foi, o segundo nao seguiu — e outra consulta?".
+        // Era. `FotosDePecaPeloWhatsappUseCase` responde quando a frase diz
+        // peca e foto; quando quem responde e a AGENTE, cai nesta ferramenta.
+        // Duas implementacoes do mesmo pedido so ficam iguais se a regra for
+        // escrita nas duas.
+        //
+        // A ficha vai no TEXTO, e quem escreve o texto e o modelo — por isso
+        // ela volta pronta em `fichaDaPeca`, e a persona manda copiar.
+        // ================================================================
         const { fotos, tinhamUrl } =
           umaSo.length > 1
             ? {
@@ -1088,10 +1105,7 @@ export class FerramentasGestaoService {
                       codigo: `${achados[0].codigoErp ?? ''}-${i + 1}`,
                       chave: f.arquivoId,
                       url: null,
-                      legenda:
-                        `${achados[0].descricaoEtiqueta ?? `${achados[0].categoria} ${achados[0].familia}`}` +
-                        `${achados[0].codigoErp ? ` — ${achados[0].codigoErp}` : ''}` +
-                        `${f.capa ? ' (capa)' : ''}`,
+                      legenda: '',
                     })),
                     true,
                   )
@@ -1111,8 +1125,19 @@ export class FerramentasGestaoService {
                 )
               : { fotos: [], tinhamUrl: 0 };
 
+        // A FICHA, PRONTA: `REF — descricao — R$ valor`. So existe quando as
+        // fotos sao de UMA peca — e e exatamente aí que a legenda saiu, entao
+        // e aqui que a informacao precisa aparecer.
+        const fichaDaPeca =
+          umaSo.length > 1 && achados[0].codigoErp
+            ? `${achados[0].codigoErp} — ` +
+              `${achados[0].descricaoEtiqueta ?? `${achados[0].categoria} ${achados[0].familia}`}` +
+              `${achados[0].valorVenda > 0 ? ` — ${moeda(achados[0].valorVenda)}` : ''}`
+            : undefined;
+
         return {
           total,
+          fichaDaPeca,
           semEstoque: Math.max(0, noCatalogo - comSaldo),
           incluiuSemEstoque: incluirSemEstoque === true,
           categoria: daPergunta,

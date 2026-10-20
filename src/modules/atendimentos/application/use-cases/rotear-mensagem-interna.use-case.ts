@@ -370,14 +370,31 @@ export class RotearMensagemInternaUseCase {
     // E O SEGUNDO TESTE E A REDE DE SEGURANCA DO PRIMEIRO — 20/10/2026.
     //
     // `pareceComando` e o atalho: casa com as formas obvias sem tocar no
-    // banco. `pareceSobreFotoDePeca` pega o resto — a mensagem que fala de
-    // foto e traz um codigo, em qualquer arranjo de palavras. Foi o caso de
-    // "me envia as fotos que voce tem da referencia BR26318", que caiu no
-    // catalogo e ouviu "pode mandar, de qual catalogo e?".
+    // banco. `pareceSobreFotoDePeca` pega o resto — qualquer mensagem que
+    // FALE de foto, em qualquer arranjo de palavras. Foi o caso de "me envia
+    // as fotos que voce tem da referencia BR26318", que caiu no catalogo e
+    // ouviu "pode mandar, de qual catalogo e?".
     //
     // Os dois sao de memoria e regex, entao a ordem vendedora-antes-de-gestao
     // segue preservada: nenhum deles faz lookup antes de ser verdade.
     // ---------------------------------------------------------------------
+    const noCatalogo = msg.agente !== 'ANASTASIA';
+    const esperandoCatalogo = noCatalogo && this.canalCatalogo.temFotoEsperando(msg.de);
+    const esperandoCodigo = noCatalogo && this.canalCatalogo.temCodigoEsperando(msg.de);
+    const esperandoConsulta = noCatalogo && this.canalCatalogo.esperandoConsulta(msg.de);
+    const fotoComFalha = noCatalogo && this.canalCatalogo.temFotoComFalha(msg.de);
+    // Desde o RF31 a foto entra crua e o tratamento virou pedido — entao uma
+    // foto guardada ha pouco faz o canal escutar o "trata" que pode vir.
+    const fotoTratavel = noCatalogo && this.canalCatalogo.temFotoTratavel(msg.de);
+
+    // O CATALOGO ESTA NO MEIO DE ALGUMA COISA? So isso decide se a deducao
+    // pode usar a peca da conversa quando a frase nao traz codigo: com o
+    // catalogo esperando, "manda a foto" e dele, e puxa-la para a peca
+    // roubaria o fluxo. Com codigo na frase a pergunta e explicita, e aí nao
+    // depende disto.
+    const catalogoNoMeio =
+      esperandoCatalogo || esperandoCodigo || esperandoConsulta || fotoComFalha;
+
     const comandoDeFoto = FotosDePecaPeloWhatsappUseCase.pareceComando(msg.texto);
     const falaDeFotoDePeca =
       FotosDePecaPeloWhatsappUseCase.pareceSobreFotoDePeca(msg.texto);
@@ -399,20 +416,16 @@ export class RotearMensagemInternaUseCase {
         // E SO ENTAO O MODELO. Os dois acima sao gratis; este custa uma
         // chamada, entao ele e o ultimo e so roda quando nenhum padrao pegou.
         if (falaDeFotoDePeca) {
-          const deduzido = await this.fotosDePeca.pedido(msg.de, msg.texto ?? '');
+          const deduzido = await this.fotosDePeca.pedido(
+            msg.de,
+            msg.texto ?? '',
+            !catalogoNoMeio,
+          );
           if (deduzido) return deduzido;
         }
       }
     }
 
-    const noCatalogo = msg.agente !== 'ANASTASIA';
-    const esperandoCatalogo = noCatalogo && this.canalCatalogo.temFotoEsperando(msg.de);
-    const esperandoCodigo = noCatalogo && this.canalCatalogo.temCodigoEsperando(msg.de);
-    const esperandoConsulta = noCatalogo && this.canalCatalogo.esperandoConsulta(msg.de);
-    const fotoComFalha = noCatalogo && this.canalCatalogo.temFotoComFalha(msg.de);
-    // Desde o RF31 a foto entra crua e o tratamento virou pedido — entao uma
-    // foto guardada ha pouco faz o canal escutar o "trata" que pode vir.
-    const fotoTratavel = noCatalogo && this.canalCatalogo.temFotoTratavel(msg.de);
     if (
       esperandoCatalogo ||
       esperandoCodigo ||

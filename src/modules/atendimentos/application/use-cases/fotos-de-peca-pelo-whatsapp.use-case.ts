@@ -349,19 +349,27 @@ export class FotosDePecaPeloWhatsappUseCase {
    * ==========================================================================
    * É A CATRACA DA DEDUÇÃO, e ela é de assunto, não de fórmula.
    *
-   * Duas condições, as duas baratas e nenhuma delas uma palavra mágica: a
-   * mensagem fala em FOTO (ou imagem), que é o assunto, e traz algo com cara
-   * de código de peça. Sem as duas, não há o que deduzir — e "quanto custa o
-   * BR26318?" continua sendo pergunta da agente, porque não fala de foto.
+   * Uma condição só, e barata: a mensagem fala em FOTO (ou imagem). É o
+   * assunto, não uma palavra mágica — "quanto custa o BR26318?" continua
+   * sendo pergunta da agente, porque não fala de foto.
    *
-   * A existência da peça NÃO se decide aqui: formato não é existência, e quem
-   * confere é o ERP, em `pedido`.
    * ==========================================================================
+   * O CÓDIGO SAIU DA CATRACA EM 20/10, e o motivo foi um teste do Lucas:
+   *
+   *   — Agora da BR26127
+   *   — Só quero as fotos
+   *
+   * A segunda frase NÃO TEM CÓDIGO, e é o pedido mais claro do dia. Exigir o
+   * código aqui seria exigir que a pessoa repita o que acabou de dizer.
+   * ==========================================================================
+   *
+   * Sem código, quem responde é a peça de que a conversa estava falando. E a
+   * existência dela NÃO se decide aqui: quem confere é o ERP, em `pedido`.
    */
   static pareceSobreFotoDePeca(texto: string | null | undefined): boolean {
     const t = (texto ?? '').trim();
     if (t.length === 0) return false;
-    return /\b(fotos?|imagens?|imagem)\b/i.test(t) && RE_CODIGO_NA_RESPOSTA.test(t);
+    return /\b(fotos?|imagens?|imagem)\b/i.test(t);
   }
 
   /**
@@ -389,8 +397,22 @@ export class FotosDePecaPeloWhatsappUseCase {
    * volta se desfaz sozinho e abrir destino errado arquiva a próxima foto na
    * peça errada, calada.
    */
-  async pedido(de: string, texto: string): Promise<RespostaFoto | null> {
-    const codigo = texto.match(RE_CODIGO_NA_RESPOSTA)?.[1]?.toUpperCase();
+  async pedido(
+    de: string,
+    texto: string,
+    /**
+     * Pode usar a peça de que a conversa falava, quando a frase não traz
+     * código? **Falso quando o catálogo está no meio de alguma coisa** — ali
+     * "manda a foto" é do catálogo, e puxá-la para a peça roubaria o fluxo.
+     */
+    podeUsarContexto = true,
+  ): Promise<RespostaFoto | null> {
+    const noTexto = texto.match(RE_CODIGO_NA_RESPOSTA)?.[1]?.toUpperCase();
+    // SEM CÓDIGO, A PEÇA É A DA CONVERSA. "Só quero as fotos" logo depois de
+    // falar da BR26127 é sobre a BR26127 — pedir o código de novo seria pedir
+    // que ela repita o que acabou de dizer.
+    const codigo =
+      noTexto ?? (podeUsarContexto ? this.sessao.pecaFalada(de)?.codigoErp : null);
     if (!codigo) return null;
 
     const produto = await this.produtos.findByCodigoErp(codigo);
