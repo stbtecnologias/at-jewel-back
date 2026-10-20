@@ -366,7 +366,22 @@ export class RotearMensagemInternaUseCase {
     //
     // Vale nos dois numeros, como a foto.
     // ---------------------------------------------------------------------
-    if (FotosDePecaPeloWhatsappUseCase.pareceComando(msg.texto)) {
+    // ---------------------------------------------------------------------
+    // E O SEGUNDO TESTE E A REDE DE SEGURANCA DO PRIMEIRO — 20/10/2026.
+    //
+    // `pareceComando` e o atalho: casa com as formas obvias sem tocar no
+    // banco. `pareceSobreFotoDePeca` pega o resto — a mensagem que fala de
+    // foto e traz um codigo, em qualquer arranjo de palavras. Foi o caso de
+    // "me envia as fotos que voce tem da referencia BR26318", que caiu no
+    // catalogo e ouviu "pode mandar, de qual catalogo e?".
+    //
+    // Os dois sao de memoria e regex, entao a ordem vendedora-antes-de-gestao
+    // segue preservada: nenhum deles faz lookup antes de ser verdade.
+    // ---------------------------------------------------------------------
+    const comandoDeFoto = FotosDePecaPeloWhatsappUseCase.pareceComando(msg.texto);
+    const falaDeFotoDePeca =
+      FotosDePecaPeloWhatsappUseCase.pareceSobreFotoDePeca(msg.texto);
+    if (comandoDeFoto || falaDeFotoDePeca) {
       const dona = await this.identificarAdmin.execute(
         telefone,
         PERMISSAO_FOTO_DE_PECA,
@@ -380,6 +395,13 @@ export class RotearMensagemInternaUseCase {
 
         const mirada = await this.fotosDePeca.mirar(msg.de, msg.texto ?? '');
         if (mirada) return mirada;
+
+        // E SO ENTAO O MODELO. Os dois acima sao gratis; este custa uma
+        // chamada, entao ele e o ultimo e so roda quando nenhum padrao pegou.
+        if (falaDeFotoDePeca) {
+          const deduzido = await this.fotosDePeca.pedido(msg.de, msg.texto ?? '');
+          if (deduzido) return deduzido;
+        }
       }
     }
 
