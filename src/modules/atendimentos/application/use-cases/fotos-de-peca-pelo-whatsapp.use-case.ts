@@ -60,6 +60,15 @@ const RE_QUAIS = [
 const ELA_PEDIU = true;
 
 /**
+ * "É DA PEÇA" — a resposta à pergunta de destino.
+ *
+ * A pergunta é a do catálogo, com a peça oferecida ao lado. Aceita a palavra
+ * solta e o código, porque os dois são jeitos naturais de responder.
+ */
+const RE_E_DA_PECA =
+  /^(?:(?:e|é|sim),?\s*)?(?:(?:par[ao]|d[ao]|n[ao])\s+)?(?:[ao]s?\s+)?(?:pe[cç]a|produto|item)\s*\.?$/i;
+
+/**
  * AS FOTOS DA PEÇA PELO WHATSAPP — RF33, pedido do Lucas em 20/10/2026.
  *
  * ==========================================================================
@@ -133,6 +142,14 @@ export class FotosDePecaPeloWhatsappUseCase {
     const nossas = await this.fotos.listar(produto.id);
     const nome = produto.descricaoEtiqueta?.trim();
     const rotulo = nome ? `${codigo} — ${nome}` : codigo;
+
+    // FALAMOS DESTA PEÇA. Não muda o destino das fotos — serve para a pergunta
+    // de destino ter a opção certa, se uma imagem chegar em seguida.
+    this.sessao.lembrarPecaFalada(de, {
+      produtoId: produto.id,
+      codigoErp: codigo,
+      rotulo,
+    });
 
     if (nossas.length === 0) {
       // SEM FOTO NOSSA, A DO ERP AINDA PODE EXISTIR — e ela vai, para a
@@ -234,6 +251,71 @@ export class FotosDePecaPeloWhatsappUseCase {
         `${rotulo}\n${jaTem} Manda as fotos — podem vir várias de uma vez, e ` +
         'todas entram nessa peça.\nQuando terminar, me diz "pronto" ou o código da próxima.',
       motivo: 'peca_mirada',
+    };
+  }
+
+  /**
+   * "É DA PEÇA" — a foto que já estava pendurada vai para ela.
+   *
+   * ==========================================================================
+   * O CAMINHO DE QUEM MANDA A FOTO PRIMEIRO E DIZ DEPOIS.
+   *
+   * A imagem foi gravada na área de espera assim que chegou — tem de ser,
+   * porque o WAHA apaga a mídia decifrada em 30 minutos e perguntar antes de
+   * gravar perderia a foto de quem saiu para almoçar.
+   *
+   * Então ela está lá, esperando destino. Esta é a resposta que a traz para a
+   * peça: o arquivo é MOVIDO da espera para a pasta da peça, e a peça fica
+   * MIRADA — porque quem mandou uma vai mandar as outras.
+   * ==========================================================================
+   */
+  async anexarPenduradas(
+    de: string,
+    texto: string,
+    nomeRemetente: string,
+  ): Promise<RespostaFoto | null> {
+    const peca = this.sessao.pecaFalada(de);
+    if (!peca) return null;
+
+    const t = texto.trim();
+    const ehDela =
+      RE_E_DA_PECA.test(t) || t.toUpperCase() === peca.codigoErp.toUpperCase();
+    if (!ehDela) return null;
+
+    const penduradas = this.sessao.recolherPendentes(de);
+    if (penduradas.length === 0) return null;
+
+    const entraram: string[] = [];
+    const perdidas: number = penduradas.length;
+    for (const p of penduradas) {
+      const foto = await this.fotos
+        .anexarExistente(peca.produtoId, p.arquivoId, p.mime, nomeRemetente)
+        .catch(() => null);
+      if (foto) entraram.push(foto.id);
+    }
+
+    if (entraram.length === 0) {
+      return {
+        resposta: `Não consegui anexar em ${peca.codigoErp}. Manda a foto de novo?`,
+        motivo: 'anexo_na_peca_falhou',
+      };
+    }
+
+    // A PEÇA FICA MIRADA: quem mandou uma foto vai mandar as outras, e
+    // perguntar de novo a cada imagem seria pior que não ter perguntado.
+    this.sessao.mirarPeca(de, peca);
+
+    const total = (await this.fotos.listar(peca.produtoId)).length;
+    const faltou =
+      entraram.length < perdidas
+        ? ` ${perdidas - entraram.length} não entrou.`
+        : '';
+    return {
+      resposta:
+        `${entraram.length === 1 ? 'Anexada' : `${entraram.length} anexadas`} em ` +
+        `${peca.codigoErp} — ela tem ${total} agora.${faltou}\n` +
+        'As próximas fotos vão para ela também. "pronto" quando terminar.',
+      motivo: 'anexo_na_peca',
     };
   }
 

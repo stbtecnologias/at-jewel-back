@@ -887,7 +887,7 @@ export class ProcessarFotoCatalogoUseCase {
       // `varrerExpiradas`. O relogio comeca aqui.
       this.agendarVarredura();
       return {
-        resposta: this.perguntarCatalogo(abertos),
+        resposta: this.perguntarCatalogo(abertos, msg.de),
         motivo: 'aguardando_catalogo',
       };
     }
@@ -937,13 +937,13 @@ export class ProcessarFotoCatalogoUseCase {
           return {
             resposta:
               `Anotei o código ${analise.codigo}. Falta só o catálogo — ` +
-              this.perguntarCatalogo(abertos),
+              this.perguntarCatalogo(abertos, de),
             motivo: 'codigo_antes_do_catalogo',
           };
         }
       }
       return {
-        resposta: 'Não achei esse catálogo. ' + this.perguntarCatalogo(abertos),
+        resposta: 'Não achei esse catálogo. ' + this.perguntarCatalogo(abertos, de),
         motivo: 'catalogo_nao_reconhecido',
       };
     }
@@ -1978,7 +1978,7 @@ export class ProcessarFotoCatalogoUseCase {
     }
 
     return {
-      resposta: `Pode mandar. ${this.perguntarCatalogo(abertos)}`,
+      resposta: `Pode mandar. ${this.perguntarCatalogo(abertos, de)}`,
       motivo: 'catalogo_intencao',
     };
   }
@@ -2616,9 +2616,23 @@ export class ProcessarFotoCatalogoUseCase {
     return Number.isFinite(valor) && valor >= 0 ? valor : null;
   }
 
-  private perguntarCatalogo(abertos: CatalogoAberto[]): string {
+  /**
+   * A PERGUNTA OFERECE A PEÇA QUANDO ELA ESTAVA NA CONVERSA — 20/10/2026.
+   *
+   * Teste do Lucas: ele pediu as fotos do BR26396, mandou uma imagem em
+   * seguida, e eu perguntei "de qual catálogo é?" — a única pergunta que eu
+   * sabia fazer. A resposta provável era a peça, e a opção nem aparecia.
+   *
+   * A peça falada NÃO desvia a foto sozinha: ela só entra na pergunta. Quem
+   * decide continua sendo a resposta.
+   */
+  private perguntarCatalogo(abertos: CatalogoAberto[], de?: string): string {
     const lista = abertos.map((c) => `#${c.numero} — ${c.nome}`).join('\n');
-    return `De qual catálogo é?\n${lista}\n\nResponde com o número ou o nome.`;
+    const peca = de ? this.sessao.pecaFalada(de) : null;
+    const ouAPeca = peca
+      ? `\n\nOu é para a peça ${peca.codigoErp}? Responde "peça" que eu anexo nela.`
+      : '';
+    return `De qual catálogo é?\n${lista}\n\nResponde com o número ou o nome.${ouAPeca}`;
   }
 
   private emReais(valor: number | null): string {

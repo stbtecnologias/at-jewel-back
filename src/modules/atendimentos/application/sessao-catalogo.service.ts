@@ -238,6 +238,8 @@ export class SessaoCatalogoService {
   private readonly guardadas = new Map<string, FotoGuardada>();
   /** A peca para onde as fotos estao indo — RF33. */
   private readonly miradas = new Map<string, PecaMirada>();
+  /** A peca de que se FALOU — o contexto da pergunta, e nao o destino. */
+  private readonly faladas = new Map<string, PecaMirada>();
 
   /** Catalogo lembrado da ultima vez, se ainda dentro da janela. */
   catalogoAtual(
@@ -506,6 +508,39 @@ export class SessaoCatalogoService {
   /** As proximas fotos vao para esta peca. Substitui a anterior. */
   mirarPeca(chave: string, peca: Omit<PecaMirada, 'em'>): void {
     this.miradas.set(chave, { ...peca, em: Date.now() });
+    this.lembrarPecaFalada(chave, peca);
+  }
+
+  // ---------------------------------------------------------------------------
+  // A PECA DE QUE SE ESTAVA FALANDO — 20/10/2026.
+  //
+  // Diferente da MIRADA: falar de uma peca nao manda foto para ela. Serve para
+  // a pergunta ter a opcao certa.
+  //
+  // Nasceu de um teste do Lucas: ele pediu as fotos do BR26396, mandou uma
+  // imagem em seguida, e a agente perguntou "de qual catalogo e?" — a unica
+  // pergunta que ela sabia fazer. A foto obvia era a da peca, e a opcao nem
+  // aparecia.
+  // ---------------------------------------------------------------------------
+
+  /** Falamos desta peca agora. Nao muda o destino das fotos. */
+  lembrarPecaFalada(chave: string, peca: Omit<PecaMirada, 'em'>): void {
+    this.faladas.set(chave, { ...peca, em: Date.now() });
+  }
+
+  /** A peca de que se falou por ultimo, se ainda dentro da janela. */
+  pecaFalada(chave: string): PecaMirada | null {
+    const p = this.faladas.get(chave);
+    if (!p) return null;
+    if (Date.now() - p.em > JANELA_MS) {
+      this.faladas.delete(chave);
+      return null;
+    }
+    return p;
+  }
+
+  esquecerPecaFalada(chave: string): void {
+    this.faladas.delete(chave);
   }
 
   /** Para onde as fotos estao indo, se ainda dentro da janela. */

@@ -8,6 +8,8 @@ import { RotearMensagemInternaUseCase } from './rotear-mensagem-interna.use-case
  */
 const SEM_FOTO_DE_PECA = {
   temPecaMirada: () => false,
+  anexarPenduradas: jest.fn().mockResolvedValue(null),
+  quais: jest.fn().mockResolvedValue(null),
   mirar: jest.fn().mockResolvedValue(null),
   foto: jest.fn().mockResolvedValue(null),
 } as never;

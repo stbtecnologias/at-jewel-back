@@ -409,6 +409,17 @@ export class RotearMensagemInternaUseCase {
         if (textoResolvido) {
           const nome = quem.nome ?? '';
           if (esperandoCatalogo) {
+            // "É DA PEÇA" — RF33, 20/10/2026. A pergunta de destino passou a
+            // oferecer a peça de que se falava; esta é a resposta dela, e tem
+            // de ser lida ANTES da do catálogo, que trataria "peça" como nome
+            // de catálogo não encontrado.
+            const naPeca = await this.fotosDePeca.anexarPenduradas(
+              msg.de,
+              textoResolvido,
+              nome,
+            );
+            if (naPeca) return naPeca;
+
             return this.canalCatalogo.resposta(msg.de, nome, textoResolvido);
           }
 

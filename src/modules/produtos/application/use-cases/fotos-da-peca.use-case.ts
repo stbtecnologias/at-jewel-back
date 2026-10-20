@@ -146,6 +146,44 @@ export class FotosDaPecaUseCase {
     };
   }
 
+  /**
+   * Anexa um arquivo QUE JÁ ESTÁ no armazenamento — 20/10/2026.
+   *
+   * É o caminho da foto que chegou pelo WhatsApp sem destino: ela foi gravada
+   * na área de espera antes de qualquer pergunta (senão some com o WAHA em 30
+   * minutos), e só depois a pessoa disse que era da peça. Aqui ela é MOVIDA
+   * para a pasta da peça e registrada.
+   *
+   * Devolve `null` quando o arquivo não está mais lá — e aí quem chama avisa,
+   * em vez de criar uma linha apontando para o nada.
+   */
+  async anexarExistente(
+    produtoId: string,
+    chaveAtual: string,
+    mime: string,
+    quem: string | null,
+  ): Promise<FotoDaPecaDto | null> {
+    const produto = await this.exigirProduto(produtoId);
+    if ((await this.fotos.contar(produtoId)) >= MAX_FOTOS_POR_PECA) return null;
+
+    const chave = await this.armazenamento.mover(
+      chaveAtual,
+      pastaDaFotoDeProduto(produto.codigoErp?.trim() || produtoId),
+    );
+    const arquivo = await this.armazenamento.ler(chave);
+    if (!arquivo) return null;
+
+    const linha = await this.fotos.adicionar({
+      produtoId,
+      arquivoId: chave,
+      mime: arquivo.mime || mime,
+      bytes: arquivo.conteudo.length,
+      origem: 'WHATSAPP',
+      enviadoPor: quem,
+    });
+    return this.paraDto(linha);
+  }
+
   async definirCapa(produtoId: string, fotoId: string): Promise<FotoDaPecaDto[]> {
     await this.exigirProduto(produtoId);
     const foto = await this.fotos.buscarPorId(fotoId);

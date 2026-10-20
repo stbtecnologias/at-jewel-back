@@ -32,7 +32,11 @@ describe('as fotos da peça pelo WhatsApp', () => {
   const IMAGEM = { url: 'http://waha/files/a.jpg', mimetype: 'image/jpeg' };
 
   let produtos: { findByCodigoErp: jest.Mock };
-  let fotos: { listar: jest.Mock; adicionar: jest.Mock };
+  let fotos: {
+    listar: jest.Mock;
+    adicionar: jest.Mock;
+    anexarExistente: jest.Mock;
+  };
   let whatsapp: { baixarMidia: jest.Mock };
   let imagens: { buscar: jest.Mock };
   let sessao: SessaoCatalogoService;
@@ -45,6 +49,7 @@ describe('as fotos da peça pelo WhatsApp', () => {
     produtos = { findByCodigoErp: jest.fn().mockResolvedValue(PECA) };
     let n = 0;
     fotos = {
+      anexarExistente: jest.fn().mockResolvedValue({ id: 'f-1' }),
       listar: jest.fn().mockResolvedValue([]),
       adicionar: jest.fn().mockImplementation(() =>
         Promise.resolve({
@@ -256,6 +261,78 @@ describe('as fotos da peça pelo WhatsApp', () => {
       produtos.findByCodigoErp.mockResolvedValue(null);
 
       expect(await useCase.quais(DE, 'fotos do produto BR99999')).toBeNull();
+    });
+  });
+
+  /**
+   * MANDAR A FOTO PRIMEIRO E DIZER DEPOIS — 20/10/2026.
+   *
+   * Teste do Lucas: ele pediu as fotos do BR26396, mandou uma imagem em
+   * seguida, e a agente perguntou "de qual catálogo é?" — a única pergunta que
+   * ela sabia fazer. A foto óbvia era a da peça, e a opção nem aparecia.
+   */
+  describe('"é da peça", com a foto já pendurada', () => {
+    const PENDURADA = {
+      arquivoId: 'catalogo/pendentes/a.jpg',
+      mime: 'image/jpeg',
+      codigoErp: null,
+      parcelas: null,
+    };
+
+    beforeEach(async () => {
+      fotos.listar.mockResolvedValue([]);
+      imagens.buscar.mockResolvedValue({ fotos: [], tinhamUrl: 0, cortadas: 0 });
+      // Falar da peça é o que coloca a opção na pergunta.
+      await useCase.quais(DE, 'quais fotos tem o BR26396?');
+      sessao.pendurar(DE, PENDURADA);
+      fotos.anexarExistente = jest.fn().mockResolvedValue({ id: 'f-1' });
+    });
+
+    it.each(['peça', 'peca', 'é da peça', 'produto', 'no produto', 'BR26396'])(
+      'reconhece "%s" e anexa na peça',
+      async (texto) => {
+        const r = await useCase.anexarPenduradas(DE, texto, QUEM);
+
+        expect(r?.motivo).toBe('anexo_na_peca');
+        expect(fotos.anexarExistente).toHaveBeenCalledWith(
+          'p-1',
+          'catalogo/pendentes/a.jpg',
+          'image/jpeg',
+          QUEM,
+        );
+      },
+    );
+
+    /* ESTE É O TESTE: quem mandou uma vai mandar as outras. */
+    it('depois de anexar, a peça fica MIRADA', async () => {
+      await useCase.anexarPenduradas(DE, 'peça', QUEM);
+
+      expect(useCase.temPecaMirada(DE)).toBe(true);
+    });
+
+    it('"#0001" NÃO é resposta de peça — segue para o catálogo', async () => {
+      expect(await useCase.anexarPenduradas(DE, '#0001', QUEM)).toBeNull();
+    });
+
+    it('sem foto pendurada não há o que anexar', async () => {
+      sessao.recolherPendentes(DE);
+
+      expect(await useCase.anexarPenduradas(DE, 'peça', QUEM)).toBeNull();
+    });
+
+    it('sem peça falada, a resposta não é comigo', async () => {
+      sessao.esquecerPecaFalada(DE);
+
+      expect(await useCase.anexarPenduradas(DE, 'peça', QUEM)).toBeNull();
+    });
+
+    it('arquivo que sumiu da espera é DITO, e não vira linha fantasma', async () => {
+      fotos.anexarExistente = jest.fn().mockResolvedValue(null);
+
+      const r = await useCase.anexarPenduradas(DE, 'peça', QUEM);
+
+      expect(r?.motivo).toBe('anexo_na_peca_falhou');
+      expect(useCase.temPecaMirada(DE)).toBe(false);
     });
   });
 
