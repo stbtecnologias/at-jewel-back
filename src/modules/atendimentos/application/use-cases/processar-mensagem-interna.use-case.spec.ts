@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import type { ChatParams } from '../../../agentes/domain/ports/llm-client.port';
 import { FerramentasVendedoraService } from '../ferramentas-vendedora.service';
 import { ProcessarMensagemInternaUseCase } from './processar-mensagem-interna.use-case';
+import { SessaoCatalogoService } from '../sessao-catalogo.service';
 
 /**
  * O canal interno, agora com ferramentas.
@@ -134,6 +135,7 @@ describe('ProcessarMensagemInternaUseCase', () => {
       memoria as never,
       { get: jest.fn(() => undefined) } as unknown as ConfigService,
       eventos as never,
+      new SessaoCatalogoService(),
     );
   });
 
@@ -572,6 +574,7 @@ describe('ProcessarMensagemInternaUseCase', () => {
         { carregar: jest.fn(() => []), registrar: jest.fn() } as never,
         { get: jest.fn(() => undefined) } as never,
         { execute: jest.fn() } as never,
+        new SessaoCatalogoService(),
       );
       return { instancia, chamada, lembretes };
     }

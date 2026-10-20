@@ -377,6 +377,17 @@ export interface ContextoGestao {
    * recusa e diz de quem e. Ver `atribuirVendedoraSeSemDona`.
    */
   podeAtribuirCarteira?: boolean;
+  /**
+   * Chamado quando a consulta resolveu em UMA peca — RF33, 20/10/2026.
+   *
+   * O gemeo do `aoFalarDePeca` da vendedora, e pelo mesmo motivo: este servico
+   * nao conhece a sessao do WhatsApp, e quem sabe o chat e quem o monta.
+   */
+  aoFalarDePeca?: (peca: {
+    produtoId: string;
+    codigoErp: string;
+    rotulo: string;
+  }) => void;
 }
 
 /**
@@ -1051,6 +1062,18 @@ export class FerramentasGestaoService {
         // Depende do RESULTADO, e nao de vocabulario — que e o que sobra
         // quando a frase pode vir de qualquer jeito.
         // ================================================================
+        // A CONVERSA FALOU DESTA PECA — e vale mesmo sem foto, porque o que
+        // importa aqui e o CONTEXTO da pergunta seguinte.
+        const so = achados.length === 1 ? achados[0] : null;
+        if (so?.id && so.codigoErp) {
+          const p = { ...so, id: so.id, codigoErp: so.codigoErp };
+          ctx.aoFalarDePeca?.({
+            produtoId: p.id,
+            codigoErp: p.codigoErp,
+            rotulo: `${p.codigoErp} — ${p.descricaoEtiqueta ?? `${p.categoria} ${p.familia}`}`,
+          });
+        }
+
         const umaSo =
           comFoto !== false && achados.length === 1 && achados[0].id
             ? await this.fotosDaPeca.listar(achados[0].id).catch(() => [])

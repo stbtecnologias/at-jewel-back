@@ -95,6 +95,18 @@ export interface ResultadoDeProdutos {
   faixa: Faixa;
   /** Quantas foram puladas antes desta pagina. */
   pulados: number;
+  /**
+   * A PECA, quando a busca resolveu em UMA SO — 20/10/2026.
+   *
+   * Nao e dado de resposta: e CONTEXTO. Quem chama registra que a conversa
+   * falou desta peca, e e isso que faz a pergunta seguinte ("de qual catalogo
+   * e essa foto?") oferecer a peca certa em vez de pedir o codigo.
+   *
+   * Nasceu de um teste do Lucas: ele pediu as fotos do BR26396 pela agente,
+   * mandou uma imagem, e a pergunta veio generica — porque so o meu caminho
+   * deterministico registrava contexto, e o dela nao.
+   */
+  pecaUnica?: { produtoId: string; codigoErp: string; rotulo: string };
   /** As fotos que existem de verdade, ja baixadas. */
   fotos: FotoDeProduto[];
   /** Quantas da lista tinham URL cadastrada — nem toda URL vira foto. */
@@ -236,6 +248,17 @@ export class ConsultarProdutosVendedoraUseCase {
     // vocabulario nenhum — depende do RESULTADO, que e o que sobra quando a
     // frase pode vir de qualquer jeito.
     // ======================================================================
+    // A CONVERSA FALOU DESTA PECA — e isso vale mesmo sem foto nenhuma, porque
+    // o que importa aqui e o CONTEXTO, nao a imagem.
+    const pecaUnica =
+      produtos.length === 1 && produtos[0].id && linhas[0].codigo
+        ? {
+            produtoId: produtos[0].id,
+            codigoErp: linhas[0].codigo,
+            rotulo: `${linhas[0].codigo} — ${linhas[0].descricao}`,
+          }
+        : undefined;
+
     if (comFoto && produtos.length === 1 && produtos[0].id) {
       const todas = await this.fotosDaPeca
         .listar(produtos[0].id)
@@ -262,6 +285,7 @@ export class ConsultarProdutosVendedoraUseCase {
           pulados,
           fotos,
           tinhamFoto: todas.length,
+          pecaUnica,
         };
       }
     }
@@ -292,6 +316,7 @@ export class ConsultarProdutosVendedoraUseCase {
       pulados,
       fotos,
       tinhamFoto: tinhamUrl,
+      pecaUnica,
     };
   }
 

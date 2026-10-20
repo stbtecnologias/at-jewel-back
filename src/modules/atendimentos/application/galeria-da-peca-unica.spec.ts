@@ -129,6 +129,45 @@ describe('a galeria quando a busca resolve em uma peça só', () => {
     expect(pedidos).toHaveLength(1);
   });
 
+  /**
+   * O CONTEXTO DA PEÇA SOBE PARA QUEM SABE O CHAT — 20/10/2026.
+   *
+   * Teste do Lucas: ele pediu as fotos do BR26396 **pela agente**, mandou uma
+   * imagem, e a pergunta de destino veio genérica ("me diz o código dela") —
+   * porque só o caminho determinístico registrava contexto, e o da agente não.
+   *
+   * O caso de uso não conhece sessão de WhatsApp, e não deve. Então ele
+   * devolve a peça, e quem sabe o chat registra.
+   */
+  it('devolve a PEÇA quando a busca resolve em uma só', async () => {
+    comTresFotos();
+    const uc = new ConsultarProdutosVendedoraUseCase(
+      listar([PECA]) as never,
+      fotos as never,
+      galeria as never,
+    );
+
+    const r = await uc.execute('BR26396');
+
+    expect(r.pecaUnica).toEqual({
+      produtoId: 'p-1',
+      codigoErp: 'BR26396',
+      rotulo: 'BR26396 — BRINCO DTS 0.25 CTS OB 18K',
+    });
+  });
+
+  it('com duas peças NÃO devolve peça — não há contexto único', async () => {
+    const uc = new ConsultarProdutosVendedoraUseCase(
+      listar([PECA, { ...PECA, id: 'p-2', codigoErp: 'BR26397' }]) as never,
+      fotos as never,
+      galeria as never,
+    );
+
+    const r = await uc.execute('brinco');
+
+    expect(r.pecaUnica).toBeUndefined();
+  });
+
   it('galeria que falha não derruba a consulta', async () => {
     galeria.listar.mockRejectedValue(new Error('S3 fora'));
     const uc = new ConsultarProdutosVendedoraUseCase(

@@ -30,6 +30,7 @@ import { PermissionsService } from '../../../auth/application/permissions.servic
 import { EscopoVendasService } from '../../../vendas/application/escopo-vendas.service';
 import { PERMISSAO_GESTAO } from '../../../auth/application/use-cases/buscar-admin-por-telefone.use-case';
 import { MemoriaConversaService } from '../memoria-conversa.service';
+import { SessaoCatalogoService } from '../sessao-catalogo.service';
 import { modeloDeIa } from '../../../../shared/config/modelo-de-ia';
 
 /**
@@ -135,6 +136,10 @@ export class ProcessarMensagemInternaUseCase {
     private readonly memoria: MemoriaConversaService,
     private readonly config: ConfigService,
     private readonly eventos: RegistrarEventoUseCase,
+    // RF33 — onde fica a peca de que a conversa falou. No FIM da lista, pelo
+    // motivo de sempre: parametro novo no meio quebra os testes que constroem
+    // este caso de uso a mao.
+    private readonly sessao: SessaoCatalogoService,
   ) {}
 
   async execute(msg: MensagemInterna): Promise<RespostaInterna> {
@@ -265,6 +270,9 @@ export class ProcessarMensagemInternaUseCase {
           aoRegistrarRelato: () => {
             relatoRegistrado = true;
           },
+          // RF33 — a peca de que a conversa acabou de falar. Quem sabe o chat
+          // e quem monta as ferramentas; o caso de uso nao conhece sessao.
+          aoFalarDePeca: (peca) => this.sessao.lembrarPecaFalada(msg.de, peca),
         }),
       });
 

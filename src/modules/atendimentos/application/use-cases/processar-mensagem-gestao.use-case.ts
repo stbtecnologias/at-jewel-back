@@ -207,6 +207,15 @@ export class ProcessarMensagemGestaoUseCase {
             msg.role,
             'clientes:write',
           ),
+          // RF33 — O CONTEXTO DA PECA NAO E REGISTRADO AQUI, e e de proposito.
+          //
+          // A sessao de foto e chaveada pelo CHAT, e `MensagemGestao` nao tem
+          // chat: a chave dela e o `usuarioId`, que serve ao painel tambem.
+          //
+          // E nao faz falta hoje: a pergunta de destino so acontece no canal
+          // do catalogo, que mora no numero da Elena. O dia em que a foto de
+          // catalogo chegar pela Anastasia, o `aoFalarDePeca` ja esta
+          // declarado em `ContextoGestao` esperando a ligacao.
           // AS VENDEDORAS QUE ELA ALCANCA — 28/09/2026. Vem do MESMO
           // `EscopoVendasService` que a tela de Vendas usa: uma regra, duas
           // portas. Sem isso, a gerente de um time veria o desempenho das
