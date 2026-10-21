@@ -641,21 +641,85 @@ export class AtendimentoRepository implements IAtendimentoRepository {
       )
 
       -- ====================================================================
-      -- A ETAPA, VINDA DA VIEW QUE JA A CALCULA.
+      -- A ETAPA COMO ELA ESTAVA NAQUELE DIA — 21/10/2026.
       --
-      -- A view vw_atendimentos_auditoria deriva a etapa da linha do tempo do
-      -- episodio (migracao 38). Reimplementar aquele CASE aqui seria manter
-      -- duas verdades sobre a mesma pergunta, e elas divergiriam na primeira
-      -- mudanca de regra.
+      -- Ate aqui a etapa vinha de vw_atendimentos_auditoria, que calcula
+      -- sobre o estado de AGORA. Numa regua de 13/10 isso significava ler o
+      -- dia 13 com o resultado do dia 21 — "3 em negociacao" descrevendo hoje
+      -- numa tela que diz terca-feira, 13 de outubro. A tela avisava em letra
+      -- miuda; o Lucas mandou consertar em vez de avisar, e esta certo: nota
+      -- de rodape nao conserta numero errado.
+      --
+      -- NAO HA HISTORICO DE ETAPA NO BANCO — e nao precisa haver. A etapa e
+      -- FUNCAO da linha do tempo do episodio, e a linha do tempo tem
+      -- carimbo: basta nao olhar o que ainda nao tinha acontecido. O CASE e
+      -- o mesmo da migracao 38; o que muda e o corte em j.ate.
+      --
+      -- O UNICO PEDACO QUE NAO SE RECONSTROI PERFEITO e o SEM_CONTATO: o
+      -- status da cobranca nao guarda historico. Aqui ele e deduzido do que
+      -- TEM carimbo — havia cobranca sem horario marcado criada ate aquele
+      -- dia, e nenhum relato depois dela. E a melhor leitura possivel com o
+      -- que esta gravado, e ela erra para o lado de quem ainda nao respondeu.
       --
       -- LEFT, E NAO INNER: venda, consignacao e lead encaminhado nao tem
       -- atendimento. Um INNER apagaria tres dos seis ramos da regua.
       -- ====================================================================
       SELECT
         p.*,
-        va.etapa::text AS etapa
+        etapa.valor::text AS etapa
       FROM pontos p
-      LEFT JOIN vw_atendimentos_auditoria va ON va.id = p.atendimento_id
+      , janela j
+      LEFT JOIN LATERAL (
+        SELECT CASE
+          -- O FECHAMENTO SO CONTA SE JA TINHA ACONTECIDO. Episodio fechado
+          -- depois daquele dia estava, naquele dia, aberto.
+          WHEN a.fechado_em IS NOT NULL AND a.fechado_em < j.ate
+               AND a.desfecho = 'VENDA'                       THEN 'CONCLUIDO'
+          WHEN a.fechado_em IS NOT NULL AND a.fechado_em < j.ate
+               AND a.desfecho IN ('SEM_VENDA', 'INATIVIDADE') THEN 'NAO_AVANCOU'
+          WHEN ultimo.tipo = 'REAGENDAMENTO'                  THEN 'REMARCADO'
+          WHEN retomada.aberta                                THEN 'SEM_CONTATO'
+          WHEN ultimo.tipo IS NOT NULL                        THEN 'EM_NEGOCIACAO'
+          ELSE 'PRIMEIRO_CONTATO'
+        END AS valor
+        FROM atendimentos a
+
+        -- O ultimo acontecimento ATE AQUELE DIA. LEMBRETE e COBRANCA ficam
+        -- de fora, como na view: sao acoes nossas, e disparar um lembrete
+        -- nao muda em que pe esta a negociacao.
+        LEFT JOIN LATERAL (
+          SELECT i.tipo, COALESCE(i.ocorrido_em, i.criado_em) AS quando
+          FROM atendimento_interacoes i
+          WHERE i.atendimento_id = a.id
+            AND i.tipo IN ('RELATO', 'REAGENDAMENTO')
+            AND COALESCE(i.ocorrido_em, i.criado_em) < j.ate
+          ORDER BY
+            i.ocorrido_em DESC NULLS LAST,
+            i.criado_em DESC,
+            (i.tipo = 'REAGENDAMENTO') DESC
+          LIMIT 1
+        ) ultimo ON true
+
+        LEFT JOIN LATERAL (
+          SELECT EXISTS (
+            SELECT 1
+            FROM atendimento_interacoes cob
+            WHERE cob.atendimento_id = a.id
+              AND cob.tipo = 'COBRANCA'
+              AND cob.combinado_em IS NULL
+              AND cob.criado_em < j.ate
+              AND NOT EXISTS (
+                SELECT 1 FROM atendimento_interacoes r
+                WHERE r.atendimento_id = a.id
+                  AND r.tipo IN ('RELATO', 'REAGENDAMENTO')
+                  AND COALESCE(r.ocorrido_em, r.criado_em) > cob.criado_em
+                  AND COALESCE(r.ocorrido_em, r.criado_em) < j.ate
+              )
+          ) AS aberta
+        ) retomada ON true
+
+        WHERE a.id = p.atendimento_id
+      ) etapa ON true
 
       ORDER BY p.em ASC
       `,
