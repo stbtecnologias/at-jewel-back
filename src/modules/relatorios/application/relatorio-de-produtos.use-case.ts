@@ -103,28 +103,6 @@ export class RelatorioDeProdutosUseCase {
         // lá — saía como `!"` no primeiro PDF. Palavra resolve e se lê melhor.
         { rotulo: 'Ordem', valor: 'Maior valor primeiro' },
       ],
-      cartoes: [
-        {
-          rotulo: 'Valor total',
-          valor: moeda(totalValor),
-          nota: `${linhas.length} peças`,
-        },
-        {
-          rotulo: 'Peças',
-          valor: String(linhas.length),
-          nota: `${Number(foto.total).toLocaleString('pt-BR')} cadastradas`,
-        },
-        {
-          rotulo: 'Saldo',
-          valor: totalQtd.toLocaleString('pt-BR'),
-          nota: 'unidades em estoque',
-        },
-        {
-          rotulo: 'Com foto cadastrada',
-          valor: `${Math.round((Number(foto.com) / Math.max(1, Number(foto.total))) * 100)}%`,
-          nota: `${Number(foto.com).toLocaleString('pt-BR')} produtos`,
-        },
-      ],
       colunas: [
         { chave: 'codigo', titulo: 'Código', peso: 1.1, mono: true },
         { chave: 'descricao', titulo: 'Descrição', peso: 3.4 },

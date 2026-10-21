@@ -42,7 +42,7 @@ const ALTURA_CABECALHO_TABELA = 26;
  * ==========================================================================
  *
  * O desenho é o do mockup de 21/10: faixa da marca, título, chips de filtro,
- * cartões de resumo, tabela com cabeçalho escuro e linha zebrada, total, nota
+ * tabela com cabeçalho escuro e linha zebrada, total, nota
  * e o rodapé com o aviso de documento interno.
  */
 @Injectable()
@@ -208,7 +208,7 @@ export class RelatorioPdfService {
       .stroke();
   }
 
-  /** Título, subtítulo, chips e cartões. Devolve o `y` onde a tabela começa. */
+  /** Título, subtítulo e chips. Devolve o `y` onde a tabela começa. */
   private abertura(doc: PDFKit.PDFDocument, r: Relatorio): number {
     let y = MARGEM + 46;
 
@@ -243,67 +243,6 @@ export class RelatorioPdfService {
         x += largura + 6;
       }
       y += 28;
-    }
-
-    if (r.cartoes?.length) {
-      // NO MÁXIMO QUATRO, e o corte é aqui em vez de no contrato: quem monta o
-      // relatório não precisa saber de largura de página.
-      const cartoes = r.cartoes.slice(0, 4);
-      const largura = this.util / cartoes.length;
-      const altura = 54;
-      doc
-        .roundedRect(MARGEM, y, this.util, altura, 6)
-        .lineWidth(0.6)
-        .strokeColor(COR.linha)
-        .stroke();
-      cartoes.forEach((c, i) => {
-        const x = MARGEM + largura * i;
-        if (i > 0) {
-          doc
-            .moveTo(x, y + 8)
-            .lineTo(x, y + altura - 8)
-            .strokeColor(COR.linha)
-            .stroke();
-        }
-        doc
-          .font('Helvetica-Bold')
-          .fontSize(6.5)
-          .fillColor(COR.claro)
-          .text(c.rotulo.toUpperCase(), x + 12, y + 10, {
-            width: largura - 24,
-            characterSpacing: 0.8,
-          });
-        // ================================================================
-        // O VALOR ENCOLHE ATÉ CABER — 21/10/2026.
-        //
-        // "R$ 21.690.148,00" em corpo 12 tem 115pt e o cartão tem 101: ele
-        // quebrava em duas linhas e a segunda ia POR CIMA da nota embaixo,
-        // que foi o que o Lucas viu no primeiro PDF ("00 peças").
-        //
-        // Encolher é melhor que cortar: o número é a razão de o cartão
-        // existir, e um valor abreviado ("R$ 21,6 mi") deixa de bater com o
-        // total da tabela — e número que não bate com o de baixo custa mais
-        // caro que fonte pequena.
-        // ================================================================
-        doc.font('Courier-Bold').fillColor(COR.tinta);
-        const util = largura - 24;
-        let corpo = 12;
-        while (corpo > 7 && doc.fontSize(corpo).widthOfString(c.valor) > util) {
-          corpo -= 0.5;
-        }
-        doc.fontSize(corpo).text(c.valor, x + 12, y + 22 + (12 - corpo) / 2, {
-          width: util,
-          lineBreak: false,
-        });
-        if (c.nota) {
-          doc
-            .font('Helvetica')
-            .fontSize(7)
-            .fillColor(COR.claro)
-            .text(c.nota, x + 12, y + 38, { width: largura - 24 });
-        }
-      });
-      y += altura + 18;
     }
 
     if (r.exibindo) {

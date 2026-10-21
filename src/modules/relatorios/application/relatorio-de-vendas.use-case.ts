@@ -115,28 +115,6 @@ export class RelatorioDeVendasUseCase {
         },
         { rotulo: 'Ordem', valor: 'Mais recente primeiro' },
       ],
-      cartoes: [
-        {
-          rotulo: 'Receita',
-          valor: moeda(receita),
-          nota: 'devoluções descontadas',
-        },
-        {
-          rotulo: 'Documentos',
-          valor: String(linhas.length),
-          nota: `${devolvidas} devolvida${devolvidas === 1 ? '' : 's'}`,
-        },
-        {
-          rotulo: 'Ticket médio',
-          valor: moeda(receita / Math.max(1, linhas.length - devolvidas)),
-          nota: 'receita ÷ vendas',
-        },
-        {
-          rotulo: 'Sem forma de pagamento',
-          valor: String(semForma),
-          nota: 'não informada pelo ERP',
-        },
-      ],
       colunas: [
         { chave: 'data', titulo: 'Data', peso: 0.8, mono: true },
         { chave: 'cliente', titulo: 'Cliente', peso: 2.2 },

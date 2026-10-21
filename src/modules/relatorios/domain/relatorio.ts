@@ -29,18 +29,6 @@ export interface FiltroDoRelatorio {
   valor: string;
 }
 
-/**
- * Um cartão de resumo. São no máximo QUATRO, e o limite é de leitura: a linha
- * de cartões é o que se lê antes de decidir se vale abrir a tabela, e cinco
- * números lado a lado deixam de ser um resumo.
- */
-export interface CartaoDoRelatorio {
-  rotulo: string;
-  valor: string;
-  /** A segunda linha, menor — "865 peças", "2.532 cadastradas". */
-  nota?: string;
-}
-
 export type AlinhamentoColuna = 'esquerda' | 'direita' | 'centro';
 
 export interface ColunaDoRelatorio {
@@ -74,7 +62,27 @@ export interface Relatorio {
    */
   posicao?: string;
   filtros?: FiltroDoRelatorio[];
-  cartoes?: CartaoDoRelatorio[];
+  /**
+   * NÃO HÁ CARTÕES DE RESUMO, e isso foi decidido — 21/10/2026.
+   *
+   * ========================================================================
+   * O molde nasceu com uma faixa de quatro números no alto, copiada do
+   * mockup. O Lucas mandou tirar de todos: produtos, vendas e vendedoras.
+   *
+   * E o motivo aparece quando se olha o que eles diziam. "VALOR TOTAL
+   * R$ 21.690.148,00" é a soma do recorte — que a linha de TOTAL da tabela
+   * já dá, e dá embaixo da coluna que ela soma. "PEÇAS 481" é a contagem de
+   * linhas. Resumo que repete a tabela não resume: ocupa o alto da folha
+   * com número que a pessoa vai reconferir embaixo.
+   *
+   * O que não estava na tabela — "7.304 cadastradas", "com foto 91%" —
+   * também não era do relatório: era de outra pergunta, respondida de
+   * passagem num papel que alguém pediu para ver estoque.
+   *
+   * Fica como ausência DECLARADA, e não como campo opcional que ninguém
+   * preenche: campo opcional volta sozinho no relatório seguinte.
+   * ========================================================================
+   */
   /**
    * FOLHA DEITADA — para tabela larga.
    *

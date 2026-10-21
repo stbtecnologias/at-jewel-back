@@ -89,10 +89,14 @@ async function main() {
       ),
       relatorio.colunas.map((c) => c.chave).join(', '),
     );
+    // O RELATORIO NAO TEM CARTAO DE RESUMO — decisao do Lucas em 21/10. O
+    // numero do alto repetia a linha de TOTAL da tabela, e resumo que repete
+    // a tabela nao resume. Aqui o que se confere e que o total EXISTE, que e
+    // onde a soma passou a morar sozinha.
     conferir(
-      'no máximo quatro cartões',
-      (relatorio.cartoes?.length ?? 0) <= 4,
-      `${relatorio.cartoes?.length ?? 0}`,
+      'a tabela tem linha de total',
+      Boolean(relatorio.total),
+      Object.values(relatorio.total ?? {}).join(' · ') || 'sem total',
     );
 
     const bytesPdf = await pdf.gerar(relatorio);

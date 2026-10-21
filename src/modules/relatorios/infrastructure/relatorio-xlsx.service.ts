@@ -71,15 +71,6 @@ export class RelatorioXlsxService {
       aba.mergeCells(linha, 1, linha, ultima);
       linha += 1;
     }
-    if (r.cartoes?.length) {
-      const c = aba.getCell(linha, 1);
-      c.value = r.cartoes
-        .map((k) => `${k.rotulo}: ${k.valor}${k.nota ? ` (${k.nota})` : ''}`)
-        .join('   ·   ');
-      c.font = { size: 9, color: { argb: 'FF1D1A17' } };
-      aba.mergeCells(linha, 1, linha, ultima);
-      linha += 1;
-    }
     linha += 1;
 
     const linhaDoCabecalho = linha;
