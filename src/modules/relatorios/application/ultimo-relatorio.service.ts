@@ -122,11 +122,46 @@ export class UltimoRelatorioService {
     // O MARCADOR DE LISTA SAI: "• Fulana — R$ 1.000" vira "Fulana — R$ 1.000".
     // O ponto existe para a frase no WhatsApp; numa tabela ele e sujeira na
     // frente de toda linha.
-    const linhas = texto
+    // ====================================================================
+    // OS DADOS SAO AS LINHAS MARCADAS COM "- ", E ISSO NAO E CHUTE.
+    //
+    // Conferido em 21/10: as 20 ferramentas que devolvem lista montam o
+    // texto do MESMO jeito — `linhas.map((l) => `- ${l}`)`. O que esta fora
+    // desse prefixo e recado para o MODELO, e foi o que vazou no primeiro
+    // PDF de itens mais vendidos: "Repasse os numeros exatamente como estao"
+    // saiu impresso num documento feito para gente.
+    //
+    // E SE NAO HOUVER NENHUMA, nao ha tabela — a resposta era prosa. Guardar
+    // um paragrafo como se fosse lista produziria um PDF de uma linha so,
+    // com cara de relatorio. Melhor a agente dizer que precisa consultar.
+    // ====================================================================
+    const dados = texto
       .split(String.fromCharCode(10))
-      .map((x) => x.replace(/^[\s*•–—-]+/, String()).trim())
+      .filter((x) => /^\s*-\s+/.test(x))
+      .map((x) => x.replace(/^\s*-\s+/, '').trim())
       .filter((x) => x.length > 0);
-    if (linhas.length === 0) return;
+    if (dados.length === 0) return;
+
+    // ====================================================================
+    // DUAS COLUNAS QUANDO TODAS AS LINHAS TEM O TRAVESSAO.
+    //
+    // A casa escreve lista como "o que — quanto": "BRINCO AMETISTA ... — R$
+    // 207.269". Quebrando no ULTIMO travessao, o valor ganha coluna propria,
+    // alinhada a direita, e a tabela passa a somar com o olho.
+    //
+    // TODAS, e nao a maioria: com uma linha fora do padrao a segunda coluna
+    // ficaria vazia naquela linha, e tabela com buraco e pior que lista.
+    // ====================================================================
+    const SEP = ' ' + String.fromCharCode(0x2014) + ' ';
+    const partido = dados.every((d) => d.includes(SEP))
+      ? dados.map((d) => {
+          const corte = d.lastIndexOf(SEP);
+          return {
+            o: d.slice(0, corte).trim(),
+            q: d.slice(corte + SEP.length).trim(),
+          };
+        })
+      : null;
 
     if (this.porChave.size >= MAX && !this.porChave.has(chave)) {
       this.descartarMaisAntigo();
@@ -135,8 +170,19 @@ export class UltimoRelatorioService {
       relatorio: {
         titulo,
         posicao: `Posição em ${agora()}`,
-        colunas: [{ chave: 'linha', titulo }],
-        linhas: linhas.map((linha) => ({ linha })),
+        colunas: partido
+          ? [
+              { chave: 'o', titulo, peso: 4 },
+              {
+                chave: 'q',
+                titulo: 'Valor',
+                peso: 1.4,
+                alinhamento: 'direita' as const,
+                mono: true,
+              },
+            ]
+          : [{ chave: 'o', titulo }],
+        linhas: partido ?? dados.map((o) => ({ o })),
       },
       em: Date.now(),
       idade: 0,

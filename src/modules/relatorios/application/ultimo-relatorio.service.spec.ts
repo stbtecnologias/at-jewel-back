@@ -77,23 +77,43 @@ describe('UltimoRelatorioService', () => {
   // adivinhar onde um campo acaba — e coluna errada e pior que coluna unica.
   // ==========================================================================
   describe('o texto de qualquer consulta', () => {
-    it('vira uma tabela de uma coluna', () => {
-      s.guardarTexto(chave, 'Faturamento por empresa', 'AT JEWEL\nMP Comercio');
+    it('so as linhas marcadas com "- " entram — o resto e recado ao modelo', () => {
+      s.guardarTexto(
+        chave,
+        'Itens mais vendidos',
+        'Pecas que mais faturaram:\n- BRINCO — R$ 207.269\n- COLAR — R$ 147.626\n\nRepasse os numeros exatamente como estao.',
+      );
       const r = s.pegar(chave);
-      expect(r?.titulo).toBe('Faturamento por empresa');
       expect(r?.linhas).toHaveLength(2);
+      expect(JSON.stringify(r)).not.toContain('Repasse');
     });
 
-    it('tira o marcador de lista da frente', () => {
-      s.guardarTexto(chave, 'Leads', '• Fulana\n- Beltrana');
-      expect(s.pegar(chave)?.linhas).toEqual([
-        { linha: 'Fulana' },
-        { linha: 'Beltrana' },
-      ]);
+    it('o travessao vira coluna de valor', () => {
+      s.guardarTexto(
+        chave,
+        'Itens',
+        '- BRINCO — R$ 207.269\n- COLAR — R$ 147.626',
+      );
+      const r = s.pegar(chave);
+      expect(r?.colunas).toHaveLength(2);
+      expect(r?.linhas[0]).toEqual({ o: 'BRINCO', q: 'R$ 207.269' });
     });
 
-    it('texto vazio nao guarda nada', () => {
-      s.guardarTexto(chave, 'Consulta', '  \n\n  ');
+    it('uma linha fora do padrao e a tabela fica de uma coluna', () => {
+      s.guardarTexto(
+        chave,
+        'Itens',
+        '- BRINCO — R$ 207.269\n- COLAR sem valor',
+      );
+      expect(s.pegar(chave)?.colunas).toHaveLength(1);
+    });
+
+    it('resposta em prosa nao vira tabela', () => {
+      s.guardarTexto(
+        chave,
+        'Consulta',
+        'A Camila fez 2 vendas, R$ 195.644 no total.',
+      );
       expect(s.pegar(chave)).toBeNull();
     });
 
@@ -101,7 +121,7 @@ describe('UltimoRelatorioService', () => {
     // funil, e nao pode atropelar o que ela fez melhor.
     it('NAO atropela a tabela rica da mesma mensagem', () => {
       s.guardar(chave, TABELA);
-      s.guardarTexto(chave, 'Consulta', 'linha solta');
+      s.guardarTexto(chave, 'Consulta', '- linha solta');
       expect(s.pegar(chave)?.titulo).toBe('Vendas da Camila');
     });
 
@@ -109,7 +129,7 @@ describe('UltimoRelatorioService', () => {
     it('na mensagem seguinte, o texto novo manda', () => {
       s.guardar(chave, TABELA);
       s.envelhecer(chave);
-      s.guardarTexto(chave, 'Leads', 'Fulana');
+      s.guardarTexto(chave, 'Leads', '- Fulana');
       expect(s.pegar(chave)?.titulo).toBe('Leads');
     });
   });
