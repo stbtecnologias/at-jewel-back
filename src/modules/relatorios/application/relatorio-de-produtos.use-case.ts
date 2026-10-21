@@ -93,16 +93,7 @@ export class RelatorioDeProdutosUseCase {
 
     return {
       titulo: 'Lista de Produtos',
-      subtitulo:
-        'Peças com saldo em estoque, ordenadas por valor. Dados lidos do ERP Safira.',
       posicao: `Posição em ${agora()}`,
-      filtros: [
-        { rotulo: 'Categoria', valor: opcoes?.categoria ?? 'Todas' },
-        { rotulo: 'Local', valor: 'Estoque' },
-        // SEM SETA: as fontes padrão do PDF são WinAnsi, e U+2193 não existe
-        // lá — saía como `!"` no primeiro PDF. Palavra resolve e se lê melhor.
-        { rotulo: 'Ordem', valor: 'Maior valor primeiro' },
-      ],
       colunas: [
         { chave: 'codigo', titulo: 'Código', peso: 1.1, mono: true },
         { chave: 'descricao', titulo: 'Descrição', peso: 3.4 },

@@ -50,24 +50,10 @@ export class RelatorioXlsxService {
     aba.mergeCells(linha, 1, linha, ultima);
     linha += 1;
 
-    if (r.subtitulo) {
-      const c = aba.getCell(linha, 1);
-      c.value = r.subtitulo;
-      c.font = { size: 10, color: { argb: 'FF6B625A' } };
-      aba.mergeCells(linha, 1, linha, ultima);
-      linha += 1;
-    }
     if (r.posicao) {
       const c = aba.getCell(linha, 1);
       c.value = r.posicao;
       c.font = { size: 9, color: { argb: 'FF6B625A' } };
-      aba.mergeCells(linha, 1, linha, ultima);
-      linha += 1;
-    }
-    if (r.filtros?.length) {
-      const c = aba.getCell(linha, 1);
-      c.value = r.filtros.map((f) => `${f.rotulo}: ${f.valor}`).join('   ·   ');
-      c.font = { size: 9, color: { argb: 'FF8A6A3B' } };
       aba.mergeCells(linha, 1, linha, ultima);
       linha += 1;
     }

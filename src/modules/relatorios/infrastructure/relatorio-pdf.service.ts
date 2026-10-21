@@ -41,7 +41,7 @@ const ALTURA_CABECALHO_TABELA = 26;
  * diferentes"* — sem depender de ninguém lembrar de copiar o cabeçalho.
  * ==========================================================================
  *
- * O desenho é o do mockup de 21/10: faixa da marca, título, chips de filtro,
+ * O desenho é o do mockup de 21/10, já enxuto: faixa da marca, título,
  * tabela com cabeçalho escuro e linha zebrada, total, nota
  * e o rodapé com o aviso de documento interno.
  */
@@ -126,12 +126,6 @@ export class RelatorioPdfService {
   }
 
   /**
-   * As larguras saem dos PESOS, e não de números fixos.
-   *
-   * Com largura fixa, acrescentar uma coluna obriga a recalcular todas as
-   * outras — e quem esquece uma vê a tabela vazar a margem sem aviso.
-   */
-  /**
    * CORTA O TEXTO ATÉ CABER, E DIZ QUE CORTOU COM "…".
    *
    * ========================================================================
@@ -162,6 +156,12 @@ export class RelatorioPdfService {
     return `${texto.slice(0, fim).trimEnd()}…`;
   }
 
+  /**
+   * As larguras saem dos PESOS, e não de números fixos.
+   *
+   * Com largura fixa, acrescentar uma coluna obriga a recalcular todas as
+   * outras — e quem esquece uma vê a tabela vazar a margem sem aviso.
+   */
   private larguras(colunas: ColunaDoRelatorio[]): number[] {
     const pesos = colunas.map((c) => c.peso ?? 1);
     const soma = pesos.reduce((a, b) => a + b, 0);
@@ -208,7 +208,7 @@ export class RelatorioPdfService {
       .stroke();
   }
 
-  /** Título, subtítulo e chips. Devolve o `y` onde a tabela começa. */
+  /** Só o título. Devolve o `y` onde a tabela começa. */
   private abertura(doc: PDFKit.PDFDocument, r: Relatorio): number {
     let y = MARGEM + 46;
 
@@ -218,32 +218,6 @@ export class RelatorioPdfService {
       .fillColor(COR.tinta)
       .text(r.titulo, MARGEM, y);
     y = doc.y + 4;
-
-    if (r.subtitulo) {
-      doc
-        .font('Helvetica')
-        .fontSize(9.5)
-        .fillColor(COR.suave)
-        .text(r.subtitulo, MARGEM, y, { width: this.util });
-      y = doc.y + 10;
-    }
-
-    if (r.filtros?.length) {
-      let x = MARGEM;
-      for (const f of r.filtros) {
-        const texto = `${f.rotulo.toUpperCase()}  ${f.valor}`;
-        const largura =
-          doc.font('Helvetica').fontSize(7.5).widthOfString(texto) + 18;
-        doc
-          .roundedRect(x, y, largura, 18, 9)
-          .lineWidth(0.6)
-          .strokeColor(COR.linha)
-          .stroke();
-        doc.fillColor(COR.suave).text(texto, x + 9, y + 5.5);
-        x += largura + 6;
-      }
-      y += 28;
-    }
 
     if (r.exibindo) {
       doc
@@ -303,24 +277,44 @@ export class RelatorioPdfService {
     }
     let x = MARGEM;
     colunas.forEach((c, i) => {
+      const util = larguras[i] - 16;
+      const bruto = linha[c.chave] ?? '';
+      doc.font(c.mono ? 'Courier' : 'Helvetica').fontSize(8);
+
+      // ==================================================================
+      // NÚMERO NÃO LEVA "…" — pedido do Lucas em 21/10: *"em valor não
+      // colocar ..., porque dá a sensação que tá faltando"*.
+      //
+      // E não é só sensação: "R$ 194.14…" é um número ERRADO, e não um
+      // número encurtado. Texto cortado a pessoa completa pelo contexto;
+      // número cortado ela lê e acredita.
+      //
+      // Então a coluna de número ENCOLHE a fonte até caber, como o valor do
+      // cartão fazia antes de sair. Corpo menor continua dizendo a verdade.
+      // ==================================================================
+      let corpo = 8;
+      let texto = bruto;
+      if (c.alinhamento === 'direita') {
+        while (corpo > 5.5 && doc.fontSize(corpo).widthOfString(texto) > util) {
+          corpo -= 0.25;
+        }
+        doc.fontSize(corpo);
+      } else {
+        texto = this.cortar(doc, bruto, util);
+      }
+
       doc
-        .font(c.mono ? 'Courier' : 'Helvetica')
-        .fontSize(8)
         .fillColor(c.mono ? COR.suave : COR.tinta)
-        .text(
-          this.cortar(doc, linha[c.chave] ?? '', larguras[i] - 16),
-          x + 8,
-          y + 7,
-          {
-            width: larguras[i] - 16,
-            align: this.align(c),
-            // UMA LINHA POR LINHA: descrição comprida é CORTADA, e não quebrada.
-            // Quebrando, uma peça com nome longo empurra a tabela inteira e as
-            // colunas deixam de se ler na vertical — que é como se lê tabela.
-            lineBreak: false,
-            ellipsis: true,
-          },
-        );
+        // O `y` acompanha o corpo para o número ficar na mesma base do resto
+        // da linha; sem isso a coluna encolhida sobe e a linha desalinha.
+        .text(texto, x + 8, y + 7 + (8 - corpo) * 0.5, {
+          width: util,
+          align: this.align(c),
+          // UMA LINHA POR LINHA: descrição comprida é CORTADA, e não quebrada.
+          // Quebrando, uma peça com nome longo empurra a tabela inteira e as
+          // colunas deixam de se ler na vertical — que é como se lê tabela.
+          lineBreak: false,
+        });
       x += larguras[i];
     });
     doc
@@ -341,20 +335,21 @@ export class RelatorioPdfService {
   ): number {
     let x = MARGEM;
     colunas.forEach((c, i) => {
-      doc
-        .font('Courier-Bold')
-        .fontSize(8.5)
-        .fillColor(COR.tinta)
-        .text(
-          this.cortar(doc, total[c.chave] ?? '', larguras[i] - 16),
-          x + 8,
-          y + 9,
-          {
-            width: larguras[i] - 16,
-            align: this.align(c),
-            lineBreak: false,
-          },
-        );
+      const util = larguras[i] - 16;
+      const texto = total[c.chave] ?? '';
+      // A LINHA DE TOTAL É SÓ NÚMERO, e vale a mesma regra da célula:
+      // encolhe, nunca corta. Um total com "…" seria o pior dos dois mundos —
+      // o número que resume a página, errado.
+      doc.font('Courier-Bold').fillColor(COR.tinta);
+      let corpo = 8.5;
+      while (corpo > 5.5 && doc.fontSize(corpo).widthOfString(texto) > util) {
+        corpo -= 0.25;
+      }
+      doc.fontSize(corpo).text(texto, x + 8, y + 9 + (8.5 - corpo) * 0.5, {
+        width: util,
+        align: this.align(c),
+        lineBreak: false,
+      });
       x += larguras[i];
     });
     return y + ALTURA_LINHA + 6;

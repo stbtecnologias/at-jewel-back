@@ -100,21 +100,9 @@ export class RelatorioDeVendasUseCase {
 
     return {
       titulo: 'Listagem de Vendas',
-      subtitulo:
-        'Vendas e devoluções sincronizadas do ERP, da mais recente para a mais antiga.',
       posicao: `Posição em ${agora()}`,
       // SETE COLUNAS NÃO CABEM EM PÉ — ver o comentário no renderizador.
       paisagem: true,
-      filtros: [
-        {
-          rotulo: 'Período',
-          valor:
-            opcoes?.de && opcoes?.ate
-              ? `${dia(opcoes.de)} a ${dia(opcoes.ate)}`
-              : 'Tudo',
-        },
-        { rotulo: 'Ordem', valor: 'Mais recente primeiro' },
-      ],
       colunas: [
         { chave: 'data', titulo: 'Data', peso: 0.8, mono: true },
         { chave: 'cliente', titulo: 'Cliente', peso: 2.2 },

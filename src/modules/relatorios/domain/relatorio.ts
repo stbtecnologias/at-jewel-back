@@ -23,12 +23,6 @@
  * O modelo escolhe O QUE pedir, nunca o que escrever dentro.
  */
 
-/** Um chip de filtro no alto — "EMPRESA Todas", "ORDEM Valor ↓". */
-export interface FiltroDoRelatorio {
-  rotulo: string;
-  valor: string;
-}
-
 export type AlinhamentoColuna = 'esquerda' | 'direita' | 'centro';
 
 export interface ColunaDoRelatorio {
@@ -51,8 +45,6 @@ export type LinhaDoRelatorio = Record<string, string>;
 export interface Relatorio {
   /** "Lista de Produtos". Vai no título grande e no cabeçalho de cada página. */
   titulo: string;
-  /** Uma frase: o que é, e de onde vieram os dados. */
-  subtitulo?: string;
   /**
    * A POSIÇÃO: "Posição em 16/09/2026 11:29".
    *
@@ -61,7 +53,22 @@ export interface Relatorio {
    * exatamente o defeito que a timeline tinha até ontem.
    */
   posicao?: string;
-  filtros?: FiltroDoRelatorio[];
+  /**
+   * NÃO HÁ SUBTÍTULO NEM CHIP DE FILTRO, e também foi decidido — 21/10/2026.
+   *
+   * ========================================================================
+   * *"Tira isso também. Deixa apenas o título e a tabela."*
+   *
+   * O subtítulo explicava o que o título já dizia ("Lista de Produtos" /
+   * "Peças com saldo em estoque"), e os chips mostravam os filtros que NÃO
+   * foram aplicados — "CATEGORIA Todas", "LOCAL Estoque". Três linhas para
+   * dizer que nada foi filtrado.
+   *
+   * O recorte, quando existir de verdade, vai no TÍTULO, que é onde quem lê
+   * procura: "Vendas de outubro", e não "Vendas" com um chip embaixo.
+   * ========================================================================
+   */
+
   /**
    * NÃO HÁ CARTÕES DE RESUMO, e isso foi decidido — 21/10/2026.
    *
