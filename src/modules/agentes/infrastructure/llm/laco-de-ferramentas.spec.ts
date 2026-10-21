@@ -459,4 +459,116 @@ describe('o artefato que a ferramenta produz', () => {
       expect(avisar).toHaveBeenCalledTimes(1);
     });
   });
+
+  /**
+   * ========================================================================
+   * TODA CONSULTA PASSA PELO FUNIL QUE GUARDA A TABELA — RF36, 21/10/2026.
+   *
+   * O pedido foi *"queria que todas as consultas virassem PDF ou CSV"*, e a
+   * captura mora no `executarLeitura` justamente para nao ser uma linha em
+   * cada uma das ~30 ferramentas — uma linha que a ferramenta 31 esquece.
+   *
+   * O FURO ERA A AGENDA: ela era a unica leitura com try/catch proprio,
+   * entao nao passava pelo funil. O sintoma ficava so no canal da Elena —
+   * "minha agenda de hoje" e depois "manda em pdf" respondia que precisava
+   * consultar primeiro. E ninguem notaria pela gestao, onde a agenda e outra
+   * ferramenta.
+   * ========================================================================
+   */
+  describe('a captura de toda consulta', () => {
+    /** Uma resposta do modelo que PEDE uma ferramenta, sem argumentos. */
+    const pede = (nome: string) => ({
+      content: [{ type: 'tool_use', id: `tu-${nome}`, name: nome, input: {} }],
+      usage: { output_tokens: 10 },
+      stop_reason: 'tool_use',
+    });
+
+    it('a AGENDA tambem guarda a tabela — era a unica fora do funil', async () => {
+      const aoResponder = jest.fn();
+      create
+        .mockResolvedValueOnce(pede('consultar_agenda'))
+        .mockResolvedValueOnce(responde('Voce tem dois hoje.'));
+
+      await cliente.chatComFerramentas({
+        ...base(),
+        consultarAgenda: jest.fn().mockResolvedValue({
+          compromissos: [
+            { cliente: 'Cliente A', quando: 'hoje 10:00' },
+            { cliente: 'Cliente B', quando: 'hoje 15:00', ocasiao: 'ANIVERSARIO' },
+          ],
+        }),
+        aoResponderConsulta: aoResponder,
+      } as unknown as ChatParams);
+
+      expect(aoResponder).toHaveBeenCalledTimes(1);
+      expect(aoResponder.mock.calls[0][0]).toBe('consultar_agenda');
+      expect(aoResponder.mock.calls[0][1]).toContain('Cliente A');
+    });
+
+    it('a falha da agenda nao derruba o turno, e nao guarda nada', async () => {
+      const aoResponder = jest.fn();
+      create
+        .mockResolvedValueOnce(pede('consultar_agenda'))
+        .mockResolvedValueOnce(responde('Nao consegui ver sua agenda agora.'));
+
+      const r = await cliente.chatComFerramentas({
+        ...base(),
+        consultarAgenda: jest.fn().mockRejectedValue(new Error('banco fora')),
+        aoResponderConsulta: aoResponder,
+      } as unknown as ChatParams);
+
+      expect(r.texto).toBeTruthy();
+      expect(aoResponder).not.toHaveBeenCalled();
+    });
+
+    // ======================================================================
+    // E O `mandar_relatorio` NAO GUARDA, de proposito.
+    //
+    // Ele nao e consulta: guardasse, a frase "o arquivo X esta pronto"
+    // viraria "a ultima tabela", e o PDF seguinte sairia com ela dentro —
+    // uma tabela de uma linha dizendo que um arquivo foi mandado.
+    // ======================================================================
+    it('o mandar_relatorio NAO entra na captura', async () => {
+      const aoResponder = jest.fn();
+      create
+        .mockResolvedValueOnce(pede('mandar_relatorio'))
+        .mockResolvedValueOnce(responde('Mandei em PDF.'));
+
+      await cliente.chatComFerramentas({
+        ...base(),
+        mandarRelatorio: jest.fn().mockResolvedValue({
+          conteudo: Buffer.from('%PDF-1.3'),
+          mime: 'application/pdf',
+          nome: 'vendas-21-10-2026.pdf',
+          legenda: 'Vendas — 10 linhas',
+        }),
+        aoResponderConsulta: aoResponder,
+      } as unknown as ChatParams);
+
+      expect(aoResponder).not.toHaveBeenCalled();
+    });
+
+    it('e o arquivo viaja por fora do dialogo, como as fotos', async () => {
+      create
+        .mockResolvedValueOnce(pede('mandar_relatorio'))
+        .mockResolvedValueOnce(responde('Mandei em PDF.'));
+
+      const r = await cliente.chatComFerramentas({
+        ...base(),
+        mandarRelatorio: jest.fn().mockResolvedValue({
+          conteudo: Buffer.from('%PDF-1.3'),
+          mime: 'application/pdf',
+          nome: 'vendas-21-10-2026.pdf',
+          legenda: 'Vendas — 10 linhas',
+        }),
+      } as unknown as ChatParams);
+
+      expect(r.arquivo?.nome).toBe('vendas-21-10-2026.pdf');
+      // Os bytes NAO podem aparecer na conversa: seria pagar o arquivo em
+      // token duas vezes, na ida e no historico.
+      expect(JSON.stringify(create.mock.calls[1][0].messages)).not.toContain(
+        '%PDF',
+      );
+    });
+  });
 });

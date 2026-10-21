@@ -3641,7 +3641,11 @@ export class AnthropicClient implements ILlmClient {
         params.consultarAgenda
       ) {
         toolResults.push(
-          await this.executarConsultarAgenda(toolUse, params.consultarAgenda),
+          await this.executarConsultarAgenda(
+            toolUse,
+            params.consultarAgenda,
+            params.aoResponderConsulta,
+          ),
         );
       } else if (
         toolUse.name === 'avisar_vendedora' &&
@@ -3875,20 +3879,28 @@ export class AnthropicClient implements ILlmClient {
   private async executarConsultarAgenda(
     toolUse: Anthropic.ToolUseBlock,
     handler: NonNullable<ChatParams['consultarAgenda']>,
+    aoResponder: ((ferramenta: string, texto: string) => void) | undefined,
   ): Promise<Anthropic.ToolResultBlockParam> {
-    const input = toolUse.input as { periodo?: PeriodoAgendaLlm };
-    try {
+    // ====================================================================
+    // PASSOU A USAR O ENVELOPE COMUM — 21/10/2026.
+    //
+    // Era a UNICA ferramenta de leitura com try/catch proprio, e por isso a
+    // unica que ficava de fora do "toda consulta vira arquivo": a captura
+    // mora no `executarLeitura`, e a agenda dela nao passava por ali. O
+    // sintoma seria so no canal da Elena — "minha agenda de hoje" e depois
+    // "manda em pdf" respondia que precisava consultar primeiro.
+    //
+    // E de quebra herda a distincao de 30/09 entre DEFEITO e indisponibilidade
+    // passageira, que este catch antigo nao fazia.
+    // ====================================================================
+    return this.executarLeitura(toolUse, aoResponder, async () => {
+      const input = toolUse.input as { periodo?: PeriodoAgendaLlm };
       const { compromissos } = await handler({
         periodo: input.periodo ?? 'HOJE',
       });
 
       if (compromissos.length === 0) {
-        return {
-          type: 'tool_result',
-          tool_use_id: toolUse.id,
-          content:
-            'Nenhum compromisso agendado nesse periodo. Diga isso a ela em uma frase, sem inventar nada.',
-        };
+        return 'Nenhum compromisso agendado nesse periodo. Diga isso a ela em uma frase, sem inventar nada.';
       }
 
       const linhas = compromissos
@@ -3898,25 +3910,11 @@ export class AnthropicClient implements ILlmClient {
         )
         .join('\n');
 
-      return {
-        type: 'tool_result',
-        tool_use_id: toolUse.id,
-        content:
-          `Compromissos dela:\n${linhas}\n\nRepasse exatamente estes nomes e horarios, ` +
-          'sem alterar nem completar. Escreva em uma ou duas frases naturais.',
-      };
-    } catch (err) {
-      this.logger.error(
-        `Falha ao consultar a agenda: ${err instanceof Error ? err.message : err}`,
+      return (
+        `Compromissos dela:\n${linhas}\n\nRepasse exatamente estes nomes e horarios, ` +
+        'sem alterar nem completar. Escreva em uma ou duas frases naturais.'
       );
-      return {
-        type: 'tool_result',
-        tool_use_id: toolUse.id,
-        content:
-          'Nao consegui consultar a agenda agora. Peca desculpa e diga que ela pode tentar de novo em instantes.',
-        is_error: true,
-      };
-    }
+    });
   }
 
   // Executa a tool registrar_demanda e monta o tool_result. Nunca loga a

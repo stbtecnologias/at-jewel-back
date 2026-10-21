@@ -302,7 +302,11 @@ export class ProcessarMensagemInternaUseCase {
           // MANDAR EM ARQUIVO — RF36 e RF37, e vale aqui pelo mesmo motivo que
           // vale na gestao: "tanto a gestao com a Anastasia como a Helena".
           mandarRelatorio: async ({ formato }) =>
-            this.montarArquivo.execute(chave, formato),
+            // O NOME DELA VAI NO RODAPE, como o da gestao vai. Faltava, e o
+            // efeito e um documento que circula sem dizer de quem saiu.
+            this.montarArquivo.execute(chave, formato, {
+              geradoPor: vendedora.nome,
+            }),
           ...this.ferramentas.montar({
             vendedoraId,
             codigoErp,
