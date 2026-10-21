@@ -110,12 +110,12 @@ async function main() {
       `${(bytesXlsx.length / 1024).toFixed(0)} KB`,
     );
 
-    const caminhoPdf = join(pasta, nomeDoArquivo(relatorio.titulo, 'pdf'));
-    const caminhoXlsx = join(pasta, nomeDoArquivo(relatorio.titulo, 'xlsx'));
-    writeFileSync(caminhoPdf, bytesPdf);
-    writeFileSync(caminhoXlsx, bytesXlsx);
-    console.log(`  ${caminhoPdf}`);
-    console.log(`  ${caminhoXlsx}`);
+    console.log(
+      `  ${escrever(pasta, nomeDoArquivo(relatorio.titulo, 'pdf'), bytesPdf)}`,
+    );
+    console.log(
+      `  ${escrever(pasta, nomeDoArquivo(relatorio.titulo, 'xlsx'), bytesXlsx)}`,
+    );
   }
 
   // ======================================================================
@@ -142,6 +142,30 @@ async function main() {
     falhou ? vermelho('\nAlguma coisa falhou.\n') : verde('\nTudo certo.\n'),
   );
   process.exit(falhou ? 1 : 0);
+}
+
+/**
+ * ESCREVE, E NAO DESISTE PORQUE O ARQUIVO ESTA ABERTO.
+ *
+ * Conferir relatorio E abrir o arquivo — entao a segunda rodada SEMPRE encontra
+ * o PDF aberto no leitor, e o Windows trava a escrita com EBUSY. A conferencia
+ * morria no meio e as provas seguintes nem rodavam.
+ *
+ * Com o nome alternativo, quem esta olhando continua olhando e a rodada nova
+ * tem para onde ir — e o caminho impresso diz qual arquivo e qual.
+ */
+function escrever(pasta: string, nome: string, bytes: Buffer): string {
+  const alvo = join(pasta, nome);
+  try {
+    writeFileSync(alvo, bytes);
+    return alvo;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'EBUSY') throw e;
+    const hora = new Date().toTimeString().slice(0, 8).replace(/:/g, '');
+    const outro = alvo.replace(/(.[a-z]+)$/, `-${hora}$1`);
+    writeFileSync(outro, bytes);
+    return `${outro}   (o outro estava aberto)`;
+  }
 }
 
 void main();

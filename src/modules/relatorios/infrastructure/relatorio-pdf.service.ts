@@ -9,9 +9,8 @@ import {
 } from '../domain/relatorio';
 
 /** A4 em pontos, retrato. */
-const PAGINA = { largura: 595.28, altura: 841.89 };
+const A4 = { curto: 595.28, longo: 841.89 };
 const MARGEM = 48;
-const LARGURA_UTIL = PAGINA.largura - MARGEM * 2;
 
 /**
  * As cores do relatório, e são as da marca — o dourado do papel timbrado, o
@@ -50,9 +49,35 @@ const ALTURA_CABECALHO_TABELA = 26;
 export class RelatorioPdfService {
   readonly mime = 'application/pdf';
 
+  /**
+   * AS MEDIDAS DA PÁGINA ATUAL, e elas mudam com a orientação.
+   *
+   * Guardadas na instância em vez de passadas em dez assinaturas: o serviço
+   * desenha UM relatório por chamada, e espalhar `largura` por cada método
+   * privado só serviria para alguém esquecer de passar numa delas.
+   */
+  private largura = A4.curto;
+  private altura = A4.longo;
+  private get util(): number {
+    return this.largura - MARGEM * 2;
+  }
+
   async gerar(r: Relatorio): Promise<Buffer> {
+    // ====================================================================
+    // PAISAGEM QUANDO A TABELA É LARGA — 21/10/2026.
+    //
+    // A listagem de vendas tem sete colunas, e em retrato cada uma ficava com
+    // 70pt: "PAGAMENTO" virava "PAGAMEN TO" e "Concluída" virava "Conclu
+    // ída", por cima da linha de baixo. O Lucas viu no primeiro PDF.
+    //
+    // Deitar a folha dá 50% mais largura e resolve sem encolher fonte nem
+    // esconder coluna — que seriam as outras duas saídas, e as duas piores.
+    // ====================================================================
+    this.largura = r.paisagem ? A4.longo : A4.curto;
+    this.altura = r.paisagem ? A4.curto : A4.longo;
+
     const doc = new PDFDocument({
-      size: [PAGINA.largura, PAGINA.altura],
+      size: [this.largura, this.altura],
       margin: MARGEM,
       autoFirstPage: false,
       info: { Title: r.titulo, Author: MARCA },
@@ -77,7 +102,7 @@ export class RelatorioPdfService {
     // coluna.
     y = this.cabecalhoDaTabela(doc, r.colunas, larguras, y);
     for (const [i, linha] of r.linhas.entries()) {
-      if (y + ALTURA_LINHA > PAGINA.altura - MARGEM - 46) {
+      if (y + ALTURA_LINHA > this.altura - MARGEM - 46) {
         this.rodape(doc, r);
         doc.addPage();
         this.cabecalho(doc, r);
@@ -92,7 +117,7 @@ export class RelatorioPdfService {
         .font('Helvetica')
         .fontSize(7.5)
         .fillColor(COR.claro)
-        .text(r.nota, MARGEM, y + 12, { width: LARGURA_UTIL });
+        .text(r.nota, MARGEM, y + 12, { width: this.util });
     }
 
     this.rodape(doc, r);
@@ -106,10 +131,41 @@ export class RelatorioPdfService {
    * Com largura fixa, acrescentar uma coluna obriga a recalcular todas as
    * outras — e quem esquece uma vê a tabela vazar a margem sem aviso.
    */
+  /**
+   * CORTA O TEXTO ATÉ CABER, E DIZ QUE CORTOU COM "…".
+   *
+   * ========================================================================
+   * EU CONFIEI NO `lineBreak: false` DO PDFKIT, E ELE QUEBROU ASSIM MESMO.
+   *
+   * O primeiro PDF de vendas saiu com "PAGAMEN TO" no cabeçalho e "Conclu
+   * ída" na célula, cada um ocupando duas linhas por cima da linha de baixo.
+   * O Lucas viu antes de mim.
+   *
+   * A saída não é insistir na opção: é NÃO DAR AO PDFKIT a chance de quebrar.
+   * Medindo e cortando aqui, o que chega lá já cabe — e a altura da linha
+   * volta a ser uma garantia em vez de uma esperança.
+   * ========================================================================
+   *
+   * Mede com a fonte e o corpo que já estão selecionados no documento, então
+   * quem chama configura a fonte ANTES.
+   */
+  private cortar(
+    doc: PDFKit.PDFDocument,
+    texto: string,
+    largura: number,
+  ): string {
+    if (doc.widthOfString(texto) <= largura) return texto;
+    let fim = texto.length;
+    while (fim > 1 && doc.widthOfString(`${texto.slice(0, fim)}…`) > largura) {
+      fim -= 1;
+    }
+    return `${texto.slice(0, fim).trimEnd()}…`;
+  }
+
   private larguras(colunas: ColunaDoRelatorio[]): number[] {
     const pesos = colunas.map((c) => c.peso ?? 1);
     const soma = pesos.reduce((a, b) => a + b, 0);
-    return pesos.map((p) => (p / soma) * LARGURA_UTIL);
+    return pesos.map((p) => (p / soma) * this.util);
   }
 
   /** A faixa da marca, em toda página. */
@@ -130,7 +186,7 @@ export class RelatorioPdfService {
       .fontSize(9)
       .fillColor(COR.tinta)
       .text(r.titulo, MARGEM, MARGEM - 14, {
-        width: LARGURA_UTIL,
+        width: this.util,
         align: 'right',
       });
     if (r.posicao) {
@@ -139,14 +195,14 @@ export class RelatorioPdfService {
         .fontSize(7.5)
         .fillColor(COR.suave)
         .text(r.posicao, MARGEM, MARGEM, {
-          width: LARGURA_UTIL,
+          width: this.util,
           align: 'right',
         });
     }
 
     doc
       .moveTo(MARGEM, MARGEM + 16)
-      .lineTo(PAGINA.largura - MARGEM, MARGEM + 16)
+      .lineTo(this.largura - MARGEM, MARGEM + 16)
       .lineWidth(0.8)
       .strokeColor(COR.ouro)
       .stroke();
@@ -168,7 +224,7 @@ export class RelatorioPdfService {
         .font('Helvetica')
         .fontSize(9.5)
         .fillColor(COR.suave)
-        .text(r.subtitulo, MARGEM, y, { width: LARGURA_UTIL });
+        .text(r.subtitulo, MARGEM, y, { width: this.util });
       y = doc.y + 10;
     }
 
@@ -193,10 +249,10 @@ export class RelatorioPdfService {
       // NO MÁXIMO QUATRO, e o corte é aqui em vez de no contrato: quem monta o
       // relatório não precisa saber de largura de página.
       const cartoes = r.cartoes.slice(0, 4);
-      const largura = LARGURA_UTIL / cartoes.length;
+      const largura = this.util / cartoes.length;
       const altura = 54;
       doc
-        .roundedRect(MARGEM, y, LARGURA_UTIL, altura, 6)
+        .roundedRect(MARGEM, y, this.util, altura, 6)
         .lineWidth(0.6)
         .strokeColor(COR.linha)
         .stroke();
@@ -217,11 +273,28 @@ export class RelatorioPdfService {
             width: largura - 24,
             characterSpacing: 0.8,
           });
-        doc
-          .font('Courier-Bold')
-          .fontSize(12)
-          .fillColor(COR.tinta)
-          .text(c.valor, x + 12, y + 22, { width: largura - 24 });
+        // ================================================================
+        // O VALOR ENCOLHE ATÉ CABER — 21/10/2026.
+        //
+        // "R$ 21.690.148,00" em corpo 12 tem 115pt e o cartão tem 101: ele
+        // quebrava em duas linhas e a segunda ia POR CIMA da nota embaixo,
+        // que foi o que o Lucas viu no primeiro PDF ("00 peças").
+        //
+        // Encolher é melhor que cortar: o número é a razão de o cartão
+        // existir, e um valor abreviado ("R$ 21,6 mi") deixa de bater com o
+        // total da tabela — e número que não bate com o de baixo custa mais
+        // caro que fonte pequena.
+        // ================================================================
+        doc.font('Courier-Bold').fillColor(COR.tinta);
+        const util = largura - 24;
+        let corpo = 12;
+        while (corpo > 7 && doc.fontSize(corpo).widthOfString(c.valor) > util) {
+          corpo -= 0.5;
+        }
+        doc.fontSize(corpo).text(c.valor, x + 12, y + 22 + (12 - corpo) / 2, {
+          width: util,
+          lineBreak: false,
+        });
         if (c.nota) {
           doc
             .font('Helvetica')
@@ -242,7 +315,7 @@ export class RelatorioPdfService {
           `Exibindo ${r.exibindo.mostradas} de ${r.exibindo.total}`,
           MARGEM,
           y - 2,
-          { width: LARGURA_UTIL, align: 'right' },
+          { width: this.util, align: 'right' },
         );
     }
 
@@ -255,21 +328,24 @@ export class RelatorioPdfService {
     larguras: number[],
     y: number,
   ): number {
-    doc
-      .rect(MARGEM, y, LARGURA_UTIL, ALTURA_CABECALHO_TABELA)
-      .fill(COR.cabecalho);
+    doc.rect(MARGEM, y, this.util, ALTURA_CABECALHO_TABELA).fill(COR.cabecalho);
     let x = MARGEM;
     colunas.forEach((c, i) => {
       doc
         .font('Helvetica-Bold')
         .fontSize(6.5)
         .fillColor('#d8cdbd')
-        .text(c.titulo.toUpperCase(), x + 8, y + 9.5, {
-          width: larguras[i] - 16,
-          align: this.align(c),
-          characterSpacing: 0.8,
-          lineBreak: false,
-        });
+        .text(
+          this.cortar(doc, c.titulo.toUpperCase(), larguras[i] - 16),
+          x + 8,
+          y + 9.5,
+          {
+            width: larguras[i] - 16,
+            align: this.align(c),
+            characterSpacing: 0.8,
+            lineBreak: false,
+          },
+        );
       x += larguras[i];
     });
     return y + ALTURA_CABECALHO_TABELA;
@@ -284,7 +360,7 @@ export class RelatorioPdfService {
     zebrada: boolean,
   ): number {
     if (zebrada) {
-      doc.rect(MARGEM, y, LARGURA_UTIL, ALTURA_LINHA).fill(COR.faixa);
+      doc.rect(MARGEM, y, this.util, ALTURA_LINHA).fill(COR.faixa);
     }
     let x = MARGEM;
     colunas.forEach((c, i) => {
@@ -292,20 +368,25 @@ export class RelatorioPdfService {
         .font(c.mono ? 'Courier' : 'Helvetica')
         .fontSize(8)
         .fillColor(c.mono ? COR.suave : COR.tinta)
-        .text(linha[c.chave] ?? '', x + 8, y + 7, {
-          width: larguras[i] - 16,
-          align: this.align(c),
-          // UMA LINHA POR LINHA: descrição comprida é CORTADA, e não quebrada.
-          // Quebrando, uma peça com nome longo empurra a tabela inteira e as
-          // colunas deixam de se ler na vertical — que é como se lê tabela.
-          lineBreak: false,
-          ellipsis: true,
-        });
+        .text(
+          this.cortar(doc, linha[c.chave] ?? '', larguras[i] - 16),
+          x + 8,
+          y + 7,
+          {
+            width: larguras[i] - 16,
+            align: this.align(c),
+            // UMA LINHA POR LINHA: descrição comprida é CORTADA, e não quebrada.
+            // Quebrando, uma peça com nome longo empurra a tabela inteira e as
+            // colunas deixam de se ler na vertical — que é como se lê tabela.
+            lineBreak: false,
+            ellipsis: true,
+          },
+        );
       x += larguras[i];
     });
     doc
       .moveTo(MARGEM, y + ALTURA_LINHA)
-      .lineTo(PAGINA.largura - MARGEM, y + ALTURA_LINHA)
+      .lineTo(this.largura - MARGEM, y + ALTURA_LINHA)
       .lineWidth(0.4)
       .strokeColor(COR.linha)
       .stroke();
@@ -325,11 +406,16 @@ export class RelatorioPdfService {
         .font('Courier-Bold')
         .fontSize(8.5)
         .fillColor(COR.tinta)
-        .text(total[c.chave] ?? '', x + 8, y + 9, {
-          width: larguras[i] - 16,
-          align: this.align(c),
-          lineBreak: false,
-        });
+        .text(
+          this.cortar(doc, total[c.chave] ?? '', larguras[i] - 16),
+          x + 8,
+          y + 9,
+          {
+            width: larguras[i] - 16,
+            align: this.align(c),
+            lineBreak: false,
+          },
+        );
       x += larguras[i];
     });
     return y + ALTURA_LINHA + 6;
@@ -337,10 +423,10 @@ export class RelatorioPdfService {
 
   /** O rodapé, com o aviso — em TODA página. Ver o porquê no contrato. */
   private rodape(doc: PDFKit.PDFDocument, r: Relatorio): void {
-    const y = PAGINA.altura - MARGEM - 6;
+    const y = this.altura - MARGEM - 6;
     doc
       .moveTo(MARGEM, y - 10)
-      .lineTo(PAGINA.largura - MARGEM, y - 10)
+      .lineTo(this.largura - MARGEM, y - 10)
       .lineWidth(0.4)
       .strokeColor(COR.linha)
       .stroke();
@@ -348,7 +434,7 @@ export class RelatorioPdfService {
       .font('Helvetica')
       .fontSize(6.5)
       .fillColor(COR.claro)
-      .text(AVISO_INTERNO, MARGEM, y, { width: LARGURA_UTIL * 0.6 });
+      .text(AVISO_INTERNO, MARGEM, y, { width: this.util * 0.6 });
 
     const quando = new Date().toLocaleString('pt-BR', {
       day: '2-digit',
@@ -365,7 +451,7 @@ export class RelatorioPdfService {
         `Gerado em ${quando}${r.geradoPor ? ` por ${r.geradoPor}` : ''}`,
         MARGEM,
         y,
-        { width: LARGURA_UTIL, align: 'right' },
+        { width: this.util, align: 'right' },
       );
   }
 

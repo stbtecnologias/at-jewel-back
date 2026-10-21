@@ -75,6 +75,16 @@ export interface Relatorio {
   posicao?: string;
   filtros?: FiltroDoRelatorio[];
   cartoes?: CartaoDoRelatorio[];
+  /**
+   * FOLHA DEITADA — para tabela larga.
+   *
+   * Quem monta o conteúdo é quem sabe quantas colunas vai ter, e por isso a
+   * escolha é dele e não do renderizador. Regra prática: a partir de seis
+   * colunas, deitada; abaixo disso a folha em pé lê melhor e imprime melhor.
+   *
+   * O xlsx ignora — planilha não tem página.
+   */
+  paisagem?: boolean;
   colunas: ColunaDoRelatorio[];
   linhas: LinhaDoRelatorio[];
   /**

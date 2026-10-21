@@ -103,6 +103,8 @@ export class RelatorioDeVendasUseCase {
       subtitulo:
         'Vendas e devoluções sincronizadas do ERP, da mais recente para a mais antiga.',
       posicao: `Posição em ${agora()}`,
+      // SETE COLUNAS NÃO CABEM EM PÉ — ver o comentário no renderizador.
+      paisagem: true,
       filtros: [
         {
           rotulo: 'Período',
@@ -111,7 +113,7 @@ export class RelatorioDeVendasUseCase {
               ? `${dia(opcoes.de)} a ${dia(opcoes.ate)}`
               : 'Tudo',
         },
-        { rotulo: 'Ordem', valor: 'Data ↓' },
+        { rotulo: 'Ordem', valor: 'Mais recente primeiro' },
       ],
       cartoes: [
         {
@@ -136,12 +138,12 @@ export class RelatorioDeVendasUseCase {
         },
       ],
       colunas: [
-        { chave: 'data', titulo: 'Data', peso: 0.9, mono: true },
-        { chave: 'cliente', titulo: 'Cliente', peso: 1.9 },
-        { chave: 'pecas', titulo: 'Peças', peso: 3.2 },
-        { chave: 'vendedora', titulo: 'Vendedora', peso: 1.4 },
-        { chave: 'pagamento', titulo: 'Pagamento', peso: 1.2 },
-        { chave: 'status', titulo: 'Status', peso: 0.9 },
+        { chave: 'data', titulo: 'Data', peso: 0.8, mono: true },
+        { chave: 'cliente', titulo: 'Cliente', peso: 2.2 },
+        { chave: 'pecas', titulo: 'Peças', peso: 4.2 },
+        { chave: 'vendedora', titulo: 'Vendedora', peso: 1.5 },
+        { chave: 'pagamento', titulo: 'Pagamento', peso: 1.3 },
+        { chave: 'status', titulo: 'Status', peso: 1 },
         {
           chave: 'valor',
           titulo: 'Total',

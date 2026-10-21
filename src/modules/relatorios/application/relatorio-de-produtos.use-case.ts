@@ -99,7 +99,9 @@ export class RelatorioDeProdutosUseCase {
       filtros: [
         { rotulo: 'Categoria', valor: opcoes?.categoria ?? 'Todas' },
         { rotulo: 'Local', valor: 'Estoque' },
-        { rotulo: 'Ordem', valor: 'Valor ↓' },
+        // SEM SETA: as fontes padrão do PDF são WinAnsi, e U+2193 não existe
+        // lá — saía como `!"` no primeiro PDF. Palavra resolve e se lê melhor.
+        { rotulo: 'Ordem', valor: 'Maior valor primeiro' },
       ],
       cartoes: [
         {
