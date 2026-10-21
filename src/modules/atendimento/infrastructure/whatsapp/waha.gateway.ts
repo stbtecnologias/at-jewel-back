@@ -338,6 +338,64 @@ export class WahaGateway implements IWhatsappGateway {
   }
 
   /**
+   * O ARQUIVO — RF36 e RF37, 21/10/2026. Ver o contrato na porta.
+   *
+   * `sendFile` e nao `sendDocument`: o segundo responde 404 neste WAHA, e isso
+   * foi sondado em 24/09 antes de escrever qualquer linha.
+   *
+   * O `filename` vai no corpo e e o que a pessoa VE na conversa. E por isso que
+   * ele e parametro, e nao uma constante como no `sendImage`: ninguem procura
+   * "peca.png" no celular tres dias depois, mas procura
+   * "produtos-21-10-2026.pdf".
+   */
+  async enviarArquivo(
+    chatId: string,
+    conteudo: Buffer,
+    mime: string,
+    nome: string,
+    legenda: string,
+    agente: AgenteDaCasa = 'ANASTASIA',
+  ): Promise<void> {
+    const baseUrl = this.config.get<string>('WAHA_BASE_URL');
+    const apiKey = this.config.get<string>('WAHA_API_KEY');
+    const session = this.sessoes.sessaoDe(agente);
+
+    if (!baseUrl || !apiKey) {
+      this.logger.warn(
+        'WAHA_BASE_URL/WAHA_API_KEY ausentes — arquivo nao enviado.',
+      );
+      return;
+    }
+
+    // MESMO TETO do texto e da imagem: para a Meta e uma mensagem.
+    this.limite.registrar(chatId, session);
+
+    const url = `${baseUrl.replace(/\/$/, '')}/api/sendFile`;
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Api-Key': apiKey },
+      body: JSON.stringify({
+        session,
+        chatId,
+        file: {
+          mimetype: mime,
+          data: conteudo.toString('base64'),
+          filename: nome,
+        },
+        caption: legenda,
+      }),
+    });
+
+    if (!resp.ok) {
+      const corpo = await resp.text().catch(() => '');
+      this.logger.error(
+        `WAHA sendFile falhou: ${resp.status} ${corpo.slice(0, 200)}`,
+      );
+      throw new Error(`WAHA sendFile retornou ${resp.status}`);
+    }
+  }
+
+  /**
    * O "digitando..." — 08/10/2026. Ver o contrato na porta.
    *
    * ======================================================================

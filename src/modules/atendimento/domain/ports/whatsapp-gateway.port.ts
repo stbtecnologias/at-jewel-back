@@ -37,6 +37,42 @@ export interface IWhatsappGateway {
   ): Promise<void>;
 
   /**
+   * ENVIA UM ARQUIVO — PDF, planilha, o que for — 21/10/2026.
+   *
+   * ==========================================================================
+   * O QUE FALTAVA PARA O RF36 E O RF37, E ERA SO ISTO.
+   *
+   * A reuniao de 19/10 pediu duas coisas que pareciam diferentes: "a lista
+   * inteira de uma vez" e "as agentes mandarem PDF e planilha na conversa".
+   * Sao a mesma: a lista inteira NAO CABE em texto — medido em 21/10, as 261
+   * joias com saldo dao 21.222 caracteres, seis mensagens de WhatsApp, e
+   * gastariam um quinto da cota de envio da pessoa.
+   *
+   * GERAR NOS JA SABIAMOS: `pdfkit` monta o catalogo em producao, `exceljs`
+   * esta no projeto, o CSV de vendas existe. **Entregar e que nao existia** —
+   * e era um metodo.
+   *
+   * O caminho e `POST /api/sendFile`, sondado no WAHA local em 24/09:
+   * `/api/sendDocument` responde 404, e o `sendFile` responde 400 a corpo
+   * vazio, que e a resposta de quem existe.
+   * ==========================================================================
+   *
+   * `nome` e o que a pessoa VE, e o que ela vai procurar depois no celular:
+   * "produtos-21-10-2026.pdf" se acha, "relatorio.pdf" nao.
+   *
+   * Conta no MESMO teto de envio do texto e da imagem — para a Meta e uma
+   * mensagem, e o que dispara bloqueio e o volume, nao o formato.
+   */
+  enviarArquivo(
+    chatId: string,
+    conteudo: Buffer,
+    mime: string,
+    nome: string,
+    legenda: string,
+    agente?: AgenteDaCasa,
+  ): Promise<void>;
+
+  /**
    * O TELEFONE conectado num dos numeros da casa, so com digitos, ou `null`
    * se aquela sessao nao esta conectada.
    *

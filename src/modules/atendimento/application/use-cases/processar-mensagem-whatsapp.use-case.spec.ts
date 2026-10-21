@@ -16,6 +16,7 @@ function make() {
   const whatsapp: jest.Mocked<IWhatsappGateway> = {
     enviarTexto: jest.fn(),
     enviarImagem: jest.fn().mockResolvedValue(undefined),
+    enviarArquivo: jest.fn().mockResolvedValue(undefined),
     // Nao usados neste fluxo: quem resolve LID e chatId e a borda HTTP.
     resolverChatId: jest.fn(),
     numeroDoAgente: jest.fn(),

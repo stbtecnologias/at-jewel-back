@@ -34,6 +34,7 @@ import { FormaPagamentoOrmEntity } from './modules/formas-pagamento/infrastructu
 import { EmpresaOrmEntity } from './modules/empresas/infrastructure/database/typeorm/entities/empresa.orm-entity';
 import { ConsignacaoOrmEntity } from './modules/consignacoes/infrastructure/database/typeorm/entities/consignacao.orm-entity';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { RelatoriosModule } from './modules/relatorios/relatorios.module';
 import { AgentesModule } from './modules/agentes/agentes.module';
 import { AtendimentoModule } from './modules/atendimento/atendimento.module';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -153,6 +154,7 @@ import { AlertasModule } from './modules/alertas/alertas.module';
     MovimentacoesModule,
     CatalogosModule,
     AnalyticsModule,
+    RelatoriosModule,
     AgentesModule,
     AtendimentoModule,
     AtendimentosModule,

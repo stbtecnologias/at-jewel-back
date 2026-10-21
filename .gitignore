@@ -30,3 +30,7 @@ Thumbs.db
 /armazenamento/
 .chave-teste-local
 .chave-teste-estoque
+
+# Os arquivos que a conferencia de relatorios escreve para alguem OLHAR.
+# Sao gerados do banco, mudam a cada rodada e levam dado de cliente.
+tmp/
