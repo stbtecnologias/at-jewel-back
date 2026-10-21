@@ -260,6 +260,8 @@ async function rodar(
     { handlers: () => ({}) } as never,
     espiar(cliente, visto) as never,
     { get: () => modelo } as never,
+      // RF36/RF37: o montador de arquivo. Mudo aqui.
+      { execute: async () => null } as never,
   );
 
   try {

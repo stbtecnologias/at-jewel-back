@@ -59,6 +59,8 @@ describe('o contexto de grupo no prompt', () => {
       { handlers: () => ({}) } as never,
       { chatComFerramentas } as never,
       { get: () => undefined } as never,
+      // RF36/RF37: o montador de arquivo. Mudo aqui.
+      { execute: async () => null } as never,
     );
   });
 

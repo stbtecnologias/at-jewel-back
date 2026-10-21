@@ -35,6 +35,7 @@ import { RotearMensagemInternaUseCase } from './application/use-cases/rotear-men
 import { ConsultarAuditoriaUseCase } from './application/use-cases/consultar-auditoria.use-case';
 import { ConsultarLinhaDoTempoUseCase } from './application/use-cases/consultar-linha-do-tempo.use-case';
 import { EquipeModule } from '../equipe/equipe.module';
+import { RelatoriosModule } from '../relatorios/relatorios.module';
 import { ReabrirAtendimentoUseCase } from './application/use-cases/reabrir-atendimento.use-case';
 import { EncerrarPorSilencioUseCase } from './application/use-cases/encerrar-por-silencio.use-case';
 import { RegistrarContatoWhatsappUseCase } from './application/use-cases/registrar-contato-whatsapp.use-case';
@@ -95,6 +96,8 @@ import { AnalisarTomUseCase } from '../atendimento/application/analisar-tom.use-
     ClientesModule,
     // Quem sabe se o telefone do outro lado e de gente da casa — RF29 e RF30.
     EquipeModule,
+    // RF36 e RF37 — o molde do relatorio e o montador de arquivo.
+    RelatoriosModule,
     // Encaminhar o lead que terminou a triagem para uma vendedora.
     LeadsModule,
     VendedorasModule,

@@ -1,4 +1,5 @@
 import { datasDeRecorte } from '../../../shared/tempo/recorte-de-datas';
+import { UltimoRelatorioService } from '../../relatorios/application/ultimo-relatorio.service';
 import {
   linhaDoClienteFiel,
   nivelDaPergunta,
@@ -102,6 +103,17 @@ function linhaDoCliente(a: {
   return `${a.clienteNome} (${rotuloEtapa(a.etapa)}, desde ${desde}${proximo})${espera}`;
 }
 
+/** A data e a hora de agora, para o carimbo de posição do relatório. */
+function agoraPorExtenso(): string {
+  return new Date().toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 function moeda(v: number): string {
   return v.toLocaleString('pt-BR', {
     style: 'currency',
@@ -136,6 +148,14 @@ export interface FerramentasVendedora {
 export interface ContextoVendedora {
   vendedoraId: string;
   codigoErp: string | null;
+  /**
+   * A CHAVE DA CONVERSA — RF36 e RF37, 21/10/2026.
+   *
+   * Liga "a lista que acabou de sair" ao "manda em PDF" que vem depois. Só
+   * existe no WhatsApp; no painel a tabela já está na tela. Sem chave, a
+   * ferramenta responde igual e não guarda nada.
+   */
+  chaveDaConversa?: string | null;
   /**
    * A frase ORIGINAL dela, para o extrator de relato.
    *
@@ -252,6 +272,8 @@ export class FerramentasVendedoraService {
     // A FAIXA DE VALOR (13/10) entra no FIM de proposito: posicao nova no
     // meio deslocaria todos os dubles dos specs em silencio.
     private readonly vendas: ConsultarVendasUseCase,
+    // RF36/RF37 — guarda a tabela para ela poder virar arquivo. NO FIM.
+    private readonly ultimoRelatorio: UltimoRelatorioService,
   ) {}
 
   /**
@@ -513,6 +535,47 @@ export class FerramentasVendedoraService {
         // o contexto; e por ele que a pergunta de destino da proxima foto sabe
         // qual peca oferecer, em vez de pedir o codigo.
         if (achados.pecaUnica) ctx.aoFalarDePeca?.(achados.pecaUnica);
+
+        // ================================================================
+        // A TABELA FICA GUARDADA, para virar PDF ou planilha — RF36/RF37.
+        //
+        // O texto que o modelo recebe nao muda; o que muda e que a MESMA
+        // consulta deixa pronta a versao tabular. Vale aqui pelo mesmo
+        // motivo que vale na gestao, e foi pedido assim: "tanto a gestao com
+        // a Anastasia como a Helena".
+        // ================================================================
+        this.ultimoRelatorio.guardar(ctx.chaveDaConversa, {
+          titulo: busca?.trim() ? `Peças — ${busca.trim()}` : 'Peças',
+          posicao: `Posição em ${agoraPorExtenso()}`,
+          colunas: [
+            { chave: 'codigo', titulo: 'Código', peso: 1.1, mono: true },
+            { chave: 'descricao', titulo: 'Descrição', peso: 3.6 },
+            { chave: 'categoria', titulo: 'Categoria', peso: 1.2 },
+            { chave: 'saldo', titulo: 'Saldo', peso: 1 },
+            {
+              chave: 'valor',
+              titulo: 'Valor',
+              peso: 1.2,
+              alinhamento: 'direita',
+              mono: true,
+            },
+          ],
+          linhas: achados.produtos.map((p) => ({
+            codigo: p.codigo ?? '—',
+            descricao: p.descricao,
+            categoria: `${p.categoria} / ${p.familia}`,
+            // DISPONIVEL, E NAO QUANTOS: a mesma regra da linha de texto, e
+            // pelo mesmo motivo — o numero nao chega ate aqui.
+            saldo: p.disponivel ? 'Disponível' : 'Indisponível',
+            valor: moeda(p.precoVenda),
+          })),
+          exibindo:
+            achados.total > achados.produtos.length
+              ? { mostradas: achados.produtos.length, total: achados.total }
+              : undefined,
+          nota: 'Valores unitários de tabela. Saldo conforme o ERP na última sincronização.',
+        });
+
         return {
           total: achados.total,
           semEstoque: achados.semEstoque,
@@ -544,11 +607,12 @@ export class FerramentasVendedoraService {
         // O `aPartirDe` chegou em 05/10 pelo canal da GESTAO, e vale aqui pelo
         // mesmo motivo: a carteira de uma vendedora tambem passa de vinte, e
         // ela tambem precisa alcancar o resto da propria lista.
-        const { clientes, total, deslocamento } = await this.carteira.semComprar(
-          codigoErp,
-          dataDeCorte({ meses, dias, desde }),
-          aPartirDe,
-        );
+        const { clientes, total, deslocamento } =
+          await this.carteira.semComprar(
+            codigoErp,
+            dataDeCorte({ meses, dias, desde }),
+            aPartirDe,
+          );
         return {
           clientes: clientes.map((c) => ({
             linha: c.ultimaCompra
@@ -586,10 +650,13 @@ export class FerramentasVendedoraService {
       },
 
       melhoresClientes: async ({ categoria, ultimosMeses }) => {
-        const { clientes, total } = await this.carteira.maioresCompradores(codigoErp, {
-          categoria,
-          ultimosMeses,
-        });
+        const { clientes, total } = await this.carteira.maioresCompradores(
+          codigoErp,
+          {
+            categoria,
+            ultimosMeses,
+          },
+        );
         const unidade = categoria ? 'peça' : 'compra';
         return {
           clientes: clientes.map((c) => ({

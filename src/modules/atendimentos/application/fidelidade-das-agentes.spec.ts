@@ -69,6 +69,8 @@ describe('os clientes por fidelidade', () => {
       // A consulta de vendas (13/10) nao e exercitada aqui — entra no duble
       // porque o construtor a exige.
       { pecasPorFaixa: jest.fn() } as never,
+      // RF36/RF37: guarda a tabela para virar arquivo. Mudo nestes testes.
+      { guardar: jest.fn(), pegar: jest.fn() } as never,
       );
     });
 
@@ -186,6 +188,8 @@ describe('os clientes por fidelidade', () => {
         { listarAguardandoGestao: jest.fn() } as never,
         { entre: jest.fn().mockResolvedValue([]) } as never,
       { listar: jest.fn().mockResolvedValue([]) } as never,
+      // RF36/RF37: guarda a tabela para virar arquivo. Mudo nestes testes.
+      { guardar: jest.fn(), pegar: jest.fn() } as never,
       );
     });
 

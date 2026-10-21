@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { FotoDeProduto } from '../fotos-de-produto.service';
+import type { ArquivoDoAgente } from '../../../relatorios/application/montar-arquivo.use-case';
 import { BuscarAdminPorTelefoneUseCase } from '../../../auth/application/use-cases/buscar-admin-por-telefone.use-case';
 import type { AgenteDaCasa } from '../../../atendimento/domain/agente-da-casa';
 import { WHATSAPP_GATEWAY } from '../../../atendimento/domain/ports/injection-tokens';
@@ -156,6 +157,13 @@ export interface RespostaDoCanal {
    * 196 tem foto; na joia, 55 de 320.
    */
   fotos?: FotoDeProduto[];
+  /**
+   * O ARQUIVO PEDIDO — RF36 e RF37, 21/10/2026.
+   *
+   * Mesmo caminho das fotos: o back produz, o webhook envia, e vai DEPOIS do
+   * texto. A frase diz que mandou; o arquivo chega em seguida.
+   */
+  arquivo?: ArquivoDoAgente;
 }
 
 /**

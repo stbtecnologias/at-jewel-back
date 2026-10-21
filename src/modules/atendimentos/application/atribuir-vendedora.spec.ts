@@ -84,6 +84,8 @@ describe('atribuir vendedora ao cliente', () => {
       { listarAguardandoGestao: jest.fn() } as never,
       { entre: jest.fn().mockResolvedValue([]) } as never,
       { listar: jest.fn().mockResolvedValue([]) } as never,
+      // RF36/RF37: guarda a tabela para virar arquivo. Mudo nestes testes.
+      { guardar: jest.fn(), pegar: jest.fn() } as never,
     );
   });
 

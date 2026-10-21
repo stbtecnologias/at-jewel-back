@@ -12,6 +12,10 @@ import { PermissionsService } from '../../../auth/application/permissions.servic
 import { EscopoVendasService } from '../../../vendas/application/escopo-vendas.service';
 import { FerramentasGestaoService } from '../ferramentas-gestao.service';
 import { MemoriaConversaService } from '../memoria-conversa.service';
+import {
+  MontarArquivoUseCase,
+  type ArquivoDoAgente,
+} from '../../../relatorios/application/montar-arquivo.use-case';
 import { modeloDeIa } from '../../../../shared/config/modelo-de-ia';
 import type { FotoDeProduto } from '../fotos-de-produto.service';
 
@@ -77,6 +81,8 @@ export interface RespostaGestao {
   motivo: 'conversa' | 'falha_agente';
   /** Ver `RespostaDoCanal.fotos` — vao depois do texto, quando existirem. */
   fotos?: FotoDeProduto[];
+  /** Ver `RespostaDoCanal.arquivo` — o PDF ou a planilha que ela pediu. */
+  arquivo?: ArquivoDoAgente;
 }
 
 /**
@@ -118,6 +124,9 @@ export class ProcessarMensagemGestaoUseCase {
     @Inject(LLM_CLIENT)
     private readonly llm: ILlmClient,
     private readonly config: ConfigService,
+    // RF36 e RF37 — quem transforma a ultima resposta em PDF ou planilha.
+    // NO FIM DA LISTA, como sempre.
+    private readonly montarArquivo: MontarArquivoUseCase,
   ) {}
 
   async execute(msg: MensagemGestao): Promise<RespostaGestao> {
@@ -165,85 +174,102 @@ export class ProcessarMensagemGestaoUseCase {
       '(me chamaram pelo nome no grupo, sem escrever mais nada)';
 
     try {
-      const { texto, fotos, semTexto } = await this.llm.chatComFerramentas({
-        model: modeloDeIa(this.config, 'ANTHROPIC_MODEL_GESTAO', 'claude-opus-4-8'),
-        system,
-        // O TETO SUBIU DE 700 PARA 1500 — 05/10/2026.
-        //
-        // Setecentos foi escolhido quando a resposta mais longa era um
-        // panorama de poucas linhas. Hoje a agente lista vinte clientes com
-        // nome e data (cerca de 450 tokens), e a quebra por tipo engordou a
-        // linha de cada vendedora. Uma lista de vinte ja raspava o teto.
-        //
-        // E O CORTE E SILENCIOSO: o cliente do LLM so reclama de
-        // `stop_reason` quando a resposta vem SEM TEXTO. Resposta truncada
-        // no meio do decimo quinto nome chega inteira do ponto de vista do
-        // codigo, e vira "a agente esqueceu o resto" para quem le.
-        maxTokens: 1500,
-        mensagens: [...historico, { role: 'user', content: pergunta }],
-        // Mesmo motivo do canal da vendedora: WhatsApp nao renderiza grafico.
-        graficos: false,
-        // O nome de quem fala vai junto: quando ele agenda, a vendedora recebe
-        // um aviso dizendo de quem veio o compromisso.
-        //
-        // O `verLoja` decide se as ferramentas podem falar da LOJA ou so de
-        // cada vendedora — ver `ContextoGestao`. A chave e `analytics:read`,
-        // a mesma que guarda o modulo de Analytics no painel: uma so, para a
-        // resposta nao depender da porta por onde a pergunta entrou.
-        ...this.ferramentas.montar({
-          solicitante: msg.nome,
-          verLoja: await this.permissoes.possui(msg.role, 'analytics:read'),
-          // A quantidade por peca e outra pergunta, com outra chave — a MESMA
-          // que a API de produtos usa. Ver `ContextoGestao.verQuantidade`.
-          verQuantidade: await this.permissoes.possui(
-            msg.role,
-            'estoque:quantidade',
+      const { texto, fotos, arquivo, semTexto } =
+        await this.llm.chatComFerramentas({
+          model: modeloDeIa(
+            this.config,
+            'ANTHROPIC_MODEL_GESTAO',
+            'claude-opus-4-8',
           ),
-          // A ESCRITA DE CARTEIRA — 09/10/2026. A MESMA chave que guarda a
-          // edicao de cliente no painel: uma regra, duas portas. Sem ela a
-          // ferramenta nem e DECLARADA ao modelo, entao ele nao chega a
-          // oferecer o que ela nao pode fazer.
-          podeAtribuirCarteira: await this.permissoes.possui(
-            msg.role,
-            'clientes:write',
-          ),
-          // RF33 — O CONTEXTO DA PECA NAO E REGISTRADO AQUI, e e de proposito.
+          system,
+          // O TETO SUBIU DE 700 PARA 1500 — 05/10/2026.
           //
-          // A sessao de foto e chaveada pelo CHAT, e `MensagemGestao` nao tem
-          // chat: a chave dela e o `usuarioId`, que serve ao painel tambem.
+          // Setecentos foi escolhido quando a resposta mais longa era um
+          // panorama de poucas linhas. Hoje a agente lista vinte clientes com
+          // nome e data (cerca de 450 tokens), e a quebra por tipo engordou a
+          // linha de cada vendedora. Uma lista de vinte ja raspava o teto.
           //
-          // E nao faz falta hoje: a pergunta de destino so acontece no canal
-          // do catalogo, que mora no numero da Elena. O dia em que a foto de
-          // catalogo chegar pela Anastasia, o `aoFalarDePeca` ja esta
-          // declarado em `ContextoGestao` esperando a ligacao.
-          // AS VENDEDORAS QUE ELA ALCANCA — 28/09/2026. Vem do MESMO
-          // `EscopoVendasService` que a tela de Vendas usa: uma regra, duas
-          // portas. Sem isso, a gerente de um time veria o desempenho das
-          // vendedoras dos outros pelo WhatsApp e nao pelo painel — a mesma
-          // pergunta com resposta diferente conforme a porta.
-          equipe: await this.escopo.equipeDoUsuario(msg.usuarioId),
-        }),
+          // E O CORTE E SILENCIOSO: o cliente do LLM so reclama de
+          // `stop_reason` quando a resposta vem SEM TEXTO. Resposta truncada
+          // no meio do decimo quinto nome chega inteira do ponto de vista do
+          // codigo, e vira "a agente esqueceu o resto" para quem le.
+          maxTokens: 1500,
+          mensagens: [...historico, { role: 'user', content: pergunta }],
+          // Mesmo motivo do canal da vendedora: WhatsApp nao renderiza grafico.
+          graficos: false,
+          // O nome de quem fala vai junto: quando ele agenda, a vendedora recebe
+          // um aviso dizendo de quem veio o compromisso.
+          //
+          // O `verLoja` decide se as ferramentas podem falar da LOJA ou so de
+          // cada vendedora — ver `ContextoGestao`. A chave e `analytics:read`,
+          // a mesma que guarda o modulo de Analytics no painel: uma so, para a
+          // resposta nao depender da porta por onde a pergunta entrou.
+          // MANDAR EM ARQUIVO — RF36 e RF37, 21/10/2026.
+          //
+          // O handler nao recebe dados: pega o que a ferramenta anterior
+          // guardou sob esta MESMA chave de conversa. Ver a concepcao de 24/09.
+          mandarRelatorio: async ({ formato, titulo }) =>
+            this.montarArquivo.execute(chave, formato, {
+              titulo,
+              geradoPor: msg.nome ?? null,
+            }),
+          ...this.ferramentas.montar({
+            solicitante: msg.nome,
+            // A chave liga a consulta de agora ao "manda em PDF" de daqui a
+            // pouco. So existe no WhatsApp — ver `ContextoGestao`.
+            chaveDaConversa: chave,
+            verLoja: await this.permissoes.possui(msg.role, 'analytics:read'),
+            // A quantidade por peca e outra pergunta, com outra chave — a MESMA
+            // que a API de produtos usa. Ver `ContextoGestao.verQuantidade`.
+            verQuantidade: await this.permissoes.possui(
+              msg.role,
+              'estoque:quantidade',
+            ),
+            // A ESCRITA DE CARTEIRA — 09/10/2026. A MESMA chave que guarda a
+            // edicao de cliente no painel: uma regra, duas portas. Sem ela a
+            // ferramenta nem e DECLARADA ao modelo, entao ele nao chega a
+            // oferecer o que ela nao pode fazer.
+            podeAtribuirCarteira: await this.permissoes.possui(
+              msg.role,
+              'clientes:write',
+            ),
+            // RF33 — O CONTEXTO DA PECA NAO E REGISTRADO AQUI, e e de proposito.
+            //
+            // A sessao de foto e chaveada pelo CHAT, e `MensagemGestao` nao tem
+            // chat: a chave dela e o `usuarioId`, que serve ao painel tambem.
+            //
+            // E nao faz falta hoje: a pergunta de destino so acontece no canal
+            // do catalogo, que mora no numero da Elena. O dia em que a foto de
+            // catalogo chegar pela Anastasia, o `aoFalarDePeca` ja esta
+            // declarado em `ContextoGestao` esperando a ligacao.
+            // AS VENDEDORAS QUE ELA ALCANCA — 28/09/2026. Vem do MESMO
+            // `EscopoVendasService` que a tela de Vendas usa: uma regra, duas
+            // portas. Sem isso, a gerente de um time veria o desempenho das
+            // vendedoras dos outros pelo WhatsApp e nao pelo painel — a mesma
+            // pergunta com resposta diferente conforme a porta.
+            equipe: await this.escopo.equipeDoUsuario(msg.usuarioId),
+          }),
 
-        // OS COMBINADOS — ANA-16 e ANA-18. Ficam FORA do
-        // `FerramentasGestaoService` de proposito: aquele e o que a agente
-        // sabe sobre a LOJA, e isto e o que ela sabe sobre ela mesma. Misturar
-        // os dois faria a lista de ferramentas de negocio crescer com uma que
-        // nao consulta dado nenhum.
-        ...this.combinados.handlers('anastasia', msg.usuarioId),
+          // OS COMBINADOS — ANA-16 e ANA-18. Ficam FORA do
+          // `FerramentasGestaoService` de proposito: aquele e o que a agente
+          // sabe sobre a LOJA, e isto e o que ela sabe sobre ela mesma. Misturar
+          // os dois faria a lista de ferramentas de negocio crescer com uma que
+          // nao consulta dado nenhum.
+          ...this.combinados.handlers('anastasia', msg.usuarioId),
 
-        // OS LEMBRETES PESSOAIS — 30/09/2026. Mesma familia dos combinados, e
-        // aqui pelo mesmo motivo: sao sobre a PESSOA, e nao sobre a loja.
-        //
-        // A diferenca entre os dois precisa ficar clara para quem ler: o
-        // combinado e da AGENTE e vale para todos ("de agora em diante, me
-        // avise quando..."); o lembrete e da PESSOA e so ela ve. Por isso ele
-        // recebe so o `usuarioId`, sem o nome da agente.
-        //
-        // E e o `usuarioId` que faz o escopo: ele entra por CLOSURE, entao
-        // nenhuma das quatro ferramentas tem um campo "de quem" para o modelo
-        // preencher errado.
-        ...this.lembretes.handlers(msg.usuarioId),
-      });
+          // OS LEMBRETES PESSOAIS — 30/09/2026. Mesma familia dos combinados, e
+          // aqui pelo mesmo motivo: sao sobre a PESSOA, e nao sobre a loja.
+          //
+          // A diferenca entre os dois precisa ficar clara para quem ler: o
+          // combinado e da AGENTE e vale para todos ("de agora em diante, me
+          // avise quando..."); o lembrete e da PESSOA e so ela ve. Por isso ele
+          // recebe so o `usuarioId`, sem o nome da agente.
+          //
+          // E e o `usuarioId` que faz o escopo: ele entra por CLOSURE, entao
+          // nenhuma das quatro ferramentas tem um campo "de quem" para o modelo
+          // preencher errado.
+          ...this.lembretes.handlers(msg.usuarioId),
+        });
 
       // ==================================================================
       // RESPOSTA SEM TEXTO NAO PODE VIRAR SILENCIO — 09/10/2026.
@@ -269,13 +295,14 @@ export class ProcessarMensagemGestaoUseCase {
       this.memoria.registrar(chave, pergunta, texto);
       // As fotos vao JUNTO da resposta, e nao no lugar dela: quem envia e o
       // webhook, depois do texto. Ver `RespostaDoCanal.fotos`.
-      return { resposta: texto, motivo: 'conversa', fotos };
+      return { resposta: texto, motivo: 'conversa', fotos, arquivo };
     } catch (err) {
       this.logger.error(
         `Falha do agente de gestao: ${err instanceof Error ? err.message : err}`,
       );
       return {
-        resposta: 'Não consegui consultar isso agora. Pode tentar de novo em instantes?',
+        resposta:
+          'Não consegui consultar isso agora. Pode tentar de novo em instantes?',
         motivo: 'falha_agente',
       };
     }

@@ -15,8 +15,12 @@ import {
 import { faixaDePreco } from '../../../shared/catalogo/faixa-de-preco';
 import { FotosDeProdutoService } from './fotos-de-produto.service';
 import { FotosDaPecaUseCase } from '../../produtos/application/use-cases/fotos-da-peca.use-case';
+import { UltimoRelatorioService } from '../../relatorios/application/ultimo-relatorio.service';
 import { diasDeCalendario } from '../../../shared/tempo/dias-de-calendario';
-import { dataDeCorte, datasDeRecorte } from '../../../shared/tempo/recorte-de-datas';
+import {
+  dataDeCorte,
+  datasDeRecorte,
+} from '../../../shared/tempo/recorte-de-datas';
 import type { NomeComemorativo } from '../../../shared/tempo/datas-comemorativas';
 import type {
   GestaoCarteiraHandler,
@@ -214,8 +218,18 @@ function pecas(quantidade: number, familia: string): string {
  * fixas nao dependem de locale instalado.
  */
 const MESES = [
-  'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
-  'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro',
+  'janeiro',
+  'fevereiro',
+  'março',
+  'abril',
+  'maio',
+  'junho',
+  'julho',
+  'agosto',
+  'setembro',
+  'outubro',
+  'novembro',
+  'dezembro',
 ];
 
 /** Janela padrao quando nao dizem "hoje" nem "esta semana". */
@@ -309,6 +323,21 @@ export interface ContextoGestao {
    * compromisso. Nao muda o que ferramenta nenhuma enxerga.
    */
   solicitante?: string | null;
+  /**
+   * A CHAVE DA CONVERSA — RF36 e RF37, 21/10/2026.
+   *
+   * ======================================================================
+   * SO EXISTE NO WHATSAPP, e e de proposito que ela seja opcional.
+   *
+   * E ela que liga "a pergunta que acabou de ser respondida" ao "manda em
+   * PDF" que vem depois. No painel nao ha o que ligar: a tabela ja esta na
+   * tela, e quem quiser exportar clica.
+   *
+   * Sem chave, a ferramenta responde igual e nao guarda nada — o arquivo e
+   * um extra do canal de conversa, nao uma mudanca no que se responde.
+   * ======================================================================
+   */
+  chaveDaConversa?: string | null;
   /**
    * Pode ver a LOJA, e nao so cada vendedora? — 28/09/2026.
    *
@@ -445,6 +474,11 @@ export class FerramentasGestaoService {
     // NO FIM DA LISTA, como o `ConsultarVendasUseCase` em 13/10: parametro
     // novo no meio quebra todo teste que constroi este servico a mao.
     private readonly fotosDaPeca: FotosDaPecaUseCase,
+    // RF36 e RF37 — guarda a tabela que a ferramenta montou, para ela poder
+    // virar PDF ou planilha depois. NO FIM DA LISTA, pela mesma razao de
+    // sempre: parametro novo no meio quebra todo teste que constroi isto a
+    // mao.
+    private readonly ultimoRelatorio: UltimoRelatorioService,
   ) {}
 
   /**
@@ -457,6 +491,7 @@ export class FerramentasGestaoService {
   montar(ctx: ContextoGestao = {}): FerramentasGestao {
     const {
       solicitante,
+      chaveDaConversa = null,
       verLoja = false,
       verQuantidade = false,
       podeAtribuirCarteira = false,
@@ -571,21 +606,25 @@ export class FerramentasGestaoService {
         // simplesmente nao tem carteira — o use case devolve vazio.
         let total = 0;
         let pulados = 0;
-        const r = await this.comVendedora(equipe, vendedora, async (_id, codigoErp) => {
-          // A data de corte vem pronta desde 01/10 — ver `dataDeCorte`.
-          const pagina = await this.carteira.semComprar(
-            codigoErp,
-            dataDeCorte({ meses }),
-            aPartirDe,
-          );
-          total = pagina.total;
-          pulados = pagina.deslocamento ?? 0;
-          return pagina.clientes.map((c) =>
-            c.ultimaCompra
-              ? `${c.nome} — última compra em ${c.ultimaCompra.toLocaleDateString('pt-BR')}, ${c.quantidade} ${c.quantidade === 1 ? 'compra' : 'compras'} no total`
-              : `${c.nome} — nunca comprou`,
-          );
-        });
+        const r = await this.comVendedora(
+          equipe,
+          vendedora,
+          async (_id, codigoErp) => {
+            // A data de corte vem pronta desde 01/10 — ver `dataDeCorte`.
+            const pagina = await this.carteira.semComprar(
+              codigoErp,
+              dataDeCorte({ meses }),
+              aPartirDe,
+            );
+            total = pagina.total;
+            pulados = pagina.deslocamento ?? 0;
+            return pagina.clientes.map((c) =>
+              c.ultimaCompra
+                ? `${c.nome} — última compra em ${c.ultimaCompra.toLocaleDateString('pt-BR')}, ${c.quantidade} ${c.quantidade === 1 ? 'compra' : 'compras'} no total`
+                : `${c.nome} — nunca comprou`,
+            );
+          },
+        );
         return { ...r, total, aPartirDe: pulados };
       },
 
@@ -627,7 +666,12 @@ export class FerramentasGestaoService {
         if (vendedora?.trim()) {
           const r = await this.resolverVendedora.execute(vendedora);
           if (r.status === 'AMBIGUA') {
-            return { status: 'AMBIGUA', sobre: 'vendedora', linhas: [], nomes: r.nomes };
+            return {
+              status: 'AMBIGUA',
+              sobre: 'vendedora',
+              linhas: [],
+              nomes: r.nomes,
+            };
           }
           if (r.status === 'NAO_ENCONTRADA') {
             return {
@@ -667,7 +711,9 @@ export class FerramentasGestaoService {
               status: 'AMBIGUA',
               sobre: 'cliente',
               linhas: [],
-              nomes: achados.map((c) => `${c.nome} (${c.codigoErp ?? 'sem código'})`),
+              nomes: achados.map(
+                (c) => `${c.nome} (${c.codigoErp ?? 'sem código'})`,
+              ),
             };
           }
           clienteId = achados[0].id ?? null;
@@ -686,6 +732,65 @@ export class FerramentasGestaoService {
           MAXIMO_VENDAS_DETALHADAS,
         );
 
+        // ================================================================
+        // A TABELA FICA GUARDADA, e o texto segue como sempre — RF36/RF37.
+        //
+        // O modelo recebe as mesmas linhas de antes; o que muda e que a
+        // MESMA consulta deixa pronta a versao tabular. Quando ela disser
+        // "manda em PDF", o arquivo sai DAQUI, e nao do que o modelo
+        // escreveu. E a escolha (b) de 24/09.
+        // ================================================================
+        this.ultimoRelatorio.guardar(chaveDaConversa, {
+          titulo: tituloDeVendas(cliente, vendedora, documento),
+          posicao: `Posição em ${agoraPorExtenso()}`,
+          paisagem: true,
+          colunas: [
+            { chave: 'data', titulo: 'Data', peso: 0.8, mono: true },
+            { chave: 'documento', titulo: 'Doc', peso: 0.7, mono: true },
+            { chave: 'cliente', titulo: 'Cliente', peso: 2.2 },
+            { chave: 'pecas', titulo: 'Peças', peso: 3.6 },
+            { chave: 'vendedora', titulo: 'Vendedora', peso: 1.4 },
+            { chave: 'status', titulo: 'Status', peso: 0.9 },
+            {
+              chave: 'valor',
+              titulo: 'Total',
+              peso: 1.1,
+              alinhamento: 'direita',
+              mono: true,
+            },
+          ],
+          linhas: r.vendas.map((v) => ({
+            data: v.data.toLocaleDateString('pt-BR'),
+            documento: v.documento ?? '—',
+            cliente: v.cliente ?? '—',
+            pecas:
+              v.itens
+                .map(
+                  (i) =>
+                    `${Number.isInteger(i.quantidade) ? i.quantidade : i.quantidade.toFixed(2)}x ${i.nome}`,
+                )
+                .join(' · ') || '—',
+            vendedora: v.vendedora ?? '—',
+            status: v.status === 'devolvida' ? 'Devolvida' : 'Concluída',
+            valor: moeda(v.valor),
+          })),
+          total: {
+            data: 'Total',
+            valor: moeda(
+              r.vendas.reduce(
+                (n, v) => n + (v.status === 'devolvida' ? -v.valor : v.valor),
+                0,
+              ),
+            ),
+          },
+          exibindo:
+            r.total > r.vendas.length
+              ? { mostradas: r.vendas.length, total: r.total }
+              : undefined,
+          nota: 'Receita desconta devoluções; a contagem de documentos, não.',
+          geradoPor: solicitante ?? undefined,
+        });
+
         return {
           status: 'OK' as const,
           linhas: r.vendas.map(linhaDaVenda),
@@ -701,7 +806,7 @@ export class FerramentasGestaoService {
        */
       gestaoPorEmpresa: async ({ periodo, de, ate }) => {
         if (!verLoja) {
-          return { status: "INDISPONIVEL" as const, linhas: [] };
+          return { status: 'INDISPONIVEL' as const, linhas: [] };
         }
         const datas = datasDeRecorte(de, ate);
         const linhas = await this.consultarVendas.porEmpresa(
@@ -709,7 +814,7 @@ export class FerramentasGestaoService {
           datas?.de,
           datas?.ate,
         );
-        return { status: "OK" as const, linhas: linhas.map(linhaDaEmpresa) };
+        return { status: 'OK' as const, linhas: linhas.map(linhaDaEmpresa) };
       },
 
       gestaoEpoca: async ({ vendedora, mes, dataComemorativa }) => {
@@ -724,11 +829,15 @@ export class FerramentasGestaoService {
 
         if (vendedora?.trim()) {
           let total = 0;
-          const r = await this.comVendedora(equipe, vendedora, async (_id, codigoErp) => {
-            const pagina = await this.carteira.porEpoca(codigoErp, recorte);
-            total = pagina.total;
-            return pagina.clientes.map(linhaDaEpoca);
-          });
+          const r = await this.comVendedora(
+            equipe,
+            vendedora,
+            async (_id, codigoErp) => {
+              const pagina = await this.carteira.porEpoca(codigoErp, recorte);
+              total = pagina.total;
+              return pagina.clientes.map(linhaDaEpoca);
+            },
+          );
           return { ...r, total };
         }
 
@@ -742,18 +851,22 @@ export class FerramentasGestaoService {
 
       gestaoMelhores: async ({ vendedora, categoria, ultimosMeses }) => {
         let total = 0;
-        const r = await this.comVendedora(equipe, vendedora, async (_id, codigoErp) => {
-          const pagina = await this.carteira.maioresCompradores(codigoErp, {
-            categoria,
-            ultimosMeses,
-          });
-          total = pagina.total;
-          const unidade = categoria ? 'peça' : 'compra';
-          return pagina.clientes.map(
-            (c) =>
-              `${c.nome} — ${c.quantidade} ${c.quantidade === 1 ? unidade : unidade + 's'}, ${moeda(c.valorTotal)}`,
-          );
-        });
+        const r = await this.comVendedora(
+          equipe,
+          vendedora,
+          async (_id, codigoErp) => {
+            const pagina = await this.carteira.maioresCompradores(codigoErp, {
+              categoria,
+              ultimosMeses,
+            });
+            total = pagina.total;
+            const unidade = categoria ? 'peça' : 'compra';
+            return pagina.clientes.map(
+              (c) =>
+                `${c.nome} — ${c.quantidade} ${c.quantidade === 1 ? unidade : unidade + 's'}, ${moeda(c.valorTotal)}`,
+            );
+          },
+        );
         return { ...r, total };
       },
 
@@ -832,7 +945,12 @@ export class FerramentasGestaoService {
 
         const p = pagina as (PecasNaFaixa & { deslocamento: number }) | null;
         if (r.status !== 'OK') {
-          return { ...FAIXA_INVALIDA, faixaInvalida: undefined, status: r.status, nomes: r.nomes };
+          return {
+            ...FAIXA_INVALIDA,
+            faixaInvalida: undefined,
+            status: r.status,
+            nomes: r.nomes,
+          };
         }
         if (!p) return FAIXA_INVALIDA;
         return {
@@ -1331,7 +1449,8 @@ export class FerramentasGestaoService {
         return {
           status: 'OK',
           linhas: daEquipe.map(
-            (l) => `${l.nome}: ${pecas(l.quantidade, casada)}, ${moeda(l.valor)}`,
+            (l) =>
+              `${l.nome}: ${pecas(l.quantidade, casada)}, ${moeda(l.valor)}`,
           ),
         };
       },
@@ -1347,8 +1466,12 @@ export class FerramentasGestaoService {
               datas.ate,
               LIMITE_MAXIMO,
             )
-          : (await this.consultarVendas.ranking(periodo ?? 'MES', LIMITE_MAXIMO))
-              .linhas;
+          : (
+              await this.consultarVendas.ranking(
+                periodo ?? 'MES',
+                LIMITE_MAXIMO,
+              )
+            ).linhas;
 
         // O RECORTE DE EQUIPE. Esta ferramenta nao passa pelo `comVendedora`
         // — ela nao resolve nome, percorre lista —, entao a checagem e
@@ -1523,7 +1646,9 @@ export class FerramentasGestaoService {
         // COM recorte, quem nao tem id fica de fora: nao da para conferir se
         // ela pertence, e o lado seguro do "nao sei" aqui e excluir.
         const ativas =
-          equipe === null ? todas : todas.filter((v) => !!v.id && alcanca(v.id));
+          equipe === null
+            ? todas
+            : todas.filter((v) => !!v.id && alcanca(v.id));
         const ordenadas = [
           ...ativas.filter((v) => v.statusDisponibilidade === 'DISPONIVEL'),
           ...ativas.filter((v) => v.statusDisponibilidade !== 'DISPONIVEL'),
@@ -1584,7 +1709,9 @@ export class FerramentasGestaoService {
             'Não consegui verificar quais celulares estão conectados agora.',
           );
         } else {
-          const n = ordenadas.filter((v) => v.id && conectadas.has(v.id)).length;
+          const n = ordenadas.filter(
+            (v) => v.id && conectadas.has(v.id),
+          ).length;
           linhas.unshift(
             n === 0
               ? `${ordenadas.length} ativa(s) no cadastro, e NENHUMA com o celular ` +
@@ -1653,115 +1780,123 @@ export class FerramentasGestaoService {
       // isso a ferramenta nao e declarada ao modelo. Nao ha versao recusavel.
       ...(podeAtribuirCarteira
         ? {
-      gestaoAtribuirVendedora: async ({ cliente, vendedora }) => {
-        // A VENDEDORA PRIMEIRO, e é de propósito: é ela que decide se a
-        // pessoa pode mexer nisso. Resolver o cliente antes faria a resposta
-        // falar de um cliente mesmo quando a vendedora está fora da equipe.
-        const daVendedora = await this.comVendedora(
-          equipe,
-          vendedora,
-          async (_id, codigoErp) => (codigoErp ? [codigoErp] : []),
-        );
-        const candidatas = daVendedora.nomes ?? [];
-        if (daVendedora.status === 'AMBIGUA') {
-          return {
-            mensagem:
-              `Há mais de uma vendedora com esse nome: ${candidatas.join(', ')}. ` +
-              'Pergunte qual delas antes de atribuir. Nada foi alterado.',
-          };
-        }
-        if (daVendedora.status === 'NAO_ENCONTRADA') {
-          return {
-            mensagem:
-              'Não encontrei essa vendedora' +
-              (candidatas.length ? `. Parecidas: ${candidatas.join(', ')}` : '') +
-              '. Nada foi alterado.',
-          };
-        }
-        const codigoDaVendedora = daVendedora.linhas[0];
-        if (!codigoDaVendedora) {
-          // Vendedora sem cadastro no ERP não tem carteira — o mesmo caso que
-          // o `ConsultarCarteiraVendedoraUseCase` trata devolvendo vazio.
-          return {
-            mensagem:
-              `A ${daVendedora.vendedora} não tem código no ERP, e a carteira ` +
-              'é por esse código. Nada foi alterado — isso precisa ser ' +
-              'corrigido no cadastro dela.',
-          };
-        }
+            gestaoAtribuirVendedora: async ({ cliente, vendedora }) => {
+              // A VENDEDORA PRIMEIRO, e é de propósito: é ela que decide se a
+              // pessoa pode mexer nisso. Resolver o cliente antes faria a resposta
+              // falar de um cliente mesmo quando a vendedora está fora da equipe.
+              const daVendedora = await this.comVendedora(
+                equipe,
+                vendedora,
+                async (_id, codigoErp) => (codigoErp ? [codigoErp] : []),
+              );
+              const candidatas = daVendedora.nomes ?? [];
+              if (daVendedora.status === 'AMBIGUA') {
+                return {
+                  mensagem:
+                    `Há mais de uma vendedora com esse nome: ${candidatas.join(', ')}. ` +
+                    'Pergunte qual delas antes de atribuir. Nada foi alterado.',
+                };
+              }
+              if (daVendedora.status === 'NAO_ENCONTRADA') {
+                return {
+                  mensagem:
+                    'Não encontrei essa vendedora' +
+                    (candidatas.length
+                      ? `. Parecidas: ${candidatas.join(', ')}`
+                      : '') +
+                    '. Nada foi alterado.',
+                };
+              }
+              const codigoDaVendedora = daVendedora.linhas[0];
+              if (!codigoDaVendedora) {
+                // Vendedora sem cadastro no ERP não tem carteira — o mesmo caso que
+                // o `ConsultarCarteiraVendedoraUseCase` trata devolvendo vazio.
+                return {
+                  mensagem:
+                    `A ${daVendedora.vendedora} não tem código no ERP, e a carteira ` +
+                    'é por esse código. Nada foi alterado — isso precisa ser ' +
+                    'corrigido no cadastro dela.',
+                };
+              }
 
-        const achados = await this.clientes.buscarPorNomeParcial(
-          cliente,
-          MAXIMO_CLIENTES_HOMONIMOS + 1,
-        );
-        if (achados.length === 0) {
-          return {
-            mensagem: `Não encontrei nenhum cliente com esse nome. Nada foi alterado.`,
-          };
-        }
-        // HOMÔNIMO NÃO VIRA ESCOLHA DO MODELO. Com duas pessoas de nome
-        // parecido, gravar na primeira seria pôr o cliente de alguém na
-        // carteira de outra pessoa sem ninguém saber.
-        if (achados.length > 1) {
-          return {
-            mensagem:
-              `Há mais de um cliente com esse nome: ` +
-              `${achados.slice(0, MAXIMO_CLIENTES_HOMONIMOS).map((c) => `${c.nome}${c.codigoErp ? ` (código ${c.codigoErp})` : ''}`).join('; ')}. ` +
-              'Pergunte qual deles, pelo código. Nada foi alterado.',
-          };
-        }
+              const achados = await this.clientes.buscarPorNomeParcial(
+                cliente,
+                MAXIMO_CLIENTES_HOMONIMOS + 1,
+              );
+              if (achados.length === 0) {
+                return {
+                  mensagem: `Não encontrei nenhum cliente com esse nome. Nada foi alterado.`,
+                };
+              }
+              // HOMÔNIMO NÃO VIRA ESCOLHA DO MODELO. Com duas pessoas de nome
+              // parecido, gravar na primeira seria pôr o cliente de alguém na
+              // carteira de outra pessoa sem ninguém saber.
+              if (achados.length > 1) {
+                return {
+                  mensagem:
+                    `Há mais de um cliente com esse nome: ` +
+                    `${achados
+                      .slice(0, MAXIMO_CLIENTES_HOMONIMOS)
+                      .map(
+                        (c) =>
+                          `${c.nome}${c.codigoErp ? ` (código ${c.codigoErp})` : ''}`,
+                      )
+                      .join('; ')}. ` +
+                    'Pergunte qual deles, pelo código. Nada foi alterado.',
+                };
+              }
 
-        const alvo = achados[0];
-        if (alvo.vendedoraCodigoErp) {
-          const dona = await this.vendedoras.buscarPorCodigoErp(
-            alvo.vendedoraCodigoErp,
-          );
-          return {
-            mensagem:
-              `${alvo.nome} já está na carteira de ` +
-              `${dona?.nome ?? `uma vendedora não cadastrada (${alvo.vendedoraCodigoErp})`}. ` +
-              'NÃO alterei nada: eu só preencho cliente que está sem vendedora. ' +
-              'Para trocar a carteira, isso é feito no painel.',
-          };
-        }
+              const alvo = achados[0];
+              if (alvo.vendedoraCodigoErp) {
+                const dona = await this.vendedoras.buscarPorCodigoErp(
+                  alvo.vendedoraCodigoErp,
+                );
+                return {
+                  mensagem:
+                    `${alvo.nome} já está na carteira de ` +
+                    `${dona?.nome ?? `uma vendedora não cadastrada (${alvo.vendedoraCodigoErp})`}. ` +
+                    'NÃO alterei nada: eu só preencho cliente que está sem vendedora. ' +
+                    'Para trocar a carteira, isso é feito no painel.',
+                };
+              }
 
-        // `id` e opcional na entidade (ela existe antes de ser gravada). Aqui
-        // ele veio do banco, entao a ausencia seria defeito — e sem id nao ha
-        // o que atualizar.
-        if (!alvo.id) {
-          return {
-            mensagem:
-              'Não consegui identificar esse cliente no cadastro. Nada foi alterado.',
-          };
-        }
-        const gravou = await this.clientes.atribuirVendedoraSeSemDona(
-          alvo.id,
-          codigoDaVendedora,
-        );
-        if (!gravou) {
-          // Chegou aqui com o `if` acima dizendo que estava vazio: alguém
-          // preencheu no meio do caminho — a sincronização do ERP mexe nos
-          // clientes com frequência. Dizer "pronto" aqui seria mentir.
-          return {
-            mensagem:
-              `${alvo.nome} ganhou uma vendedora enquanto eu gravava, e eu NÃO ` +
-              'sobrescrevi. Peça para conferir de quem é agora.',
-          };
-        }
+              // `id` e opcional na entidade (ela existe antes de ser gravada). Aqui
+              // ele veio do banco, entao a ausencia seria defeito — e sem id nao ha
+              // o que atualizar.
+              if (!alvo.id) {
+                return {
+                  mensagem:
+                    'Não consegui identificar esse cliente no cadastro. Nada foi alterado.',
+                };
+              }
+              const gravou = await this.clientes.atribuirVendedoraSeSemDona(
+                alvo.id,
+                codigoDaVendedora,
+              );
+              if (!gravou) {
+                // Chegou aqui com o `if` acima dizendo que estava vazio: alguém
+                // preencheu no meio do caminho — a sincronização do ERP mexe nos
+                // clientes com frequência. Dizer "pronto" aqui seria mentir.
+                return {
+                  mensagem:
+                    `${alvo.nome} ganhou uma vendedora enquanto eu gravava, e eu NÃO ` +
+                    'sobrescrevi. Peça para conferir de quem é agora.',
+                };
+              }
 
-        // O LOG É O QUE TORNA UMA REVERSÃO DETECTÁVEL. A integração atualiza
-        // cliente com frequência; se um dia ela apagar isto, a única forma de
-        // descobrir é ter registrado que nós escrevemos. Sem nome de cliente.
-        this.logger.log(
-          `Carteira atribuida: cliente ${alvo.id} -> vendedora ${codigoDaVendedora}` +
-            (solicitante ? ` (pedido por ${solicitante})` : ''),
-        );
-        return {
-          mensagem:
-            `Pronto: ${alvo.nome} agora está na carteira da ${daVendedora.vendedora}. ` +
-            'Responda com isso, sem alterar nomes.',
-        };
-      },
+              // O LOG É O QUE TORNA UMA REVERSÃO DETECTÁVEL. A integração atualiza
+              // cliente com frequência; se um dia ela apagar isto, a única forma de
+              // descobrir é ter registrado que nós escrevemos. Sem nome de cliente.
+              this.logger.log(
+                `Carteira atribuida: cliente ${alvo.id} -> vendedora ${codigoDaVendedora}` +
+                  (solicitante ? ` (pedido por ${solicitante})` : ''),
+              );
+              return {
+                mensagem:
+                  `Pronto: ${alvo.nome} agora está na carteira da ${daVendedora.vendedora}. ` +
+                  'Responda com isso, sem alterar nomes.',
+              };
+            },
           }
         : {}),
       /**
@@ -1983,7 +2118,12 @@ export class FerramentasGestaoService {
           linhas.push('Nenhuma interação registrada no período.');
         }
 
-        return { status: 'OK' as const, de: janela.de, ate: janela.ate, linhas };
+        return {
+          status: 'OK' as const,
+          de: janela.de,
+          ate: janela.ate,
+          linhas,
+        };
       },
 
       /**
@@ -2026,31 +2166,42 @@ export class FerramentasGestaoService {
           RESPOSTA: () =>
             r.respondeMaisRapido.length
               ? 'Responde mais rápido: ' +
-                r.respondeMaisRapido.map(tempo).join('; ') + '.'
+                r.respondeMaisRapido.map(tempo).join('; ') +
+                '.'
               : 'Ainda não há vendedora com casos suficientes para ranquear tempo de resposta.',
           FECHAMENTO: () =>
             r.fechaMaisRapido.length
               ? 'Fecha venda em menos tempo: ' +
-                r.fechaMaisRapido.map(tempo).join('; ') + '.'
+                r.fechaMaisRapido.map(tempo).join('; ') +
+                '.'
               : 'Nenhum atendimento fechado em venda no período — não dá para ranquear.',
           INTERACOES: () =>
             r.maisInterage.length
               ? 'Mais interage: ' +
                 r.maisInterage
-                  .map((p) => `${p.nome} ${p.valor} interação(ões) em ${p.amostra} atendimento(s)`)
-                  .join('; ') + '.'
+                  .map(
+                    (p) =>
+                      `${p.nome} ${p.valor} interação(ões) em ${p.amostra} atendimento(s)`,
+                  )
+                  .join('; ') +
+                '.'
               : 'Nenhuma interação registrada no período.',
           CONVERSAO: () =>
             r.maisConverte.length
               ? 'Mais converte: ' +
                 r.maisConverte
-                  .map((p) => `${p.nome} ${p.valor}% em ${p.amostra} lead(s) decidido(s)`)
-                  .join('; ') + '.'
+                  .map(
+                    (p) =>
+                      `${p.nome} ${p.valor}% em ${p.amostra} lead(s) decidido(s)`,
+                  )
+                  .join('; ') +
+                '.'
               : 'Nenhuma vendedora tem leads com desfecho suficientes para ranquear conversão.',
           LEADS: () =>
             r.maisLeads.length
               ? 'Recebe mais leads: ' +
-                r.maisLeads.map((p) => contagem(p, 'lead(s)')).join('; ') + '.'
+                r.maisLeads.map((p) => contagem(p, 'lead(s)')).join('; ') +
+                '.'
               : 'Nenhum lead atribuído no período.',
         };
 
@@ -2073,7 +2224,12 @@ export class FerramentasGestaoService {
           );
         }
 
-        return { status: 'OK' as const, de: janela.de, ate: janela.ate, linhas };
+        return {
+          status: 'OK' as const,
+          de: janela.de,
+          ate: janela.ate,
+          linhas,
+        };
       },
 
       /**
@@ -2109,7 +2265,9 @@ export class FerramentasGestaoService {
                   'nunca tenha havido, ou que seja antiga demais e já tenha saído do aparelho.',
               ];
             default:
-              return ['Não consegui ler a conversa agora. Vale tentar de novo.'];
+              return [
+                'Não consegui ler a conversa agora. Vale tentar de novo.',
+              ];
           }
         }),
 
@@ -2134,19 +2292,24 @@ export class FerramentasGestaoService {
 
         const comVendedora = async (
           fn: (id: string | null) => Promise<GestaoLeituraResultado>,
-        ) => (vendedora && vendedora.trim()
-          ? this.comVendedora(equipe, vendedora, async (id) => {
-              const r = await fn(id);
-              return r.status === 'OK' ? r.linhas : [];
-            })
-          : fn(null));
+        ) =>
+          vendedora && vendedora.trim()
+            ? this.comVendedora(equipe, vendedora, async (id) => {
+                const r = await fn(id);
+                return r.status === 'OK' ? r.linhas : [];
+              })
+            : fn(null);
 
         return comVendedora(async (vendedoraId) => {
           const r =
             mes !== undefined && mes >= 1 && mes <= 12
               ? await this.compararAnos.porMes(mes, vendedoraId)
               : recorte
-                ? await this.compararAnos.porPeriodo(recorte.de, recorte.ate, vendedoraId)
+                ? await this.compararAnos.porPeriodo(
+                    recorte.de,
+                    recorte.ate,
+                    vendedoraId,
+                  )
                 : null;
 
           if (r === null) {
@@ -2204,7 +2367,10 @@ export class FerramentasGestaoService {
           ordenados.forEach((a, i) => {
             const anterior = ordenados[i + 1];
             const v = anterior ? variacao(a.receita, anterior.receita) : null;
-            const delta = v === null ? '' : ` (${v > 0 ? '+' : ''}${v}% vs ${anterior.ano})`;
+            const delta =
+              v === null
+                ? ''
+                : ` (${v > 0 ? '+' : ''}${v}% vs ${anterior.ano})`;
             const fechado =
               a.receitaFechada !== null
                 ? `, mês fechado ${moeda(a.receitaFechada)}`
@@ -2240,8 +2406,15 @@ export class FerramentasGestaoService {
 
         const responder = async (vendedoraId: string | null) => {
           const c = recorte
-            ? await this.compararAnterior.porDatas(recorte.de, recorte.ate, vendedoraId)
-            : await this.compararAnterior.porRecorte(periodo ?? 'MES', vendedoraId);
+            ? await this.compararAnterior.porDatas(
+                recorte.de,
+                recorte.ate,
+                vendedoraId,
+              )
+            : await this.compararAnterior.porRecorte(
+                periodo ?? 'MES',
+                vendedoraId,
+              );
 
           const linhas: string[] = [
             `${cap(c.rotulo)}: ${c.atual.clientes} cliente(s), ${c.atual.vendas} ` +
@@ -2258,7 +2431,9 @@ export class FerramentasGestaoService {
 
           const ditas = variacoes
             .filter(([, v]) => v !== null)
-            .map(([nome, v]) => `${(v as number) > 0 ? '+' : ''}${v}% em ${nome}`);
+            .map(
+              ([nome, v]) => `${(v as number) > 0 ? '+' : ''}${v}% em ${nome}`,
+            );
 
           linhas.push(
             ditas.length > 0
@@ -2297,37 +2472,41 @@ export class FerramentasGestaoService {
           // inexistente. Ver `statusDeLead`.
           const pedido = statusDeLead(status);
           const janela = oDiaInteiro(dia);
-          return this.comVendedora(equipe, vendedora, async (_id, codigoErp) => {
-            if (!codigoErp) return [];
-            // ============================================================
-            // A GESTAO VE TUDO — INCLUSIVE O QUE ELA JA RESOLVEU.
-            //
-            // O `false` e o que separa esta leitura da lista DELA. A da
-            // vendedora e uma FILA ("o que eu tenho para fazer") e por isso
-            // esconde o resolvido; esta e uma PRESTACAO DE CONTAS ("como foi
-            // com os leads que mandei"), e ali o resolvido E a resposta.
-            //
-            // Sem isto, perguntar "ele deu baixa em algum?" devolvia "nao tem
-            // nenhum lead" — que e verdade sobre a fila e mentira sobre a
-            // pergunta. Aconteceu em 22/09/2026, com o Lucas do outro lado.
-            // ============================================================
-            const achados = await this.leads.listarPorVendedora(
-              codigoErp,
-              MAXIMO_LEADS + 1,
-              false,
-              { ...(pedido ? { status: pedido } : {}), ...janela },
-            );
-            const linhas = achados
-              .slice(0, MAXIMO_LEADS)
-              .map((l) => linhaDoLead(l, true));
-            // Teto silencioso mente por omissao — ver a licao da carteira.
-            if (achados.length > MAXIMO_LEADS) {
-              linhas.push(
-                `Ha mais de ${MAXIMO_LEADS}; estes sao os mais recentes. Diga isso.`,
+          return this.comVendedora(
+            equipe,
+            vendedora,
+            async (_id, codigoErp) => {
+              if (!codigoErp) return [];
+              // ============================================================
+              // A GESTAO VE TUDO — INCLUSIVE O QUE ELA JA RESOLVEU.
+              //
+              // O `false` e o que separa esta leitura da lista DELA. A da
+              // vendedora e uma FILA ("o que eu tenho para fazer") e por isso
+              // esconde o resolvido; esta e uma PRESTACAO DE CONTAS ("como foi
+              // com os leads que mandei"), e ali o resolvido E a resposta.
+              //
+              // Sem isto, perguntar "ele deu baixa em algum?" devolvia "nao tem
+              // nenhum lead" — que e verdade sobre a fila e mentira sobre a
+              // pergunta. Aconteceu em 22/09/2026, com o Lucas do outro lado.
+              // ============================================================
+              const achados = await this.leads.listarPorVendedora(
+                codigoErp,
+                MAXIMO_LEADS + 1,
+                false,
+                { ...(pedido ? { status: pedido } : {}), ...janela },
               );
-            }
-            return linhas;
-          });
+              const linhas = achados
+                .slice(0, MAXIMO_LEADS)
+                .map((l) => linhaDoLead(l, true));
+              // Teto silencioso mente por omissao — ver a licao da carteira.
+              if (achados.length > MAXIMO_LEADS) {
+                linhas.push(
+                  `Ha mais de ${MAXIMO_LEADS}; estes sao os mais recentes. Diga isso.`,
+                );
+              }
+              return linhas;
+            },
+          );
         }
 
         const [panorama, esperando] = await Promise.all([
@@ -2436,7 +2615,9 @@ export class FerramentasGestaoService {
 
         const sujeito = equipe === null ? 'A loja' : 'A equipe';
         const porEtapa =
-          equipe === null ? r.porEtapa : somarEtapas(daEquipe.map((v) => v.porEtapa));
+          equipe === null
+            ? r.porEtapa
+            : somarEtapas(daEquipe.map((v) => v.porEtapa));
 
         const linhas = [`${sujeito} tem ${fraseDoFunil(total, porEtapa)}.`];
         const esperando = daEquipe.reduce(
@@ -2503,9 +2684,11 @@ export class FerramentasGestaoService {
           total: paginas.reduce((s, p) => s + p.total, 0),
         };
 
-        return { status: 'OK', linhas: [...linhas, ...nomesDoFunil(juntas, true)] };
+        return {
+          status: 'OK',
+          linhas: [...linhas, ...nomesDoFunil(juntas, true)],
+        };
       },
-
     };
   }
 
@@ -2827,7 +3010,9 @@ function etapaAberta(etapa?: string): EtapaAtendimento | undefined {
  * dia e empurrado depois.
  * ==========================================================================
  */
-function oDiaInteiro(dia?: string): { de: Date; ate: Date } | Record<string, never> {
+function oDiaInteiro(
+  dia?: string,
+): { de: Date; ate: Date } | Record<string, never> {
   if (!dia) return {};
   const janela = datasDeRecorte(dia, dia);
   if (!janela) return {};
@@ -3021,9 +3206,7 @@ export function resumoDoDia(
     linhas.push(
       `Marcou ${marcados.length} ${marcados.length === 1 ? 'contato' : 'contatos'}: ` +
         marcados
-          .map(
-            (m) => `${m.cliente ?? 'cliente'} ${formatarQuando(m.quando)}`,
-          )
+          .map((m) => `${m.cliente ?? 'cliente'} ${formatarQuando(m.quando)}`)
           .join('; ') +
         '.',
     );
@@ -3101,6 +3284,39 @@ function linhaDaEpoca(c: {
  * AS PECAS NA MESMA RESPOSTA, e nao numa segunda pergunta: sao 1,6 por venda
  * na media, entao cabem — e "o que ela comprou" e sempre a pergunta seguinte.
  */
+/**
+ * O TÍTULO DO PAPEL SAI DO RECORTE QUE FOI PEDIDO — RF36/RF37, 21/10/2026.
+ *
+ * "Vendas da Camila" e não "Listagem de Vendas": o relatório não tem mais
+ * subtítulo nem chip de filtro, então o título é o único lugar onde cabe
+ * dizer de que recorte aquela tabela é. Quem abre o arquivo três dias depois
+ * precisa saber o que pediu.
+ */
+function tituloDeVendas(
+  cliente?: string | null,
+  vendedora?: string | null,
+  documento?: string | null,
+): string {
+  if (documento?.trim()) return `Venda ${documento.trim()}`;
+  if (cliente?.trim() && vendedora?.trim()) {
+    return `Vendas de ${cliente.trim()} com ${vendedora.trim()}`;
+  }
+  if (cliente?.trim()) return `Vendas de ${cliente.trim()}`;
+  if (vendedora?.trim()) return `Vendas da ${vendedora.trim()}`;
+  return 'Listagem de Vendas';
+}
+
+/** A data e a hora de agora, para o carimbo de posição do relatório. */
+function agoraPorExtenso(): string {
+  return new Date().toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 function linhaDaVenda(v: {
   documento: string | null;
   data: Date;
@@ -3150,7 +3366,7 @@ function linhaDaEmpresa(e: {
   const unidade = e.vendas === 1 ? 'venda' : 'vendas';
   const devolvidas =
     e.devolucoes > 0
-      ? `, ${e.devolucoes} ${e.devolucoes === 1 ? "devolução" : "devoluções"}`
+      ? `, ${e.devolucoes} ${e.devolucoes === 1 ? 'devolução' : 'devoluções'}`
       : '';
   return `${e.empresa}: ${moeda(e.receita)} em ${e.vendas} ${unidade} (ticket ${moeda(ticket)})${devolvidas}`;
 }

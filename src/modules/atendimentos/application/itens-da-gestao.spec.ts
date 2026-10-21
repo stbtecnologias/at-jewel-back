@@ -119,6 +119,8 @@ describe('itens_mais_vendidos e o escopo de quem pergunta', () => {
       // descrevem o roteamento das ferramentas, nao a consulta.
       { entre: jest.fn().mockResolvedValue([]) } as never,
       { listar: jest.fn().mockResolvedValue([]) } as never,
+      // RF36/RF37: guarda a tabela para virar arquivo. Mudo nestes testes.
+      { guardar: jest.fn(), pegar: jest.fn() } as never,
     );
   });
 
@@ -265,6 +267,8 @@ describe('consultar_produtos da gestao e a quantidade', () => {
       // descrevem o roteamento das ferramentas, nao a consulta.
       { entre: jest.fn().mockResolvedValue([]) } as never,
       { listar: jest.fn().mockResolvedValue([]) } as never,
+      // RF36/RF37: guarda a tabela para virar arquivo. Mudo nestes testes.
+      { guardar: jest.fn(), pegar: jest.fn() } as never,
     );
   });
 
@@ -422,6 +426,8 @@ describe('o recorte de equipe nas ferramentas de gestao', () => {
       // descrevem o roteamento das ferramentas, nao a consulta.
       { entre: jest.fn().mockResolvedValue([]) } as never,
       { listar: jest.fn().mockResolvedValue([]) } as never,
+      // RF36/RF37: guarda a tabela para virar arquivo. Mudo nestes testes.
+      { guardar: jest.fn(), pegar: jest.fn() } as never,
     );
   });
 
@@ -737,6 +743,8 @@ describe('o periodo livre nas ferramentas de venda', () => {
       // descrevem o roteamento das ferramentas, nao a consulta.
       { entre: jest.fn().mockResolvedValue([]) } as never,
       { listar: jest.fn().mockResolvedValue([]) } as never,
+      // RF36/RF37: guarda a tabela para virar arquivo. Mudo nestes testes.
+      { guardar: jest.fn(), pegar: jest.fn() } as never,
     );
   });
 
@@ -892,6 +900,8 @@ describe('o ranking por tipo de peça', () => {
       // descrevem o roteamento das ferramentas, nao a consulta.
       { entre: jest.fn().mockResolvedValue([]) } as never,
       { listar: jest.fn().mockResolvedValue([]) } as never,
+      // RF36/RF37: guarda a tabela para virar arquivo. Mudo nestes testes.
+      { guardar: jest.fn(), pegar: jest.fn() } as never,
     );
   });
 

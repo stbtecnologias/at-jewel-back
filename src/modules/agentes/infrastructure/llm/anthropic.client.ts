@@ -12,6 +12,7 @@ import {
 import { siglasEmTexto } from '../../../../shared/catalogo/sinonimos';
 import { ConfigService } from '@nestjs/config';
 import type {
+  ArquivoDoAgenteLlm,
   ChatComFerramentasResultado,
   ChatParams,
   GestaoLeituraResultado,
@@ -576,6 +577,43 @@ const GESTAO_POR_EMPRESA_TOOL: Anthropic.Tool = {
  * As PECAS vem junto, sem precisar de uma segunda pergunta — "e o que ela
  * comprou?" e sempre o que vem depois.
  */
+/**
+ * MANDAR EM PDF OU PLANILHA — RF36 e RF37, 21/10/2026.
+ *
+ * ==========================================================================
+ * ELA NAO RECEBE DADOS, E ISSO E O DESENHO INTEIRO.
+ *
+ * O modelo diz o FORMATO e, se quiser, o TITULO. A tabela vem do que a
+ * ferramenta anterior guardou — a mesma que acabou de responder na tela.
+ * Decisao do Lucas em 24/09: "o modelo decide o que vai no papel; o dado nao
+ * passa por ele".
+ *
+ * A descricao diz "a ULTIMA lista" de proposito: sem isso o modelo tenta
+ * usa-la para qualquer coisa, inclusive para o que nunca foi consultado.
+ * ==========================================================================
+ */
+const MANDAR_RELATORIO_TOOL: Anthropic.Tool = {
+  name: 'mandar_relatorio',
+  description:
+    'Manda a ULTIMA lista consultada como arquivo na conversa — PDF para ver e repassar, planilha para trabalhar (ordenar, filtrar, somar). Use quando pedirem "manda em pdf", "me manda a planilha", "exporta isso", "manda esse relatorio". NAO use para montar lista nova: consulte primeiro e so entao ofereca o arquivo. Se nao houver lista recente, a ferramenta avisa e voce diz que precisa consultar antes.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      formato: {
+        type: 'string',
+        enum: ['PDF', 'PLANILHA'],
+        description: 'PDF para ler e repassar; PLANILHA (xlsx) para trabalhar os numeros.',
+      },
+      titulo: {
+        type: 'string',
+        description:
+          'Titulo do documento, curto e dizendo o recorte: "Vendas da Camila em outubro". Omita para usar o titulo que a consulta ja tinha.',
+      },
+    },
+    required: ['formato'],
+  },
+};
+
 const GESTAO_VENDAS_DETALHADAS_TOOL: Anthropic.Tool = {
   name: 'vendas_detalhadas',
   description:
@@ -1889,6 +1927,7 @@ export class AnthropicClient implements ILlmClient {
       );
     }
     if (params.gestaoVendasDetalhadas) tools.push(GESTAO_VENDAS_DETALHADAS_TOOL);
+    if (params.mandarRelatorio) tools.push(MANDAR_RELATORIO_TOOL);
     // SO PARA QUEM VE A LOJA. O faturamento do grupo nao tem versao estreita,
     // entao a ferramenta nao e oferecida em vez de ser oferecida e recusada.
     if (params.gestaoPorEmpresa && params.gestaoPorEmpresaDisponivel) {
@@ -1983,6 +2022,8 @@ export class AnthropicClient implements ILlmClient {
     // As fotos das pecas, se a busca encontrou alguma. Mesmo desenho do
     // grafico: artefato que nao cabe no dialogo e viaja por fora.
     let fotos: FotoDeProdutoLlm[] | undefined;
+    // O arquivo pedido, pelo mesmo caminho das fotos.
+    let arquivo: ArquivoDoAgenteLlm | undefined;
     const conversa: Anthropic.MessageParam[] = [...apiMessages];
     let resp = first;
 
@@ -2000,6 +2041,7 @@ export class AnthropicClient implements ILlmClient {
           tokens,
           grafico,
           fotos,
+          arquivo,
           ...(texto ? {} : { semTexto: motivoDoVazio(resp.stop_reason) }),
         };
       }
@@ -2011,6 +2053,9 @@ export class AnthropicClient implements ILlmClient {
       // A ULTIMA BUSCA VENCE, como no grafico: se ela refinou a pergunta, as
       // fotos que vao junto sao as da lista que ela acabou de receber.
       fotos = rodada.fotos ?? fotos;
+      // O ULTIMO PEDIDO VENCE tambem aqui: se ela pediu PDF e depois planilha,
+      // vai a planilha — e nao os dois.
+      arquivo = rodada.arquivo ?? arquivo;
 
       // ====================================================================
       // O TETO NAO DESCARTA PEDIDO EM SILENCIO — foi esse o defeito.
@@ -2073,6 +2118,7 @@ export class AnthropicClient implements ILlmClient {
     tetos: TetosPorTurno,
   ): Promise<{
     toolResults: Anthropic.ToolResultBlockParam[];
+    arquivo?: ArquivoDoAgenteLlm;
     grafico?: GraficoDinamico;
     fotos?: FotoDeProdutoLlm[];
   }> {
@@ -2081,6 +2127,8 @@ export class AnthropicClient implements ILlmClient {
     let grafico: GraficoDinamico | undefined;
     let fotos: FotoDeProdutoLlm[] | undefined;
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
+    // O ARQUIVO viaja por fora do dialogo, como o grafico e as fotos.
+    let arquivo: ArquivoDoAgenteLlm | undefined;
 
     for (const toolUse of toolUses) {
       if (toolUse.name === 'gerar_grafico') {
@@ -3193,6 +3241,12 @@ export class AnthropicClient implements ILlmClient {
             );
           }),
         );
+      } else if (toolUse.name === 'mandar_relatorio' && params.mandarRelatorio) {
+        toolResults.push(
+          await this.executarMandarRelatorio(toolUse, params.mandarRelatorio, (a) => {
+            arquivo = a;
+          }),
+        );
       } else if (
         toolUse.name === 'vendas_detalhadas' &&
         params.gestaoVendasDetalhadas
@@ -3391,7 +3445,7 @@ export class AnthropicClient implements ILlmClient {
         : r,
     );
 
-    return { toolResults: resultadosSeguros, grafico, fotos };
+    return { toolResults: resultadosSeguros, grafico, fotos, arquivo };
   }
 
 
@@ -3402,6 +3456,36 @@ export class AnthropicClient implements ILlmClient {
    * meta?") e uso legitimo. Falha vira tool_result de erro, e o modelo se
    * recupera na conversa em vez de derrubar a resposta inteira.
    */
+  /**
+   * Executa o `mandar_relatorio`.
+   *
+   * O ARQUIVO NAO VOLTA NO `tool_result`: ele sai por fora, e o que o modelo
+   * recebe e so a confirmacao. Mandar bytes pelo dialogo seria pagar o
+   * arquivo inteiro em token, duas vezes — na ida e no historico.
+   */
+  private async executarMandarRelatorio(
+    toolUse: Anthropic.ToolUseBlock,
+    handler: NonNullable<ChatParams['mandarRelatorio']>,
+    guardar: (a: ArquivoDoAgenteLlm) => void,
+  ): Promise<Anthropic.ToolResultBlockParam> {
+    return this.executarLeitura(toolUse, async () => {
+      const input = toolUse.input as { formato?: string; titulo?: string };
+      // VALIDADO, NUNCA CONVERTIDO: formato que o modelo invente nao vira
+      // renderizador. Fora de PDF/PLANILHA, cai em PDF, que e o pedido mais
+      // comum e o que se abre em qualquer lugar.
+      const formato = input.formato === 'PLANILHA' ? 'PLANILHA' : 'PDF';
+      const a = await handler({ formato, titulo: input.titulo ?? null });
+      if (!a) {
+        return (
+          'Nao ha nenhuma lista recente para mandar. Diga que precisa consultar ' +
+          'primeiro, e pergunte o que ela quer ver.'
+        );
+      }
+      guardar(a);
+      return `O arquivo ${a.nome} foi enviado na conversa. Diga em uma frase curta que mandou, e NAO repita a lista.`;
+    });
+  }
+
   private async executarLeitura(
     toolUse: Anthropic.ToolUseBlock,
     corpo: () => Promise<string>,

@@ -149,6 +149,8 @@ describe('FerramentasGestaoService', () => {
       // O ponteiro de conversas vivas (29/09) — o `conversas_agora`.
       conversas as never,
       { listar: jest.fn().mockResolvedValue([]) } as never,
+      // RF36/RF37: guarda a tabela para virar arquivo. Mudo nestes testes.
+      { guardar: jest.fn(), pegar: jest.fn() } as never,
     );
   });
 

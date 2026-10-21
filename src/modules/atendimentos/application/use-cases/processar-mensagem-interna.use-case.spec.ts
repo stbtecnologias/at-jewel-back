@@ -114,6 +114,8 @@ describe('ProcessarMensagemInternaUseCase', () => {
       // A consulta de vendas (13/10) nao e exercitada aqui — entra no duble
       // porque o construtor a exige.
       { pecasPorFaixa: jest.fn() } as never,
+      // RF36/RF37: guarda a tabela para virar arquivo. Mudo nestes testes.
+      { guardar: jest.fn(), pegar: jest.fn() } as never,
     );
 
     useCase = new ProcessarMensagemInternaUseCase(
@@ -136,6 +138,8 @@ describe('ProcessarMensagemInternaUseCase', () => {
       { get: jest.fn(() => undefined) } as unknown as ConfigService,
       eventos as never,
       new SessaoCatalogoService(),
+      // RF36/RF37: o montador de arquivo. Mudo aqui.
+      { execute: async () => null } as never,
     );
   });
 
@@ -575,6 +579,8 @@ describe('ProcessarMensagemInternaUseCase', () => {
         { get: jest.fn(() => undefined) } as never,
         { execute: jest.fn() } as never,
         new SessaoCatalogoService(),
+      // RF36/RF37: o montador de arquivo. Mudo aqui.
+      { execute: async () => null } as never,
       );
       return { instancia, chamada, lembretes };
     }

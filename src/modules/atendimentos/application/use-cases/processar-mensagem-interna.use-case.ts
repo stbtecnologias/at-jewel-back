@@ -1,6 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { respostaQuandoNaoVeioTexto } from '../resposta-sem-texto';
 import type { FotoDeProduto } from '../fotos-de-produto.service';
+import {
+  MontarArquivoUseCase,
+  type ArquivoDoAgente,
+} from '../../../relatorios/application/montar-arquivo.use-case';
 import { ConfigService } from '@nestjs/config';
 import { limparEHigienizar } from '../../../../shared/http/sanitize/sanitize-text.transform';
 import {
@@ -76,6 +80,8 @@ export interface RespostaInterna {
     | 'falha_agente';
   /** Ver `RespostaDoCanal.fotos` — vao depois do texto, quando existirem. */
   fotos?: FotoDeProduto[];
+  /** Ver `RespostaDoCanal.arquivo` — o PDF ou a planilha que ela pediu. */
+  arquivo?: ArquivoDoAgente;
 }
 
 /**
@@ -140,6 +146,8 @@ export class ProcessarMensagemInternaUseCase {
     // motivo de sempre: parametro novo no meio quebra os testes que constroem
     // este caso de uso a mao.
     private readonly sessao: SessaoCatalogoService,
+    // RF36 e RF37 — quem transforma a ultima resposta em PDF ou planilha.
+    private readonly montarArquivo: MontarArquivoUseCase,
   ) {}
 
   async execute(msg: MensagemInterna): Promise<RespostaInterna> {
@@ -148,7 +156,9 @@ export class ProcessarMensagemInternaUseCase {
 
     if (!vendedora?.id) {
       // Nao logamos o numero: e PII, e o log e o lugar mais facil de vazar.
-      this.logger.debug('Mensagem interna de remetente nao reconhecido — ignorada.');
+      this.logger.debug(
+        'Mensagem interna de remetente nao reconhecido — ignorada.',
+      );
       return { resposta: null, motivo: 'ignorado_remetente_desconhecido' };
     }
 
@@ -222,59 +232,71 @@ export class ProcessarMensagemInternaUseCase {
     await this.registrarConsultaRestrita(vendedoraId, pergunta);
 
     try {
-      const { texto, fotos, semTexto } = await this.llm.chatComFerramentas({
-        model: modeloDeIa(this.config, 'ANTHROPIC_MODEL_INTERNO', 'claude-opus-4-8'),
-        system,
-        // O TETO SUBIU DE 700 PARA 1500 — 05/10/2026.
-        //
-        // Setecentos foi escolhido quando a resposta mais longa era um
-        // panorama de poucas linhas. Hoje a agente lista vinte clientes com
-        // nome e data (cerca de 450 tokens), e a quebra por tipo engordou a
-        // linha de cada vendedora. Uma lista de vinte ja raspava o teto.
-        //
-        // E O CORTE E SILENCIOSO: o cliente do LLM so reclama de
-        // `stop_reason` quando a resposta vem SEM TEXTO. Resposta truncada
-        // no meio do decimo quinto nome chega inteira do ponto de vista do
-        // codigo, e vira "a agente esqueceu o resto" para quem le.
-        maxTokens: 1500,
-        mensagens: [...historico, { role: 'user', content: pergunta }],
-        // WhatsApp nao renderiza grafico. Oferecer a ferramenta so convida o
-        // modelo a tentar e depois se desculpar.
-        graficos: false,
-        // AS FERRAMENTAS VEM DO SERVICO — o MESMO que a Elena do painel usa.
-        // Aqui fica so o que e proprio do WhatsApp: quem esta falando (por
-        // closure, do telefone resolvido), a memoria e a ausencia de grafico.
-        // ================================================================
-        // QUEM TAMBEM GERENCIA RECEBE OS DOIS CONJUNTOS — 07/10/2026.
-        //
-        // A Nathalia e gerente de vendas E vendedora, com um numero so: o
-        // da Helena. Antes disto, metade do trabalho dela nao tinha canal
-        // — ela via a propria carteira e nao via a equipe.
-        //
-        // A ORDEM NAO ARBITRA NADA. Onde os dois conjuntos usam o MESMO
-        // nome de ferramenta — `consultar_produtos` e `clientes_por_epoca`
-        // —, quem decide e o cliente do LLM, que declara a versao da
-        // vendedora quando as duas chaves estao presentes. Ver os
-        // `!params.consultarProdutos` em `anthropic.client.ts`.
-        //
-        // E O ESCOPO CONTINUA O DA GESTAO: equipe, `verLoja` e
-        // `verQuantidade` saem do papel dela, pelo MESMO servico que a
-        // Anastasia usa. Nenhuma regra e reescrita aqui.
-        // ================================================================
-        ...deGestao,
-        ...this.ferramentas.montar({
-          vendedoraId,
-          codigoErp,
-          // A frase ORIGINAL habilita o relato — ver ContextoVendedora.
-          textoOriginal: textoDaMensagem,
-          aoRegistrarRelato: () => {
-            relatoRegistrado = true;
-          },
-          // RF33 — a peca de que a conversa acabou de falar. Quem sabe o chat
-          // e quem monta as ferramentas; o caso de uso nao conhece sessao.
-          aoFalarDePeca: (peca) => this.sessao.lembrarPecaFalada(msg.de, peca),
-        }),
-      });
+      const { texto, fotos, arquivo, semTexto } =
+        await this.llm.chatComFerramentas({
+          model: modeloDeIa(
+            this.config,
+            'ANTHROPIC_MODEL_INTERNO',
+            'claude-opus-4-8',
+          ),
+          system,
+          // O TETO SUBIU DE 700 PARA 1500 — 05/10/2026.
+          //
+          // Setecentos foi escolhido quando a resposta mais longa era um
+          // panorama de poucas linhas. Hoje a agente lista vinte clientes com
+          // nome e data (cerca de 450 tokens), e a quebra por tipo engordou a
+          // linha de cada vendedora. Uma lista de vinte ja raspava o teto.
+          //
+          // E O CORTE E SILENCIOSO: o cliente do LLM so reclama de
+          // `stop_reason` quando a resposta vem SEM TEXTO. Resposta truncada
+          // no meio do decimo quinto nome chega inteira do ponto de vista do
+          // codigo, e vira "a agente esqueceu o resto" para quem le.
+          maxTokens: 1500,
+          mensagens: [...historico, { role: 'user', content: pergunta }],
+          // WhatsApp nao renderiza grafico. Oferecer a ferramenta so convida o
+          // modelo a tentar e depois se desculpar.
+          graficos: false,
+          // AS FERRAMENTAS VEM DO SERVICO — o MESMO que a Elena do painel usa.
+          // Aqui fica so o que e proprio do WhatsApp: quem esta falando (por
+          // closure, do telefone resolvido), a memoria e a ausencia de grafico.
+          // ================================================================
+          // QUEM TAMBEM GERENCIA RECEBE OS DOIS CONJUNTOS — 07/10/2026.
+          //
+          // A Nathalia e gerente de vendas E vendedora, com um numero so: o
+          // da Helena. Antes disto, metade do trabalho dela nao tinha canal
+          // — ela via a propria carteira e nao via a equipe.
+          //
+          // A ORDEM NAO ARBITRA NADA. Onde os dois conjuntos usam o MESMO
+          // nome de ferramenta — `consultar_produtos` e `clientes_por_epoca`
+          // —, quem decide e o cliente do LLM, que declara a versao da
+          // vendedora quando as duas chaves estao presentes. Ver os
+          // `!params.consultarProdutos` em `anthropic.client.ts`.
+          //
+          // E O ESCOPO CONTINUA O DA GESTAO: equipe, `verLoja` e
+          // `verQuantidade` saem do papel dela, pelo MESMO servico que a
+          // Anastasia usa. Nenhuma regra e reescrita aqui.
+          // ================================================================
+          ...deGestao,
+          // MANDAR EM ARQUIVO — RF36 e RF37, e vale aqui pelo mesmo motivo que
+          // vale na gestao: "tanto a gestao com a Anastasia como a Helena".
+          mandarRelatorio: async ({ formato, titulo }) =>
+            this.montarArquivo.execute(chave, formato, { titulo }),
+          ...this.ferramentas.montar({
+            vendedoraId,
+            codigoErp,
+            // Liga a consulta de agora ao "manda em PDF" de daqui a pouco.
+            chaveDaConversa: chave,
+            // A frase ORIGINAL habilita o relato — ver ContextoVendedora.
+            textoOriginal: textoDaMensagem,
+            aoRegistrarRelato: () => {
+              relatoRegistrado = true;
+            },
+            // RF33 — a peca de que a conversa acabou de falar. Quem sabe o chat
+            // e quem monta as ferramentas; o caso de uso nao conhece sessao.
+            aoFalarDePeca: (peca) =>
+              this.sessao.lembrarPecaFalada(msg.de, peca),
+          }),
+        });
 
       // ==================================================================
       // RESPOSTA SEM TEXTO NAO PODE VIRAR SILENCIO — 09/10/2026.
@@ -306,6 +328,8 @@ export class ProcessarMensagemInternaUseCase {
         motivo: relatoRegistrado ? 'relato_registrado' : 'conversa',
         // Ver `RespostaDoCanal.fotos`: vao junto, depois do texto.
         fotos,
+        // E o arquivo, por ultimo — ver `RespostaDoCanal.arquivo`.
+        arquivo,
       };
     } catch (err) {
       this.logger.error(
@@ -357,7 +381,9 @@ export class ProcessarMensagemInternaUseCase {
       conteudo: arquivo.conteudo,
       // O content-type do download e mais confiavel que o do payload, mas se
       // vier generico o do payload vale mais.
-      mimetype: arquivo.mimetype.startsWith('audio') ? arquivo.mimetype : mimetype,
+      mimetype: arquivo.mimetype.startsWith('audio')
+        ? arquivo.mimetype
+        : mimetype,
     });
 
     if (!texto) return null;
@@ -480,12 +506,15 @@ export class ProcessarMensagemInternaUseCase {
   }
 
   private async montarContextoPendencia(vendedoraId: string): Promise<string> {
-    const pendencia = await this.atendimentos.buscarCobrancaAguardando(vendedoraId);
+    const pendencia =
+      await this.atendimentos.buscarCobrancaAguardando(vendedoraId);
     if (!pendencia) {
       return 'Não há retorno pendente dela no momento — ninguém está esperando relato de contato. Não use a ferramenta registrar_relato.';
     }
 
-    const cliente = await this.clientes.buscarPorId(pendencia.atendimento.clienteId);
+    const cliente = await this.clientes.buscarPorId(
+      pendencia.atendimento.clienteId,
+    );
     const nome = cliente?.nome ?? 'um cliente';
 
     return (
@@ -507,7 +536,10 @@ function moeda(v: number): string {
 /** "hoje às 15:00", "amanhã às 10:00", "sexta-feira às 09:30", "28/08 às 14:00". */
 function formatarQuando(d: Date): string {
   const agora = new Date();
-  const hora = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const hora = d.toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 
   const soDia = (x: Date) =>
     new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
@@ -529,6 +561,9 @@ function agoraLocal(): string {
     month: '2-digit',
     year: 'numeric',
   });
-  const hora = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const hora = agora.toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
   return `${dia}, ${hora}`;
 }

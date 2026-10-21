@@ -223,6 +223,33 @@ export class WhatsappWebhookController {
           );
         }
       }
+
+      // ======================================================================
+      // E ENTAO O ARQUIVO — RF36 e RF37, 21/10/2026.
+      //
+      // Por ultimo de proposito, e pela mesma razao das fotos: o texto e a
+      // resposta, o arquivo e o complemento. Se o envio falhar, ela ja leu o
+      // que perguntou — e o `catch` proprio garante que uma falha aqui nao
+      // derrube a resposta que ja saiu.
+      //
+      // Quase sempre nao ha arquivo nenhum: so existe quando ela PEDIU.
+      // ======================================================================
+      if (resultado.arquivo) {
+        try {
+          await this.whatsapp.enviarArquivo(
+            de,
+            resultado.arquivo.conteudo,
+            resultado.arquivo.mime,
+            resultado.arquivo.nome,
+            resultado.arquivo.legenda,
+            agente,
+          );
+        } catch (err) {
+          this.logger.warn(
+            `Arquivo ${resultado.arquivo.nome} nao foi enviado: ${String(err)}`,
+          );
+        }
+      }
       // Fora de producao, devolve a resposta gerada para facilitar debug do
       // webhook (atras do token; e a mensagem da propria agente, nao PII).
       const debug =

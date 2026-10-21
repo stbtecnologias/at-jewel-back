@@ -1205,6 +1205,23 @@ export interface ChatParams {
   // Idem para `consultar_vendas` e `consultar_metas`.
   consultarVendas?: ConsultarVendasHandler;
   consultarMetas?: ConsultarMetasHandler;
+  /**
+   * MANDAR A ULTIMA RESPOSTA EM ARQUIVO — RF36 e RF37, 21/10/2026.
+   *
+   * ======================================================================
+   * O MODELO ESCOLHE O FORMATO E O TITULO. O DADO NAO PASSA POR ELE.
+   *
+   * Decisao do Lucas em 24/09, quando havia dois caminhos: ou o modelo
+   * redigita a tabela dentro do arquivo — e ai a Camila tem 4 contatos e o
+   * PDF sai com 3 —, ou o arquivo e montado do RESULTADO DA FERRAMENTA. Ele
+   * escolheu o segundo.
+   *
+   * Entao este handler nao RECEBE dados: ele pega o que a ferramenta
+   * anterior guardou, e devolve o arquivo pronto. `null` quando nao ha nada
+   * guardado — e ai a agente diz isso, em vez de inventar um papel vazio.
+   * ======================================================================
+   */
+  mandarRelatorio?: MandarRelatorioHandler;
   // Idem para `consultar_produtos`.
   consultarProdutos?: ConsultarProdutosHandler;
   // Idem para `consultar_minha_carteira`.
@@ -1294,6 +1311,19 @@ export interface ChatResultado {
   tokens: number;
 }
 
+/** O que o `mandar_relatorio` devolve, pronto para o gateway enviar. */
+export interface ArquivoDoAgenteLlm {
+  conteudo: Buffer;
+  mime: string;
+  nome: string;
+  legenda: string;
+}
+
+export type MandarRelatorioHandler = (p: {
+  formato: 'PDF' | 'PLANILHA';
+  titulo?: string | null;
+}) => Promise<ArquivoDoAgenteLlm | null>;
+
 export interface ChatComFerramentasResultado extends ChatResultado {
   grafico?: GraficoDinamico;
   /**
@@ -1308,6 +1338,14 @@ export interface ChatComFerramentasResultado extends ChatResultado {
    * depois da resposta.
    */
   fotos?: FotoDeProdutoLlm[];
+  /**
+   * O ARQUIVO PEDIDO, JA RENDERIZADO — RF36 e RF37, 21/10/2026.
+   *
+   * Mesmo desenho do `grafico` e das `fotos`: a ferramenta produz um
+   * artefato que nao cabe no texto, e ele viaja por fora do dialogo ate quem
+   * sabe envia-lo. Vai DEPOIS do texto, como as fotos.
+   */
+  arquivo?: ArquivoDoAgenteLlm;
   /**
    * POR QUE A RESPOSTA VEIO SEM TEXTO — 09/10/2026.
    *
