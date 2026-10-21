@@ -38,9 +38,28 @@ describe('o molde do relatório', () => {
     ...over,
   });
 
+  /** Quantas folhas o PDF tem — contadas no proprio arquivo. */
+  const paginas = (b: Buffer): number =>
+    (b.toString('latin1').match(/\/Type\s*\/Page[^s]/g) ?? []).length;
+
   it('gera um PDF de verdade', async () => {
     const bytes = await pdf.gerar(base());
     expect(bytes.subarray(0, 5).toString()).toBe('%PDF-');
+  });
+
+  // ==========================================================================
+  // DUAS LINHAS CABEM EM UMA FOLHA — e em 21/10 sairam em TRES.
+  //
+  // O pdfkit vira a pagina sozinho quando o texto cruzaria a margem de baixo,
+  // e o rodape e escrito exatamente ali. Cada frase dele criava uma pagina
+  // nova, que nascia com rodape, que criava outra.
+  // ==========================================================================
+  it('duas linhas saem em UMA pagina', async () => {
+    expect(paginas(await pdf.gerar(base()))).toBe(1);
+  });
+
+  it('e em paisagem tambem', async () => {
+    expect(paginas(await pdf.gerar(base({ paisagem: true })))).toBe(1);
   });
 
   it('gera uma planilha de verdade', async () => {

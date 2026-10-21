@@ -113,11 +113,18 @@ export class RelatorioPdfService {
 
     if (r.total) y = this.linhaDeTotal(doc, r.colunas, larguras, r.total, y);
     if (r.nota) {
-      doc
-        .font('Helvetica')
-        .fontSize(7.5)
-        .fillColor(COR.claro)
-        .text(r.nota, MARGEM, y + 12, { width: this.util });
+      // SEM QUEBRA, pelo mesmo motivo do rodape: a nota fica perto do pe da
+      // folha, e uma linha a mais criaria uma pagina so para ela.
+      this.noRodape(doc, () => {
+        doc
+          .font('Helvetica')
+          .fontSize(7.5)
+          .fillColor(COR.claro)
+          .text(r.nota ?? '', MARGEM, y + 12, {
+            width: this.util,
+            lineBreak: false,
+          });
+      });
     }
 
     this.rodape(doc, r);
@@ -356,38 +363,66 @@ export class RelatorioPdfService {
     return y + ALTURA_LINHA + 6;
   }
 
+  /**
+   * DESENHA SEM DEIXAR O PDFKIT VIRAR A PÁGINA — 21/10/2026.
+   *
+   * ========================================================================
+   * UM PDF DE DUAS LINHAS SAIU COM TRÊS PÁGINAS, e a causa era o RODAPÉ.
+   *
+   * O pdfkit vira a página sozinho quando o texto cruzaria a margem de
+   * baixo. O rodapé é escrito exatamente ali — é o que ele é —, então cada
+   * uma das duas frases dele criava uma página nova, e a nova nascia com
+   * rodapé, que criava outra. Duas linhas de tabela viravam três folhas.
+   *
+   * Zerando a margem de baixo durante o desenho, o rodapé ocupa o lugar dele
+   * e ninguém vira nada. A margem volta logo em seguida, porque a quebra
+   * automática ainda é o que queremos para o resto.
+   * ========================================================================
+   */
+  private noRodape(doc: PDFKit.PDFDocument, desenhar: () => void): void {
+    const antes = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
+    try {
+      desenhar();
+    } finally {
+      doc.page.margins.bottom = antes;
+    }
+  }
+
   /** O rodapé, com o aviso — em TODA página. Ver o porquê no contrato. */
   private rodape(doc: PDFKit.PDFDocument, r: Relatorio): void {
-    const y = this.altura - MARGEM - 6;
-    doc
-      .moveTo(MARGEM, y - 10)
-      .lineTo(this.largura - MARGEM, y - 10)
-      .lineWidth(0.4)
-      .strokeColor(COR.linha)
-      .stroke();
-    doc
-      .font('Helvetica')
-      .fontSize(6.5)
-      .fillColor(COR.claro)
-      .text(AVISO_INTERNO, MARGEM, y, { width: this.util * 0.6 });
+    this.noRodape(doc, () => {
+      const y = this.altura - MARGEM - 6;
+      doc
+        .moveTo(MARGEM, y - 10)
+        .lineTo(this.largura - MARGEM, y - 10)
+        .lineWidth(0.4)
+        .strokeColor(COR.linha)
+        .stroke();
+      doc
+        .font('Helvetica')
+        .fontSize(6.5)
+        .fillColor(COR.claro)
+        .text(AVISO_INTERNO, MARGEM, y, { width: this.util * 0.6 });
 
-    const quando = new Date().toLocaleString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
+      const quando = new Date().toLocaleString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      doc
+        .font('Courier')
+        .fontSize(6.5)
+        .fillColor(COR.claro)
+        .text(
+          `Gerado em ${quando}${r.geradoPor ? ` por ${r.geradoPor}` : ''}`,
+          MARGEM,
+          y,
+          { width: this.util, align: 'right' },
+        );
     });
-    doc
-      .font('Courier')
-      .fontSize(6.5)
-      .fillColor(COR.claro)
-      .text(
-        `Gerado em ${quando}${r.geradoPor ? ` por ${r.geradoPor}` : ''}`,
-        MARGEM,
-        y,
-        { width: this.util, align: 'right' },
-      );
   }
 
   private align(c: ColunaDoRelatorio): 'left' | 'right' | 'center' {
