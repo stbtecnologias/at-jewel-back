@@ -761,7 +761,10 @@ export class FerramentasGestaoService {
           ],
           linhas: r.vendas.map((v) => ({
             data: v.data.toLocaleDateString('pt-BR'),
-            documento: v.documento ?? '—',
+            // COAGIDO: o documento vem NUMERO do Postgres, e foi ele que
+            // derrubou o primeiro PDF de verdade em 21/10. O renderizador ja
+            // se protege; aqui o tipo volta a dizer a verdade.
+            documento: v.documento ? String(v.documento) : '—',
             cliente: v.cliente ?? '—',
             pecas:
               v.itens

@@ -145,9 +145,10 @@ export class RelatorioPdfService {
    */
   private cortar(
     doc: PDFKit.PDFDocument,
-    texto: string,
+    bruto: unknown,
     largura: number,
   ): string {
+    const texto = texto_(bruto);
     if (doc.widthOfString(texto) <= largura) return texto;
     let fim = texto.length;
     while (fim > 1 && doc.widthOfString(`${texto.slice(0, fim)}…`) > largura) {
@@ -278,7 +279,7 @@ export class RelatorioPdfService {
     let x = MARGEM;
     colunas.forEach((c, i) => {
       const util = larguras[i] - 16;
-      const bruto = linha[c.chave] ?? '';
+      const bruto = texto_(linha[c.chave]);
       doc.font(c.mono ? 'Courier' : 'Helvetica').fontSize(8);
 
       // ==================================================================
@@ -336,7 +337,7 @@ export class RelatorioPdfService {
     let x = MARGEM;
     colunas.forEach((c, i) => {
       const util = larguras[i] - 16;
-      const texto = total[c.chave] ?? '';
+      const texto = texto_(total[c.chave]);
       // A LINHA DE TOTAL É SÓ NÚMERO, e vale a mesma regra da célula:
       // encolhe, nunca corta. Um total com "…" seria o pior dos dois mundos —
       // o número que resume a página, errado.
@@ -396,4 +397,27 @@ export class RelatorioPdfService {
         ? 'center'
         : 'left';
   }
+}
+
+/**
+ * O VALOR DA CÉLULA, GARANTIDAMENTE TEXTO — 21/10/2026.
+ *
+ * ==========================================================================
+ * O CONTRATO DIZIA `Record<string, string>`, E EU ACREDITEI NELE.
+ *
+ * O primeiro "manda em PDF" de verdade explodiu com `texto.slice is not a
+ * function`: o número do documento da venda vem do Postgres como NÚMERO, e o
+ * TypeScript não tem como saber disso — ele confere o que foi declarado, e o
+ * que foi declarado era uma promessa de quem preencheu.
+ *
+ * A guarda fica AQUI, e não em cada relatório, porque relatório novo é
+ * exatamente o lugar onde alguém vai esquecer. Este é o funil por onde todas
+ * as células passam — a mesma razão da guarda de `tool_result` vazio.
+ * ==========================================================================
+ *
+ * `null` e `undefined` viram vazio, e não "null" escrito na tabela.
+ */
+function texto_(v: unknown): string {
+  if (v === null || v === undefined) return '';
+  return typeof v === 'string' ? v : String(v);
 }

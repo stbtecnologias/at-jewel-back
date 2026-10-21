@@ -76,7 +76,8 @@ export class RelatorioXlsxService {
     for (const dados of r.linhas) {
       colunas.forEach((col, i) => {
         const c = aba.getCell(linha, i + 1);
-        const bruto = dados[col.chave] ?? '';
+        // COAGIDO: a celula pode vir numero do banco — ver `numeroDe`.
+        const bruto = String(dados[col.chave] ?? '');
         const n = numeroDe(bruto);
         if (n === null) {
           c.value = bruto;
@@ -100,7 +101,7 @@ export class RelatorioXlsxService {
     if (r.total) {
       colunas.forEach((col, i) => {
         const c = aba.getCell(linha, i + 1);
-        const bruto = r.total?.[col.chave] ?? '';
+        const bruto = String(r.total?.[col.chave] ?? '');
         const n = numeroDe(bruto);
         c.value = n === null ? bruto : n;
         if (n !== null) {
@@ -166,7 +167,12 @@ export class RelatorioXlsxService {
  * ordem destes dois `replace` transforma mil e duzentos em um vírgula dois.
  * ==========================================================================
  */
-export function numeroDe(texto: string): number | null {
+export function numeroDe(valor: unknown): number | null {
+  // JA VEM NUMERO AS VEZES: o documento da venda sai do Postgres assim, e foi
+  // o que derrubou o primeiro "manda a planilha" de verdade.
+  if (typeof valor === 'number') return Number.isFinite(valor) ? valor : null;
+  if (typeof valor !== 'string') return null;
+  const texto = valor;
   const limpo = texto
     .replace(/R\$|%|\s/g, '')
     .replace(/ /g, '')
