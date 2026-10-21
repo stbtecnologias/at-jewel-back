@@ -262,6 +262,8 @@ async function rodar(
     { get: () => modelo } as never,
       // RF36/RF37: o montador de arquivo. Mudo aqui.
       { execute: async () => null } as never,
+      // RF36/RF37: o guarda do ultimo relatorio. Mudo aqui.
+      { guardar: jest.fn(), pegar: jest.fn(), envelhecer: jest.fn() } as never,
   );
 
   try {

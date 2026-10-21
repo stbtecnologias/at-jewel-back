@@ -1321,7 +1321,6 @@ export interface ArquivoDoAgenteLlm {
 
 export type MandarRelatorioHandler = (p: {
   formato: 'PDF' | 'PLANILHA';
-  titulo?: string | null;
 }) => Promise<ArquivoDoAgenteLlm | null>;
 
 export interface ChatComFerramentasResultado extends ChatResultado {

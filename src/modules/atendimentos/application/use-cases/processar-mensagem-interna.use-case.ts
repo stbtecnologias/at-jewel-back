@@ -5,6 +5,7 @@ import {
   MontarArquivoUseCase,
   type ArquivoDoAgente,
 } from '../../../relatorios/application/montar-arquivo.use-case';
+import { UltimoRelatorioService } from '../../../relatorios/application/ultimo-relatorio.service';
 import { ConfigService } from '@nestjs/config';
 import { limparEHigienizar } from '../../../../shared/http/sanitize/sanitize-text.transform';
 import {
@@ -148,6 +149,7 @@ export class ProcessarMensagemInternaUseCase {
     private readonly sessao: SessaoCatalogoService,
     // RF36 e RF37 — quem transforma a ultima resposta em PDF ou planilha.
     private readonly montarArquivo: MontarArquivoUseCase,
+    private readonly ultimoRelatorio: UltimoRelatorioService,
   ) {}
 
   async execute(msg: MensagemInterna): Promise<RespostaInterna> {
@@ -279,8 +281,8 @@ export class ProcessarMensagemInternaUseCase {
           ...deGestao,
           // MANDAR EM ARQUIVO — RF36 e RF37, e vale aqui pelo mesmo motivo que
           // vale na gestao: "tanto a gestao com a Anastasia como a Helena".
-          mandarRelatorio: async ({ formato, titulo }) =>
-            this.montarArquivo.execute(chave, formato, { titulo }),
+          mandarRelatorio: async ({ formato }) =>
+            this.montarArquivo.execute(chave, formato),
           ...this.ferramentas.montar({
             vendedoraId,
             codigoErp,

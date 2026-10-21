@@ -16,6 +16,7 @@ import {
   MontarArquivoUseCase,
   type ArquivoDoAgente,
 } from '../../../relatorios/application/montar-arquivo.use-case';
+import { UltimoRelatorioService } from '../../../relatorios/application/ultimo-relatorio.service';
 import { modeloDeIa } from '../../../../shared/config/modelo-de-ia';
 import type { FotoDeProduto } from '../fotos-de-produto.service';
 
@@ -127,6 +128,7 @@ export class ProcessarMensagemGestaoUseCase {
     // RF36 e RF37 — quem transforma a ultima resposta em PDF ou planilha.
     // NO FIM DA LISTA, como sempre.
     private readonly montarArquivo: MontarArquivoUseCase,
+    private readonly ultimoRelatorio: UltimoRelatorioService,
   ) {}
 
   async execute(msg: MensagemGestao): Promise<RespostaGestao> {
@@ -208,9 +210,8 @@ export class ProcessarMensagemGestaoUseCase {
           //
           // O handler nao recebe dados: pega o que a ferramenta anterior
           // guardou sob esta MESMA chave de conversa. Ver a concepcao de 24/09.
-          mandarRelatorio: async ({ formato, titulo }) =>
+          mandarRelatorio: async ({ formato }) =>
             this.montarArquivo.execute(chave, formato, {
-              titulo,
               geradoPor: msg.nome ?? null,
             }),
           ...this.ferramentas.montar({

@@ -44,19 +44,26 @@ export class MontarArquivoUseCase {
   async execute(
     chave: string | null | undefined,
     formato: FormatoDeArquivo,
-    opcoes?: { titulo?: string | null; geradoPor?: string | null },
+    opcoes?: { geradoPor?: string | null },
   ): Promise<ArquivoDoAgente | null> {
     const guardado = this.ultimo.pegar(chave);
     if (!guardado) return null;
 
-    // O TÍTULO DO MODELO É ACEITO, o resto não.
+    // ====================================================================
+    // O TÍTULO É O DA FERRAMENTA, E NÃO O DO MODELO — 21/10/2026.
     //
-    // Deixá-lo nomear o papel é útil ("Vendas da Camila em outubro") e é
-    // seguro: título errado se lê e se corrige, número errado não. Em branco,
-    // fica o que a ferramenta já tinha posto.
+    // Eu tinha deixado o modelo nomear o papel, raciocinando que "título
+    // errado se lê e se corrige". Em 21/10 às 14:14 saiu um arquivo chamado
+    // "Faturamento por empresa — setembro" com as vendas da Camila dentro:
+    // o título errado não se corrigiu sozinho, ele AUTENTICOU o conteúdo
+    // errado.
+    //
+    // O título guardado vem de quem montou a tabela e já diz o recorte —
+    // "Vendas da Camila". Tirando este último fio, não sobra nenhum caminho
+    // pelo qual o modelo possa rotular um documento.
+    // ====================================================================
     const relatorio: Relatorio = {
       ...guardado,
-      titulo: opcoes?.titulo?.trim() || guardado.titulo,
       geradoPor: opcoes?.geradoPor ?? guardado.geradoPor,
     };
 

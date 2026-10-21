@@ -604,11 +604,6 @@ const MANDAR_RELATORIO_TOOL: Anthropic.Tool = {
         enum: ['PDF', 'PLANILHA'],
         description: 'PDF para ler e repassar; PLANILHA (xlsx) para trabalhar os numeros.',
       },
-      titulo: {
-        type: 'string',
-        description:
-          'Titulo do documento, curto e dizendo o recorte: "Vendas da Camila em outubro". Omita para usar o titulo que a consulta ja tinha.',
-      },
     },
     required: ['formato'],
   },
@@ -3469,12 +3464,12 @@ export class AnthropicClient implements ILlmClient {
     guardar: (a: ArquivoDoAgenteLlm) => void,
   ): Promise<Anthropic.ToolResultBlockParam> {
     return this.executarLeitura(toolUse, async () => {
-      const input = toolUse.input as { formato?: string; titulo?: string };
+      const input = toolUse.input as { formato?: string };
       // VALIDADO, NUNCA CONVERTIDO: formato que o modelo invente nao vira
       // renderizador. Fora de PDF/PLANILHA, cai em PDF, que e o pedido mais
       // comum e o que se abre em qualquer lugar.
       const formato = input.formato === 'PLANILHA' ? 'PLANILHA' : 'PDF';
-      const a = await handler({ formato, titulo: input.titulo ?? null });
+      const a = await handler({ formato });
       if (!a) {
         return (
           'Nao ha nenhuma lista recente para mandar. Diga que precisa consultar ' +
