@@ -46,3 +46,48 @@ export function respostaQuandoNaoVeioTexto(
       );
   }
 }
+
+/**
+ * O TURNO NÃO ESCREVEU NADA, MAS PRODUZIU ALGUMA COISA — 21/10/2026.
+ *
+ * ==========================================================================
+ * ACONTECEU NO PRIMEIRO "GERA O PDF" DE VERDADE, ÀS 14:57.
+ *
+ *   — "quais peças mais vendidas em julho"  (a agente listou as dez)
+ *   — "gera o pdf"
+ *   — "Me perdi no meio da resposta e não cheguei a escrever nada."
+ *
+ * O PDF EXISTIA. A ferramenta rodou, o arquivo foi montado e estava na mão
+ * do caso de uso — e o modelo, com a ação já concluída no `tool_result`,
+ * encerrou o turno sem escrever uma palavra. O guarda do texto vazio então
+ * devolveu a frase de desculpa e **descartou o arquivo junto**, porque o
+ * webhook não envia anexo quando não há texto.
+ *
+ * Ou seja: a agente pediu desculpa por não ter feito exatamente a coisa que
+ * ela tinha acabado de fazer.
+ * ==========================================================================
+ *
+ * A REGRA QUE FICA: turno que produziu artefato não termina em desculpa. O
+ * silêncio do modelo é defeito dele, e segue no log — mas o que ela pediu
+ * sai, porque já está pronto.
+ *
+ * Devolve `null` quando não houve artefato nenhum: aí a desculpa é a resposta
+ * certa, e quem chama volta para `respostaQuandoNaoVeioTexto`.
+ */
+export function respostaQuandoVeioSoArtefato(artefato: {
+  arquivo?: boolean;
+  fotos?: number;
+}): string | null {
+  const comFotos = (artefato.fotos ?? 0) > 0;
+
+  if (artefato.arquivo && comFotos) {
+    return 'Segue o arquivo que você pediu, e as fotos logo abaixo.';
+  }
+  // O NOME DO ARQUIVO NÃO ENTRA NA FRASE: ele já vai na legenda do anexo,
+  // escrito por quem o montou. Repetir aqui é mais um lugar para divergir.
+  if (artefato.arquivo) return 'Segue o arquivo que você pediu.';
+  if (comFotos) {
+    return artefato.fotos === 1 ? 'Segue a foto.' : 'Seguem as fotos.';
+  }
+  return null;
+}

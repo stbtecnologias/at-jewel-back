@@ -117,6 +117,32 @@ describe('UltimoRelatorioService', () => {
       expect(s.pegar(chave)).toBeNull();
     });
 
+    // ======================================================================
+    // E A PROSA DERRUBA A TABELA DE ANTES — o caminho exato das 14:14.
+    //
+    // Era so `return`, e a tabela anterior ficava no lugar: ela pergunta
+    // outra coisa, a resposta vem em frase, e o "manda em PDF" seguinte
+    // sairia com a tabela de duas perguntas atras.
+    // ======================================================================
+    it('a prosa de uma mensagem NOVA invalida a tabela anterior', () => {
+      s.guardar(chave, TABELA);
+      s.envelhecer(chave);
+      s.guardarTexto(
+        chave,
+        'Faturamento por empresa',
+        'Nenhuma empresa do grupo teve movimento nesse periodo.',
+      );
+      expect(s.pegar(chave)).toBeNull();
+    });
+
+    it('mas a prosa da MESMA mensagem nao derruba a tabela de agora', () => {
+      // Um turno pode rodar duas ferramentas: uma monta a tabela, a outra
+      // responde em frase. A tabela e da pergunta de agora.
+      s.guardar(chave, TABELA);
+      s.guardarTexto(chave, 'Metas', 'Ela bateu a meta do mes.');
+      expect(s.pegar(chave)?.titulo).toBe('Vendas da Camila');
+    });
+
     // A ferramenta de vendas monta sete colunas. O texto dela chega DEPOIS no
     // funil, e nao pode atropelar o que ela fez melhor.
     it('NAO atropela a tabela rica da mesma mensagem', () => {
@@ -132,6 +158,21 @@ describe('UltimoRelatorioService', () => {
       s.guardarTexto(chave, 'Leads', '- Fulana');
       expect(s.pegar(chave)?.titulo).toBe('Leads');
     });
+  });
+
+  // ==========================================================================
+  // "E EM PLANILHA TAMBEM?" — servir rejuvenesce o guardado.
+  //
+  // Sem isto, o segundo formato da MESMA tabela chegaria com idade dois e
+  // seria recusado: ela pediu o PDF, leu, e pede a planilha do mesmo recorte.
+  // Nao passou outra pergunta no meio — passou a resposta desta.
+  // ==========================================================================
+  it('depois de servir, o mesmo recorte ainda vale no formato seguinte', () => {
+    s.guardar(chave, TABELA);
+    s.envelhecer(chave); // "gera o pdf"
+    expect(s.pegar(chave)).not.toBeNull();
+    s.envelhecer(chave); // "e em planilha tambem?"
+    expect(s.pegar(chave)).not.toBeNull();
   });
 
   it('esquecer zera', () => {

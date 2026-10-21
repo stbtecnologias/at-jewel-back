@@ -1,4 +1,7 @@
-import { respostaQuandoNaoVeioTexto } from './resposta-sem-texto';
+import {
+  respostaQuandoNaoVeioTexto,
+  respostaQuandoVeioSoArtefato,
+} from './resposta-sem-texto';
 
 /**
  * ==========================================================================
@@ -69,5 +72,50 @@ describe('a resposta quando o modelo não escreveu nada', () => {
     ]);
 
     expect(frases.size).toBe(3);
+  });
+});
+
+/**
+ * ==========================================================================
+ * O PDF ESTAVA PRONTO E A AGENTE PEDIU DESCULPA — 21/10/2026, 14:57.
+ *
+ *   — "quais peças mais vendidas em julho"   (ela listou as dez)
+ *   — "gera o pdf"
+ *   — "Me perdi no meio da resposta e não cheguei a escrever nada."
+ *
+ * O arquivo existia: a ferramenta rodou, o PDF foi montado, e o modelo
+ * encerrou o turno sem escrever uma palavra. O guarda do texto vazio devolveu
+ * a desculpa e descartou o anexo, porque o webhook não manda arquivo sem
+ * texto.
+ *
+ * A regra que fica: turno que PRODUZIU artefato não termina em desculpa.
+ * ==========================================================================
+ */
+describe('a resposta quando só veio o artefato', () => {
+  /* ESTE É O TESTE DAS 14:57. */
+  it('com arquivo, devolve frase — e não a desculpa', () => {
+    const frase = respostaQuandoVeioSoArtefato({ arquivo: true });
+
+    expect(frase).toBeTruthy();
+    expect(frase).not.toContain('Me perdi');
+  });
+
+  it('sem artefato nenhum, devolve null — a desculpa é a resposta certa', () => {
+    expect(respostaQuandoVeioSoArtefato({})).toBeNull();
+    expect(respostaQuandoVeioSoArtefato({ arquivo: false })).toBeNull();
+    // Zero foto é nenhuma foto: o `?? 0` não pode virar "tem".
+    expect(respostaQuandoVeioSoArtefato({ fotos: 0 })).toBeNull();
+  });
+
+  it('uma foto é foto, muitas são fotos', () => {
+    expect(respostaQuandoVeioSoArtefato({ fotos: 1 })).toContain('a foto');
+    expect(respostaQuandoVeioSoArtefato({ fotos: 3 })).toContain('as fotos');
+  });
+
+  it('arquivo e fotos juntos dizem os dois', () => {
+    const frase = respostaQuandoVeioSoArtefato({ arquivo: true, fotos: 2 });
+
+    expect(frase).toContain('arquivo');
+    expect(frase).toContain('fotos');
   });
 });

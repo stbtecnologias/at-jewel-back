@@ -3731,7 +3731,22 @@ export class AnthropicClient implements ILlmClient {
         );
       }
       guardar(a);
-      return `O arquivo ${a.nome} foi enviado na conversa. Diga em uma frase curta que mandou, e NAO repita a lista.`;
+      // ================================================================
+      // O TEXTO PEDE QUE ELE ESCREVA, E NAO DIZ QUE JA ACABOU — 21/10/2026.
+      //
+      // Era "foi enviado na conversa", que descreve acao CONCLUIDA. As 14:57
+      // o modelo leu isso como fim de turno e encerrou sem escrever palavra
+      // nenhuma — e quem perguntou recebeu "me perdi no meio da resposta".
+      //
+      // E a ordem importa: o arquivo sai DEPOIS do texto (ver o webhook),
+      // entao a frase dele e parte do envio, e nao um comentario sobre algo
+      // que ja saiu.
+      // ================================================================
+      return (
+        `O arquivo ${a.nome} esta pronto e sai logo depois da sua resposta. ` +
+        'RESPONDA AGORA, em uma frase curta, dizendo que mandou o arquivo — ' +
+        'sem repetir a lista. Sem a sua frase o anexo chega sem explicacao.'
+      );
     });
   }
 

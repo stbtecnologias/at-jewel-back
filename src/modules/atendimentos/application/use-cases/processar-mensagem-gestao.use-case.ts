@@ -1,6 +1,9 @@
 import { randomBytes } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { respostaQuandoNaoVeioTexto } from '../resposta-sem-texto';
+import {
+  respostaQuandoNaoVeioTexto,
+  respostaQuandoVeioSoArtefato,
+} from '../resposta-sem-texto';
 import { ConfigService } from '@nestjs/config';
 import { limparEHigienizar } from '../../../../shared/http/sanitize/sanitize-text.transform';
 import { ANASTASIA_GESTAO_SYSTEM } from '../../../agentes/application/personas';
@@ -156,6 +159,20 @@ export class ProcessarMensagemGestaoUseCase {
     const historico = this.memoria.carregar(chave);
 
     // ======================================================================
+    // A TABELA GUARDADA ENVELHECE AQUI — RF36, 21/10/2026.
+    //
+    // Chegou mensagem nova: o que estava guardado para virar PDF fica um
+    // passo mais velho, e deixa de valer quando outra pergunta passa no meio.
+    // É o conserto do arquivo com a tabela errada das 14:14 — e eu tinha
+    // escrito `envelhecer` sem chamar de lugar nenhum, então o conserto
+    // existia no teste de unidade e em nenhum outro lugar.
+    //
+    // MORA NA CHEGADA DA MENSAGEM, e não dentro do serviço: quem sabe que uma
+    // mensagem nova começou é o canal. O serviço só conta.
+    // ======================================================================
+    this.ultimoRelatorio.envelhecer(chave);
+
+    // ======================================================================
     // TURNO VAZIO A API RECUSA — 30/09/2026.
     //
     // `400 messages.0: user messages must have non-empty content`, e a
@@ -203,40 +220,29 @@ export class ProcessarMensagemGestaoUseCase {
           // O nome de quem fala vai junto: quando ele agenda, a vendedora recebe
           // um aviso dizendo de quem veio o compromisso.
           //
-          // O `verLoja` decide se as ferramentas podem falar da LOJA ou so de
-          // cada vendedora — ver `ContextoGestao`. A chave e `analytics:read`,
-          // a mesma que guarda o modulo de Analytics no painel: uma so, para a
-          // resposta nao depender da porta por onde a pergunta entrou.
+          // TODA CONSULTA PODE VIRAR ARQUIVO — RF36 e RF37, 21/10/2026.
+          //
+          // O ouvinte roda no funil por onde TODA leitura passa, entao nao ha
+          // uma linha por ferramenta para alguem esquecer na proxima. O texto
+          // e o da FERRAMENTA, nao o do modelo.
+          aoResponderConsulta: (ferramenta, texto) =>
+            this.ultimoRelatorio.guardarTexto(
+              chave,
+              tituloDaFerramenta(ferramenta),
+              texto,
+            ),
           // MANDAR EM ARQUIVO — RF36 e RF37, 21/10/2026.
           //
           // O handler nao recebe dados: pega o que a ferramenta anterior
           // guardou sob esta MESMA chave de conversa. Ver a concepcao de 24/09.
-          // TODA CONSULTA PODE VIRAR ARQUIVO — RF36 e RF37, 21/10/2026.
-
-          //
-
-          // O ouvinte roda no funil por onde TODA leitura passa, entao nao ha uma
-
-          // linha por ferramenta para alguem esquecer na proxima. O texto e o da
-
-          // ferramenta, nao o do modelo.
-
-          aoResponderConsulta: (ferramenta, texto) =>
-
-            this.ultimoRelatorio.guardarTexto(
-
-              chave,
-
-              tituloDaFerramenta(ferramenta),
-
-              texto,
-
-            ),
-
           mandarRelatorio: async ({ formato }) =>
             this.montarArquivo.execute(chave, formato, {
               geradoPor: msg.nome ?? null,
             }),
+          // O `verLoja` decide se as ferramentas podem falar da LOJA ou so de
+          // cada vendedora — ver `ContextoGestao`. A chave e `analytics:read`,
+          // a mesma que guarda o modulo de Analytics no painel: uma so, para a
+          // resposta nao depender da porta por onde a pergunta entrou.
           ...this.ferramentas.montar({
             solicitante: msg.nome,
             // A chave liga a consulta de agora ao "manda em PDF" de daqui a
@@ -308,6 +314,27 @@ export class ProcessarMensagemGestaoUseCase {
         this.logger.warn(
           `Resposta sem texto no canal da gestao (motivo: ${semTexto ?? 'desconhecido'}).`,
         );
+
+        // ================================================================
+        // MAS SE O TURNO PRODUZIU ARTEFATO, ELE SAI — 21/10/2026.
+        //
+        // Às 14:57 o PDF estava pronto nesta variável, e esta função
+        // devolveu "me perdi no meio da resposta" e jogou o arquivo fora:
+        // o webhook não envia anexo sem texto. Ver
+        // `respostaQuandoVeioSoArtefato`.
+        // ================================================================
+        const frase = respostaQuandoVeioSoArtefato({
+          arquivo: Boolean(arquivo),
+          fotos: fotos?.length,
+        });
+        if (frase) {
+          // ENTRA NA MEMÓRIA, ao contrário do turno que não produziu nada:
+          // o "e em planilha?" de daqui a pouco precisa saber que já saiu
+          // um arquivo.
+          this.memoria.registrar(chave, pergunta, frase);
+          return { resposta: frase, motivo: 'conversa', fotos, arquivo };
+        }
+
         return {
           resposta: respostaQuandoNaoVeioTexto(semTexto),
           motivo: 'falha_agente',

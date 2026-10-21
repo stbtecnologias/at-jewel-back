@@ -1,5 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { respostaQuandoNaoVeioTexto } from '../resposta-sem-texto';
+import {
+  respostaQuandoNaoVeioTexto,
+  respostaQuandoVeioSoArtefato,
+} from '../resposta-sem-texto';
 import type { FotoDeProduto } from '../fotos-de-produto.service';
 import {
   MontarArquivoUseCase,
@@ -227,6 +230,11 @@ export class ProcessarMensagemInternaUseCase {
     const historico = this.memoria.carregar(chave);
     const pergunta = limparEHigienizar(textoDaMensagem);
 
+    // A TABELA GUARDADA ENVELHECE AQUI — o gemeo deste esta no canal da
+    // gestao, com o motivo escrito por extenso. Em resumo: chegou mensagem
+    // nova, o que estava guardado para virar PDF fica um passo mais velho.
+    this.ultimoRelatorio.envelhecer(chave);
+
     // O REGISTRO DO RN-01(g) — 28/09/2026. Nao muda a resposta, nao bloqueia
     // nada e nao e esperado: a Equipe AT pediu para ENXERGAR quando a
     // vendedora pergunta por quantidade ou custo. A barreira ja esta no lugar
@@ -280,30 +288,19 @@ export class ProcessarMensagemInternaUseCase {
           // Anastasia usa. Nenhuma regra e reescrita aqui.
           // ================================================================
           ...deGestao,
+          // TODA CONSULTA PODE VIRAR ARQUIVO — RF36 e RF37, 21/10/2026.
+          //
+          // O ouvinte roda no funil por onde TODA leitura passa, entao nao ha
+          // uma linha por ferramenta para alguem esquecer na proxima. O texto
+          // e o da FERRAMENTA, nao o do modelo.
+          aoResponderConsulta: (ferramenta, texto) =>
+            this.ultimoRelatorio.guardarTexto(
+              chave,
+              tituloDaFerramenta(ferramenta),
+              texto,
+            ),
           // MANDAR EM ARQUIVO — RF36 e RF37, e vale aqui pelo mesmo motivo que
           // vale na gestao: "tanto a gestao com a Anastasia como a Helena".
-          // TODA CONSULTA PODE VIRAR ARQUIVO — RF36 e RF37, 21/10/2026.
-
-          //
-
-          // O ouvinte roda no funil por onde TODA leitura passa, entao nao ha uma
-
-          // linha por ferramenta para alguem esquecer na proxima. O texto e o da
-
-          // ferramenta, nao o do modelo.
-
-          aoResponderConsulta: (ferramenta, texto) =>
-
-            this.ultimoRelatorio.guardarTexto(
-
-              chave,
-
-              tituloDaFerramenta(ferramenta),
-
-              texto,
-
-            ),
-
           mandarRelatorio: async ({ formato }) =>
             this.montarArquivo.execute(chave, formato),
           ...this.ferramentas.montar({
@@ -338,6 +335,24 @@ export class ProcessarMensagemInternaUseCase {
         this.logger.warn(
           `Resposta sem texto no canal interno (motivo: ${semTexto ?? 'desconhecido'}).`,
         );
+
+        // TURNO QUE PRODUZIU ARTEFATO NAO TERMINA EM DESCULPA — 21/10/2026.
+        // O arquivo (ou a foto) ja esta pronto nesta variavel; sem frase, o
+        // webhook o descartaria. Ver `respostaQuandoVeioSoArtefato`.
+        const frase = respostaQuandoVeioSoArtefato({
+          arquivo: Boolean(arquivo),
+          fotos: fotos?.length,
+        });
+        if (frase) {
+          this.memoria.registrar(chave, pergunta, frase);
+          return {
+            resposta: frase,
+            motivo: relatoRegistrado ? 'relato_registrado' : 'conversa',
+            fotos,
+            arquivo,
+          };
+        }
+
         return {
           resposta: respostaQuandoNaoVeioTexto(semTexto),
           motivo: 'falha_agente',

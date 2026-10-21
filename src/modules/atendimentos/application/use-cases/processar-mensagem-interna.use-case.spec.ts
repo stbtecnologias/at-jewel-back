@@ -36,9 +36,22 @@ describe('ProcessarMensagemInternaUseCase', () => {
   let transcricao: { transcrever: jest.Mock; disponivel: jest.Mock };
   let memoria: { carregar: jest.Mock; registrar: jest.Mock };
   let eventos: { execute: jest.Mock };
+  /** RF36/RF37: o guarda da ultima tabela. Espiado, e nao so dublado. */
+  let ultimoRelatorio: {
+    guardar: jest.Mock;
+    guardarTexto: jest.Mock;
+    pegar: jest.Mock;
+    envelhecer: jest.Mock;
+  };
   let useCase: ProcessarMensagemInternaUseCase;
 
   beforeEach(() => {
+    ultimoRelatorio = {
+      guardar: jest.fn(),
+      guardarTexto: jest.fn(),
+      pegar: jest.fn(),
+      envelhecer: jest.fn(),
+    };
     identificar = { execute: jest.fn().mockResolvedValue(VENDEDORA) };
     eventos = { execute: jest.fn().mockResolvedValue(undefined) };
     relato = { execute: jest.fn().mockResolvedValue({ status: 'SEM_PENDENCIA' }) };
@@ -140,8 +153,7 @@ describe('ProcessarMensagemInternaUseCase', () => {
       new SessaoCatalogoService(),
       // RF36/RF37: o montador de arquivo. Mudo aqui.
       { execute: async () => null } as never,
-      // RF36/RF37: o guarda do ultimo relatorio. Mudo aqui.
-      { guardar: jest.fn(), pegar: jest.fn(), envelhecer: jest.fn() } as never,
+      ultimoRelatorio as never,
     );
   });
 
@@ -581,10 +593,10 @@ describe('ProcessarMensagemInternaUseCase', () => {
         { get: jest.fn(() => undefined) } as never,
         { execute: jest.fn() } as never,
         new SessaoCatalogoService(),
-      // RF36/RF37: o montador de arquivo. Mudo aqui.
-      { execute: async () => null } as never,
-      // RF36/RF37: o guarda do ultimo relatorio. Mudo aqui.
-      { guardar: jest.fn(), pegar: jest.fn(), envelhecer: jest.fn() } as never,
+        // RF36/RF37: o montador de arquivo. Mudo aqui.
+        { execute: async () => null } as never,
+        // RF36/RF37: o guarda do ultimo relatorio. Mudo aqui.
+        { guardar: jest.fn(), pegar: jest.fn(), envelhecer: jest.fn() } as never,
       );
       return { instancia, chamada, lembretes };
     }
@@ -716,6 +728,105 @@ describe('ProcessarMensagemInternaUseCase', () => {
       await useCase.execute({ de: '558586467241@c.us', texto: 'oi' });
 
       expect(memoria.registrar).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * ========================================================================
+   * O ARQUIVO NAO PODE SER ENGOLIDO PELO SILENCIO DO MODELO — 21/10/2026.
+   *
+   * O que aconteceu as 14:57, no canal da gestao: a agente listou as dez
+   * pecas que mais faturaram, o Lucas pediu "gera o pdf", a ferramenta rodou
+   * e o PDF ficou pronto — e o modelo encerrou o turno sem escrever nada. O
+   * guarda do texto vazio devolveu "me perdi no meio da resposta" e jogou o
+   * arquivo fora, porque o webhook nao manda anexo sem texto.
+   *
+   * O par deste bloco: o envelhecimento da tabela. Eu escrevi `envelhecer`
+   * como conserto do arquivo com a tabela errada das 14:14 e NAO CHAMEI de
+   * lugar nenhum — o teste de unidade do servico chamava direto, entao
+   * passava. Prova por existencia, de novo.
+   * ========================================================================
+   */
+  describe('o arquivo e a tabela que envelhece (RF36/RF37)', () => {
+    const PDF = {
+      conteudo: Buffer.from('%PDF-1.3'),
+      mime: 'application/pdf',
+      nome: 'itens-mais-vendidos-21-10-2026.pdf',
+      legenda: 'Itens mais vendidos — 10 linhas',
+    };
+
+    /* ESTE E O TESTE DAS 14:57. */
+    it('turno sem texto COM arquivo manda o arquivo, e nao a desculpa', async () => {
+      llm.chatComFerramentas.mockResolvedValue({
+        texto: '',
+        tokens: 0,
+        arquivo: PDF,
+      });
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'gera o pdf',
+      });
+
+      expect(r.arquivo).toBe(PDF);
+      expect(r.resposta).toBeTruthy();
+      expect(r.resposta).not.toContain('Me perdi');
+      // E o motivo deixa de ser falha: ela recebeu o que pediu.
+      expect(r.motivo).not.toBe('falha_agente');
+    });
+
+    it('a frase NAO repete o nome do arquivo — a legenda ja o leva', async () => {
+      llm.chatComFerramentas.mockResolvedValue({
+        texto: '',
+        tokens: 0,
+        arquivo: PDF,
+      });
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'gera o pdf',
+      });
+
+      expect(r.resposta).not.toContain('.pdf');
+    });
+
+    it('turno sem texto COM fotos manda as fotos', async () => {
+      const fotos = [{ url: 'http://x/1.jpg', legenda: '' }];
+      llm.chatComFerramentas.mockResolvedValue({ texto: '', tokens: 0, fotos });
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'me manda as fotos da BR26318',
+      });
+
+      expect(r.fotos).toBe(fotos);
+      expect(r.resposta).not.toContain('Me perdi');
+    });
+
+    it('sem artefato nenhum, a desculpa continua sendo a resposta', async () => {
+      llm.chatComFerramentas.mockResolvedValue({ texto: '', tokens: 0 });
+
+      const r = await useCase.execute({ de: '558586467241@c.us', texto: 'oi' });
+
+      expect(r.resposta).toContain('Me perdi');
+      expect(r.motivo).toBe('falha_agente');
+    });
+
+    /* ESTE E O TESTE DO FIO SOLTO: `envelhecer` escrito e nao chamado. */
+    it('toda mensagem envelhece a tabela guardada', async () => {
+      await useCase.execute({ de: '558586467241@c.us', texto: 'minha agenda?' });
+
+      expect(ultimoRelatorio.envelhecer).toHaveBeenCalledTimes(1);
+    });
+
+    it('envelhece sob a MESMA chave da memoria de conversa', async () => {
+      await useCase.execute({ de: '558586467241@c.us', texto: 'minha agenda?' });
+
+      // Duas chaves diferentes para a mesma conversa fariam o PDF sair da
+      // pergunta de outra pessoa — e o teste nao saberia dizer de quem.
+      expect(ultimoRelatorio.envelhecer.mock.calls[0][0]).toBe(
+        memoria.carregar.mock.calls[0][0],
+      );
     });
   });
 });

@@ -140,7 +140,23 @@ export class UltimoRelatorioService {
       .filter((x) => /^\s*-\s+/.test(x))
       .map((x) => x.replace(/^\s*-\s+/, '').trim())
       .filter((x) => x.length > 0);
-    if (dados.length === 0) return;
+    if (dados.length === 0) {
+      // ==================================================================
+      // CONSULTA QUE RESPONDEU EM PROSA INVALIDA A TABELA ANTERIOR.
+      //
+      // Era so `return`, e isso deixava a tabela de antes no lugar. E o
+      // caminho exato do arquivo errado das 14:14: ela pergunta outra coisa,
+      // a resposta vem em frase ("nenhuma empresa teve movimento"), e o
+      // "manda em PDF" seguinte mandaria a tabela de duas perguntas atras
+      // com cara de ser a de agora.
+      //
+      // SO O QUE VEIO DE MENSAGEM ANTERIOR e descartado: no mesmo turno uma
+      // ferramenta pode responder em frase depois de outra ter montado a
+      // tabela, e ai a tabela e da pergunta de agora.
+      // ==================================================================
+      if (atual && atual.idade > 0) this.porChave.delete(chave);
+      return;
+    }
 
     // ====================================================================
     // DUAS COLUNAS QUANDO TODAS AS LINHAS TEM O TRAVESSAO.
@@ -242,6 +258,19 @@ export class UltimoRelatorioService {
       );
       return null;
     }
+
+    // ====================================================================
+    // SERVIU, LOGO REJUVENESCEU — e isso e o "e em planilha tambem?".
+    //
+    // Sem esta linha a pergunta seguinte sobre a MESMA tabela chegaria com
+    // idade 2 e seria recusada: ela pediu o PDF, leu, e pede a planilha do
+    // mesmo recorte. Nao passou outra pergunta no meio — passou a resposta
+    // desta.
+    //
+    // E nao reabre o buraco das 14:14: o que invalida a tabela e outra
+    // CONSULTA ter respondido, nao o tempo. Ver o `delete` em `guardarTexto`.
+    // ====================================================================
+    g.idade = 0;
     return g.relatorio;
   }
 
