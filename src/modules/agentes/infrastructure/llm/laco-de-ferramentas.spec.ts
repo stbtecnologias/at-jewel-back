@@ -94,6 +94,101 @@ describe('o laço de ferramentas', () => {
     expect(create).toHaveBeenCalledTimes(1);
   });
 
+  /**
+   * ========================================================================
+   * ANTES DE PEDIR QUE ELA REPITA, TENTE DE NOVO — 21/10/2026.
+   *
+   * "Me perdi no meio da resposta. Pode repetir a pergunta?" foi o que o
+   * Lucas recebeu as 14:57 depois de "gera o pdf" — e a pergunta estava na
+   * conversa que eu acabei de mandar ao modelo. Mandar a pessoa digitar de
+   * novo o que ja esta em maos e cobrar dela a minha falha.
+   *
+   * Pedido dele, no mesmo dia: *"so nao quero que o cliente fique falando a
+   * mesma coisa, principalmente quando esta dentro do mesmo assunto e em
+   * poucos minutos"*.
+   * ========================================================================
+   */
+  describe('o turno que voltou sem texto', () => {
+    /** O modelo encerrou sem escrever nada. */
+    const mudo = (stop = 'end_turn') => ({
+      content: [],
+      usage: { output_tokens: 0 },
+      stop_reason: stop,
+    });
+
+    /* ESTE E O TESTE. */
+    it('tenta mais uma vez, em vez de pedir que ela repita', async () => {
+      create
+        .mockResolvedValueOnce(mudo())
+        .mockResolvedValueOnce(responde('A Camila fez 2 vendas.'));
+
+      const r = await cliente.chatComFerramentas(base());
+
+      expect(r.texto).toBe('A Camila fez 2 vendas.');
+      expect(r.semTexto).toBeUndefined();
+      expect(create).toHaveBeenCalledTimes(2);
+    });
+
+    it('e a segunda chamada OBRIGA texto — o que faltou foi escrever', async () => {
+      create
+        .mockResolvedValueOnce(mudo())
+        .mockResolvedValueOnce(responde('Pronto.'));
+
+      await cliente.chatComFerramentas(base());
+
+      expect(create.mock.calls[1][0].tool_choice).toEqual({ type: 'none' });
+      // E a conversa mandada e a MESMA: a pergunta dela nao se perde.
+      expect(create.mock.calls[1][0].messages).toEqual(
+        create.mock.calls[0][0].messages,
+      );
+    });
+
+    it('tenta UMA vez só — calado duas vezes, aí sim a frase', async () => {
+      create.mockResolvedValue(mudo());
+
+      const r = await cliente.chatComFerramentas(base());
+
+      expect(r.texto).toBe('');
+      expect(r.semTexto).toBe('outro');
+      expect(create).toHaveBeenCalledTimes(2);
+    });
+
+    // ======================================================================
+    // E NAO INSISTE QUANDO O SILENCIO TEM CAUSA.
+    //
+    // Cortada por tamanho, repetir da o mesmo corte e cobra de novo. Recusa,
+    // idem. Nesses dois a frase certa e a que diz o que fazer.
+    // ======================================================================
+    it.each([['max_tokens'], ['refusal']])(
+      'nao repete quando o motivo foi %s',
+      async (motivo) => {
+        create.mockResolvedValueOnce(mudo(motivo));
+
+        const r = await cliente.chatComFerramentas(base());
+
+        expect(r.semTexto).toBe(motivo);
+        expect(create).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it('depois de uma ferramenta, a segunda chance ainda vale', async () => {
+      const leads = jest.fn().mockResolvedValue({ linhas: ['lead 1'] });
+      create
+        .mockResolvedValueOnce(pede('listar_leads'))
+        .mockResolvedValueOnce(mudo())
+        .mockResolvedValueOnce(responde('Tem um lead na fila.'));
+
+      const r = await cliente.chatComFerramentas({
+        ...base(),
+        gestaoLeads: leads,
+      });
+
+      expect(r.texto).toBe('Tem um lead na fila.');
+      // A consulta NAO roda de novo: o que faltou foi escrever, nao consultar.
+      expect(leads).toHaveBeenCalledTimes(1);
+    });
+  });
+
   /*
    * O teto nao pode reintroduzir o defeito: quando ele bate, o turno TEM de
    * terminar em texto. `tool_choice: none` e o que obriga isso — sem ele, a

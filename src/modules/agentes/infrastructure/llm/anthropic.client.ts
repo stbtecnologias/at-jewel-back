@@ -2039,7 +2039,46 @@ export class AnthropicClient implements ILlmClient {
         (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
       );
       if (pedidos.length === 0) {
-        const texto = this.extrairTexto(resp);
+        let texto = this.extrairTexto(resp);
+
+        // ==================================================================
+        // UMA SEGUNDA CHANCE ANTES DE PEDIR QUE ELA REPITA — 21/10/2026.
+        //
+        // "Me perdi no meio da resposta. Pode repetir a pergunta?" e a pior
+        // saida possivel, porque a pergunta esta AQUI: ela foi escrita, foi
+        // lida e esta na conversa que eu acabei de mandar. Mandar a pessoa
+        // digitar de novo o que eu ja tenho em maos e fazer ela trabalhar
+        // pela minha falha.
+        //
+        // Pedido do Lucas em 21/10: *"so nao quero que o cliente fique
+        // falando a mesma coisa, principalmente quando esta dentro do mesmo
+        // assunto e em poucos minutos"*.
+        //
+        // UMA vez so, e com `tool_choice: none`: o turno ja consultou o que
+        // tinha de consultar — o que faltou foi ESCREVER. Forcando texto, a
+        // segunda chamada nao pode repetir o silencio pedindo ferramenta.
+        //
+        // NAO VALE PARA `max_tokens` NEM `refusal`: nesses dois o silencio
+        // tem causa, e repetir daria o mesmo resultado cobrando outra vez.
+        // ==================================================================
+        if (!texto && motivoDoVazio(resp.stop_reason) === 'outro') {
+          this.logger.warn(
+            'Turno sem texto — tentando mais uma vez antes de pedir que ela repita.',
+          );
+          resp = await this.client.messages.create({
+            model: params.model,
+            max_tokens: Math.max(params.maxTokens, 1024),
+            system: params.system,
+            tools,
+            ...(tools.length > 0
+              ? { tool_choice: { type: 'none' as const } }
+              : {}),
+            messages: conversa,
+          });
+          tokens += resp.usage.output_tokens;
+          texto = this.extrairTexto(resp);
+        }
+
         // O MOTIVO SOBE JUNTO quando nao ha texto — ver `semTexto` no port.
         // O log de 29/09 ja contava isto ao servidor; quem perguntou e que
         // ficava sem nada.
