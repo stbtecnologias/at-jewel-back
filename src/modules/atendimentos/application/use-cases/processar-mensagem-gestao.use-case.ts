@@ -17,6 +17,7 @@ import {
   type ArquivoDoAgente,
 } from '../../../relatorios/application/montar-arquivo.use-case';
 import { UltimoRelatorioService } from '../../../relatorios/application/ultimo-relatorio.service';
+import { tituloDaFerramenta } from '../../../relatorios/domain/titulo-da-ferramenta';
 import { modeloDeIa } from '../../../../shared/config/modelo-de-ia';
 import type { FotoDeProduto } from '../fotos-de-produto.service';
 
@@ -210,6 +211,28 @@ export class ProcessarMensagemGestaoUseCase {
           //
           // O handler nao recebe dados: pega o que a ferramenta anterior
           // guardou sob esta MESMA chave de conversa. Ver a concepcao de 24/09.
+          // TODA CONSULTA PODE VIRAR ARQUIVO — RF36 e RF37, 21/10/2026.
+
+          //
+
+          // O ouvinte roda no funil por onde TODA leitura passa, entao nao ha uma
+
+          // linha por ferramenta para alguem esquecer na proxima. O texto e o da
+
+          // ferramenta, nao o do modelo.
+
+          aoResponderConsulta: (ferramenta, texto) =>
+
+            this.ultimoRelatorio.guardarTexto(
+
+              chave,
+
+              tituloDaFerramenta(ferramenta),
+
+              texto,
+
+            ),
+
           mandarRelatorio: async ({ formato }) =>
             this.montarArquivo.execute(chave, formato, {
               geradoPor: msg.nome ?? null,

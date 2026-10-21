@@ -1222,6 +1222,28 @@ export interface ChatParams {
    * ======================================================================
    */
   mandarRelatorio?: MandarRelatorioHandler;
+  /**
+   * UMA CONSULTA ACABOU DE RESPONDER — RF36 e RF37, 21/10/2026.
+   *
+   * ======================================================================
+   * E O QUE FAZ *TODA* CONSULTA PODER VIRAR ARQUIVO.
+   *
+   * Pedido do Lucas: "queria que todas as consultas virassem PDF ou CSV,
+   * assim elas podem pedir quando quiser".
+   *
+   * A alternativa era uma linha em cada uma das ~30 ferramentas. Isso nao
+   * e so trabalhoso: e uma linha que a ferramenta numero 31 vai esquecer, e
+   * ninguem descobre ate alguem pedir o PDF dela e ouvir "preciso consultar
+   * antes".
+   *
+   * Aqui e o FUNIL por onde toda leitura passa — o mesmo lugar onde mora a
+   * guarda de `tool_result` vazio, e pelo mesmo motivo.
+   * ======================================================================
+   *
+   * Recebe o nome da ferramenta e O TEXTO QUE ELA PRODUZIU — que e nosso, e
+   * nao do modelo. Quem escuta decide o que fazer com isso.
+   */
+  aoResponderConsulta?: (ferramenta: string, texto: string) => void;
   // Idem para `consultar_produtos`.
   consultarProdutos?: ConsultarProdutosHandler;
   // Idem para `consultar_minha_carteira`.

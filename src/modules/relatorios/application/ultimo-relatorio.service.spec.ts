@@ -69,6 +69,51 @@ describe('UltimoRelatorioService', () => {
     expect(s.pegar(undefined)).toBeNull();
   });
 
+  // ==========================================================================
+  // TODA CONSULTA VIRA ARQUIVO — pedido do Lucas em 21/10.
+  //
+  // O funil guarda o TEXTO que a ferramenta escreveu. Uma coluna so, e isso e
+  // honesto em vez de esperto: separar aquelas linhas em colunas exigiria
+  // adivinhar onde um campo acaba — e coluna errada e pior que coluna unica.
+  // ==========================================================================
+  describe('o texto de qualquer consulta', () => {
+    it('vira uma tabela de uma coluna', () => {
+      s.guardarTexto(chave, 'Faturamento por empresa', 'AT JEWEL\nMP Comercio');
+      const r = s.pegar(chave);
+      expect(r?.titulo).toBe('Faturamento por empresa');
+      expect(r?.linhas).toHaveLength(2);
+    });
+
+    it('tira o marcador de lista da frente', () => {
+      s.guardarTexto(chave, 'Leads', '• Fulana\n- Beltrana');
+      expect(s.pegar(chave)?.linhas).toEqual([
+        { linha: 'Fulana' },
+        { linha: 'Beltrana' },
+      ]);
+    });
+
+    it('texto vazio nao guarda nada', () => {
+      s.guardarTexto(chave, 'Consulta', '  \n\n  ');
+      expect(s.pegar(chave)).toBeNull();
+    });
+
+    // A ferramenta de vendas monta sete colunas. O texto dela chega DEPOIS no
+    // funil, e nao pode atropelar o que ela fez melhor.
+    it('NAO atropela a tabela rica da mesma mensagem', () => {
+      s.guardar(chave, TABELA);
+      s.guardarTexto(chave, 'Consulta', 'linha solta');
+      expect(s.pegar(chave)?.titulo).toBe('Vendas da Camila');
+    });
+
+    // Mas numa mensagem NOVA ele manda: a pergunta mudou.
+    it('na mensagem seguinte, o texto novo manda', () => {
+      s.guardar(chave, TABELA);
+      s.envelhecer(chave);
+      s.guardarTexto(chave, 'Leads', 'Fulana');
+      expect(s.pegar(chave)?.titulo).toBe('Leads');
+    });
+  });
+
   it('esquecer zera', () => {
     s.guardar(chave, TABELA);
     s.esquecer(chave);

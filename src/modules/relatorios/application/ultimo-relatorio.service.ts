@@ -15,6 +15,14 @@ const MAX = 200;
 
 interface Guardado {
   relatorio: Relatorio;
+  /**
+   * Veio de uma ferramenta que montou TABELA de verdade, com colunas?
+   *
+   * O que vem do funil genérico é uma lista de uma coluna só — fiel, mas
+   * pobre. Marcando quem é rico, a captura genérica deixa de atropelar as
+   * ferramentas que já fazem melhor.
+   */
+  rico: boolean;
   em: number;
   /**
    * QUANTAS MENSAGENS SE PASSARAM desde que esta tabela foi montada.
@@ -72,7 +80,68 @@ export class UltimoRelatorioService {
     if (this.porChave.size >= MAX && !this.porChave.has(chave)) {
       this.descartarMaisAntigo();
     }
-    this.porChave.set(chave, { relatorio, em: Date.now(), idade: 0 });
+    this.porChave.set(chave, {
+      relatorio,
+      em: Date.now(),
+      idade: 0,
+      rico: true,
+    });
+  }
+
+  /**
+   * QUALQUER CONSULTA RESPONDEU, e o texto dela pode virar arquivo.
+   *
+   * ========================================================================
+   * É O QUE FAZ *TODA* PERGUNTA TER PDF — pedido do Lucas em 21/10:
+   * *"queria que todas as consultas virassem PDF ou CSV, assim elas podem
+   * pedir quando quiser"*.
+   *
+   * O texto é o que a FERRAMENTA escreveu, não o que o modelo falou — ele
+   * passa pelo mesmo funil onde mora a guarda de `tool_result` vazio. Então
+   * a regra de 24/09 continua de pé: o dado não passa pelo modelo.
+   *
+   * UMA COLUNA SÓ, e isso é honesto em vez de esperto. Separar aquelas
+   * linhas em colunas exigiria adivinhar onde um campo acaba e outro começa
+   * — e um relatório com a coluna errada é pior que um com uma coluna só.
+   * As ferramentas que montam tabela de verdade continuam ganhando desta,
+   * porque `rico` manda.
+   * ========================================================================
+   */
+  guardarTexto(
+    chave: string | null | undefined,
+    titulo: string,
+    texto: string,
+  ): void {
+    if (!chave) return;
+
+    // NÃO ATROPELA O RICO DA MESMA MENSAGEM: a consulta de vendas guarda a
+    // tabela com sete colunas antes de o texto dela chegar aqui.
+    const atual = this.porChave.get(chave);
+    if (atual && atual.rico && atual.idade === 0) return;
+
+    // O MARCADOR DE LISTA SAI: "• Fulana — R$ 1.000" vira "Fulana — R$ 1.000".
+    // O ponto existe para a frase no WhatsApp; numa tabela ele e sujeira na
+    // frente de toda linha.
+    const linhas = texto
+      .split(String.fromCharCode(10))
+      .map((x) => x.replace(/^[\s*•–—-]+/, String()).trim())
+      .filter((x) => x.length > 0);
+    if (linhas.length === 0) return;
+
+    if (this.porChave.size >= MAX && !this.porChave.has(chave)) {
+      this.descartarMaisAntigo();
+    }
+    this.porChave.set(chave, {
+      relatorio: {
+        titulo,
+        posicao: `Posição em ${agora()}`,
+        colunas: [{ chave: 'linha', titulo }],
+        linhas: linhas.map((linha) => ({ linha })),
+      },
+      em: Date.now(),
+      idade: 0,
+      rico: false,
+    });
   }
 
   /**
@@ -145,4 +214,15 @@ export class UltimoRelatorioService {
     }
     if (alvo) this.porChave.delete(alvo);
   }
+}
+
+/** A data e a hora de agora, para o carimbo de posição do relatório. */
+function agora(): string {
+  return new Date().toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }

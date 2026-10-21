@@ -211,7 +211,9 @@ const PRODUTOS_TOOL: Anthropic.Tool = {
         description:
           'O que procurar, nas palavras dela: nome da peca, categoria, familia, colecao, pedra, cor ou codigo do ERP. Ex.: "esmeralda", "alianca ouro 18k", "SEED-P0002".' +
           'Se ela citar um CODIGO ("An24084", "o CO24022"), mande SO o codigo neste campo — nao repita a frase dela em volta.' +
-          'AS SIGLAS DO CATALOGO SAO TERMO VALIDO, e sao o jeito que a equipe fala: OB e ouro branco, OA ouro amarelo, DTS e DMT sao diamante, ESM esmeralda. Se ela escrever uma sigla, MANDE A SIGLA neste campo e NAO pergunte o que significa — a busca entende. Sigla NAO e codigo do ERP. As que o catalogo conhece: ' + siglasEmTexto() + '. ' +
+          'AS SIGLAS DO CATALOGO SAO TERMO VALIDO, e sao o jeito que a equipe fala: OB e ouro branco, OA ouro amarelo, DTS e DMT sao diamante, ESM esmeralda. Se ela escrever uma sigla, MANDE A SIGLA neste campo e NAO pergunte o que significa — a busca entende. Sigla NAO e codigo do ERP. As que o catalogo conhece: ' +
+          siglasEmTexto() +
+          '. ' +
           'OMITA este campo quando a pergunta nao tiver termo — "uma tabela de pecas ate 20 mil", "o que temos em estoque", "as mais caras". NAO invente palavra generica como "peca" ou "joia": isso nao casa com nada e devolve lista vazia.',
       },
       incluir_sem_estoque: {
@@ -279,7 +281,9 @@ const GESTAO_PRODUTOS_TOOL: Anthropic.Tool = {
         description:
           'O que procurar: nome da peca, categoria, familia, colecao, pedra, cor ou codigo do ERP.' +
           'Se ela citar um CODIGO ("An24084", "o CO24022"), mande SO o codigo neste campo — nao repita a frase dela em volta.' +
-          'AS SIGLAS DO CATALOGO SAO TERMO VALIDO, e sao o jeito que a equipe fala: OB e ouro branco, OA ouro amarelo, DTS e DMT sao diamante, ESM esmeralda. Se ela escrever uma sigla, MANDE A SIGLA neste campo e NAO pergunte o que significa — a busca entende. Sigla NAO e codigo do ERP. As que o catalogo conhece: ' + siglasEmTexto() + '. ' +
+          'AS SIGLAS DO CATALOGO SAO TERMO VALIDO, e sao o jeito que a equipe fala: OB e ouro branco, OA ouro amarelo, DTS e DMT sao diamante, ESM esmeralda. Se ela escrever uma sigla, MANDE A SIGLA neste campo e NAO pergunte o que significa — a busca entende. Sigla NAO e codigo do ERP. As que o catalogo conhece: ' +
+          siglasEmTexto() +
+          '. ' +
           'OMITA este campo quando a pergunta nao tiver termo — "uma tabela de pecas ate 20 mil", "o que temos em estoque", "as mais caras". NAO invente palavra generica como "peca" ou "joia": isso nao casa com nada e devolve lista vazia.',
       },
       incluir_sem_estoque: {
@@ -602,7 +606,8 @@ const MANDAR_RELATORIO_TOOL: Anthropic.Tool = {
       formato: {
         type: 'string',
         enum: ['PDF', 'PLANILHA'],
-        description: 'PDF para ler e repassar; PLANILHA (xlsx) para trabalhar os numeros.',
+        description:
+          'PDF para ler e repassar; PLANILHA (xlsx) para trabalhar os numeros.',
       },
     },
     required: ['formato'],
@@ -627,7 +632,8 @@ const GESTAO_VENDAS_DETALHADAS_TOOL: Anthropic.Tool = {
       },
       documento: {
         type: 'string',
-        description: 'Numero do documento da venda, quando ela citar um ("1157").',
+        description:
+          'Numero do documento da venda, quando ela citar um ("1157").',
       },
       periodo: {
         type: 'string',
@@ -1494,7 +1500,10 @@ const GESTAO_TOM_TOOL: Anthropic.Tool = {
   input_schema: {
     type: 'object',
     properties: {
-      vendedora: { type: 'string', description: 'Nome da vendedora, como falado.' },
+      vendedora: {
+        type: 'string',
+        description: 'Nome da vendedora, como falado.',
+      },
       cliente: { type: 'string', description: 'Nome da cliente, como falado.' },
     },
     required: ['vendedora', 'cliente'],
@@ -1520,12 +1529,14 @@ const GESTAO_COMPARAR_ANOS_TOOL: Anthropic.Tool = {
         type: 'integer',
         minimum: 1,
         maximum: 12,
-        description: 'O mes, de 1 a 12. Use quando a pergunta for sobre um mes.',
+        description:
+          'O mes, de 1 a 12. Use quando a pergunta for sobre um mes.',
       },
       ...DATAS_LIVRES,
       vendedora: {
         type: 'string',
-        description: 'Nome da vendedora, como falado. OMITA para a loja inteira.',
+        description:
+          'Nome da vendedora, como falado. OMITA para a loja inteira.',
       },
     },
   },
@@ -1921,7 +1932,8 @@ export class AnthropicClient implements ILlmClient {
           : GESTAO_ITENS_TOOL,
       );
     }
-    if (params.gestaoVendasDetalhadas) tools.push(GESTAO_VENDAS_DETALHADAS_TOOL);
+    if (params.gestaoVendasDetalhadas)
+      tools.push(GESTAO_VENDAS_DETALHADAS_TOOL);
     if (params.mandarRelatorio) tools.push(MANDAR_RELATORIO_TOOL);
     // SO PARA QUEM VE A LOJA. O faturamento do grupo nao tem versao estreita,
     // entao a ferramenta nao e oferecida em vez de ser oferecida e recusada.
@@ -1959,9 +1971,9 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoRankings) tools.push(GESTAO_RANKINGS_TOOL);
     if (params.gestaoTom) tools.push(GESTAO_TOM_TOOL);
     if (params.gestaoCompararAnos) tools.push(GESTAO_COMPARAR_ANOS_TOOL);
-    if (params.gestaoCompararAnterior) tools.push(GESTAO_COMPARAR_ANTERIOR_TOOL);
-    if (params.gestaoDiaDaVendedora)
-      tools.push(GESTAO_DIA_DA_VENDEDORA_TOOL);
+    if (params.gestaoCompararAnterior)
+      tools.push(GESTAO_COMPARAR_ANTERIOR_TOOL);
+    if (params.gestaoDiaDaVendedora) tools.push(GESTAO_DIA_DA_VENDEDORA_TOOL);
     if (params.gestaoConversasAgora) tools.push(GESTAO_CONVERSAS_AGORA_TOOL);
     if (params.registrarRelato) tools.push(RELATO_TOOL);
     if (params.consultarVendas) tools.push(VENDAS_TOOL);
@@ -2185,43 +2197,51 @@ export class AnthropicClient implements ILlmClient {
         params.gestaoCarteira
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as {
-              vendedora?: string;
-              meses?: number;
-              a_partir_de?: number;
-            };
-            return textoDaLeituraDeGestao(
-              await params.gestaoCarteira!({
-                vendedora: String(e.vendedora ?? '').slice(0, 80),
-                meses: Number(e.meses) > 0 ? Number(e.meses) : undefined,
-                aPartirDe:
-                  Number(e.a_partir_de) > 0 ? Number(e.a_partir_de) : 0,
-              }),
-              'cliente parado',
-            );
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                vendedora?: string;
+                meses?: number;
+                a_partir_de?: number;
+              };
+              return textoDaLeituraDeGestao(
+                await params.gestaoCarteira!({
+                  vendedora: String(e.vendedora ?? '').slice(0, 80),
+                  meses: Number(e.meses) > 0 ? Number(e.meses) : undefined,
+                  aPartirDe:
+                    Number(e.a_partir_de) > 0 ? Number(e.a_partir_de) : 0,
+                }),
+                'cliente parado',
+              );
+            },
+          ),
         );
       } else if (
         toolUse.name === 'melhores_da_vendedora' &&
         params.gestaoMelhores
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as {
-              vendedora?: string;
-              categoria?: string;
-              ultimos_meses?: number;
-            };
-            return textoDaLeituraDeGestao(
-              await params.gestaoMelhores!({
-                vendedora: String(e.vendedora ?? '').slice(0, 80),
-                categoria: e.categoria,
-                ultimosMeses: e.ultimos_meses,
-              }),
-              'comprador',
-            );
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                vendedora?: string;
+                categoria?: string;
+                ultimos_meses?: number;
+              };
+              return textoDaLeituraDeGestao(
+                await params.gestaoMelhores!({
+                  vendedora: String(e.vendedora ?? '').slice(0, 80),
+                  categoria: e.categoria,
+                  ultimosMeses: e.ultimos_meses,
+                }),
+                'comprador',
+              );
+            },
+          ),
         );
       } else if (
         toolUse.name === 'clientes_por_fidelidade' &&
@@ -2231,44 +2251,52 @@ export class AnthropicClient implements ILlmClient {
         // existe. A Nathalia tem OS DOIS, e um `if` por handler sempre
         // escolheria o mesmo, mandando "meus clientes Ouro" para a loja.
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as {
-              nivel?: string;
-              vendedora?: string;
-              meses_sem_comprar?: number;
-              a_partir_de?: number;
-            };
-            const r = await params.gestaoFidelidade!({
-              nivel: e.nivel,
-              mesesSemComprar: e.meses_sem_comprar,
-              aPartirDe: e.a_partir_de,
-              vendedora: e.vendedora
-                ? String(e.vendedora).slice(0, 80)
-                : undefined,
-            });
-            return textoDaFidelidade(r, { daLoja: !e.vendedora });
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                nivel?: string;
+                vendedora?: string;
+                meses_sem_comprar?: number;
+                a_partir_de?: number;
+              };
+              const r = await params.gestaoFidelidade!({
+                nivel: e.nivel,
+                mesesSemComprar: e.meses_sem_comprar,
+                aPartirDe: e.a_partir_de,
+                vendedora: e.vendedora
+                  ? String(e.vendedora).slice(0, 80)
+                  : undefined,
+              });
+              return textoDaFidelidade(r, { daLoja: !e.vendedora });
+            },
+          ),
         );
       } else if (
         toolUse.name === 'meus_clientes_por_fidelidade' &&
         params.clientesPorFidelidade
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as {
-              nivel?: string;
-              meses_sem_comprar?: number;
-              a_partir_de?: number;
-            };
-            return textoDaFidelidade(
-              await params.clientesPorFidelidade!({
-                nivel: e.nivel,
-                mesesSemComprar: e.meses_sem_comprar,
-                aPartirDe: e.a_partir_de,
-              }),
-              { daLoja: false },
-            );
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                nivel?: string;
+                meses_sem_comprar?: number;
+                a_partir_de?: number;
+              };
+              return textoDaFidelidade(
+                await params.clientesPorFidelidade!({
+                  nivel: e.nivel,
+                  mesesSemComprar: e.meses_sem_comprar,
+                  aPartirDe: e.a_partir_de,
+                }),
+                { daLoja: false },
+              );
+            },
+          ),
         );
       } else if (
         toolUse.name === 'atribuir_vendedora_ao_cliente' &&
@@ -2288,17 +2316,21 @@ export class AnthropicClient implements ILlmClient {
         } else {
           tetos.carteirasAtribuidas += 1;
           toolResults.push(
-            await this.executarLeitura(toolUse, async () => {
-              const e = toolUse.input as {
-                cliente?: string;
-                vendedora?: string;
-              };
-              const r = await params.gestaoAtribuirVendedora!({
-                cliente: String(e.cliente ?? '').slice(0, 120),
-                vendedora: String(e.vendedora ?? '').slice(0, 80),
-              });
-              return `${r.mensagem}\n\nResponda com isso, sem alterar nomes.`;
-            }),
+            await this.executarLeitura(
+              toolUse,
+              params.aoResponderConsulta,
+              async () => {
+                const e = toolUse.input as {
+                  cliente?: string;
+                  vendedora?: string;
+                };
+                const r = await params.gestaoAtribuirVendedora!({
+                  cliente: String(e.cliente ?? '').slice(0, 120),
+                  vendedora: String(e.vendedora ?? '').slice(0, 80),
+                });
+                return `${r.mensagem}\n\nResponda com isso, sem alterar nomes.`;
+              },
+            ),
           );
         }
       } else if (
@@ -2306,27 +2338,31 @@ export class AnthropicClient implements ILlmClient {
         params.gestaoPecasPorValor
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as {
-              valor_minimo?: number;
-              valor_maximo?: number;
-              de?: string;
-              ate?: string;
-              vendedora?: string;
-              a_partir_de?: number;
-            };
-            const r = await params.gestaoPecasPorValor!({
-              valorMinimo: e.valor_minimo,
-              valorMaximo: e.valor_maximo,
-              de: e.de,
-              ate: e.ate,
-              aPartirDe: e.a_partir_de,
-              vendedora: e.vendedora
-                ? String(e.vendedora).slice(0, 80)
-                : undefined,
-            });
-            return textoDasPecasPorValor(r, { daLoja: !e.vendedora });
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                valor_minimo?: number;
+                valor_maximo?: number;
+                de?: string;
+                ate?: string;
+                vendedora?: string;
+                a_partir_de?: number;
+              };
+              const r = await params.gestaoPecasPorValor!({
+                valorMinimo: e.valor_minimo,
+                valorMaximo: e.valor_maximo,
+                de: e.de,
+                ate: e.ate,
+                aPartirDe: e.a_partir_de,
+                vendedora: e.vendedora
+                  ? String(e.vendedora).slice(0, 80)
+                  : undefined,
+              });
+              return textoDasPecasPorValor(r, { daLoja: !e.vendedora });
+            },
+          ),
         );
       } else if (
         toolUse.name === 'minhas_pecas_por_valor' &&
@@ -2336,124 +2372,150 @@ export class AnthropicClient implements ILlmClient {
         // dois conjuntos, e um `if` por handler sempre escolheria o mesmo.
         // Mesma decisao do `clientes_por_fidelidade`, em 09/10.
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as {
-              valor_minimo?: number;
-              valor_maximo?: number;
-              de?: string;
-              ate?: string;
-              a_partir_de?: number;
-            };
-            return textoDasPecasPorValor(
-              await params.minhasPecasPorValor!({
-                valorMinimo: e.valor_minimo,
-                valorMaximo: e.valor_maximo,
-                de: e.de,
-                ate: e.ate,
-                aPartirDe: e.a_partir_de,
-              }),
-              { daLoja: false },
-            );
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                valor_minimo?: number;
+                valor_maximo?: number;
+                de?: string;
+                ate?: string;
+                a_partir_de?: number;
+              };
+              return textoDasPecasPorValor(
+                await params.minhasPecasPorValor!({
+                  valorMinimo: e.valor_minimo,
+                  valorMaximo: e.valor_maximo,
+                  de: e.de,
+                  ate: e.ate,
+                  aPartirDe: e.a_partir_de,
+                }),
+                { daLoja: false },
+              );
+            },
+          ),
         );
       } else if (
         toolUse.name === 'agendar_para_vendedora' &&
         params.gestaoAgendar
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as {
-              cliente?: string;
-              vendedora?: string;
-              quandoIso?: string;
-              modo?: 'OCASIONAL' | 'TRANSFERIR';
-            };
-            const r = await params.gestaoAgendar!({
-              cliente: String(e.cliente ?? '').slice(0, 120),
-              vendedora: String(e.vendedora ?? '').slice(0, 80),
-              quandoIso: String(e.quandoIso ?? ''),
-              modo: e.modo,
-            });
-            return `${r.mensagem}\n\nResponda com isso, sem alterar nomes nem horarios.`;
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                cliente?: string;
+                vendedora?: string;
+                quandoIso?: string;
+                modo?: 'OCASIONAL' | 'TRANSFERIR';
+              };
+              const r = await params.gestaoAgendar!({
+                cliente: String(e.cliente ?? '').slice(0, 120),
+                vendedora: String(e.vendedora ?? '').slice(0, 80),
+                quandoIso: String(e.quandoIso ?? ''),
+                modo: e.modo,
+              });
+              return `${r.mensagem}\n\nResponda com isso, sem alterar nomes nem horarios.`;
+            },
+          ),
         );
       } else if (
         toolUse.name === 'panorama_de_leads' &&
         params.gestaoPanoramaLeads
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as { vendedora?: string };
-            return textoDosLeads(
-              await params.gestaoPanoramaLeads!({
-                vendedora: String(e.vendedora ?? '').slice(0, 80) || undefined,
-              }),
-            );
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as { vendedora?: string };
+              return textoDosLeads(
+                await params.gestaoPanoramaLeads!({
+                  vendedora:
+                    String(e.vendedora ?? '').slice(0, 80) || undefined,
+                }),
+              );
+            },
+          ),
         );
       } else if (
         toolUse.name === 'funil_de_atendimentos' &&
         params.gestaoFunil
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as { vendedora?: string };
-            return textoDoFunil(
-              await params.gestaoFunil!({
-                vendedora: String(e.vendedora ?? '').slice(0, 80) || undefined,
-              }),
-            );
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as { vendedora?: string };
+              return textoDoFunil(
+                await params.gestaoFunil!({
+                  vendedora:
+                    String(e.vendedora ?? '').slice(0, 80) || undefined,
+                }),
+              );
+            },
+          ),
         );
       } else if (
         toolUse.name === 'agenda_de_vendedora' &&
         params.gestaoAgenda
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as {
-              vendedora?: string;
-              periodo?: PeriodoAgendaLlm;
-            };
-            // VAZIO VIRA `undefined`, e nao string vazia: e o que distingue
-            // "a agenda da Marina" de "a agenda da equipe". Com `''` o
-            // handler cairia no caminho de UMA vendedora sem nome nenhum.
-            const nome = String(e.vendedora ?? '').slice(0, 80);
-            return textoDaLeituraDeGestao(
-              await params.gestaoAgenda!({
-                vendedora: nome || undefined,
-                periodo: e.periodo ?? 'HOJE',
-              }),
-              'compromisso',
-            );
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                vendedora?: string;
+                periodo?: PeriodoAgendaLlm;
+              };
+              // VAZIO VIRA `undefined`, e nao string vazia: e o que distingue
+              // "a agenda da Marina" de "a agenda da equipe". Com `''` o
+              // handler cairia no caminho de UMA vendedora sem nome nenhum.
+              const nome = String(e.vendedora ?? '').slice(0, 80);
+              return textoDaLeituraDeGestao(
+                await params.gestaoAgenda!({
+                  vendedora: nome || undefined,
+                  periodo: e.periodo ?? 'HOJE',
+                }),
+                'compromisso',
+              );
+            },
+          ),
         );
       } else if (
         toolUse.name === 'vendas_de_vendedora' &&
         params.gestaoVendas
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as {
-              vendedora?: string;
-              periodo?: PeriodoVendasLlm;
-              de?: string;
-              ate?: string;
-            };
-            return textoDaLeituraDeGestao(
-              await params.gestaoVendas!({
-                vendedora: String(e.vendedora ?? '').slice(0, 80),
-                // O ATALHO SO VALE SEM AS DATAS. Mandando `de` e `ate`, o
-                // enum e ignorado la dentro — e por isso o padrao nao entra
-                // aqui: fixar um valor faria o handler achar que houve
-                // escolha de periodo quando nao houve.
-                periodo: e.periodo,
-                de: e.de,
-                ate: e.ate,
-              }),
-              'venda',
-            );
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                vendedora?: string;
+                periodo?: PeriodoVendasLlm;
+                de?: string;
+                ate?: string;
+              };
+              return textoDaLeituraDeGestao(
+                await params.gestaoVendas!({
+                  vendedora: String(e.vendedora ?? '').slice(0, 80),
+                  // O ATALHO SO VALE SEM AS DATAS. Mandando `de` e `ate`, o
+                  // enum e ignorado la dentro — e por isso o padrao nao entra
+                  // aqui: fixar um valor faria o handler achar que houve
+                  // escolha de periodo quando nao houve.
+                  periodo: e.periodo,
+                  de: e.de,
+                  ate: e.ate,
+                }),
+                'venda',
+              );
+            },
+          ),
         );
       } else if (
         // ==================================================================
@@ -2472,540 +2534,660 @@ export class AnthropicClient implements ILlmClient {
         params.gestaoMetricas
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as {
-              de?: string;
-              ate?: string;
-              periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
-            };
-            return textoDeLinhas(
-              await params.gestaoMetricas!({ de: e.de, ate: e.ate, periodo: e.periodo }),
-              'Repasse os numeros com o TAMANHO DA AMOSTRA junto: media de dois casos nao e indicador.',
-            );
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                de?: string;
+                ate?: string;
+                periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
+              };
+              return textoDeLinhas(
+                await params.gestaoMetricas!({
+                  de: e.de,
+                  ate: e.ate,
+                  periodo: e.periodo,
+                }),
+                'Repasse os numeros com o TAMANHO DA AMOSTRA junto: media de dois casos nao e indicador.',
+              );
+            },
+          ),
         );
       } else if (
         toolUse.name === 'rankings_de_atendimento' &&
         params.gestaoRankings
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as {
-              eixo?: 'RESPOSTA' | 'FECHAMENTO' | 'INTERACOES' | 'CONVERSAO' | 'LEADS';
-              de?: string;
-              ate?: string;
-              periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
-            };
-            return textoDeLinhas(
-              await params.gestaoRankings!({
-                eixo: e.eixo,
-                de: e.de,
-                ate: e.ate,
-                periodo: e.periodo,
-              }),
-              'O tempo vem no relogio da loja (08h-19h) com o corrido ao lado: ' +
-                'diga os dois quando diferirem, porque a diferenca significa que a ' +
-                'cliente escreveu fora do horario.',
-            );
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                eixo?:
+                  | 'RESPOSTA'
+                  | 'FECHAMENTO'
+                  | 'INTERACOES'
+                  | 'CONVERSAO'
+                  | 'LEADS';
+                de?: string;
+                ate?: string;
+                periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
+              };
+              return textoDeLinhas(
+                await params.gestaoRankings!({
+                  eixo: e.eixo,
+                  de: e.de,
+                  ate: e.ate,
+                  periodo: e.periodo,
+                }),
+                'O tempo vem no relogio da loja (08h-19h) com o corrido ao lado: ' +
+                  'diga os dois quando diferirem, porque a diferenca significa que a ' +
+                  'cliente escreveu fora do horario.',
+              );
+            },
+          ),
         );
       } else if (
         toolUse.name === 'comparar_com_outros_anos' &&
         params.gestaoCompararAnos
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as {
-              mes?: number;
-              de?: string;
-              ate?: string;
-              vendedora?: string;
-            };
-            return textoDeLinhas(
-              await params.gestaoCompararAnos!({
-                mes: e.mes,
-                de: e.de,
-                ate: e.ate,
-                vendedora: e.vendedora,
-              }),
-              'Quando a resposta disser que o mes atual ainda nao fechou, DIGA ISSO: ' +
-                'comparar mes parcial com mes inteiro faz o ano atual parecer pior sempre.',
-            );
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                mes?: number;
+                de?: string;
+                ate?: string;
+                vendedora?: string;
+              };
+              return textoDeLinhas(
+                await params.gestaoCompararAnos!({
+                  mes: e.mes,
+                  de: e.de,
+                  ate: e.ate,
+                  vendedora: e.vendedora,
+                }),
+                'Quando a resposta disser que o mes atual ainda nao fechou, DIGA ISSO: ' +
+                  'comparar mes parcial com mes inteiro faz o ano atual parecer pior sempre.',
+              );
+            },
+          ),
         );
       } else if (
         toolUse.name === 'comparar_com_periodo_anterior' &&
         params.gestaoCompararAnterior
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as {
-              periodo?: 'SEMANA' | 'MES' | 'ANO';
-              de?: string;
-              ate?: string;
-              vendedora?: string;
-            };
-            return textoDeLinhas(
-              await params.gestaoCompararAnterior!({
-                periodo: e.periodo,
-                de: e.de,
-                ate: e.ate,
-                vendedora: e.vendedora,
-              }),
-              'CLIENTES e VENDAS sao numeros diferentes: repasse o que perguntaram. ' +
-                'E se vier o periodo anterior FECHADO, diga os dois.',
-            );
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                periodo?: 'SEMANA' | 'MES' | 'ANO';
+                de?: string;
+                ate?: string;
+                vendedora?: string;
+              };
+              return textoDeLinhas(
+                await params.gestaoCompararAnterior!({
+                  periodo: e.periodo,
+                  de: e.de,
+                  ate: e.ate,
+                  vendedora: e.vendedora,
+                }),
+                'CLIENTES e VENDAS sao numeros diferentes: repasse o que perguntaram. ' +
+                  'E se vier o periodo anterior FECHADO, diga os dois.',
+              );
+            },
+          ),
         );
       } else if (toolUse.name === 'tom_da_conversa' && params.gestaoTom) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as { vendedora?: string; cliente?: string };
-            return textoDeLinhas(
-              await params.gestaoTom!({
-                vendedora: String(e.vendedora ?? '').slice(0, 80),
-                cliente: String(e.cliente ?? '').slice(0, 80),
-              }),
-              'Se a resposta disser que o celular dela nao esta conectado ou que ' +
-                'a conversa e antiga demais, REPASSE — nao conclua que nao houve atendimento.',
-            );
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                vendedora?: string;
+                cliente?: string;
+              };
+              return textoDeLinhas(
+                await params.gestaoTom!({
+                  vendedora: String(e.vendedora ?? '').slice(0, 80),
+                  cliente: String(e.cliente ?? '').slice(0, 80),
+                }),
+                'Se a resposta disser que o celular dela nao esta conectado ou que ' +
+                  'a conversa e antiga demais, REPASSE — nao conclua que nao houve atendimento.',
+              );
+            },
+          ),
         );
       } else if (toolUse.name === 'metas_de_vendedora' && params.gestaoMetas) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as { vendedora?: string };
-            return textoDaLeituraDeGestao(
-              await params.gestaoMetas!({
-                vendedora: String(e.vendedora ?? '').slice(0, 80),
-              }),
-              'meta',
-            );
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as { vendedora?: string };
+              return textoDaLeituraDeGestao(
+                await params.gestaoMetas!({
+                  vendedora: String(e.vendedora ?? '').slice(0, 80),
+                }),
+                'meta',
+              );
+            },
+          ),
         );
       } else if (
         toolUse.name === 'quem_mais_vende' &&
         params.gestaoPorFamilia
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as {
-              familia?: string;
-              limite?: number;
-              mes?: number;
-              periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
-              de?: string;
-              ate?: string;
-            };
-            const r = await params.gestaoPorFamilia!({
-              familia: String(e.familia ?? '').slice(0, 40),
-              limite: e.limite,
-              mes: e.mes,
-              periodo: e.periodo,
-              de: e.de,
-              ate: e.ate,
-            });
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                familia?: string;
+                limite?: number;
+                mes?: number;
+                periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
+                de?: string;
+                ate?: string;
+              };
+              const r = await params.gestaoPorFamilia!({
+                familia: String(e.familia ?? '').slice(0, 40),
+                limite: e.limite,
+                mes: e.mes,
+                periodo: e.periodo,
+                de: e.de,
+                ate: e.ate,
+              });
 
-            // A FAMILIA QUE NAO EXISTE VIRA PERGUNTA, e nao 'ninguem vendeu':
-            // zero linhas seria indistinguivel de um periodo sem venda, e a
-            // pessoa concluiria que ninguem vendeu brinco naquele mes.
-            if (r.status === 'FAMILIA_DESCONHECIDA') {
+              // A FAMILIA QUE NAO EXISTE VIRA PERGUNTA, e nao 'ninguem vendeu':
+              // zero linhas seria indistinguivel de um periodo sem venda, e a
+              // pessoa concluiria que ninguem vendeu brinco naquele mes.
+              if (r.status === 'FAMILIA_DESCONHECIDA') {
+                return (
+                  'Esse tipo de peca nao existe no catalogo. Os que existem: ' +
+                  (r.familias ?? []).join(', ') +
+                  '. Diga isso e pergunte qual deles ela quer.'
+                );
+              }
+              if (r.linhas.length === 0) {
+                return 'Ninguem vendeu esse tipo de peca no periodo. Diga isso em uma frase.';
+              }
               return (
-                'Esse tipo de peca nao existe no catalogo. Os que existem: ' +
-                (r.familias ?? []).join(', ') +
-                '. Diga isso e pergunte qual deles ela quer.'
+                `Ranking no periodo:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+                'A primeira linha e a resposta. Repasse os numeros exatamente como estao. ' +
+                // A RESSALVA QUE A AGENTE INVENTAVA — 02/10/2026. Somando quatro
+                // familias a mao, ela avisou que "isso cobre so essas quatro" e
+                // citou tipos que ela mesma escolheu nao consultar; um deles
+                // ("alianca") nem existe no catalogo. O recorte e de UM tipo, e
+                // dizer isso e diferente de alegar que o resto ficou de fora.
+                'Este ranking e de UM tipo de peca, o que foi pedido. Nao diga que outros tipos "ficaram de fora da conta" nem invente nomes de tipos: se ela quiser o total de pecas por vendedora, some nada — peca o panorama_da_equipe, que ja traz todas as familias.' +
+                // O TRAVESSAO SE LE COMO MENOS — 02/10/2026. Perguntada quantos
+                // pingentes sairam em agosto e setembro, ela respondeu "Em
+                // setembro, 7 — 6 da Camila Brito e 1 da Ylka Franck". O 7 esta
+                // certo e o travessao era de aposto, mas o Lucas leu "7 - 6" e
+                // perguntou o que era. Quem le no WhatsApp nao tem a lista ao
+                // lado para conferir.
+                ' MAIS DE UMA VENDEDORA SE LE EM LISTA, uma por linha, com o numero de cada uma. E nunca separe um total da quebra dele com travessao, porque travessao entre dois numeros se le como subtracao: escreva "7 pingentes: 6 da Camila Brito e 1 da Ylka Franck", nunca "7 — 6 da Camila Brito".'
               );
-            }
-            if (r.linhas.length === 0) {
-              return 'Ninguem vendeu esse tipo de peca no periodo. Diga isso em uma frase.';
-            }
-            return (
-              `Ranking no periodo:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
-              'A primeira linha e a resposta. Repasse os numeros exatamente como estao. ' +
-              // A RESSALVA QUE A AGENTE INVENTAVA — 02/10/2026. Somando quatro
-              // familias a mao, ela avisou que "isso cobre so essas quatro" e
-              // citou tipos que ela mesma escolheu nao consultar; um deles
-              // ("alianca") nem existe no catalogo. O recorte e de UM tipo, e
-              // dizer isso e diferente de alegar que o resto ficou de fora.
-              'Este ranking e de UM tipo de peca, o que foi pedido. Nao diga que outros tipos "ficaram de fora da conta" nem invente nomes de tipos: se ela quiser o total de pecas por vendedora, some nada — peca o panorama_da_equipe, que ja traz todas as familias.' +
-              // O TRAVESSAO SE LE COMO MENOS — 02/10/2026. Perguntada quantos
-              // pingentes sairam em agosto e setembro, ela respondeu "Em
-              // setembro, 7 — 6 da Camila Brito e 1 da Ylka Franck". O 7 esta
-              // certo e o travessao era de aposto, mas o Lucas leu "7 - 6" e
-              // perguntou o que era. Quem le no WhatsApp nao tem a lista ao
-              // lado para conferir.
-              ' MAIS DE UMA VENDEDORA SE LE EM LISTA, uma por linha, com o numero de cada uma. E nunca separe um total da quebra dele com travessao, porque travessao entre dois numeros se le como subtracao: escreva "7 pingentes: 6 da Camila Brito e 1 da Ylka Franck", nunca "7 — 6 da Camila Brito".'
-            );
-          }),
+            },
+          ),
         );
       } else if (
         toolUse.name === 'guardar_combinado' &&
         params.guardarCombinado
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const { texto } = toolUse.input as { texto?: string };
-            const r = await params.guardarCombinado!({
-              texto: String(texto ?? '').slice(0, 400),
-            });
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const { texto } = toolUse.input as { texto?: string };
+              const r = await params.guardarCombinado!({
+                texto: String(texto ?? '').slice(0, 400),
+              });
 
-            // CADA RECUSA DIZ O QUE FAZER, e nao so o que houve. "Nao deu" faz
-            // a agente pedir desculpa e parar; dizendo o teto, ela devolve a
-            // conversa para quem pode resolver.
-            if (r.status === 'VAZIO') {
-              return 'Nao veio combinado nenhum. Pergunte o que ela quer que voce lembre.';
-            }
-            if (r.status === 'LONGO') {
-              return `Longo demais (teto de ${r.teto} caracteres). Peca para resumir, ou proponha voce uma versao curta e confirme antes de guardar.`;
-            }
-            if (r.status === 'CHEIO') {
-              return `Ja ha ${r.teto} combinados guardados, que e o maximo. Mostre a lista com listar_combinados e pergunte qual sai para este entrar.`;
-            }
-            return (
-              'Guardado. Confirme em uma frase, com as SUAS palavras, e diga que ' +
-              'vale daqui em diante. Se o combinado for um aviso automatico, diga ' +
-              'tambem que voce nao dispara sozinha — que precisa que perguntem.'
-            );
-          }),
+              // CADA RECUSA DIZ O QUE FAZER, e nao so o que houve. "Nao deu" faz
+              // a agente pedir desculpa e parar; dizendo o teto, ela devolve a
+              // conversa para quem pode resolver.
+              if (r.status === 'VAZIO') {
+                return 'Nao veio combinado nenhum. Pergunte o que ela quer que voce lembre.';
+              }
+              if (r.status === 'LONGO') {
+                return `Longo demais (teto de ${r.teto} caracteres). Peca para resumir, ou proponha voce uma versao curta e confirme antes de guardar.`;
+              }
+              if (r.status === 'CHEIO') {
+                return `Ja ha ${r.teto} combinados guardados, que e o maximo. Mostre a lista com listar_combinados e pergunte qual sai para este entrar.`;
+              }
+              return (
+                'Guardado. Confirme em uma frase, com as SUAS palavras, e diga que ' +
+                'vale daqui em diante. Se o combinado for um aviso automatico, diga ' +
+                'tambem que voce nao dispara sozinha — que precisa que perguntem.'
+              );
+            },
+          ),
         );
       } else if (
         toolUse.name === 'listar_combinados' &&
         params.listarCombinados
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const { linhas } = await params.listarCombinados!();
-            if (linhas.length === 0) {
-              return 'Nao ha combinado guardado. Diga isso em uma frase.';
-            }
-            return (
-              `Combinados guardados:\n${linhas.join('\n')}\n\n` +
-              'Repasse a lista com os numeros — eles sao o que ela usa para pedir ' +
-              'para esquecer algum.'
-            );
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const { linhas } = await params.listarCombinados!();
+              if (linhas.length === 0) {
+                return 'Nao ha combinado guardado. Diga isso em uma frase.';
+              }
+              return (
+                `Combinados guardados:\n${linhas.join('\n')}\n\n` +
+                'Repasse a lista com os numeros — eles sao o que ela usa para pedir ' +
+                'para esquecer algum.'
+              );
+            },
+          ),
         );
       } else if (
         toolUse.name === 'esquecer_combinado' &&
         params.esquecerCombinado
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const { numero } = toolUse.input as { numero?: number };
-            const r = await params.esquecerCombinado!({
-              numero: Number(numero ?? 0),
-            });
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const { numero } = toolUse.input as { numero?: number };
+              const r = await params.esquecerCombinado!({
+                numero: Number(numero ?? 0),
+              });
 
-            if (r.status === 'NAO_ACHEI') {
-              // O numero errado NAO apaga nada, e a agente tem de dizer isso —
-              // "pronto, esqueci" sobre um combinado que continua valendo e o
-              // pior desfecho possivel aqui.
-              return 'Nao ha combinado nessa posicao. Mostre a lista de novo e pergunte qual e.';
-            }
-            return `Esquecido: "${r.texto}". Confirme em uma frase, dizendo qual era.`;
-          }),
+              if (r.status === 'NAO_ACHEI') {
+                // O numero errado NAO apaga nada, e a agente tem de dizer isso —
+                // "pronto, esqueci" sobre um combinado que continua valendo e o
+                // pior desfecho possivel aqui.
+                return 'Nao ha combinado nessa posicao. Mostre a lista de novo e pergunte qual e.';
+              }
+              return `Esquecido: "${r.texto}". Confirme em uma frase, dizendo qual era.`;
+            },
+          ),
         );
-      } else if (toolUse.name === 'guardar_lembrete' && params.guardarLembrete) {
+      } else if (
+        toolUse.name === 'guardar_lembrete' &&
+        params.guardarLembrete
+      ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            // O TETO E DO TURNO, e e CONTADO. Ver `TetosPorTurno`: vinte,
-            // para a agenda de uma semana colada de uma vez caber.
-            //
-            // E ELE DIZ O QUE FALTOU. "Voce ja guardou um lembrete" fazia o
-            // modelo confirmar UM e calar sobre os outros seis; dizer quantos
-            // entraram e que o resto precisa de outra mensagem deixa a conta
-            // visivel para quem pediu.
-            if (tetos.lembretesGuardados >= MAX_LEMBRETES_POR_TURNO) {
-              return (
-                `Voce ja guardou ${MAX_LEMBRETES_POR_TURNO} lembretes nesta ` +
-                'mensagem, que e o maximo de uma vez. DIGA a ela quantos ' +
-                'foram guardados e QUAIS faltaram, e peca para mandar o resto ' +
-                'numa mensagem nova — nao finja que guardou tudo.'
-              );
-            }
-            const e = toolUse.input as { texto?: string; quandoIso?: string };
-            const r = await params.guardarLembrete!({
-              texto: String(e.texto ?? '').slice(0, 400),
-              quandoIso: String(e.quandoIso ?? ''),
-            });
-            tetos.lembretesGuardados += 1;
-            return `${r.mensagem}\n\nResponda com isso, sem mudar o texto nem o horario.`;
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              // O TETO E DO TURNO, e e CONTADO. Ver `TetosPorTurno`: vinte,
+              // para a agenda de uma semana colada de uma vez caber.
+              //
+              // E ELE DIZ O QUE FALTOU. "Voce ja guardou um lembrete" fazia o
+              // modelo confirmar UM e calar sobre os outros seis; dizer quantos
+              // entraram e que o resto precisa de outra mensagem deixa a conta
+              // visivel para quem pediu.
+              if (tetos.lembretesGuardados >= MAX_LEMBRETES_POR_TURNO) {
+                return (
+                  `Voce ja guardou ${MAX_LEMBRETES_POR_TURNO} lembretes nesta ` +
+                  'mensagem, que e o maximo de uma vez. DIGA a ela quantos ' +
+                  'foram guardados e QUAIS faltaram, e peca para mandar o resto ' +
+                  'numa mensagem nova — nao finja que guardou tudo.'
+                );
+              }
+              const e = toolUse.input as { texto?: string; quandoIso?: string };
+              const r = await params.guardarLembrete!({
+                texto: String(e.texto ?? '').slice(0, 400),
+                quandoIso: String(e.quandoIso ?? ''),
+              });
+              tetos.lembretesGuardados += 1;
+              return `${r.mensagem}\n\nResponda com isso, sem mudar o texto nem o horario.`;
+            },
+          ),
         );
       } else if (toolUse.name === 'meus_lembretes' && params.meusLembretes) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const { linhas } = await params.meusLembretes!();
-            return (
-              `Lembretes dela:\n${linhas.join('\n')}\n\n` +
-              'Repasse com os numeros — sao eles que ela usa para remarcar ou cancelar.'
-            );
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const { linhas } = await params.meusLembretes!();
+              return (
+                `Lembretes dela:\n${linhas.join('\n')}\n\n` +
+                'Repasse com os numeros — sao eles que ela usa para remarcar ou cancelar.'
+              );
+            },
+          ),
         );
       } else if (
         toolUse.name === 'remarcar_lembrete' &&
         params.remarcarLembrete
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as { qual?: string; quandoIso?: string };
-            const r = await params.remarcarLembrete!({
-              qual: String(e.qual ?? '').slice(0, 400),
-              quandoIso: String(e.quandoIso ?? ''),
-            });
-            return `${r.mensagem}\n\nResponda com isso, sem mudar o texto nem o horario.`;
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as { qual?: string; quandoIso?: string };
+              const r = await params.remarcarLembrete!({
+                qual: String(e.qual ?? '').slice(0, 400),
+                quandoIso: String(e.quandoIso ?? ''),
+              });
+              return `${r.mensagem}\n\nResponda com isso, sem mudar o texto nem o horario.`;
+            },
+          ),
         );
       } else if (
         toolUse.name === 'cancelar_lembrete' &&
         params.cancelarLembrete
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as { qual?: string };
-            const r = await params.cancelarLembrete!({
-              qual: String(e.qual ?? '').slice(0, 400),
-            });
-            return `${r.mensagem}\n\nResponda com isso, sem mudar o texto.`;
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as { qual?: string };
+              const r = await params.cancelarLembrete!({
+                qual: String(e.qual ?? '').slice(0, 400),
+              });
+              return `${r.mensagem}\n\nResponda com isso, sem mudar o texto.`;
+            },
+          ),
         );
       } else if (toolUse.name === 'itens_mais_vendidos' && params.gestaoItens) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as {
-              periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
-              limite?: number;
-              vendedora?: string;
-              de?: string;
-              ate?: string;
-            };
-            const r = await params.gestaoItens!(e);
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+                limite?: number;
+                vendedora?: string;
+                de?: string;
+                ate?: string;
+              };
+              const r = await params.gestaoItens!(e);
 
-            // Faltou dizer DE QUEM, e quem pergunta nao ve a loja inteira.
-            // Nao e "nao encontrei": e uma pergunta incompleta, e dizer o
-            // contrario faria a resposta soar como dado ausente.
-            if (r.status === 'EXIGE_VENDEDORA') {
-              return 'Esta consulta e sempre por vendedora. Pergunte de qual vendedora ela quer as pecas, sem mencionar permissao nem limitacao de acesso.';
-            }
-            if (r.status === 'NAO_ENCONTRADA') {
-              return 'Nao achei essa vendedora na equipe. Diga isso e pergunte o nome de novo.';
-            }
-            if (r.status === 'AMBIGUA') {
+              // Faltou dizer DE QUEM, e quem pergunta nao ve a loja inteira.
+              // Nao e "nao encontrei": e uma pergunta incompleta, e dizer o
+              // contrario faria a resposta soar como dado ausente.
+              if (r.status === 'EXIGE_VENDEDORA') {
+                return 'Esta consulta e sempre por vendedora. Pergunte de qual vendedora ela quer as pecas, sem mencionar permissao nem limitacao de acesso.';
+              }
+              if (r.status === 'NAO_ENCONTRADA') {
+                return 'Nao achei essa vendedora na equipe. Diga isso e pergunte o nome de novo.';
+              }
+              if (r.status === 'AMBIGUA') {
+                return (
+                  `Ha mais de uma vendedora com esse nome:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+                  'Pergunte qual delas.'
+                );
+              }
+              if (r.linhas.length === 0) {
+                return 'Nenhuma peca vendida nesse periodo. Diga isso em uma frase, e ofereca outro periodo.';
+              }
               return (
-                `Ha mais de uma vendedora com esse nome:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
-                'Pergunte qual delas.'
+                `Pecas que mais faturaram no periodo:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+                'Repasse os numeros exatamente como estao, sem somar nem arredondar.'
               );
-            }
-            if (r.linhas.length === 0) {
-              return 'Nenhuma peca vendida nesse periodo. Diga isso em uma frase, e ofereca outro periodo.';
-            }
-            return (
-              `Pecas que mais faturaram no periodo:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
-              'Repasse os numeros exatamente como estao, sem somar nem arredondar.'
-            );
-          }),
+            },
+          ),
         );
       } else if (
         toolUse.name === 'panorama_da_equipe' &&
         params.gestaoPanorama
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as {
-              periodo?: PeriodoVendasLlm;
-              de?: string;
-              ate?: string;
-            };
-            const { linhas } = await params.gestaoPanorama!({
-              periodo: e.periodo,
-              de: e.de,
-              ate: e.ate,
-            });
-            if (linhas.length === 0) {
-              return 'Nenhuma vendedora ativa com venda nesse periodo. Diga isso em uma frase.';
-            }
-            return (
-              `Equipe no periodo:\n${linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
-              // UMA LINHA POR PESSOA, E NAO UMA FRASE — 02/10/2026.
-              //
-              // Perguntada por quem vendeu mais pecas, ela comprimiu sete
-              // vendedoras em "a Keyciane com 12, seguida da Camila com 10 e da
-              // Faby com 7": o dado estava certo, e a quebra por tipo das outras
-              // seis simplesmente sumiu. Comparacao se le em coluna.
-              //
-              // A SEGUNDA VOLTA, no mesmo dia: a instrucao acima dizia "nao
-              // resuma em frase corrida", e mesmo assim a MESMA pergunta teve
-              // duas respostas — 14h54 veio a lista inteira, 15h42 veio
-              // "faturou mais a Faby, com R$ 321.250; mais pecas tambem ela,
-              // com 8; mais vendas a Bianca, com 6". Nao foi desobediencia: a
-              // pergunta era "QUEM teve mais", um superlativo, e responder so
-              // o topo e uma leitura legitima dela. A instrucao brigava com a
-              // pergunta, e a cada vez uma ganhava.
-              //
-              // ENTAO O TEXTO RESOLVE A BRIGA em vez de proibir: diz o que
-              // fazer quando a pergunta e sobre quem lidera — a frase do topo
-              // E a lista, nao uma OU a outra. Instrucao que so proibe deixa o
-              // modelo escolher o que colocar no lugar.
-              'RESPONDA SEMPRE COM A LISTA INTEIRA, uma vendedora por linha, numerada, na ordem em que vieram, com a quebra por tipo entre parenteses em CADA uma. ISSO VALE TAMBEM QUANDO A PERGUNTA E SOBRE QUEM LIDERA ("quem vendeu mais", "quem faturou mais"): ai voce diz numa frase curta quem lidera em cada criterio E LOGO EM SEGUIDA a lista completa. Nunca responda so com o topo, nunca corte as ultimas colocadas, e repasse os numeros exatamente como estao.'
-            );
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                periodo?: PeriodoVendasLlm;
+                de?: string;
+                ate?: string;
+              };
+              const { linhas } = await params.gestaoPanorama!({
+                periodo: e.periodo,
+                de: e.de,
+                ate: e.ate,
+              });
+              if (linhas.length === 0) {
+                return 'Nenhuma vendedora ativa com venda nesse periodo. Diga isso em uma frase.';
+              }
+              return (
+                `Equipe no periodo:\n${linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+                // UMA LINHA POR PESSOA, E NAO UMA FRASE — 02/10/2026.
+                //
+                // Perguntada por quem vendeu mais pecas, ela comprimiu sete
+                // vendedoras em "a Keyciane com 12, seguida da Camila com 10 e da
+                // Faby com 7": o dado estava certo, e a quebra por tipo das outras
+                // seis simplesmente sumiu. Comparacao se le em coluna.
+                //
+                // A SEGUNDA VOLTA, no mesmo dia: a instrucao acima dizia "nao
+                // resuma em frase corrida", e mesmo assim a MESMA pergunta teve
+                // duas respostas — 14h54 veio a lista inteira, 15h42 veio
+                // "faturou mais a Faby, com R$ 321.250; mais pecas tambem ela,
+                // com 8; mais vendas a Bianca, com 6". Nao foi desobediencia: a
+                // pergunta era "QUEM teve mais", um superlativo, e responder so
+                // o topo e uma leitura legitima dela. A instrucao brigava com a
+                // pergunta, e a cada vez uma ganhava.
+                //
+                // ENTAO O TEXTO RESOLVE A BRIGA em vez de proibir: diz o que
+                // fazer quando a pergunta e sobre quem lidera — a frase do topo
+                // E a lista, nao uma OU a outra. Instrucao que so proibe deixa o
+                // modelo escolher o que colocar no lugar.
+                'RESPONDA SEMPRE COM A LISTA INTEIRA, uma vendedora por linha, numerada, na ordem em que vieram, com a quebra por tipo entre parenteses em CADA uma. ISSO VALE TAMBEM QUANDO A PERGUNTA E SOBRE QUEM LIDERA ("quem vendeu mais", "quem faturou mais"): ai voce diz numa frase curta quem lidera em cada criterio E LOGO EM SEGUIDA a lista completa. Nunca responda so com o topo, nunca corte as ultimas colocadas, e repasse os numeros exatamente como estao.'
+              );
+            },
+          ),
         );
       } else if (
         toolUse.name === 'feedbacks_de_vendedora' &&
         params.gestaoFeedbacks
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as {
-              vendedora?: string;
-              cliente?: string;
-              dias?: number;
-            };
-            const r = await params.gestaoFeedbacks!({
-              vendedora: String(e.vendedora ?? '').slice(0, 80),
-              cliente: e.cliente ? String(e.cliente).slice(0, 120) : undefined,
-              dias: typeof e.dias === 'number' ? e.dias : undefined,
-            });
-            return textoDosFeedbacks(r, Boolean(e.cliente));
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                vendedora?: string;
+                cliente?: string;
+                dias?: number;
+              };
+              const r = await params.gestaoFeedbacks!({
+                vendedora: String(e.vendedora ?? '').slice(0, 80),
+                cliente: e.cliente
+                  ? String(e.cliente).slice(0, 120)
+                  : undefined,
+                dias: typeof e.dias === 'number' ? e.dias : undefined,
+              });
+              return textoDosFeedbacks(r, Boolean(e.cliente));
+            },
+          ),
         );
       } else if (
         toolUse.name === 'dia_da_vendedora' &&
         params.gestaoDiaDaVendedora
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as { vendedora?: string; dia?: string };
-            const dia = String(e.dia ?? "");
-            const r = await params.gestaoDiaDaVendedora!({
-              vendedora: String(e.vendedora ?? "").slice(0, 80),
-              dia: DATA_ISO.test(dia) ? dia : undefined,
-            });
-            return textoDoDiaDaVendedora(r);
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as { vendedora?: string; dia?: string };
+              const dia = String(e.dia ?? '');
+              const r = await params.gestaoDiaDaVendedora!({
+                vendedora: String(e.vendedora ?? '').slice(0, 80),
+                dia: DATA_ISO.test(dia) ? dia : undefined,
+              });
+              return textoDoDiaDaVendedora(r);
+            },
+          ),
         );
       } else if (
         toolUse.name === 'conversas_agora' &&
         params.gestaoConversasAgora
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as { vendedora?: string; minutos?: number };
-            const nome = String(e.vendedora ?? '').slice(0, 80);
-            const r = await params.gestaoConversasAgora!({
-              vendedora: nome || undefined,
-              minutos: typeof e.minutos === 'number' ? e.minutos : undefined,
-            });
-            return textoDasConversasAgora(r, Boolean(nome));
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                vendedora?: string;
+                minutos?: number;
+              };
+              const nome = String(e.vendedora ?? '').slice(0, 80);
+              const r = await params.gestaoConversasAgora!({
+                vendedora: nome || undefined,
+                minutos: typeof e.minutos === 'number' ? e.minutos : undefined,
+              });
+              return textoDasConversasAgora(r, Boolean(nome));
+            },
+          ),
         );
       } else if (toolUse.name === 'listar_leads' && params.gestaoLeads) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const r = await params.gestaoLeads!();
-            if (r.linhas.length === 0) {
-              return 'Nenhum lead esperando encaminhamento. Diga isso.';
-            }
-            return (
-              `${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
-              'Repasse a lista assim e pergunte se ela quer encaminhar algum agora.'
-            );
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const r = await params.gestaoLeads!();
+              if (r.linhas.length === 0) {
+                return 'Nenhum lead esperando encaminhamento. Diga isso.';
+              }
+              return (
+                `${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+                'Repasse a lista assim e pergunte se ela quer encaminhar algum agora.'
+              );
+            },
+          ),
         );
       } else if (
         toolUse.name === 'listar_vendedoras' &&
         params.gestaoVendedoras
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const r = await params.gestaoVendedoras!();
-            if (r.linhas.length === 0) {
-              return 'Nenhuma vendedora ativa cadastrada. Diga isso.';
-            }
-            return (
-              `${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
-              'Repasse a lista assim, sem acrescentar numeros de venda.'
-            );
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const r = await params.gestaoVendedoras!();
+              if (r.linhas.length === 0) {
+                return 'Nenhuma vendedora ativa cadastrada. Diga isso.';
+              }
+              return (
+                `${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+                'Repasse a lista assim, sem acrescentar numeros de venda.'
+              );
+            },
+          ),
         );
       } else if (
         toolUse.name === 'encaminhar_lead' &&
         params.gestaoEncaminharLead
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as {
-              vendedora?: string;
-              lead?: string;
-              quando?: string;
-            };
-            const r = await params.gestaoEncaminharLead!({
-              vendedora: String(e.vendedora ?? '').slice(0, 120),
-              lead: e.lead ? String(e.lead).slice(0, 120) : undefined,
-              quando: e.quando ? String(e.quando).slice(0, 120) : undefined,
-            });
-            return textoDoEncaminhamento(r);
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                vendedora?: string;
+                lead?: string;
+                quando?: string;
+              };
+              const r = await params.gestaoEncaminharLead!({
+                vendedora: String(e.vendedora ?? '').slice(0, 120),
+                lead: e.lead ? String(e.lead).slice(0, 120) : undefined,
+                quando: e.quando ? String(e.quando).slice(0, 120) : undefined,
+              });
+              return textoDoEncaminhamento(r);
+            },
+          ),
         );
       } else if (
         toolUse.name === 'de_quem_e_o_cliente' &&
         params.gestaoCarteiraDoCliente
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as { cliente?: string };
-            const r = await params.gestaoCarteiraDoCliente!({
-              cliente: String(e.cliente ?? '').slice(0, 120),
-            });
-            if (r.status === 'NAO_ENCONTRADO') {
-              return 'Nenhum cliente com esse nome. Diga isso e pergunte se o nome esta completo.';
-            }
-            if (r.status === 'AMBIGUO') {
-              return (
-                `Mais de um cliente com esse nome:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
-                'Mostre as opcoes e pergunte de qual se trata.'
-              );
-            }
-            return `${r.linhas.join('\n')}\n\nRepasse exatamente assim.`;
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as { cliente?: string };
+              const r = await params.gestaoCarteiraDoCliente!({
+                cliente: String(e.cliente ?? '').slice(0, 120),
+              });
+              if (r.status === 'NAO_ENCONTRADO') {
+                return 'Nenhum cliente com esse nome. Diga isso e pergunte se o nome esta completo.';
+              }
+              if (r.status === 'AMBIGUO') {
+                return (
+                  `Mais de um cliente com esse nome:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+                  'Mostre as opcoes e pergunte de qual se trata.'
+                );
+              }
+              return `${r.linhas.join('\n')}\n\nRepasse exatamente assim.`;
+            },
+          ),
         );
       } else if (
         toolUse.name === 'consultar_vendas' &&
         params.consultarVendas
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as {
-              periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
-              de?: string;
-              ate?: string;
-            };
-            // Sem padrao fixo aqui: com `de` e `ate` preenchidos o atalho e
-            // ignorado la dentro, e cravar 'HOJE' faria o handler achar que
-            // houve escolha de periodo quando nao houve.
-            const { resumo } = await params.consultarVendas!({
-              periodo: e.periodo,
-              de: e.de,
-              ate: e.ate,
-            });
-            return (
-              `Vendas dela no periodo: ${resumo}. Repasse estes numeros exatamente ` +
-              'como estao, em uma ou duas frases naturais.'
-            );
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                periodo?: PeriodoVendasLlm | 'ONTEM' | 'ANO';
+                de?: string;
+                ate?: string;
+              };
+              // Sem padrao fixo aqui: com `de` e `ate` preenchidos o atalho e
+              // ignorado la dentro, e cravar 'HOJE' faria o handler achar que
+              // houve escolha de periodo quando nao houve.
+              const { resumo } = await params.consultarVendas!({
+                periodo: e.periodo,
+                de: e.de,
+                ate: e.ate,
+              });
+              return (
+                `Vendas dela no periodo: ${resumo}. Repasse estes numeros exatamente ` +
+                'como estao, em uma ou duas frases naturais.'
+              );
+            },
+          ),
         );
       } else if (toolUse.name === 'consultar_metas' && params.consultarMetas) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const { metas } = await params.consultarMetas!();
-            if (metas.length === 0) {
-              return 'Ela nao tem meta cadastrada no momento. Diga isso em uma frase, sem inventar numero.';
-            }
-            return (
-              `Metas dela:\n${metas.map((m) => `- ${m.linha}`).join('\n')}\n\n` +
-              'Repasse os numeros exatamente como estao.'
-            );
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const { metas } = await params.consultarMetas!();
+              if (metas.length === 0) {
+                return 'Ela nao tem meta cadastrada no momento. Diga isso em uma frase, sem inventar numero.';
+              }
+              return (
+                `Metas dela:\n${metas.map((m) => `- ${m.linha}`).join('\n')}\n\n` +
+                'Repasse os numeros exatamente como estao.'
+              );
+            },
+          ),
         );
       } else if (
         toolUse.name === 'consultar_produtos' &&
@@ -3013,135 +3195,158 @@ export class AnthropicClient implements ILlmClient {
         !params.consultarProdutos
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const entrada = toolUse.input as RecorteDeProduto;
-            const r = await params.gestaoProdutos!({
-              busca: String(entrada.busca ?? '').slice(0, 120),
-              incluirSemEstoque: entrada.incluir_sem_estoque === true,
-              categoria: entrada.categoria,
-              precoDe: entrada.preco_de,
-              precoAte: entrada.preco_ate,
-              aPartirDe: Number(entrada.a_partir_de) || 0,
-              comFoto: entrada.com_foto !== false,
-              soComFoto: entrada.so_com_foto === true,
-            });
-            fotos = r.fotos ?? fotos;
-            return textoDeProdutos(r, 'Repasse os numeros exatamente como estao.');
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const entrada = toolUse.input as RecorteDeProduto;
+              const r = await params.gestaoProdutos!({
+                busca: String(entrada.busca ?? '').slice(0, 120),
+                incluirSemEstoque: entrada.incluir_sem_estoque === true,
+                categoria: entrada.categoria,
+                precoDe: entrada.preco_de,
+                precoAte: entrada.preco_ate,
+                aPartirDe: Number(entrada.a_partir_de) || 0,
+                comFoto: entrada.com_foto !== false,
+                soComFoto: entrada.so_com_foto === true,
+              });
+              fotos = r.fotos ?? fotos;
+              return textoDeProdutos(
+                r,
+                'Repasse os numeros exatamente como estao.',
+              );
+            },
+          ),
         );
       } else if (
         toolUse.name === 'consultar_produtos' &&
         params.consultarProdutos
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const entrada = toolUse.input as RecorteDeProduto;
-            const r = await params.consultarProdutos!({
-              categoria: entrada.categoria,
-              busca: String(entrada.busca ?? '').slice(0, 120),
-              // `=== true` e nao truthy: o modelo as vezes manda a string
-              // "false", que e truthy em JavaScript e ligaria o filtro ao
-              // contrario do que ele pediu.
-              incluirSemEstoque: entrada.incluir_sem_estoque === true,
-              precoDe: entrada.preco_de,
-              precoAte: entrada.preco_ate,
-              aPartirDe: Number(entrada.a_partir_de) || 0,
-              comFoto: entrada.com_foto !== false,
-              soComFoto: entrada.so_com_foto === true,
-            });
-            fotos = r.fotos ?? fotos;
-            return textoDeProdutos(
-              r,
-              'Repasse os precos exatamente como estao. Se ela pedir custo ou margem, diga que voce nao consegue ver isso.',
-            );
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const entrada = toolUse.input as RecorteDeProduto;
+              const r = await params.consultarProdutos!({
+                categoria: entrada.categoria,
+                busca: String(entrada.busca ?? '').slice(0, 120),
+                // `=== true` e nao truthy: o modelo as vezes manda a string
+                // "false", que e truthy em JavaScript e ligaria o filtro ao
+                // contrario do que ele pediu.
+                incluirSemEstoque: entrada.incluir_sem_estoque === true,
+                precoDe: entrada.preco_de,
+                precoAte: entrada.preco_ate,
+                aPartirDe: Number(entrada.a_partir_de) || 0,
+                comFoto: entrada.com_foto !== false,
+                soComFoto: entrada.so_com_foto === true,
+              });
+              fotos = r.fotos ?? fotos;
+              return textoDeProdutos(
+                r,
+                'Repasse os precos exatamente como estao. Se ela pedir custo ou margem, diga que voce nao consegue ver isso.',
+              );
+            },
+          ),
         );
       } else if (toolUse.name === 'meus_leads' && params.consultarMeusLeads) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const r = await params.consultarMeusLeads!();
-            if (r.status === 'SEM_CODIGO') {
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const r = await params.consultarMeusLeads!();
+              if (r.status === 'SEM_CODIGO') {
+                return (
+                  'O cadastro dela esta sem codigo de vendedora, entao nao da para ' +
+                  'saber quais leads sao dela. Diga isso e peca para ela falar com a ' +
+                  'gestao. NAO diga que ela nao tem lead — e outra coisa.'
+                );
+              }
+              if (r.linhas.length === 0) {
+                return 'Nenhum lead foi encaminhado para ela ate agora. Diga isso em uma frase, sem inventar.';
+              }
+              const teto =
+                r.total > r.linhas.length
+                  ? `\n\nSao ${r.total} no total; estes sao os ${r.linhas.length} mais recentes. Diga isso.`
+                  : '';
               return (
-                'O cadastro dela esta sem codigo de vendedora, entao nao da para ' +
-                'saber quais leads sao dela. Diga isso e peca para ela falar com a ' +
-                'gestao. NAO diga que ela nao tem lead — e outra coisa.'
+                `Leads encaminhados para ela:\n${r.linhas.map((l) => `- ${l}`).join('\n')}${teto}\n\n` +
+                'Repasse nomes e telefones exatamente como estao — e por eles que ela entra em contato. ' +
+                'NAO OFERECA AGENDAR NENHUM DELES: lead nao tem cadastro de cliente, e agendar_contato ' +
+                'so aceita cliente da carteira. Se ela pedir para agendar um destes, diga que o lead ainda ' +
+                'nao e cliente e por isso nao entra na agenda, e repasse o telefone para ela falar com a pessoa.'
               );
-            }
-            if (r.linhas.length === 0) {
-              return 'Nenhum lead foi encaminhado para ela ate agora. Diga isso em uma frase, sem inventar.';
-            }
-            const teto =
-              r.total > r.linhas.length
-                ? `\n\nSao ${r.total} no total; estes sao os ${r.linhas.length} mais recentes. Diga isso.`
-                : '';
-            return (
-              `Leads encaminhados para ela:\n${r.linhas.map((l) => `- ${l}`).join('\n')}${teto}\n\n` +
-              'Repasse nomes e telefones exatamente como estao — e por eles que ela entra em contato. ' +
-              'NAO OFERECA AGENDAR NENHUM DELES: lead nao tem cadastro de cliente, e agendar_contato ' +
-              'so aceita cliente da carteira. Se ela pedir para agendar um destes, diga que o lead ainda ' +
-              'nao e cliente e por isso nao entra na agenda, e repasse o telefone para ela falar com a pessoa.'
-            );
-          }),
+            },
+          ),
         );
       } else if (toolUse.name === 'atualizar_lead' && params.atualizarLead) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const e = toolUse.input as {
-              lead?: string;
-              status?: StatusLeadLlm;
-              observacao?: string;
-            };
-            const r = await params.atualizarLead!({
-              lead: String(e.lead ?? '').slice(0, 120),
-              status: e.status ?? 'EM_CONTATO',
-              // Vazio NAO e observacao: mandar string vazia apagaria a que ja
-              // estava gravada. `undefined` quer dizer "nao mexe".
-              observacao: e.observacao?.trim()
-                ? e.observacao.slice(0, 500)
-                : undefined,
-            });
-            // A frase ja vem pronta do servidor, com o veredito na frente.
-            return r.mensagem;
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                lead?: string;
+                status?: StatusLeadLlm;
+                observacao?: string;
+              };
+              const r = await params.atualizarLead!({
+                lead: String(e.lead ?? '').slice(0, 120),
+                status: e.status ?? 'EM_CONTATO',
+                // Vazio NAO e observacao: mandar string vazia apagaria a que ja
+                // estava gravada. `undefined` quer dizer "nao mexe".
+                observacao: e.observacao?.trim()
+                  ? e.observacao.slice(0, 500)
+                  : undefined,
+              });
+              // A frase ja vem pronta do servidor, com o veredito na frente.
+              return r.mensagem;
+            },
+          ),
         );
       } else if (
         toolUse.name === 'consultar_minha_carteira' &&
         params.consultarCarteiraAgora
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const r = await params.consultarCarteiraAgora!();
-            if (r.total === 0) {
-              return 'Ela nao tem nenhum cliente com atendimento em curso agora. Diga isso em uma frase, sem inventar numero.';
-            }
-            const espera =
-              r.aguardandoRelato > 0
-                ? `\n\n${r.aguardandoRelato} ${
-                    r.aguardandoRelato === 1
-                      ? 'desses esta esperando o relato DELA'
-                      : 'desses estao esperando o relato DELA'
-                  } — e o que ela precisa resolver.`
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const r = await params.consultarCarteiraAgora!();
+              if (r.total === 0) {
+                return 'Ela nao tem nenhum cliente com atendimento em curso agora. Diga isso em uma frase, sem inventar numero.';
+              }
+              const espera =
+                r.aguardandoRelato > 0
+                  ? `\n\n${r.aguardandoRelato} ${
+                      r.aguardandoRelato === 1
+                        ? 'desses esta esperando o relato DELA'
+                        : 'desses estao esperando o relato DELA'
+                    } — e o que ela precisa resolver.`
+                  : '';
+              // QUEM SAO, e nao so quantos — 08/10/2026. Nasceu do teste da
+              // Nathalia em PRODUCAO: ela perguntou "quem sao as clientes em
+              // negociacao?" e ouviu "o sistema so me da o numero (...) olhe
+              // direto no seu funil". O dado estava a um metodo de distancia.
+              const quemSao = r.clientes.length
+                ? `\n\nQUEM SAO:\n${r.clientes.map((c) => `- ${c}`).join('\n')}` +
+                  (r.clientesOcultos
+                    ? `\n\nSAO ${r.total} NO TOTAL e esta lista traz ` +
+                      `${r.clientes.length}: DIGA isso e ofereca o resto.`
+                    : '') +
+                  '\n\nQuando ela perguntar QUEM sao, responda com estes nomes — ' +
+                  'NAO mande ela olhar no painel.'
                 : '';
-            // QUEM SAO, e nao so quantos — 08/10/2026. Nasceu do teste da
-            // Nathalia em PRODUCAO: ela perguntou "quem sao as clientes em
-            // negociacao?" e ouviu "o sistema so me da o numero (...) olhe
-            // direto no seu funil". O dado estava a um metodo de distancia.
-            const quemSao = r.clientes.length
-              ? `\n\nQUEM SAO:\n${r.clientes.map((c) => `- ${c}`).join('\n')}` +
-                (r.clientesOcultos
-                  ? `\n\nSAO ${r.total} NO TOTAL e esta lista traz ` +
-                    `${r.clientes.length}: DIGA isso e ofereca o resto.`
-                  : '') +
-                '\n\nQuando ela perguntar QUEM sao, responda com estes nomes — ' +
-                'NAO mande ela olhar no painel.'
-              : '';
-            return (
-              `Carteira dela AGORA: ${r.total} ${r.total === 1 ? 'cliente' : 'clientes'} ` +
-              `em atendimento em curso — ${r.linhas.join(', ')}.${espera}${quemSao}\n\n` +
-              'Repasse os numeros exatamente como estao. Isto e o estado de agora, ' +
-              'nao um recorte de periodo: nao diga "hoje" nem "esta semana".'
-            );
-          }),
+              return (
+                `Carteira dela AGORA: ${r.total} ${r.total === 1 ? 'cliente' : 'clientes'} ` +
+                `em atendimento em curso — ${r.linhas.join(', ')}.${espera}${quemSao}\n\n` +
+                'Repasse os numeros exatamente como estao. Isto e o estado de agora, ' +
+                'nao um recorte de periodo: nao diga "hoje" nem "esta semana".'
+              );
+            },
+          ),
         );
       } else if (toolUse.name === 'agendar_contato' && params.agendarContato) {
         if (tetos.contatoAgendado) {
@@ -3156,233 +3361,280 @@ export class AnthropicClient implements ILlmClient {
         }
         tetos.contatoAgendado = true;
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const entrada = toolUse.input as {
-              cliente?: string;
-              quandoIso?: string;
-            };
-            const r = await params.agendarContato!({
-              cliente: String(entrada.cliente ?? '').slice(0, 120),
-              quandoIso: String(entrada.quandoIso ?? ''),
-            });
-            return `${r.mensagem}\n\nResponda a ela com isso, sem alterar nomes nem horarios.`;
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const entrada = toolUse.input as {
+                cliente?: string;
+                quandoIso?: string;
+              };
+              const r = await params.agendarContato!({
+                cliente: String(entrada.cliente ?? '').slice(0, 120),
+                quandoIso: String(entrada.quandoIso ?? ''),
+              });
+              return `${r.mensagem}\n\nResponda a ela com isso, sem alterar nomes nem horarios.`;
+            },
+          ),
         );
       } else if (
         toolUse.name === 'clientes_sem_comprar' &&
         params.clientesSemComprar
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const entrada = toolUse.input as {
-              meses?: number;
-              dias?: number;
-              desde?: string;
-              a_partir_de?: number;
-            };
-            // NENHUM TRATAMENTO DE PADRAO AQUI — `dataDeCorte` decide, e e um
-            // lugar so. Dois defaults em dois arquivos divergem na primeira
-            // mudanca de um lado.
-            const pagina = await params.clientesSemComprar!({
-              meses: Number(entrada.meses) || undefined,
-              dias: Number(entrada.dias) || undefined,
-              desde: entrada.desde ? String(entrada.desde) : undefined,
-              aPartirDe:
-                Number(entrada.a_partir_de) > 0
-                  ? Number(entrada.a_partir_de)
-                  : 0,
-            });
-            if (pagina.clientes.length === 0) {
-              // PEDIU A CONTINUACAO DE UMA LISTA QUE ACABOU — e isso nao e
-              // "nenhum cliente parado". Dizer que nao ha ninguem depois de
-              // ter listado vinte contradiz a propria resposta anterior.
-              return pagina.aPartirDe
-                ? 'A lista acabou: nao ha mais clientes parados depois dos que voce ja mostrou. Diga isso em uma frase.'
-                : 'Nenhum cliente da carteira dela esta parado nesse periodo. Diga isso em uma frase.';
-            }
-            return (
-              `Clientes parados:\n${pagina.clientes.map((c) => `- ${c.linha}`).join(`\n`)}\n\n` +
-              faixaDaLista(
-                pagina.aPartirDe ?? 0,
-                pagina.clientes.length,
-                pagina.total,
-              ) +
-              'Repasse os nomes e as datas exatamente como estao.'
-            );
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const entrada = toolUse.input as {
+                meses?: number;
+                dias?: number;
+                desde?: string;
+                a_partir_de?: number;
+              };
+              // NENHUM TRATAMENTO DE PADRAO AQUI — `dataDeCorte` decide, e e um
+              // lugar so. Dois defaults em dois arquivos divergem na primeira
+              // mudanca de um lado.
+              const pagina = await params.clientesSemComprar!({
+                meses: Number(entrada.meses) || undefined,
+                dias: Number(entrada.dias) || undefined,
+                desde: entrada.desde ? String(entrada.desde) : undefined,
+                aPartirDe:
+                  Number(entrada.a_partir_de) > 0
+                    ? Number(entrada.a_partir_de)
+                    : 0,
+              });
+              if (pagina.clientes.length === 0) {
+                // PEDIU A CONTINUACAO DE UMA LISTA QUE ACABOU — e isso nao e
+                // "nenhum cliente parado". Dizer que nao ha ninguem depois de
+                // ter listado vinte contradiz a propria resposta anterior.
+                return pagina.aPartirDe
+                  ? 'A lista acabou: nao ha mais clientes parados depois dos que voce ja mostrou. Diga isso em uma frase.'
+                  : 'Nenhum cliente da carteira dela esta parado nesse periodo. Diga isso em uma frase.';
+              }
+              return (
+                `Clientes parados:\n${pagina.clientes.map((c) => `- ${c.linha}`).join(`\n`)}\n\n` +
+                faixaDaLista(
+                  pagina.aPartirDe ?? 0,
+                  pagina.clientes.length,
+                  pagina.total,
+                ) +
+                'Repasse os nomes e as datas exatamente como estao.'
+              );
+            },
+          ),
         );
-      } else if (toolUse.name === 'faturamento_por_empresa' && params.gestaoPorEmpresa) {
+      } else if (
+        toolUse.name === 'faturamento_por_empresa' &&
+        params.gestaoPorEmpresa
+      ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const entrada = toolUse.input as {
-              periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
-              de?: string;
-              ate?: string;
-            };
-            const r = await params.gestaoPorEmpresa!({
-              periodo: entrada.periodo,
-              de: entrada.de ? String(entrada.de) : undefined,
-              ate: entrada.ate ? String(entrada.ate) : undefined,
-            });
-            if (r.status === 'INDISPONIVEL') {
-              return 'Esta consulta nao esta disponivel por aqui. Ofereca o numero de uma vendedora, sem mencionar permissao nem limitacao de acesso.';
-            }
-            if (r.linhas.length === 0) {
-              return 'Nenhuma empresa do grupo teve movimento nesse periodo. Diga isso em uma frase, e ofereca outro periodo.';
-            }
-            return (
-              `Faturamento por empresa:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
-              'Repasse os nomes e numeros exatamente como estao. Se ela perguntou por UMA empresa, responda so a dela e diga que pode trazer as outras. Nao some as empresas por conta propria.'
-            );
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const entrada = toolUse.input as {
+                periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+                de?: string;
+                ate?: string;
+              };
+              const r = await params.gestaoPorEmpresa!({
+                periodo: entrada.periodo,
+                de: entrada.de ? String(entrada.de) : undefined,
+                ate: entrada.ate ? String(entrada.ate) : undefined,
+              });
+              if (r.status === 'INDISPONIVEL') {
+                return 'Esta consulta nao esta disponivel por aqui. Ofereca o numero de uma vendedora, sem mencionar permissao nem limitacao de acesso.';
+              }
+              if (r.linhas.length === 0) {
+                return 'Nenhuma empresa do grupo teve movimento nesse periodo. Diga isso em uma frase, e ofereca outro periodo.';
+              }
+              return (
+                `Faturamento por empresa:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+                'Repasse os nomes e numeros exatamente como estao. Se ela perguntou por UMA empresa, responda so a dela e diga que pode trazer as outras. Nao some as empresas por conta propria.'
+              );
+            },
+          ),
         );
-      } else if (toolUse.name === 'mandar_relatorio' && params.mandarRelatorio) {
+      } else if (
+        toolUse.name === 'mandar_relatorio' &&
+        params.mandarRelatorio
+      ) {
         toolResults.push(
-          await this.executarMandarRelatorio(toolUse, params.mandarRelatorio, (a) => {
-            arquivo = a;
-          }),
+          await this.executarMandarRelatorio(
+            toolUse,
+            params.mandarRelatorio,
+            (a) => {
+              arquivo = a;
+            },
+          ),
         );
       } else if (
         toolUse.name === 'vendas_detalhadas' &&
         params.gestaoVendasDetalhadas
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const entrada = toolUse.input as {
-              cliente?: string;
-              vendedora?: string;
-              documento?: string;
-              periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
-              de?: string;
-              ate?: string;
-            };
-            const r = await params.gestaoVendasDetalhadas!({
-              cliente: entrada.cliente ? String(entrada.cliente) : undefined,
-              vendedora: entrada.vendedora ? String(entrada.vendedora) : undefined,
-              documento: entrada.documento ? String(entrada.documento) : undefined,
-              periodo: entrada.periodo,
-              de: entrada.de ? String(entrada.de) : undefined,
-              ate: entrada.ate ? String(entrada.ate) : undefined,
-            });
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const entrada = toolUse.input as {
+                cliente?: string;
+                vendedora?: string;
+                documento?: string;
+                periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+                de?: string;
+                ate?: string;
+              };
+              const r = await params.gestaoVendasDetalhadas!({
+                cliente: entrada.cliente ? String(entrada.cliente) : undefined,
+                vendedora: entrada.vendedora
+                  ? String(entrada.vendedora)
+                  : undefined,
+                documento: entrada.documento
+                  ? String(entrada.documento)
+                  : undefined,
+                periodo: entrada.periodo,
+                de: entrada.de ? String(entrada.de) : undefined,
+                ate: entrada.ate ? String(entrada.ate) : undefined,
+              });
 
-            // Faltou DE QUEM ou DE QUAL VENDA. Nao e "nao encontrei": e uma
-            // pergunta que ainda nao fechou.
-            if (r.status === 'EXIGE_RECORTE') {
-              return 'Esta consulta e sempre sobre alguem ou sobre uma venda. Pergunte de qual cliente, de qual vendedora ou de qual documento ela quer, sem mencionar permissao nem limitacao de acesso.';
-            }
-            if (r.status === 'NAO_ENCONTRADA') {
-              return r.sobre === 'cliente'
-                ? 'Nao achei esse cliente. Diga isso e peca o nome de novo, ou o codigo dele.'
-                : 'Nao achei essa vendedora na equipe. Diga isso e pergunte o nome de novo.';
-            }
-            if (r.status === 'AMBIGUA') {
-              const quem = r.sobre === 'cliente' ? 'cliente' : 'vendedora';
+              // Faltou DE QUEM ou DE QUAL VENDA. Nao e "nao encontrei": e uma
+              // pergunta que ainda nao fechou.
+              if (r.status === 'EXIGE_RECORTE') {
+                return 'Esta consulta e sempre sobre alguem ou sobre uma venda. Pergunte de qual cliente, de qual vendedora ou de qual documento ela quer, sem mencionar permissao nem limitacao de acesso.';
+              }
+              if (r.status === 'NAO_ENCONTRADA') {
+                return r.sobre === 'cliente'
+                  ? 'Nao achei esse cliente. Diga isso e peca o nome de novo, ou o codigo dele.'
+                  : 'Nao achei essa vendedora na equipe. Diga isso e pergunte o nome de novo.';
+              }
+              if (r.status === 'AMBIGUA') {
+                const quem = r.sobre === 'cliente' ? 'cliente' : 'vendedora';
+                return (
+                  `Ha mais de um(a) ${quem} com esse nome — ${r.nomes?.length ?? 0} ao todo:\n` +
+                  `${(r.nomes ?? []).map((n) => `- ${n}`).join('\n')}\n\n` +
+                  'Diga quantos sao e pergunte qual deles. Nao escolha por conta propria.'
+                );
+              }
+              if (r.linhas.length === 0) {
+                return 'Nenhuma venda nesse recorte. Diga isso em uma frase, e ofereca outro periodo.';
+              }
+              const quantas = r.total ?? r.linhas.length;
+              const aviso =
+                quantas > r.linhas.length
+                  ? ` (as ${r.linhas.length} mais recentes de ${quantas})`
+                  : '';
               return (
-                `Ha mais de um(a) ${quem} com esse nome — ${r.nomes?.length ?? 0} ao todo:\n` +
-                `${(r.nomes ?? []).map((n) => `- ${n}`).join('\n')}\n\n` +
-                'Diga quantos sao e pergunte qual deles. Nao escolha por conta propria.'
+                `Vendas${aviso}:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+                'Repasse datas, nomes, pecas e valores exatamente como estao. Nao some os valores por conta propria — se ela quiser o total, ha ferramenta de resumo.'
               );
-            }
-            if (r.linhas.length === 0) {
-              return 'Nenhuma venda nesse recorte. Diga isso em uma frase, e ofereca outro periodo.';
-            }
-            const quantas = r.total ?? r.linhas.length;
-            const aviso =
-              quantas > r.linhas.length
-                ? ` (as ${r.linhas.length} mais recentes de ${quantas})`
-                : '';
-            return (
-              `Vendas${aviso}:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
-              'Repasse datas, nomes, pecas e valores exatamente como estao. Nao some os valores por conta propria — se ela quiser o total, ha ferramenta de resumo.'
-            );
-          }),
+            },
+          ),
         );
       } else if (toolUse.name === 'clientes_por_epoca' && params.gestaoEpoca) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const entrada = toolUse.input as {
-              vendedora?: string;
-              mes?: number;
-              dataComemorativa?: string;
-            };
-            const mes = Number(entrada.mes);
-            const r = await params.gestaoEpoca!({
-              vendedora: entrada.vendedora ? String(entrada.vendedora) : undefined,
-              mes: mes >= 1 && mes <= 12 ? mes : undefined,
-              dataComemorativa: entrada.dataComemorativa
-                ? String(entrada.dataComemorativa)
-                : undefined,
-            });
-            // Faltou dizer DE QUEM, e quem pergunta nao ve a loja inteira. Nao
-            // e "nao encontrei": e uma pergunta incompleta.
-            if (r.status === 'EXIGE_VENDEDORA') {
-              return 'Esta consulta e sempre por vendedora. Pergunte de qual vendedora ela quer, sem mencionar permissao nem limitacao de acesso.';
-            }
-            if (r.status === 'NAO_ENCONTRADA') {
-              return 'Nao achei essa vendedora na equipe. Diga isso e pergunte o nome de novo.';
-            }
-            if (r.status === 'AMBIGUA') {
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const entrada = toolUse.input as {
+                vendedora?: string;
+                mes?: number;
+                dataComemorativa?: string;
+              };
+              const mes = Number(entrada.mes);
+              const r = await params.gestaoEpoca!({
+                vendedora: entrada.vendedora
+                  ? String(entrada.vendedora)
+                  : undefined,
+                mes: mes >= 1 && mes <= 12 ? mes : undefined,
+                dataComemorativa: entrada.dataComemorativa
+                  ? String(entrada.dataComemorativa)
+                  : undefined,
+              });
+              // Faltou dizer DE QUEM, e quem pergunta nao ve a loja inteira. Nao
+              // e "nao encontrei": e uma pergunta incompleta.
+              if (r.status === 'EXIGE_VENDEDORA') {
+                return 'Esta consulta e sempre por vendedora. Pergunte de qual vendedora ela quer, sem mencionar permissao nem limitacao de acesso.';
+              }
+              if (r.status === 'NAO_ENCONTRADA') {
+                return 'Nao achei essa vendedora na equipe. Diga isso e pergunte o nome de novo.';
+              }
+              if (r.status === 'AMBIGUA') {
+                return (
+                  `Ha mais de uma vendedora com esse nome:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+                  'Pergunte qual delas.'
+                );
+              }
+              if (r.linhas.length === 0) {
+                return 'Nenhuma compra nessa epoca. Diga isso em uma frase, e ofereca outro mes ou outra data.';
+              }
               return (
-                `Ha mais de uma vendedora com esse nome:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
-                'Pergunte qual delas.'
+                `Clientes dessa epoca${r.vendedora ? ` (carteira da ${r.vendedora})` : ' (loja inteira)'} — ${r.total ?? r.linhas.length} no total:\n` +
+                `${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+                'Repasse os nomes e numeros exatamente como estao. "Em N anos diferentes" quer dizer que a pessoa comprou nessa mesma epoca em N anos — e o que separa habito de coincidencia; sem isso, nao afirme que alguem "sempre compra" nessa data.'
               );
-            }
-            if (r.linhas.length === 0) {
-              return 'Nenhuma compra nessa epoca. Diga isso em uma frase, e ofereca outro mes ou outra data.';
-            }
-            return (
-              `Clientes dessa epoca${r.vendedora ? ` (carteira da ${r.vendedora})` : ' (loja inteira)'} — ${r.total ?? r.linhas.length} no total:\n` +
-              `${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
-              'Repasse os nomes e numeros exatamente como estao. "Em N anos diferentes" quer dizer que a pessoa comprou nessa mesma epoca em N anos — e o que separa habito de coincidencia; sem isso, nao afirme que alguem "sempre compra" nessa data.'
-            );
-          }),
+            },
+          ),
         );
-      } else if (toolUse.name === 'clientes_por_epoca' && params.clientesPorEpoca) {
+      } else if (
+        toolUse.name === 'clientes_por_epoca' &&
+        params.clientesPorEpoca
+      ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const entrada = toolUse.input as {
-              mes?: number;
-              dataComemorativa?: string;
-            };
-            const mes = Number(entrada.mes);
-            const { clientes, total } = await params.clientesPorEpoca!({
-              mes: mes >= 1 && mes <= 12 ? mes : undefined,
-              dataComemorativa: entrada.dataComemorativa
-                ? String(entrada.dataComemorativa)
-                : undefined,
-            });
-            if (clientes.length === 0) {
-              return 'Nenhuma compra da carteira dela nessa epoca. Diga isso em uma frase, e ofereca outro mes ou outra data.';
-            }
-            return (
-              `Clientes dessa epoca (${total} no total):\n` +
-              `${clientes.map((c) => `- ${c.linha}`).join('\n')}\n\n` +
-              'Repasse os nomes e numeros exatamente como estao. "Em N anos diferentes" quer dizer que a pessoa comprou nessa mesma epoca em N anos — e o que separa habito de coincidencia; sem isso, nao afirme que alguem "sempre compra" nessa data.'
-            );
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const entrada = toolUse.input as {
+                mes?: number;
+                dataComemorativa?: string;
+              };
+              const mes = Number(entrada.mes);
+              const { clientes, total } = await params.clientesPorEpoca!({
+                mes: mes >= 1 && mes <= 12 ? mes : undefined,
+                dataComemorativa: entrada.dataComemorativa
+                  ? String(entrada.dataComemorativa)
+                  : undefined,
+              });
+              if (clientes.length === 0) {
+                return 'Nenhuma compra da carteira dela nessa epoca. Diga isso em uma frase, e ofereca outro mes ou outra data.';
+              }
+              return (
+                `Clientes dessa epoca (${total} no total):\n` +
+                `${clientes.map((c) => `- ${c.linha}`).join('\n')}\n\n` +
+                'Repasse os nomes e numeros exatamente como estao. "Em N anos diferentes" quer dizer que a pessoa comprou nessa mesma epoca em N anos — e o que separa habito de coincidencia; sem isso, nao afirme que alguem "sempre compra" nessa data.'
+              );
+            },
+          ),
         );
       } else if (
         toolUse.name === 'melhores_clientes' &&
         params.melhoresClientes
       ) {
         toolResults.push(
-          await this.executarLeitura(toolUse, async () => {
-            const entrada = toolUse.input as {
-              categoria?: string;
-              ultimos_meses?: number;
-            };
-            const { clientes } = await params.melhoresClientes!({
-              categoria: entrada.categoria,
-              ultimosMeses: entrada.ultimos_meses,
-            });
-            if (clientes.length === 0) {
-              return 'Nenhuma compra encontrada na carteira dela com esse recorte. Diga isso em uma frase.';
-            }
-            return (
-              `Maiores compradores:\n${clientes.map((c) => `- ${c.linha}`).join(`\n`)}\n\n` +
-              'Repasse os nomes e numeros exatamente como estao.'
-            );
-          }),
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const entrada = toolUse.input as {
+                categoria?: string;
+                ultimos_meses?: number;
+              };
+              const { clientes } = await params.melhoresClientes!({
+                categoria: entrada.categoria,
+                ultimosMeses: entrada.ultimos_meses,
+              });
+              if (clientes.length === 0) {
+                return 'Nenhuma compra encontrada na carteira dela com esse recorte. Diga isso em uma frase.';
+              }
+              return (
+                `Maiores compradores:\n${clientes.map((c) => `- ${c.linha}`).join(`\n`)}\n\n` +
+                'Repasse os nomes e numeros exatamente como estao.'
+              );
+            },
+          ),
         );
       } else if (
         toolUse.name === 'consultar_agenda' &&
@@ -3443,7 +3695,6 @@ export class AnthropicClient implements ILlmClient {
     return { toolResults: resultadosSeguros, grafico, fotos, arquivo };
   }
 
-
   /**
    * Envelope comum das ferramentas de LEITURA do canal interno.
    *
@@ -3463,7 +3714,10 @@ export class AnthropicClient implements ILlmClient {
     handler: NonNullable<ChatParams['mandarRelatorio']>,
     guardar: (a: ArquivoDoAgenteLlm) => void,
   ): Promise<Anthropic.ToolResultBlockParam> {
-    return this.executarLeitura(toolUse, async () => {
+    // NAO AVISA O OUVINTE: esta ferramenta nao e consulta. Avisando, a frase
+    // de confirmacao viraria a "ultima tabela", e o PDF seguinte sairia com
+    // ela dentro.
+    return this.executarLeitura(toolUse, undefined, async () => {
       const input = toolUse.input as { formato?: string };
       // VALIDADO, NUNCA CONVERTIDO: formato que o modelo invente nao vira
       // renderizador. Fora de PDF/PLANILHA, cai em PDF, que e o pedido mais
@@ -3483,13 +3737,26 @@ export class AnthropicClient implements ILlmClient {
 
   private async executarLeitura(
     toolUse: Anthropic.ToolUseBlock,
+    aoResponder: ((ferramenta: string, texto: string) => void) | undefined,
     corpo: () => Promise<string>,
   ): Promise<Anthropic.ToolResultBlockParam> {
     try {
+      const texto = await corpo();
+      // A CONSULTA RESPONDEU — e o texto e NOSSO, nao do modelo. E daqui que
+      // sai o "manda em PDF" de qualquer pergunta. Ver `aoResponderConsulta`.
+      //
+      // Falha do ouvinte nao pode derrubar a resposta: ele e um extra.
+      try {
+        aoResponder?.(toolUse.name, texto);
+      } catch (e) {
+        this.logger.warn(
+          `Nao guardei a tabela de ${toolUse.name}: ${e instanceof Error ? e.message : e}`,
+        );
+      }
       return {
         type: 'tool_result',
         tool_use_id: toolUse.id,
-        content: await corpo(),
+        content: texto,
       };
     } catch (err) {
       // ====================================================================
@@ -3748,8 +4015,7 @@ export class AnthropicClient implements ILlmClient {
     anexos?: ChatParams['anexos'],
   ): Anthropic.MessageParam[] {
     const api = mensagens.map((m) => {
-      const vazio =
-        typeof m.content === 'string' && m.content.trim() === '';
+      const vazio = typeof m.content === 'string' && m.content.trim() === '';
       if (vazio) {
         this.logger.warn(
           `Turno "${m.role}" chegou VAZIO ao cliente — trocado por um marcador ` +
@@ -3890,12 +4156,12 @@ export class AnthropicClient implements ILlmClient {
 function textoDoDiaDaVendedora(r: GestaoLeituraResultado): string {
   if (r.status === 'AMBIGUA') {
     return (
-      `Mais de uma vendedora com esse nome: ${(r.nomes ?? []).join(", ")}. ` +
+      `Mais de uma vendedora com esse nome: ${(r.nomes ?? []).join(', ')}. ` +
       'Pergunte de qual se trata. NAO escolha uma.'
     );
   }
   if (r.status === 'NAO_ENCONTRADA') {
-    const equipe = (r.nomes ?? []).join(", ");
+    const equipe = (r.nomes ?? []).join(', ');
     return equipe
       ? `Nao ha vendedora com esse nome. A equipe ativa e: ${equipe}. Diga isso e pergunte qual delas.`
       : 'Nao ha vendedora com esse nome. Diga isso em uma frase.';
@@ -3928,7 +4194,7 @@ function textoDoDiaDaVendedora(r: GestaoLeituraResultado): string {
     );
   }
   return (
-    `O dia de ${r.vendedora}:\n${r.linhas.map((l) => `- ${l}`).join("\n")}\n\n` +
+    `O dia de ${r.vendedora}:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
     'Conte isso como quem esta contando o dia dela, em texto corrido. Repasse ' +
     'os numeros exatamente como estao. NAO diga o que as clientes queriam nem ' +
     'o assunto das conversas — isto aqui nao le o texto delas. E quem aparece ' +
@@ -4214,7 +4480,9 @@ function textoDasPecasPorValor(
   if (r.status === 'NAO_ENCONTRADA') {
     return (
       'Nao encontrei essa vendedora' +
-      ((r.nomes ?? []).length ? `. Parecidas: ${(r.nomes ?? []).join(', ')}` : '') +
+      ((r.nomes ?? []).length
+        ? `. Parecidas: ${(r.nomes ?? []).join(', ')}`
+        : '') +
       '. Pergunte de quem e, ou chame de novo SEM vendedora para a loja inteira.'
     );
   }
