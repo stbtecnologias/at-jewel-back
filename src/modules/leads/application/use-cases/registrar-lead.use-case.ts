@@ -6,6 +6,7 @@ import {
   variantesTelefone,
 } from '../../../clientes/application/utils/normalizadores';
 import { LEAD_REPOSITORY } from '../../domain/ports/injection-tokens';
+import { GenteDaCasaService } from '../../../equipe/application/gente-da-casa.service';
 import { AvisarGestaoDeLeadUseCase } from './avisar-gestao-de-lead.use-case';
 import { EncaminharPelaCarteiraUseCase } from './encaminhar-pela-carteira.use-case';
 import type {
@@ -26,6 +27,22 @@ export type ReconhecimentoLead =
   | 'LEAD_ANTERIOR'
   /** Nunca fez triagem, mas e cliente cadastrado no ERP. */
   | 'CLIENTE_ERP'
+  /**
+   * E GENTE DA CASA, E POR ISSO NAO NASCEU LEAD — 21/10/2026.
+   *
+   * ========================================================================
+   * Decisao do Lucas: *"conversa interna nao e lead; marca na timeline, mas
+   * nao gera lead. Quando ela quiser fazer uma campanha dos leads dela, vai
+   * ter muito numero interno — antes de criar e melhor verificar."*
+   *
+   * E a razao e de USO, nao de arrumacao: funil existe para ser trabalhado, e
+   * uma lista com 12 colegas em 27 linhas nao se trabalha. Medido em 20/10.
+   * ========================================================================
+   *
+   * Com este reconhecimento o `lead` vem NULO. Quem chama precisa tratar — e
+   * e de proposito que o tipo obriga a isso.
+   */
+  | 'GENTE_DA_CASA'
   /** Ninguem conhece esse numero. */
   | 'NOVO';
 
@@ -46,7 +63,8 @@ export interface RegistrarLeadInput {
 }
 
 export interface RegistrarLeadOutput {
-  lead: Lead;
+  /** NULO quando o reconhecimento e `GENTE_DA_CASA` — e so nesse caso. */
+  lead: Lead | null;
   reconhecimento: ReconhecimentoLead;
   /** Atalho para quem so quer saber se pode cumprimentar pelo nome. */
   conhecido: boolean;
@@ -85,6 +103,9 @@ export class RegistrarLeadUseCase {
     private readonly buscarClientePorWhatsapp: BuscarClientePorWhatsappUseCase,
     private readonly avisarGestao: AvisarGestaoDeLeadUseCase,
     private readonly encaminharPelaCarteira: EncaminharPelaCarteiraUseCase,
+    // NO FIM DA LISTA, como sempre: parametro novo no meio quebra todo spec
+    // que constroi este use case por posicao.
+    private readonly genteDaCasa: GenteDaCasaService,
   ) {}
 
   async execute(entrada: RegistrarLeadInput): Promise<RegistrarLeadOutput> {
@@ -137,6 +158,31 @@ export class RegistrarLeadUseCase {
         reconhecimento: 'LEAD_ANTERIOR',
         conhecido: true,
       };
+    }
+
+    // ====================================================================
+    // DAQUI PARA BAIXO SE CRIA LEAD NOVO — E E AQUI QUE A PERGUNTA CABE.
+    //
+    // A conferencia vem DEPOIS dos dois ramos acima de proposito: lead que
+    // ja existe continua se comportando como sempre. O pedido foi "antes de
+    // criar e melhor verificar se o numero e interno" — verificar antes de
+    // criar, e nao parar de mexer no que ja esta no funil.
+    //
+    // Os 12 que ja nasceram ficam, por decisao do Lucas: tres deles estao
+    // como GANHO, e alguem trabalhou neles.
+    // ====================================================================
+    // TODAS AS VARIANTES, dos dois lados: o mapa ja guarda as formas do numero
+    // CADASTRADO, e aqui se tenta as formas do numero que CHEGOU. Comparar
+    // so a forma canonica deixaria passar o mesmo numero escrito diferente —
+    // que e o erro que ja custou uma consulta cega em 20/10.
+    const mapa = await this.genteDaCasa.mapa();
+    const daCasa =
+      variantes.map((v) => mapa.papelDoHash(hashField(v))).find((p) => p) ?? null;
+    if (daCasa) {
+      this.logger.log(
+        `Conversa de gente da casa (${daCasa}) nao virou lead — RF30.`,
+      );
+      return { lead: null, reconhecimento: 'GENTE_DA_CASA', conhecido: true };
     }
 
     // 3. Cliente do ERP que nunca passou pela triagem.

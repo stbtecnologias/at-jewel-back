@@ -39,6 +39,19 @@ export class LeadsController {
     const { lead, reconhecimento, conhecido } =
       await this.registrar.execute(dto);
 
+    // ====================================================================
+    // GENTE DA CASA NAO VIRA LEAD — RF30, 21/10/2026.
+    //
+    // O `atwpp` chama isto a cada mensagem e so precisa saber se segue a
+    // conversa. Devolver 200 com `id` nulo e o reconhecimento explicito e
+    // mais honesto que um erro: nao houve falha nenhuma, houve uma decisao.
+    //
+    // `conhecido: true` porque a pessoa E conhecida — ela trabalha aqui.
+    // ====================================================================
+    if (!lead) {
+      return { id: null, estado: null, reconhecimento, conhecido };
+    }
+
     return {
       id: lead.id,
       estado: lead.estado,

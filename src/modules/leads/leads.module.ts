@@ -8,6 +8,7 @@ import { AtualizarStatusLeadUseCase } from './application/use-cases/atualizar-st
 import { AvisarGestaoDeLeadUseCase } from './application/use-cases/avisar-gestao-de-lead.use-case';
 import { AtendimentoPersistenciaModule } from '../atendimentos/atendimento-persistencia.module';
 import { EncaminharPelaCarteiraUseCase } from './application/use-cases/encaminhar-pela-carteira.use-case';
+import { EquipeModule } from '../equipe/equipe.module';
 import { RegistrarLeadUseCase } from './application/use-cases/registrar-lead.use-case';
 import { LEAD_REPOSITORY } from './domain/ports/injection-tokens';
 import { LeadOrmEntity } from './infrastructure/database/typeorm/entities/lead.orm-entity';
@@ -31,6 +32,8 @@ import { LeadsParadosScheduler } from './infrastructure/schedule/leads-parados.s
     WhatsappGatewayModule,
     // Para dizer, no mesmo aviso, quem eu sugeriria para atender.
     VendedorasModule,
+    // Para nao criar lead de gente da casa — RF30, 21/10/2026.
+    EquipeModule,
     // So o repositorio de atendimentos — o modulo inteiro fecharia ciclo, porque
     // o AtendimentosModule importa este aqui.
     AtendimentoPersistenciaModule,

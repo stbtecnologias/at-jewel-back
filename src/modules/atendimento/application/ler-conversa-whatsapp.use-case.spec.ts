@@ -299,4 +299,37 @@ describe('LerConversaWhatsappUseCase', () => {
     expect(r.lidas).toBe(1);
     expect(atendimentos.criarInteracao).toHaveBeenCalledTimes(1);
   });
+
+  // ==========================================================================
+  // GENTE DA CASA NAO VIRA LEAD — RF30, 21/10/2026.
+  //
+  // Quem decide e o RegistrarLeadUseCase, que devolve o lead NULO. O que
+  // este teste protege e o LADO DE CA: o leitor nao pode quebrar, e a conversa
+  // nao pode ficar pendurada esperando uma segunda leitura.
+  // ==========================================================================
+  it('lead nulo — a conversa fica LIDA, e nada de funil acontece', async () => {
+    responde({
+      sobre_joias: true,
+      resultado: 'EM_ANDAMENTO',
+      resumo: 'Falaram de preco de peca entre elas.',
+      nome: null,
+    });
+    registrarLead.execute.mockResolvedValue({
+      lead: null,
+      reconhecimento: 'GENTE_DA_CASA',
+      conhecido: true,
+    });
+
+    const r = await uc.execute();
+
+    expect(r.lidas).toBe(1);
+    expect(leads.atualizar).not.toHaveBeenCalled();
+    // LIDA, E NAO IGNORADA: a conversa E assunto de loja e aparece na
+    // timeline etiquetada. Ignorada faria o leitor voltar nela em 24h para
+    // reconfirmar o que ja se sabe.
+    expect(conversas.concluirLeitura).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ estado: 'LIDA', lerEm: null }),
+    );
+  });
 });

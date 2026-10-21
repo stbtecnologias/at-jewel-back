@@ -57,6 +57,7 @@ describe('RegistrarLeadUseCase', () => {
   let buscarCliente: jest.Mocked<BuscarClientePorWhatsappUseCase>;
   let avisarGestao: jest.Mocked<AvisarGestaoDeLeadUseCase>;
   let encaminharPelaCarteira: jest.Mocked<EncaminharPelaCarteiraUseCase>;
+  let genteDaCasa: { mapa: jest.Mock };
 
   beforeEach(() => {
     process.env = { ...ORIGINAL_ENV };
@@ -80,11 +81,23 @@ describe('RegistrarLeadUseCase', () => {
       execute: jest.fn().mockResolvedValue({ status: 'SEM_DONA' }),
     } as unknown as jest.Mocked<EncaminharPelaCarteiraUseCase>;
 
+    // NINGUEM DA CASA POR PADRAO: todo teste que nao e sobre o RF30 segue
+    // valendo exatamente o que valia. Os do RF30 trocam este dublê.
+    genteDaCasa = {
+      mapa: jest.fn().mockResolvedValue({
+        vazio: () => true,
+        hashes: () => [],
+        papelDoHash: () => null,
+        papelDoChat: () => null,
+      }),
+    };
+
     useCase = new RegistrarLeadUseCase(
       leads,
       buscarCliente,
       avisarGestao,
       encaminharPelaCarteira,
+      genteDaCasa as never,
     );
   });
 
@@ -368,6 +381,85 @@ describe('RegistrarLeadUseCase', () => {
       });
 
       expect(leads.buscarPorId).toHaveBeenCalled();
+    });
+  });
+
+  // ==========================================================================
+  // GENTE DA CASA NAO VIRA LEAD — RF30, 21/10/2026.
+  //
+  // Decisao do Lucas: "conversa interna nao e lead; marca na timeline, mas nao
+  // gera lead. Quando ela quiser fazer uma campanha dos leads dela, vai ter
+  // muito numero interno".
+  //
+  // Medido em 20/10, antes do conserto: 12 dos 27 leads eram de colega ou
+  // admin — 44% do funil.
+  // ==========================================================================
+  describe('gente da casa', () => {
+    const daCasa = (papel: string) =>
+      genteDaCasa.mapa.mockResolvedValue({
+        vazio: () => false,
+        hashes: () => [],
+        papelDoHash: () => papel,
+        papelDoChat: () => papel,
+      });
+
+    it('não cria lead, e diz por quê', async () => {
+      daCasa('VENDEDORA');
+
+      const r = await useCase.execute({ whatsapp: '85999990001' });
+
+      expect(r.lead).toBeNull();
+      expect(r.reconhecimento).toBe('GENTE_DA_CASA');
+      expect(leads.criar).not.toHaveBeenCalled();
+    });
+
+    // CONHECIDO, SIM: a pessoa é conhecida — ela trabalha aqui. O campo
+    // responde "dá para chamar pelo nome", e a resposta continua sendo sim.
+    it('conta como conhecido', async () => {
+      daCasa('ADMIN');
+
+      expect((await useCase.execute({ whatsapp: '85999990001' })).conhecido).toBe(
+        true,
+      );
+    });
+
+    // ========================================================================
+    // O QUE JA EXISTE CONTINUA EXISTINDO — decisao do Lucas no mesmo dia:
+    // "os leads que ja entraram, blz; os novos e que nao precisam entrar".
+    //
+    // Conversa em andamento e lead anterior sao ramos ANTERIORES a conferencia,
+    // e isso aqui e o que trava a ordem: alguem que mova a conferencia para o
+    // topo faz este teste cair.
+    // ========================================================================
+    it('lead ABERTO de gente da casa continua sendo atualizado', async () => {
+      daCasa('VENDEDORA');
+      leads.buscarAbertoPorHash.mockResolvedValue(leadFake({ id: 'ja-existe' }));
+
+      const r = await useCase.execute({ whatsapp: '85999990001' });
+
+      expect(r.reconhecimento).toBe('CONVERSA_EM_ANDAMENTO');
+      expect(r.lead?.id).toBe('ja-existe');
+      expect(leads.atualizar).toHaveBeenCalled();
+    });
+
+    it('lead ANTERIOR de gente da casa ainda reabre', async () => {
+      daCasa('VENDEDORA');
+      leads.buscarUltimoPorHash.mockResolvedValue(
+        leadFake({ nome: 'Keyciane', fechadoEm: new Date() }),
+      );
+
+      const r = await useCase.execute({ whatsapp: '85999990001' });
+
+      expect(r.reconhecimento).toBe('LEAD_ANTERIOR');
+      expect(leads.criar).toHaveBeenCalled();
+    });
+
+    it('quem não é da casa segue criando lead como sempre', async () => {
+      const r = await useCase.execute({ whatsapp: '85999990001' });
+
+      expect(r.lead).not.toBeNull();
+      expect(r.reconhecimento).not.toBe('GENTE_DA_CASA');
+      expect(leads.criar).toHaveBeenCalled();
     });
   });
 });

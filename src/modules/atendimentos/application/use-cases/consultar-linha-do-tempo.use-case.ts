@@ -3,7 +3,7 @@ import { VENDEDORA_REPOSITORY } from '../../../vendedoras/domain/ports/injection
 import type { IVendedoraRepository } from '../../../vendedoras/domain/ports/repositories/vendedora-repository.port';
 import { CLIENTE_REPOSITORY } from '../../../clientes/domain/ports/injection-tokens';
 import type { IClienteRepository } from '../../../clientes/domain/ports/repositories/cliente-repository.port';
-import { GenteDaCasaService } from '../gente-da-casa.service';
+import { GenteDaCasaService } from '../../../equipe/application/gente-da-casa.service';
 import { janelaDoDia } from '../../../../shared/tempo/janela-do-dia';
 import { ATENDIMENTO_REPOSITORY } from '../../domain/ports/injection-tokens';
 import {

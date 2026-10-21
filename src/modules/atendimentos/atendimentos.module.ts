@@ -34,7 +34,7 @@ import { ResolverVendedoraPorNomeUseCase } from './application/use-cases/resolve
 import { RotearMensagemInternaUseCase } from './application/use-cases/rotear-mensagem-interna.use-case';
 import { ConsultarAuditoriaUseCase } from './application/use-cases/consultar-auditoria.use-case';
 import { ConsultarLinhaDoTempoUseCase } from './application/use-cases/consultar-linha-do-tempo.use-case';
-import { GenteDaCasaService } from './application/gente-da-casa.service';
+import { EquipeModule } from '../equipe/equipe.module';
 import { ReabrirAtendimentoUseCase } from './application/use-cases/reabrir-atendimento.use-case';
 import { EncerrarPorSilencioUseCase } from './application/use-cases/encerrar-por-silencio.use-case';
 import { RegistrarContatoWhatsappUseCase } from './application/use-cases/registrar-contato-whatsapp.use-case';
@@ -93,6 +93,8 @@ import { AnalisarTomUseCase } from '../atendimento/application/analisar-tom.use-
     // O agendador precisa do nome do cliente, do WhatsApp da vendedora e do
     // gateway de envio. Nenhum destes importa atendimentos — sem ciclo.
     ClientesModule,
+    // Quem sabe se o telefone do outro lado e de gente da casa — RF29 e RF30.
+    EquipeModule,
     // Encaminhar o lead que terminou a triagem para uma vendedora.
     LeadsModule,
     VendedorasModule,
@@ -180,8 +182,6 @@ import { AnalisarTomUseCase } from '../atendimento/application/analisar-tom.use-
     RotearMensagemInternaUseCase,
     ConsultarAuditoriaUseCase,
     ConsultarLinhaDoTempoUseCase,
-    // Quem sabe de quem e o telefone do outro lado — RF29 e RF30.
-    GenteDaCasaService,
     ReabrirAtendimentoUseCase,
     EncerrarPorSilencioUseCase,
     RegistrarContatoWhatsappUseCase,

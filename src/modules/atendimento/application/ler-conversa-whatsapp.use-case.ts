@@ -301,6 +301,27 @@ export class LerConversaWhatsappUseCase {
           ? ('PERDIDO' as const)
           : null;
 
+    // ======================================================================
+    // GENTE DA CASA NAO VIRA LEAD — RF30, 21/10/2026.
+    //
+    // O registro devolve `lead` NULO quando o numero do outro lado e de
+    // vendedora ou de conta de painel. A conversa foi lida, e e so isso: nao
+    // ha funil para mexer.
+    //
+    // E A CONVERSA FICA COMO LIDA, e nao como ignorada: ela E assunto de
+    // loja, ela aparece na timeline com a etiqueta de interna, e marcar
+    // ignorada faria o leitor voltar nela daqui a 24h para reconfirmar o que
+    // ja se sabe.
+    // ======================================================================
+    if (!lead) {
+      await this.conversas.concluirLeitura(conversa.id, {
+        lidaAte: ultimaEm,
+        estado: 'LIDA',
+        lerEm: null,
+      });
+      return 'LIDA';
+    }
+
     // O desfecho manda; sem ele, a resposta da vendedora tira o lead de NOVO.
     const alvo =
       desfecho ??
