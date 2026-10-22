@@ -121,6 +121,10 @@ describe('itens_mais_vendidos e o escopo de quem pergunta', () => {
       { listar: jest.fn().mockResolvedValue([]) } as never,
       // RF36/RF37: guarda a tabela para virar arquivo. Mudo nestes testes.
       { guardar: jest.fn(), pegar: jest.fn() } as never,
+      // 22/10: criar catalogo pela conversa. Mudos nestes testes.
+      { execute: jest.fn() } as never,
+      { texto: jest.fn() } as never,
+      { execute: jest.fn() } as never,
     );
   });
 
@@ -269,6 +273,10 @@ describe('consultar_produtos da gestao e a quantidade', () => {
       { listar: jest.fn().mockResolvedValue([]) } as never,
       // RF36/RF37: guarda a tabela para virar arquivo. Mudo nestes testes.
       { guardar: jest.fn(), pegar: jest.fn() } as never,
+      // 22/10: criar catalogo pela conversa. Mudos nestes testes.
+      { execute: jest.fn() } as never,
+      { texto: jest.fn() } as never,
+      { execute: jest.fn() } as never,
     );
   });
 
@@ -428,6 +436,10 @@ describe('o recorte de equipe nas ferramentas de gestao', () => {
       { listar: jest.fn().mockResolvedValue([]) } as never,
       // RF36/RF37: guarda a tabela para virar arquivo. Mudo nestes testes.
       { guardar: jest.fn(), pegar: jest.fn() } as never,
+      // 22/10: criar catalogo pela conversa. Mudos nestes testes.
+      { execute: jest.fn() } as never,
+      { texto: jest.fn() } as never,
+      { execute: jest.fn() } as never,
     );
   });
 
@@ -745,6 +757,10 @@ describe('o periodo livre nas ferramentas de venda', () => {
       { listar: jest.fn().mockResolvedValue([]) } as never,
       // RF36/RF37: guarda a tabela para virar arquivo. Mudo nestes testes.
       { guardar: jest.fn(), pegar: jest.fn() } as never,
+      // 22/10: criar catalogo pela conversa. Mudos nestes testes.
+      { execute: jest.fn() } as never,
+      { texto: jest.fn() } as never,
+      { execute: jest.fn() } as never,
     );
   });
 
@@ -902,6 +918,10 @@ describe('o ranking por tipo de peça', () => {
       { listar: jest.fn().mockResolvedValue([]) } as never,
       // RF36/RF37: guarda a tabela para virar arquivo. Mudo nestes testes.
       { guardar: jest.fn(), pegar: jest.fn() } as never,
+      // 22/10: criar catalogo pela conversa. Mudos nestes testes.
+      { execute: jest.fn() } as never,
+      { texto: jest.fn() } as never,
+      { execute: jest.fn() } as never,
     );
   });
 

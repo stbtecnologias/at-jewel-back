@@ -124,6 +124,13 @@ import { MidiaController } from './infrastructure/http/controllers/midia.control
     // ser gravada.
     CONFERENCIA_FOTO,
     INTERPRETADOR_DESTINO,
+    // CRIAR CATALOGO PELA CONVERSA — 22/10/2026. Os tres passos que fazem o
+    // catalogo nascer util: criar, descrever o estilo e liberar. Quem os
+    // encadeia e o `FerramentasGestaoService`, em atendimentos — que ja
+    // importa este modulo, e este nao importa aquele: nao ha ciclo.
+    CriarCatalogoUseCase,
+    AnexarReferenciaUseCase,
+    AtualizarCatalogoUseCase,
   ],
 })
 export class CatalogosModule {}

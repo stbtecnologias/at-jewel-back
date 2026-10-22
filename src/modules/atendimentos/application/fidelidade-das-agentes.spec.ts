@@ -190,6 +190,10 @@ describe('os clientes por fidelidade', () => {
       { listar: jest.fn().mockResolvedValue([]) } as never,
       // RF36/RF37: guarda a tabela para virar arquivo. Mudo nestes testes.
       { guardar: jest.fn(), pegar: jest.fn() } as never,
+      // 22/10: criar catalogo pela conversa. Mudos nestes testes.
+      { execute: jest.fn() } as never,
+      { texto: jest.fn() } as never,
+      { execute: jest.fn() } as never,
       );
     });
 

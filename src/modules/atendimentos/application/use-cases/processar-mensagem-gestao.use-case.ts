@@ -21,6 +21,7 @@ import {
 } from '../../../relatorios/application/montar-arquivo.use-case';
 import { UltimoRelatorioService } from '../../../relatorios/application/ultimo-relatorio.service';
 import { tituloDaFerramenta } from '../../../relatorios/domain/titulo-da-ferramenta';
+import { PERMISSAO_CATALOGO } from './processar-foto-catalogo.use-case';
 import { modeloDeIa } from '../../../../shared/config/modelo-de-ia';
 import type { FotoDeProduto } from '../fotos-de-produto.service';
 
@@ -278,6 +279,18 @@ export class ProcessarMensagemGestaoUseCase {
             // vendedoras dos outros pelo WhatsApp e nao pelo painel — a mesma
             // pergunta com resposta diferente conforme a porta.
             equipe: await this.escopo.equipeDoUsuario(msg.usuarioId),
+            // CRIAR CATALOGO PELA CONVERSA — 22/10/2026. A MESMA chave do
+            // painel, `catalogo:write`: uma regra, duas portas. Sem ela a
+            // ferramenta nem e declarada, entao a agente nao chega a oferecer
+            // o que a pessoa nao pode fazer.
+            podeCatalogo: await this.permissoes.possui(
+              msg.role,
+              PERMISSAO_CATALOGO,
+            ),
+            // E o catalogo nasce COM DONO: `criado_por_nome` e o que a tela
+            // mostra, e material de campanha sem autor e o comeco de ninguem
+            // responder por ele.
+            usuarioId: msg.usuarioId,
           }),
 
           // OS COMBINADOS — ANA-16 e ANA-18. Ficam FORA do

@@ -688,6 +688,29 @@ export type GestaoAtribuirVendedoraHandler = (input: {
   vendedora: string;
 }) => Promise<{ mensagem: string }>;
 
+/**
+ * CRIAR CATALOGO PELA CONVERSA — 22/10/2026.
+ *
+ * Ate aqui o catalogo so nascia no painel, e o WhatsApp sabia apenas pendurar
+ * foto num catalogo que JA existia. Pedido do Lucas: *"vamos colocar para ela
+ * criar tambem o catalogo pelo whats; voce pega as informacoes importantes"*.
+ *
+ * E as importantes sao duas — o NOME e o ESTILO. O resto tem padrao. Sem ao
+ * menos uma referencia o catalogo nao pode ser liberado para receber foto, e
+ * essa regra nao nasce aqui: ela ja valia no painel, porque sem referencia a
+ * IA nao tem o que seguir e a foto volta tratada em qualquer estilo.
+ *
+ * A frase de volta e montada no SERVIDOR, como em toda escrita: ela carrega o
+ * NUMERO do catalogo, que e exatamente o que o modelo inventaria.
+ */
+export type GestaoCriarCatalogoHandler = (input: {
+  nome: string;
+  tema?: string;
+  formato?: string;
+  /** O padrao visual, em palavras. Sem ele o catalogo nasce em rascunho. */
+  estilo?: string;
+}) => Promise<{ mensagem: string }>;
+
 export type MeusLembretesHandler = () => Promise<{
   /** Uma linha por lembrete, ja numerada — o numero serve ao remarcar e ao cancelar. */
   linhas: string[];
@@ -1308,6 +1331,8 @@ export interface ChatParams {
   gestaoPecasPorValor?: GestaoPecasPorValorHandler;
   // Idem para `atribuir_vendedora_ao_cliente` — a escrita de carteira.
   gestaoAtribuirVendedora?: GestaoAtribuirVendedoraHandler;
+  // Idem para `criar_catalogo` — so existe com `catalogo:write`.
+  gestaoCriarCatalogo?: GestaoCriarCatalogoHandler;
   gestaoAgendar?: GestaoAgendarHandler;
   gestaoFeedbacks?: GestaoFeedbacksHandler;
   gestaoDiaDaVendedora?: GestaoDiaDaVendedoraHandler;

@@ -1184,6 +1184,59 @@ const GESTAO_ATRIBUIR_VENDEDORA_TOOL: Anthropic.Tool = {
 };
 
 /**
+ * CRIAR CATALOGO PELA CONVERSA — 22/10/2026.
+ *
+ * ==========================================================================
+ * A DESCRICAO PEDE O ESTILO PORQUE SEM ELE O CATALOGO NASCE INUTIL.
+ *
+ * Catalogo sem nenhuma referencia nao pode ser liberado — e a regra do
+ * painel, e a razao esta escrita la: sem referencia a IA nao tem o que
+ * seguir, e a foto volta tratada em qualquer estilo. Entao a ferramenta
+ * aceita criar sem estilo (a pessoa pode nao ter decidido ainda), mas a
+ * resposta diz, em voz alta, que ele ainda NAO recebe foto.
+ *
+ * NOME E ESTILO sao "as informacoes importantes" do pedido do Lucas. Tema e
+ * formato tem padrao, e perguntar os quatro faria um formulario — que e
+ * exatamente o que o painel ja e.
+ * ==========================================================================
+ */
+const GESTAO_CRIAR_CATALOGO_TOOL: Anthropic.Tool = {
+  name: 'criar_catalogo',
+  description:
+    'Cria um catalogo NOVO para receber fotos de pecas. ' +
+    'Use quando pedirem "cria um catalogo", "abre um catalogo de dia das maes", "quero um catalogo novo". ' +
+    'PERGUNTE O NOME se ela nao disser — todo catalogo precisa de um. ' +
+    'E PERGUNTE O ESTILO antes de criar, se ela nao descrever: o padrao visual em palavras (fundo, luz, enquadramento, fonte). Sem estilo o catalogo nasce em rascunho e NAO recebe foto. ' +
+    'Nao use para mandar foto para um catalogo que ja existe — para isso ela so manda a foto dizendo de qual catalogo e.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      nome: {
+        type: 'string',
+        description:
+          'Como o catalogo se chama — "Dia das Maes 2026", "Alianças". E por ele que ela manda as fotos depois.',
+      },
+      tema: {
+        type: 'string',
+        description: 'O assunto da campanha, se ela disser. Opcional.',
+      },
+      formato: {
+        type: 'string',
+        enum: ['9:16', '16:9'],
+        description:
+          '9:16 e o padrao (story, vertical). So mande 16:9 se ela pedir horizontal.',
+      },
+      estilo: {
+        type: 'string',
+        description:
+          'O padrao visual EM PALAVRAS, como ela descreveu: fundo, luz, enquadramento, fonte, referencia de campanha. E o que libera o catalogo para receber foto.',
+      },
+    },
+    required: ['nome'],
+  },
+};
+
+/**
  * OS CAMPOS DA FAIXA DE VALOR, dos dois canais — 13/10/2026.
  *
  * O PERIODO E EM DATAS, e nao num enum de "trimestre"/"semestre": o modelo ja
@@ -1963,6 +2016,7 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoPecasPorValor) tools.push(GESTAO_PECAS_POR_VALOR_TOOL);
     if (params.gestaoAtribuirVendedora)
       tools.push(GESTAO_ATRIBUIR_VENDEDORA_TOOL);
+    if (params.gestaoCriarCatalogo) tools.push(GESTAO_CRIAR_CATALOGO_TOOL);
     if (params.gestaoAgendar) tools.push(GESTAO_AGENDAR_TOOL);
     if (params.gestaoFeedbacks) tools.push(GESTAO_FEEDBACKS_TOOL);
     if (params.gestaoFunil) tools.push(GESTAO_FUNIL_TOOL);
@@ -2372,6 +2426,30 @@ export class AnthropicClient implements ILlmClient {
             ),
           );
         }
+      } else if (
+        toolUse.name === 'criar_catalogo' &&
+        params.gestaoCriarCatalogo
+      ) {
+        toolResults.push(
+          // NAO AVISA O OUVINTE DE RELATORIO: isto nao e consulta, e a frase
+          // de confirmacao viraria "a ultima tabela" — o PDF seguinte sairia
+          // com uma linha dizendo que um catalogo foi criado.
+          await this.executarLeitura(toolUse, undefined, async () => {
+            const e = toolUse.input as {
+              nome?: string;
+              tema?: string;
+              formato?: string;
+              estilo?: string;
+            };
+            const r = await params.gestaoCriarCatalogo!({
+              nome: String(e.nome ?? '').slice(0, 120),
+              tema: e.tema ? String(e.tema).slice(0, 200) : undefined,
+              formato: e.formato ? String(e.formato) : undefined,
+              estilo: e.estilo ? String(e.estilo).slice(0, 2000) : undefined,
+            });
+            return `${r.mensagem}\n\nNao invente numero de catalogo: use o que esta aqui.`;
+          }),
+        );
       } else if (
         toolUse.name === 'pecas_por_valor' &&
         params.gestaoPecasPorValor

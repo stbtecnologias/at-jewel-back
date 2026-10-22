@@ -16,6 +16,11 @@ import { faixaDePreco } from '../../../shared/catalogo/faixa-de-preco';
 import { FotosDeProdutoService } from './fotos-de-produto.service';
 import { FotosDaPecaUseCase } from '../../produtos/application/use-cases/fotos-da-peca.use-case';
 import { UltimoRelatorioService } from '../../relatorios/application/ultimo-relatorio.service';
+import {
+  AnexarReferenciaUseCase,
+  AtualizarCatalogoUseCase,
+  CriarCatalogoUseCase,
+} from '../../catalogos/application/use-cases/catalogos.use-cases';
 import { diasDeCalendario } from '../../../shared/tempo/dias-de-calendario';
 import {
   dataDeCorte,
@@ -54,6 +59,7 @@ import type {
   GestaoPanoramaHandler,
   GestaoVendasHandler,
   GestaoAgendaHandler,
+  GestaoCriarCatalogoHandler,
 } from '../../agentes/domain/ports/llm-client.port';
 import { janelaDoDia } from '../../../shared/tempo/janela-do-dia';
 import { CONVERSA_WHATSAPP_REPOSITORY } from '../domain/ports/injection-tokens';
@@ -288,6 +294,14 @@ export interface FerramentasGestao {
    * `if` dentro do handler, que existiria so para ser recusado.
    */
   gestaoAtribuirVendedora?: GestaoAtribuirVendedoraHandler;
+  /**
+   * CRIAR CATALOGO PELA CONVERSA — 22/10/2026.
+   *
+   * OPCIONAL pela mesma razao do `gestaoAtribuirVendedora`: sem
+   * `catalogo:write` o handler nao existe, e sem handler a ferramenta nem
+   * chega a ser declarada ao modelo.
+   */
+  gestaoCriarCatalogo?: GestaoCriarCatalogoHandler;
   gestaoFeedbacks: GestaoFeedbacksHandler;
   gestaoDiaDaVendedora: GestaoDiaDaVendedoraHandler;
   gestaoConversasAgora: GestaoConversasAgoraHandler;
@@ -417,6 +431,28 @@ export interface ContextoGestao {
     codigoErp: string;
     rotulo: string;
   }) => void;
+  /**
+   * Pode CRIAR catálogo pela conversa? — 22/10/2026.
+   *
+   * ======================================================================
+   * A MESMA CHAVE DO PAINEL: `catalogo:write`. Uma regra, duas portas — o
+   * canal do WhatsApp não inventa um critério próprio para quem monta
+   * material da casa.
+   *
+   * Sem ela a chave nem existe no objeto devolvido, então a ferramenta não
+   * é DECLARADA ao modelo: ele não chega a oferecer o que ela não pode
+   * fazer. Padrão `false`, como todo escopo daqui.
+   * ======================================================================
+   */
+  podeCatalogo?: boolean;
+  /**
+   * Quem está falando, para o catálogo nascer com dono.
+   *
+   * `criado_por_nome` é NOT NULL e a tela mostra quem criou. Sem o id, o
+   * catálogo ficaria "da Equipe" — e material de campanha sem autor é o
+   * começo de ninguém responder por ele.
+   */
+  usuarioId?: string | null;
 }
 
 /**
@@ -479,6 +515,12 @@ export class FerramentasGestaoService {
     // sempre: parametro novo no meio quebra todo teste que constroi isto a
     // mao.
     private readonly ultimoRelatorio: UltimoRelatorioService,
+    // CRIAR CATALOGO PELA CONVERSA — 22/10/2026. Os tres passos que ate hoje
+    // so existiam no painel: criar, descrever o estilo e liberar para receber
+    // foto. NO FIM DA LISTA, pela mesma razao de sempre.
+    private readonly criarCatalogo: CriarCatalogoUseCase,
+    private readonly anexarReferencia: AnexarReferenciaUseCase,
+    private readonly atualizarCatalogo: AtualizarCatalogoUseCase,
   ) {}
 
   /**
@@ -495,6 +537,8 @@ export class FerramentasGestaoService {
       verLoja = false,
       verQuantidade = false,
       podeAtribuirCarteira = false,
+      podeCatalogo = false,
+      usuarioId = null,
       equipe = null,
     } = ctx;
 
@@ -2692,6 +2736,83 @@ export class FerramentasGestaoService {
           linhas: [...linhas, ...nomesDoFunil(juntas, true)],
         };
       },
+
+      // ====================================================================
+      // CRIAR CATALOGO PELA CONVERSA — 22/10/2026.
+      //
+      // *"Vamos colocar para ela criar também o catálogo pelo WhatsApp; você
+      // pega as informações importantes."*
+      //
+      // E AS IMPORTANTES SAO DUAS, nao quatro:
+      //
+      //   NOME    — obrigatorio no banco, e e por ele que a foto acha o
+      //             catalogo depois ("manda pro Dia das Maes");
+      //   ESTILO  — porque sem ao menos UMA referencia o catalogo NAO PODE
+      //             ser liberado. Essa regra ja existia no painel, com a
+      //             razao escrita: "sem referencia a IA nao tem o que
+      //             seguir, e a foto volta tratada em qualquer estilo".
+      //
+      // Tema e formato tem padrao (9:16, o do story) e so entram se ela
+      // disser. Perguntar os quatro faria um formulario — e formulario em
+      // conversa e exatamente o que ela ja tem no painel.
+      //
+      // SEM `catalogo:write`, A CHAVE NEM EXISTE no objeto devolvido, entao
+      // a ferramenta nao e declarada ao modelo. Nao ha versao recusavel.
+      // ====================================================================
+      ...(podeCatalogo
+        ? {
+            gestaoCriarCatalogo: async ({ nome, tema, formato, estilo }) => {
+              const limpo = String(nome ?? '').trim();
+              if (!limpo) {
+                return {
+                  mensagem:
+                    'Todo catálogo precisa de um nome. Pergunte como ela quer ' +
+                    'chamar este — nada foi criado.',
+                };
+              }
+
+              const catalogo = await this.criarCatalogo.execute({
+                nome: limpo.slice(0, 120),
+                tema: tema ? String(tema).trim().slice(0, 200) : null,
+                formato: formato === '16:9' ? '16:9' : '9:16',
+                criadoPorUserId: usuarioId ?? null,
+                criadoPorNomeFallback: solicitante ?? undefined,
+              });
+
+              const descricao = String(estilo ?? '').trim();
+              if (!descricao) {
+                // NASCE EM RASCUNHO, e rascunho nao aparece para a agente.
+                // Dizer isso em voz alta e o que evita ela mandar foto para
+                // um catalogo que ainda nao recebe.
+                return {
+                  mensagem:
+                    `Catálogo ${catalogo.numero} — "${catalogo.nome}" criado, ` +
+                    'em rascunho. Ele ainda NÃO recebe foto: falta a ' +
+                    'referência de estilo. Peça para ela descrever o padrão ' +
+                    '(fundo, luz, enquadramento, fonte) ou mandar uma imagem ' +
+                    'de exemplo, e então use esta ferramenta de novo com o ' +
+                    'estilo preenchido.',
+                };
+              }
+
+              await this.anexarReferencia.texto(
+                catalogo.id,
+                'OBSERVACAO',
+                descricao.slice(0, 2000),
+              );
+              await this.atualizarCatalogo.execute(catalogo.id, {
+                status: 'COLETANDO',
+              });
+
+              return {
+                mensagem:
+                  `Catálogo ${catalogo.numero} — "${catalogo.nome}" criado e ` +
+                  'liberado para receber fotos. Diga o número e o nome, e que ' +
+                  'ela já pode mandar as fotos dizendo que são deste catálogo.',
+              };
+            },
+          }
+        : {}),
     };
   }
 

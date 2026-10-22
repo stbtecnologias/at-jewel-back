@@ -44,6 +44,10 @@ describe('FerramentasGestaoService', () => {
   let porEmpresa: jest.Mock;
   let leads: { listarAguardandoGestao: jest.Mock };
   let conversas: { entre: jest.Mock };
+  /** Os tres passos do catalogo pela conversa — 22/10/2026. */
+  let criarCat: { execute: jest.Mock };
+  let anexarRef: { texto: jest.Mock };
+  let atualizarCat: { execute: jest.Mock };
   let servico: FerramentasGestaoService;
 
   const MARINA = {
@@ -94,6 +98,13 @@ describe('FerramentasGestaoService', () => {
     ]);
     leads = { listarAguardandoGestao: jest.fn().mockResolvedValue([]) };
     conversas = { entre: jest.fn().mockResolvedValue([]) };
+    criarCat = {
+      execute: jest
+        .fn()
+        .mockResolvedValue({ id: 'cat-1', numero: '0042', nome: 'Dia das Mães' }),
+    };
+    anexarRef = { texto: jest.fn().mockResolvedValue({ id: 'ref-1' }) };
+    atualizarCat = { execute: jest.fn().mockResolvedValue({ id: 'cat-1' }) };
 
     servico = new FerramentasGestaoService(
       resolverVendedora as never,
@@ -151,6 +162,10 @@ describe('FerramentasGestaoService', () => {
       { listar: jest.fn().mockResolvedValue([]) } as never,
       // RF36/RF37: guarda a tabela para virar arquivo. Mudo nestes testes.
       { guardar: jest.fn(), pegar: jest.fn() } as never,
+      // 22/10: criar catalogo pela conversa.
+      criarCat as never,
+      anexarRef as never,
+      atualizarCat as never,
     );
   });
 
@@ -1101,6 +1116,100 @@ describe('FerramentasGestaoService', () => {
     });
   });
 
+  /**
+   * ========================================================================
+   * CRIAR CATÁLOGO PELA CONVERSA — 22/10/2026.
+   *
+   * *"Vamos colocar para ela criar também o catálogo pelo WhatsApp; você pega
+   * as informações importantes."*
+   *
+   * E as importantes são duas — nome e estilo. O estilo não é capricho: sem
+   * ao menos uma referência o catálogo NÃO PODE ser liberado, e essa regra já
+   * existia no painel com a razão escrita: sem referência a IA não tem o que
+   * seguir, e a foto volta tratada em qualquer estilo.
+   * ========================================================================
+   */
+  describe('criar catálogo pela conversa', () => {
+    const comPermissao = () => servico.montar({ podeCatalogo: true });
+
+    /* ESTE É O TESTE DO ESCOPO: ausência de caminho, não recusa. */
+    it('sem catalogo:write a ferramenta NEM EXISTE', () => {
+      expect(servico.montar({}).gestaoCriarCatalogo).toBeUndefined();
+      expect(comPermissao().gestaoCriarCatalogo).toBeDefined();
+    });
+
+    it('sem nome, não cria nada', async () => {
+      const r = await comPermissao().gestaoCriarCatalogo!({ nome: '  ' });
+
+      expect(criarCat.execute).not.toHaveBeenCalled();
+      expect(r.mensagem).toContain('nome');
+    });
+
+    // ======================================================================
+    // SEM ESTILO ELE NASCE EM RASCUNHO — e a frase diz isso em voz alta.
+    //
+    // Calar seria pior que recusar: ela mandaria as fotos para um catálogo
+    // que não as recebe, e só descobriria quando nada chegasse.
+    // ======================================================================
+    it('sem estilo, cria em rascunho e avisa que NÃO recebe foto', async () => {
+      const r = await comPermissao().gestaoCriarCatalogo!({
+        nome: 'Dia das Mães',
+      });
+
+      expect(criarCat.execute).toHaveBeenCalledTimes(1);
+      expect(anexarRef.texto).not.toHaveBeenCalled();
+      expect(atualizarCat.execute).not.toHaveBeenCalled();
+      expect(r.mensagem).toContain('0042');
+      expect(r.mensagem).toMatch(/NÃO recebe foto/i);
+    });
+
+    it('com estilo, cria, guarda a referência e libera', async () => {
+      const r = await comPermissao().gestaoCriarCatalogo!({
+        nome: 'Dia das Mães',
+        estilo: 'fundo claro, luz suave, peça centralizada',
+      });
+
+      expect(anexarRef.texto).toHaveBeenCalledWith(
+        'cat-1',
+        'OBSERVACAO',
+        'fundo claro, luz suave, peça centralizada',
+      );
+      expect(atualizarCat.execute).toHaveBeenCalledWith('cat-1', {
+        status: 'COLETANDO',
+      });
+      expect(r.mensagem).toContain('0042');
+    });
+
+    it('o catálogo nasce COM DONO', async () => {
+      await servico
+        .montar({ podeCatalogo: true, usuarioId: 'ad-7', solicitante: 'Lucas' })
+        .gestaoCriarCatalogo!({ nome: 'Alianças' });
+
+      expect(criarCat.execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          criadoPorUserId: 'ad-7',
+          criadoPorNomeFallback: 'Lucas',
+        }),
+      );
+    });
+
+    // 9:16 é o do story, e é o caso comum. Formato que o modelo invente não
+    // vira coluna no banco — cai no padrão, como o formato do relatório.
+    it.each([
+      [undefined, '9:16'],
+      ['16:9', '16:9'],
+      ['quadrado', '9:16'],
+    ])('formato %s vira %s', async (pedido, esperado) => {
+      await comPermissao().gestaoCriarCatalogo!({
+        nome: 'Alianças',
+        formato: pedido,
+      });
+
+      expect(criarCat.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ formato: esperado }),
+      );
+    });
+  });
 });
 
 /**
