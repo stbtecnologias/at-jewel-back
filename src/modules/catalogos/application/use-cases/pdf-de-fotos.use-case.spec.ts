@@ -16,12 +16,11 @@ import { PdfDeFotosUseCase } from './pdf-de-fotos.use-case';
  * ============================================================================
  */
 describe('o catálogo em PDF', () => {
-  // Um JPEG 2x3 de verdade, em base64: o pdfkit precisa ler as dimensões do
-  // cabeçalho, então não serve um buffer qualquer.
+  // Um JPEG com cabeçalho de 1000x1500 — o pdfkit lê a dimensão dali, e é
+  // dela que sai o tamanho da página. Folha de verdade é o que faz o teste
+  // das páginas fantasma valer: numa de 2x3 pontos, nada estoura.
   const JPEG_2x3 = Buffer.from(
-    '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a' +
-      'HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAADAAIBAREA/8QAFAABAAAAAAAA' +
-      'AAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==',
+    '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAXcA+gBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==',
     'base64',
   );
 
@@ -59,6 +58,36 @@ describe('o catálogo em PDF', () => {
   /** Quantas folhas o PDF tem — contadas no próprio arquivo. */
   const paginas = (b: Buffer): number =>
     (b.toString('latin1').match(/\/Type\s*\/Page[^s]/g) ?? []).length;
+
+  /** Quantas folhas o PDF tem — uma `/MediaBox` por página. */
+  const folhas = (b: Buffer): number =>
+    (b.toString('latin1').match(/\/MediaBox/g) ?? []).length;
+
+  /**
+   * ==========================================================================
+   * O TEXTO DA CAPA NÃO PODE CRIAR PÁGINA — 22/10/2026, visto em produção.
+   *
+   * O primeiro PDF com capa saiu com SETE páginas para três fotos: o nome em
+   * corpo proporcional à largura ficou mais largo que a folha, o pdfkit
+   * quebrou a linha mesmo com `lineBreak: false`, e o pedaço que passava da
+   * borda de baixo virou página nova — em branco, com metade do nome.
+   *
+   * É a mesma armadilha de 21/10 no relatório, e foi a segunda vez. Por isso
+   * agora ela tem teste, e com nome comprido, que é quando ela aparece.
+   * ==========================================================================
+   */
+  it.each([
+    ['Under 25k'],
+    ['New Opala'],
+    ['Coleção de fim de ano com nome bem comprido'],
+  ])('o PDF tem as páginas das fotos, e nem uma a mais — "%s"', async (nome) => {
+    const { uc } = montar();
+
+    const r = await uc.execute('cat-1', null, nome);
+
+    expect(r.paginas).toBe(4);
+    expect(folhas(r.conteudo)).toBe(4);
+  });
 
   /* ESTE É O TESTE: capa de graça, e a peça continua na página dela. */
   it('abre com capa e mostra TODAS as fotos depois', async () => {

@@ -273,17 +273,39 @@ export class PdfDeFotosUseCase {
     largura: number,
     altura: number,
   ): void {
-    // Proporcional à página: a capa pode ser um story de 1080 ou um JPEG de
-    // 4000 pixels, e tamanho fixo ficaria minúsculo num e gigante no outro.
-    const nome = Math.max(28, Math.round(largura * 0.22));
-    const marca = Math.max(9, Math.round(largura * 0.028));
-    const chamada = Math.max(7, Math.round(largura * 0.021));
-    const margem = Math.round(largura * 0.08);
-    const util = largura - margem * 2;
-
     const temFonte = this.carregarFontes(doc);
     const script = temFonte ? FONTE_NOME : 'Helvetica-Oblique';
     const sans = temFonte ? FONTE_MARCA : 'Helvetica';
+
+    const margem = Math.round(largura * 0.08);
+    const util = largura - margem * 2;
+
+    // ====================================================================
+    // O TEXTO É MEDIDO E ENCOLHIDO ATÉ CABER — e não é preciosismo.
+    //
+    // A primeira versão saiu com 7 PÁGINAS num catálogo de 3 fotos: o nome
+    // em corpo proporcional à largura ficou mais largo que a página, o
+    // pdfkit QUEBROU a linha — apesar do `lineBreak: false` — e cada pedaço
+    // que passava da borda de baixo virava PÁGINA NOVA. "New Opala" saiu
+    // repartido em duas folhas em branco.
+    //
+    // É a mesma armadilha de 21/10, no relatório: *"o `lineBreak:false` não
+    // impede a quebra"*, e *"escrever na margem de baixo adiciona página"*.
+    // A lição custou duas vezes, então agora ela é código: MEDE, ENCOLHE, e
+    // desenha com `x` calculado — sem `width`, não há onde quebrar.
+    // ====================================================================
+    const corpoQueCabe = (
+      texto: string,
+      fonte: string,
+      desejado: number,
+      espaco = 0,
+    ): number => {
+      doc.font(fonte).fontSize(desejado);
+      const largo =
+        doc.widthOfString(texto) + espaco * Math.max(0, texto.length - 1);
+      if (largo <= util) return desejado;
+      return Math.max(8, Math.floor((desejado * util) / largo));
+    };
 
     const escrever = (
       texto: string,
@@ -291,45 +313,80 @@ export class PdfDeFotosUseCase {
       tamanho: number,
       fonte: string,
       espaco = 0,
+      cor = COR_TINTA,
+      halo = COR_CLARA,
     ) => {
-      const comum = {
-        width: util,
-        align: 'center' as const,
-        characterSpacing: espaco,
-        lineBreak: false,
-      };
       doc.font(fonte).fontSize(tamanho);
-      // A SOMBRA É O QUE MANTÉM O TEXTO LEGÍVEL sobre cabelo claro e sobre
-      // pele — e as duas coisas aparecem na mesma capa. Sem ela, metade do
-      // nome some. Desenhar duas vezes é o jeito do pdfkit: ele não tem
-      // sombra.
-      doc
-        .fillColor('#000000')
-        .opacity(0.3)
-        .text(texto, margem + Math.max(1, tamanho * 0.02), y + Math.max(1, tamanho * 0.02), comum);
-      doc.fillColor(COR_CREME).opacity(1).text(texto, margem, y, comum);
+      const largo =
+        doc.widthOfString(texto) + espaco * Math.max(0, texto.length - 1);
+      const x = (largura - largo) / 2;
+      // SEM `width` E SEM `align`: com a posição calculada, não existe caixa
+      // de texto para o pdfkit quebrar nem estourar. É o que impede a
+      // página fantasma.
+      const comum = { characterSpacing: espaco, lineBreak: false };
+      const desloca = Math.max(1, tamanho * 0.025);
+
+      // O HALO CLARO vem primeiro e a tinta por cima. Ao contrário da
+      // sombra escura da primeira versão, ele funciona onde as fotos da
+      // casa vivem: packshot em fundo branco. Creme sobre branco some.
+      doc.fillColor(halo).opacity(0.75).text(texto, x + desloca, y + desloca, comum);
+      doc.fillColor(cor).opacity(1).text(texto, x, y, comum);
     };
 
     // A MARCA EM CAIXA ALTA E ESPAÇADA, no alto — como na referência.
-    escrever('A.T JEWEL', altura * 0.05, marca, sans, marca * 0.45);
+    const marca = corpoQueCabe(
+      'A.T JEWEL',
+      sans,
+      Math.max(9, Math.round(largura * 0.026)),
+      Math.round(largura * 0.012),
+    );
+    escrever(
+      'A.T JEWEL',
+      altura * 0.045,
+      marca,
+      sans,
+      Math.round(largura * 0.012),
+    );
 
-    // O NOME EM MANUSCRITO, no terço de baixo. `titulo` NÃO vai em caixa
-    // alta: a Great Vibes é desenhada para maiúscula só na inicial, e tudo
-    // em caixa alta vira um emaranhado ilegível.
-    const yNome = altura * 0.62;
+    // O NOME EM MANUSCRITO. `titulo` NÃO vai em caixa alta: a Great Vibes é
+    // desenhada para maiúscula só na inicial, e tudo em caixa vira um
+    // emaranhado ilegível.
+    //
+    // O corpo nasce da MENOR dimensão: numa foto deitada, 22% da largura
+    // seria mais alto que a página inteira.
+    const nome = corpoQueCabe(
+      titulo,
+      script,
+      Math.round(Math.min(largura * 0.2, altura * 0.12)),
+    );
+    doc.font(script).fontSize(nome);
+    const alturaDoNome = doc.heightOfString(titulo, { lineBreak: false });
+
+    // E O BLOCO INTEIRO TEM DE CABER NA FOLHA. O `min` é o que garante que
+    // nem o filete nem o "SHOP NOW" encostem na borda de baixo — encostar é
+    // o que criava a página nova.
+    const chamada = Math.max(7, Math.round(largura * 0.02));
+    const alturaDoBloco = alturaDoNome + chamada * 3.2;
+    const yNome = Math.min(altura * 0.66, altura - margem - alturaDoBloco);
+
     escrever(titulo, yNome, nome, script);
 
-    // O filete e o "SHOP NOW" fecham o bloco, como no material dela.
-    const yFilete = yNome + nome * 0.95;
+    const yFilete = yNome + alturaDoNome + chamada * 0.6;
     doc
-      .opacity(0.9)
-      .moveTo(largura / 2 - nome * 0.22, yFilete)
-      .lineTo(largura / 2 + nome * 0.22, yFilete)
-      .lineWidth(Math.max(1, nome * 0.012))
-      .strokeColor(COR_CREME)
+      .opacity(0.85)
+      .moveTo(largura / 2 - chamada * 2.2, yFilete)
+      .lineTo(largura / 2 + chamada * 2.2, yFilete)
+      .lineWidth(Math.max(1, chamada * 0.09))
+      .strokeColor(COR_TINTA)
       .stroke();
 
-    escrever('SHOP NOW', yFilete + chamada * 1.2, chamada, sans, chamada * 0.5);
+    escrever(
+      'SHOP NOW',
+      yFilete + chamada * 0.8,
+      chamada,
+      sans,
+      Math.round(chamada * 0.5),
+    );
     doc.opacity(1);
   }
 
@@ -361,8 +418,17 @@ export class PdfDeFotosUseCase {
   }
 }
 
-/** O creme da referência — branco puro sobre pele clara some. */
-const COR_CREME = '#f6ece0';
+/**
+ * A TINTA E O HALO DA CAPA.
+ *
+ * A referência do marketing é creme sobre foto de modelo. As fotos DA CASA
+ * são packshot em fundo branco — e creme sobre branco some, foi o que saiu no
+ * primeiro teste. Então a tinta é escura, com um halo claro atrás: lê em
+ * fundo branco, que é onde as nossas fotos vivem, e continua legível sobre
+ * foto clara de modelo.
+ */
+const COR_TINTA = '#2b2b2b';
+const COR_CLARA = '#ffffff';
 
 const FONTE_NOME = 'capa-nome';
 const FONTE_MARCA = 'capa-marca';
