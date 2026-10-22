@@ -1278,7 +1278,8 @@ const GESTAO_PDF_CATALOGO_TOOL: Anthropic.Tool = {
     'Monta o PDF de um catalogo, UMA FOTO POR PAGINA, e manda na conversa. ' +
     'Use quando pedirem "gera o pdf", "monta o catalogo em pdf", "manda o catalogo para eu enviar as clientes". ' +
     'As fotos ja estao no catalogo e ja trazem o preco na imagem — este PDF nao escreve nada por cima delas. ' +
-    'A CAPA e OPCIONAL e e UMA DAS FOTOS que ja estao la: se ela disser qual quer na frente, mande o codigo da peca; se nao disser, nao pergunte, o PDF sai na ordem do catalogo. ' +
+    'A CAPA e OPCIONAL e e UMA DAS FOTOS que ja estao la: se ela disser qual quer na frente, mande o CODIGO DA PECA; se nao disser, nao pergunte, o PDF sai na ordem do catalogo. ' +
+    'Com capa escolhida, o NOME DO CATALOGO e escrito sobre ela — entao se ela quiser outro texto na capa, e so renomear o catalogo. ' +
     'Voce NAO cria imagem nova: se ela pedir uma capa desenhada, diga que da para escolher uma das fotos como abertura.',
   input_schema: {
     type: 'object',

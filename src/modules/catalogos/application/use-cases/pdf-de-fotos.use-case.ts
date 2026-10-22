@@ -57,17 +57,32 @@ export class PdfDeFotosUseCase {
   ) {}
 
   /**
-   * @param capaFotoId a foto que ela escolheu para abrir. Ela sobe para a
-   *   primeira página e NÃO se repete no meio — abrir e repetir faria o PDF
-   *   parecer defeito.
+   * @param capaDita o que ela disse para abrir o PDF — o CÓDIGO da peça
+   *   ("AN26369") ou o id da foto. Ela sobe para a primeira página e NÃO se
+   *   repete no meio: abrir e repetir faria o PDF parecer defeito.
    */
-  async execute(catalogoId: string, capaFotoId?: string | null): Promise<PdfDeFotos> {
+  async execute(catalogoId: string, capaDita?: string | null): Promise<PdfDeFotos> {
     const catalogo = await this.repositorio.buscarPorId(catalogoId);
     if (!catalogo) throw new NotFoundException('Catálogo não encontrado');
 
     const naOrdem = [...catalogo.fotos].sort((a, b) => a.posicao - b.posicao);
-    const capa = capaFotoId
-      ? naOrdem.find((f) => f.id === capaFotoId)
+    // ====================================================================
+    // O CÓDIGO OU O ID — e o código é o que ela diz — 22/10/2026.
+    //
+    // A primeira versão comparava só com o id da foto (um uuid), e a
+    // ferramenta pede à agente o CÓDIGO DA PEÇA. Nunca casava, e a capa era
+    // ignorada EM SILÊNCIO: o PDF saía na ordem normal e ninguém sabia por
+    // quê. Defeito que não quebra nada é o que mais demora a aparecer.
+    // ====================================================================
+    const procurado = String(capaDita ?? '')
+      .trim()
+      .toUpperCase();
+    const capa = procurado
+      ? naOrdem.find(
+          (f) =>
+            f.id.toUpperCase() === procurado ||
+            (f.codigoErp ?? '').toUpperCase() === procurado,
+        )
       : undefined;
     const fila = capa
       ? [capa, ...naOrdem.filter((f) => f.id !== capa.id)]
@@ -101,7 +116,7 @@ export class PdfDeFotosUseCase {
       );
     }
 
-    const conteudo = await this.desenhar(imagens);
+    const conteudo = await this.desenhar(imagens, capa ? catalogo.nome : null);
     const nome = `catalogo-${catalogo.numero}-${semAcento(catalogo.nome)}.pdf`;
 
     // ====================================================================
@@ -145,7 +160,10 @@ export class PdfDeFotosUseCase {
    * o tamanho da primeira imagem — com a padrão, o PDF abriria com uma folha
    * A4 em branco antes da capa.
    */
-  private desenhar(imagens: Buffer[]): Promise<Buffer> {
+  private desenhar(
+    imagens: Buffer[],
+    tituloDaCapa: string | null,
+  ): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({ autoFirstPage: false, margin: 0 });
       const pedacos: Buffer[] = [];
@@ -162,17 +180,87 @@ export class PdfDeFotosUseCase {
           openImage(src: Buffer): { width: number; height: number };
         };
 
-        for (const imagem of imagens) {
+        imagens.forEach((imagem, i) => {
           // A dimensão real do arquivo; é dela que sai o tamanho da página.
           const { width, height } = medir.openImage(imagem);
           doc.addPage({ size: [width, height], margin: 0 });
           doc.image(imagem, 0, 0, { width, height });
-        }
+          if (i === 0 && tituloDaCapa) {
+            this.escreverNaCapa(doc, tituloDaCapa, width, height);
+          }
+        });
         doc.end();
       } catch (e) {
         reject(e instanceof Error ? e : new Error(String(e)));
       }
     });
+  }
+
+  /**
+   * O NOME DO CATÁLOGO ESCRITO SOBRE A FOTO DE CAPA — 22/10/2026.
+   *
+   * ========================================================================
+   * ESCOLHA DELE, DEPOIS DE VER AS DUAS OPÇÕES: *"letra A"* — a foto dela
+   * como capa e o texto escrito por nós, em vez de mandar a imagem ao modelo
+   * para ele reescrever a palavra.
+   *
+   * A razão é dupla. **A letra sai exata** — modelo de imagem erra letra, e
+   * "New Opala" pode voltar "New Opaia" num PDF que vai para cliente. E a
+   * edição por IA daria ao modelo licença para redesenhar a joia que a
+   * modelo está usando: foi o que aconteceu em 31/08, quando ele trocou um
+   * brinco por outro recortado de uma referência.
+   *
+   * DESENHADO DUAS VEZES, escuro e depois claro, com 2pt de deslocamento: é
+   * sombra de pobre, e é o que mantém o nome legível tanto sobre cabelo
+   * claro quanto sobre fundo escuro. Sem isso, metade das capas some.
+   * ========================================================================
+   */
+  private escreverNaCapa(
+    doc: PDFKit.PDFDocument,
+    titulo: string,
+    largura: number,
+    altura: number,
+  ): void {
+    // Proporcional à página: a capa pode ser um story de 1080 ou um JPEG de
+    // 4000 pixels, e tamanho fixo ficaria minúsculo num e gigante no outro.
+    const corpo = Math.max(18, Math.round(largura * 0.085));
+    const marca = Math.max(9, Math.round(largura * 0.022));
+    const margem = Math.round(largura * 0.08);
+    const util = largura - margem * 2;
+
+    const escrever = (
+      texto: string,
+      y: number,
+      tamanho: number,
+      fonte: 'Helvetica' | 'Helvetica-Bold',
+      espaco = 0,
+    ) => {
+      const comum = {
+        width: util,
+        align: 'center' as const,
+        characterSpacing: espaco,
+        lineBreak: false,
+      };
+      doc.font(fonte).fontSize(tamanho);
+      doc
+        .fillColor('#000000')
+        .opacity(0.35)
+        .text(texto, margem + 2, y + 2, comum);
+      doc.fillColor('#ffffff').opacity(1).text(texto, margem, y, comum);
+    };
+
+    escrever('A.T JEWEL', altura * 0.06, marca, 'Helvetica', marca * 0.35);
+    escrever(titulo.toUpperCase(), altura * 0.72, corpo, 'Helvetica-Bold');
+
+    // O filete dourado, a mesma marca gráfica da capa do painel e do montador.
+    const y = altura * 0.72 + corpo * 1.45;
+    doc
+      .opacity(1)
+      .moveTo(largura / 2 - corpo, y)
+      .lineTo(largura / 2 + corpo, y)
+      .lineWidth(Math.max(1, corpo * 0.045))
+      .strokeColor('#b8912f')
+      .stroke();
   }
 }
 

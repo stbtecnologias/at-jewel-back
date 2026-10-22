@@ -28,6 +28,8 @@ describe('o catálogo em PDF', () => {
   const foto = (id: string, posicao: number) => ({
     id,
     posicao,
+    // O CÓDIGO É O QUE ELA DIZ na conversa; o id é um uuid que ela nunca viu.
+    codigoErp: `AN2630${posicao}`,
     arquivoId: `catalogo/0042/originais/${id}.jpg`,
     arquivoOriginalId: null,
   });
@@ -108,6 +110,55 @@ describe('o catálogo em PDF', () => {
     const r = await uc.execute('cat-1', 'de-outro');
 
     expect(r.paginas).toBe(3);
+  });
+
+  // ==========================================================================
+  // A CAPA VEM PELO CÓDIGO DA PEÇA — e era aí que estava o defeito.
+  //
+  // A primeira versão comparava só com o id da foto (um uuid), e a ferramenta
+  // pede à agente o CÓDIGO. Nunca casava, e a capa era ignorada EM SILÊNCIO:
+  // o PDF saía na ordem normal e ninguém sabia por quê.
+  // ==========================================================================
+  it('acha a capa pelo CÓDIGO da peça, e não só pelo id da foto', async () => {
+    const { uc, armazenamento } = montar();
+
+    await uc.execute('cat-1', 'AN26303');
+
+    expect(armazenamento.ler.mock.calls[0][0]).toBe(
+      'catalogo/0042/originais/f3.jpg',
+    );
+  });
+
+  it('e o código pode vir em minúscula, como ela digita', async () => {
+    const { uc, armazenamento } = montar();
+
+    await uc.execute('cat-1', 'an26302');
+
+    expect(armazenamento.ler.mock.calls[0][0]).toBe(
+      'catalogo/0042/originais/f2.jpg',
+    );
+  });
+
+  // ==========================================================================
+  // O NOME DO CATÁLOGO VAI ESCRITO NA CAPA — escolha dele em 22/10: *"letra
+  // A"*, a foto dela com o texto escrito por nós, em vez de mandar a imagem
+  // ao modelo para reescrever a palavra.
+  //
+  // Sem capa escolhida não há texto: o PDF é só a sequência de fotos, e
+  // escrever sobre a primeira peça estragaria a página dela.
+  // ==========================================================================
+  it('com capa, o nome do catálogo é escrito sobre ela', async () => {
+    const { uc } = montar();
+
+    const com = await uc.execute('cat-1', 'AN26303');
+    const sem = await uc.execute('cat-1');
+
+    // NÃO DÁ PARA PROCURAR A PALAVRA NO ARQUIVO: o pdfkit comprime o fluxo
+    // de desenho (FlateDecode), então o texto não aparece em texto claro. O
+    // que se vê de fora é o PDF ficar MAIOR — a fonte embarcada e o desenho
+    // do texto pesam, e a sequência de fotos é a mesma nos dois.
+    expect(com.conteudo.length).toBeGreaterThan(sem.conteudo.length);
+    expect(com.paginas).toBe(sem.paginas);
   });
 
   // ==========================================================================
