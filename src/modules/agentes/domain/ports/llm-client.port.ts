@@ -707,8 +707,17 @@ export type GestaoCriarCatalogoHandler = (input: {
   nome: string;
   tema?: string;
   formato?: string;
-  /** O padrao visual, em palavras. Sem ele o catalogo nasce em rascunho. */
+  /** O padrao visual, em palavras, quando ela mesma descrever. */
   estilo?: string;
+  /** Codigos de peca que ela NOMEOU — conferidos um a um no cadastro. */
+  pecas?: string[];
+  /**
+   * "Essas pecas" — as da ULTIMA lista que a ferramenta devolveu.
+   *
+   * Os codigos saem da tabela guardada, e nao do modelo: lista de doze que
+   * voltasse com dez faria um catalogo menor sem ninguem notar.
+   */
+  usarUltimaLista?: boolean;
 }) => Promise<{ mensagem: string }>;
 
 export type MeusLembretesHandler = () => Promise<{

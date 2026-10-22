@@ -28,6 +28,9 @@ export interface FotoDaPecaDto {
   id: string;
   /** A chave no armazenamento — o painel monta `/midia/<chave>` com ela. */
   arquivoId: string;
+  /** O tipo da imagem. Entrou em 22/10, quando a foto da peca passou a poder
+   *  ir para dentro de um catalogo — ver RF32. */
+  mime: string;
   caminho: string | null;
   capa: boolean;
   posicao: number;
@@ -239,6 +242,7 @@ export class FotosDaPecaUseCase {
     return {
       id: f.id,
       arquivoId: f.arquivoId,
+      mime: f.mime,
       caminho: this.armazenamento.caminhoPublico(f.arquivoId),
       capa: f.capa,
       posicao: f.posicao,

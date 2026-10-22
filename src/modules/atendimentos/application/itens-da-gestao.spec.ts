@@ -125,6 +125,9 @@ describe('itens_mais_vendidos e o escopo de quem pergunta', () => {
       { execute: jest.fn() } as never,
       { texto: jest.fn() } as never,
       { execute: jest.fn() } as never,
+      // RF32: as pecas da lista entrando no catalogo.
+      { findByCodigoErp: jest.fn() } as never,
+      { criarFoto: jest.fn() } as never,
     );
   });
 
@@ -277,6 +280,9 @@ describe('consultar_produtos da gestao e a quantidade', () => {
       { execute: jest.fn() } as never,
       { texto: jest.fn() } as never,
       { execute: jest.fn() } as never,
+      // RF32: as pecas da lista entrando no catalogo.
+      { findByCodigoErp: jest.fn() } as never,
+      { criarFoto: jest.fn() } as never,
     );
   });
 
@@ -440,6 +446,9 @@ describe('o recorte de equipe nas ferramentas de gestao', () => {
       { execute: jest.fn() } as never,
       { texto: jest.fn() } as never,
       { execute: jest.fn() } as never,
+      // RF32: as pecas da lista entrando no catalogo.
+      { findByCodigoErp: jest.fn() } as never,
+      { criarFoto: jest.fn() } as never,
     );
   });
 
@@ -761,6 +770,9 @@ describe('o periodo livre nas ferramentas de venda', () => {
       { execute: jest.fn() } as never,
       { texto: jest.fn() } as never,
       { execute: jest.fn() } as never,
+      // RF32: as pecas da lista entrando no catalogo.
+      { findByCodigoErp: jest.fn() } as never,
+      { criarFoto: jest.fn() } as never,
     );
   });
 
@@ -922,6 +934,9 @@ describe('o ranking por tipo de peça', () => {
       { execute: jest.fn() } as never,
       { texto: jest.fn() } as never,
       { execute: jest.fn() } as never,
+      // RF32: as pecas da lista entrando no catalogo.
+      { findByCodigoErp: jest.fn() } as never,
+      { criarFoto: jest.fn() } as never,
     );
   });
 

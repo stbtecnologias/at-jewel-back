@@ -46,6 +46,11 @@ describe('FerramentasGestaoService', () => {
   let conversas: { entre: jest.Mock };
   /** Os tres passos do catalogo pela conversa — 22/10/2026. */
   let criarCat: { execute: jest.Mock };
+  /** RF32: a ultima lista, o cadastro da peca e o catalogo que recebe. */
+  let ultimoRel: { guardar: jest.Mock; guardarTexto: jest.Mock; pegar: jest.Mock };
+  let produtosRepo: { findByCodigoErp: jest.Mock };
+  let catalogosRepo: { criarFoto: jest.Mock };
+  let fotosDaPeca: { listar: jest.Mock };
   let anexarRef: { texto: jest.Mock };
   let atualizarCat: { execute: jest.Mock };
   let servico: FerramentasGestaoService;
@@ -105,6 +110,10 @@ describe('FerramentasGestaoService', () => {
     };
     anexarRef = { texto: jest.fn().mockResolvedValue({ id: 'ref-1' }) };
     atualizarCat = { execute: jest.fn().mockResolvedValue({ id: 'cat-1' }) };
+    ultimoRel = { guardar: jest.fn(), guardarTexto: jest.fn(), pegar: jest.fn() };
+    produtosRepo = { findByCodigoErp: jest.fn() };
+    catalogosRepo = { criarFoto: jest.fn().mockResolvedValue({ id: 'f-1' }) };
+    fotosDaPeca = { listar: jest.fn().mockResolvedValue([]) };
 
     servico = new FerramentasGestaoService(
       resolverVendedora as never,
@@ -159,13 +168,17 @@ describe('FerramentasGestaoService', () => {
       leads as never,
       // O ponteiro de conversas vivas (29/09) — o `conversas_agora`.
       conversas as never,
-      { listar: jest.fn().mockResolvedValue([]) } as never,
-      // RF36/RF37: guarda a tabela para virar arquivo. Mudo nestes testes.
-      { guardar: jest.fn(), pegar: jest.fn() } as never,
+      // RF33 — as fotos da PECA.
+      fotosDaPeca as never,
+      // RF36/RF37: guarda a tabela para virar arquivo.
+      ultimoRel as never,
       // 22/10: criar catalogo pela conversa.
       criarCat as never,
       anexarRef as never,
       atualizarCat as never,
+      // RF32: as pecas da lista entrando no catalogo.
+      produtosRepo as never,
+      catalogosRepo as never,
     );
   });
 
@@ -1224,6 +1237,131 @@ describe('FerramentasGestaoService', () => {
       expect(criarCat.execute).toHaveBeenCalledWith(
         expect.objectContaining({ formato: esperado }),
       );
+    });
+
+    /**
+     * ======================================================================
+     * "COLOCA ESSAS PEÇAS NO CATÁLOGO" — RF32, 22/10/2026.
+     *
+     *   — "me lista colar de até 10 mil"   (a lista sai)
+     *   — "coloca essas peças no catálogo com o nome de under 10k"
+     *
+     * E "essas" sai da ÚLTIMA LISTA, não do modelo: os códigos são lidos da
+     * tabela que a própria ferramenta guardou. Se o modelo os redigitasse,
+     * uma lista de doze poderia voltar com dez, e o catálogo sairia com duas
+     * peças a menos sem ninguém notar.
+     * ======================================================================
+     */
+    describe('as peças da última lista', () => {
+      const comLista = (linhas: Record<string, string>[]) =>
+        ultimoRel.pegar.mockReturnValue({
+          titulo: 'Peças',
+          colunas: [{ chave: 'o', titulo: 'Peças' }],
+          linhas,
+        });
+
+      const UMA_PECA = {
+        id: 'p-1',
+        codigoErp: 'CO26217',
+        descricaoEtiqueta: 'Colar Riv. Coroa',
+        valorVenda: 9900,
+      };
+
+      /* ESTE É O TESTE: o código vem do dado, não do modelo. */
+      it('lê os códigos da tabela guardada, e não do que o modelo digitou', async () => {
+        comLista([
+          { o: 'Colar Riv. Coroa — código CO26217: R$ 9.900,00, disponível' },
+          { o: 'Colar DTS — código CO26229: R$ 8.000,00, disponível' },
+        ]);
+        produtosRepo.findByCodigoErp.mockResolvedValue(UMA_PECA);
+        fotosDaPeca.listar.mockResolvedValue([
+          { arquivoId: 'arq-1', mime: 'image/jpeg' },
+        ]);
+
+        await comPermissao().gestaoCriarCatalogo!({
+          nome: 'under 10k',
+          usarUltimaLista: true,
+        });
+
+        expect(
+          produtosRepo.findByCodigoErp.mock.calls.map((c) => c[0]),
+        ).toEqual(['CO26217', 'CO26229']);
+      });
+
+      it('todas as fotos da peça entram — foi a letra (a)', async () => {
+        comLista([{ o: 'código CO26217: R$ 9.900,00' }]);
+        produtosRepo.findByCodigoErp.mockResolvedValue(UMA_PECA);
+        fotosDaPeca.listar.mockResolvedValue([
+          { arquivoId: 'a1', mime: 'image/jpeg' },
+          { arquivoId: 'a2', mime: 'image/png' },
+          { arquivoId: 'a3', mime: 'image/jpeg' },
+        ]);
+
+        const r = await comPermissao().gestaoCriarCatalogo!({
+          nome: 'under 10k',
+          usarUltimaLista: true,
+        });
+
+        expect(catalogosRepo.criarFoto).toHaveBeenCalledTimes(3);
+        // Aponta para o arquivo que JÁ existe: nada é baixado nem reenviado.
+        expect(catalogosRepo.criarFoto).toHaveBeenCalledWith(
+          expect.objectContaining({
+            catalogoId: 'cat-1',
+            codigoErp: 'CO26217',
+            arquivoId: 'a1',
+            arquivoOriginalId: 'a1',
+            precoAVista: 9900,
+          }),
+        );
+        expect(r.mensagem).toContain('3 foto');
+      });
+
+      // ====================================================================
+      // O QUE FICOU DE FORA É DITO. Peça sem foto cadastrada é o caso comum
+      // desta base — catálogo menor que a lista precisa dizer por quê.
+      // ====================================================================
+      it('peça sem foto fica de fora, e a frase diz qual', async () => {
+        comLista([{ o: 'código CO26217' }, { o: 'código AN23341' }]);
+        produtosRepo.findByCodigoErp.mockImplementation((c: string) =>
+          Promise.resolve({ ...UMA_PECA, codigoErp: c }),
+        );
+        fotosDaPeca.listar.mockResolvedValue([]);
+
+        const r = await comPermissao().gestaoCriarCatalogo!({
+          nome: 'under 10k',
+          usarUltimaLista: true,
+        });
+
+        expect(catalogosRepo.criarFoto).not.toHaveBeenCalled();
+        expect(r.mensagem).toContain('CO26217');
+        expect(r.mensagem).toContain('AN23341');
+        expect(r.mensagem).toMatch(/sem foto/i);
+      });
+
+      it('código que o modelo invente não vira peça — vira "não achei"', async () => {
+        produtosRepo.findByCodigoErp.mockResolvedValue(null);
+
+        const r = await comPermissao().gestaoCriarCatalogo!({
+          nome: 'under 10k',
+          pecas: ['XX99999'],
+        });
+
+        expect(catalogosRepo.criarFoto).not.toHaveBeenCalled();
+        expect(r.mensagem).toMatch(/não achei/i);
+        expect(r.mensagem).toContain('XX99999');
+      });
+
+      it('sem lista guardada, o catálogo sai vazio — e ele existe', async () => {
+        ultimoRel.pegar.mockReturnValue(null);
+
+        const r = await comPermissao().gestaoCriarCatalogo!({
+          nome: 'under 10k',
+          usarUltimaLista: true,
+        });
+
+        expect(catalogosRepo.criarFoto).not.toHaveBeenCalled();
+        expect(r.mensagem).toContain('criado');
+      });
     });
   });
 });

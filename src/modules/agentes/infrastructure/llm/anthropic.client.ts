@@ -1201,10 +1201,12 @@ const GESTAO_ATRIBUIR_VENDEDORA_TOOL: Anthropic.Tool = {
 const GESTAO_CRIAR_CATALOGO_TOOL: Anthropic.Tool = {
   name: 'criar_catalogo',
   description:
-    'Cria um catalogo NOVO, ja liberado para receber fotos de pecas. ' +
-    'Use quando pedirem "cria um catalogo", "abre um catalogo de dia das maes", "quero um catalogo novo". ' +
+    'Cria um catalogo NOVO, ja liberado para receber fotos, e opcionalmente ja POE as pecas dentro, com as fotos que elas tem cadastradas. ' +
+    'Use quando pedirem "cria um catalogo", "abre um catalogo de dia das maes", "coloca essas pecas num catalogo chamado X". ' +
     'PERGUNTE SO O NOME, e so se ela nao disser — todo catalogo precisa de um. ' +
     'NAO pergunte estilo, tema nem formato: tudo isso tem padrao e ela muda depois. So preencha se ela mesma falar. ' +
+    'Se ela disser "ESSAS pecas", "as que voce listou", "as da lista", mande usar_ultima_lista=true e NAO redigite os codigos: eu os leio da lista que acabei de devolver, inteira. ' +
+    'Use "pecas" so quando ela NOMEAR os codigos na frase ("coloca a AN2568 e a GD5478"). ' +
     'Nao use para mandar foto para um catalogo que ja existe — para isso ela so manda a foto dizendo de qual catalogo e.',
   input_schema: {
     type: 'object',
@@ -1228,6 +1230,17 @@ const GESTAO_CRIAR_CATALOGO_TOOL: Anthropic.Tool = {
         type: 'string',
         description:
           'O padrao visual EM PALAVRAS, SO se ela descrever por conta propria (fundo, luz, enquadramento, fonte). NAO pergunte por ele: sem estilo o catalogo sai com o padrao da casa.',
+      },
+      usar_ultima_lista: {
+        type: 'boolean',
+        description:
+          'true quando ela se referir as pecas da ULTIMA lista ("essas", "as que voce listou"). Os codigos saem da lista guardada, inteira — nao os redigite.',
+      },
+      pecas: {
+        type: 'array',
+        items: { type: 'string' },
+        description:
+          'Codigos que ELA nomeou na frase, como vieram ("AN2568"). Nao use junto de usar_ultima_lista.',
       },
     },
     required: ['nome'],
@@ -2438,12 +2451,20 @@ export class AnthropicClient implements ILlmClient {
               tema?: string;
               formato?: string;
               estilo?: string;
+              pecas?: unknown;
+              usar_ultima_lista?: unknown;
             };
             const r = await params.gestaoCriarCatalogo!({
               nome: String(e.nome ?? '').slice(0, 120),
               tema: e.tema ? String(e.tema).slice(0, 200) : undefined,
               formato: e.formato ? String(e.formato) : undefined,
               estilo: e.estilo ? String(e.estilo).slice(0, 2000) : undefined,
+              // TETO DE CODIGOS: lista nomeada a mao nao passa de vinte, e o
+              // caso grande vem pela ultima lista, que ja tem teto proprio.
+              pecas: Array.isArray(e.pecas)
+                ? e.pecas.slice(0, 20).map((c) => String(c))
+                : undefined,
+              usarUltimaLista: e.usar_ultima_lista === true,
             });
             return `${r.mensagem}\n\nNao invente numero de catalogo: use o que esta aqui.`;
           }),

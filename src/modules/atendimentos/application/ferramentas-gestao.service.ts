@@ -16,6 +16,10 @@ import { faixaDePreco } from '../../../shared/catalogo/faixa-de-preco';
 import { FotosDeProdutoService } from './fotos-de-produto.service';
 import { FotosDaPecaUseCase } from '../../produtos/application/use-cases/fotos-da-peca.use-case';
 import { UltimoRelatorioService } from '../../relatorios/application/ultimo-relatorio.service';
+import { PRODUTO_REPOSITORY } from '../../erp/domain/ports/injection-tokens';
+import type { IProdutoRepository } from '../../erp/domain/ports/repositories/produto-repository.port';
+import { CATALOGO_REPOSITORY } from '../../catalogos/domain/ports/injection-tokens';
+import type { ICatalogoRepository } from '../../catalogos/domain/ports/repositories/catalogo-repository.port';
 import {
   AnexarReferenciaUseCase,
   AtualizarCatalogoUseCase,
@@ -253,6 +257,9 @@ const DIAS_PADRAO_FEEDBACK = 7;
  * `dia_da_vendedora` — e por isso este numero nao vira teto de nada: quem
  * pedir "nas ultimas duas horas" recebe duas horas.
  */
+/** Parcelas que o catalogo assume quando ninguem informa — a regra da casa. */
+const PARCELAS_DO_CATALOGO = 10;
+
 const MINUTOS_CONVERSA_AGORA = 30;
 
 /** Uma conversa do ponteiro com o nome ja resolvido. */
@@ -521,6 +528,12 @@ export class FerramentasGestaoService {
     private readonly criarCatalogo: CriarCatalogoUseCase,
     private readonly anexarReferencia: AnexarReferenciaUseCase,
     private readonly atualizarCatalogo: AtualizarCatalogoUseCase,
+    // AS PECAS DA ULTIMA LISTA ENTRANDO NO CATALOGO — RF32, 22/10/2026.
+    // O produto resolve o codigo; o repositorio de catalogo recebe a foto.
+    @Inject(PRODUTO_REPOSITORY)
+    private readonly produtos: IProdutoRepository,
+    @Inject(CATALOGO_REPOSITORY)
+    private readonly catalogos: ICatalogoRepository,
   ) {}
 
   /**
@@ -2763,7 +2776,14 @@ export class FerramentasGestaoService {
       // ====================================================================
       ...(podeCatalogo
         ? {
-            gestaoCriarCatalogo: async ({ nome, tema, formato, estilo }) => {
+            gestaoCriarCatalogo: async ({
+              nome,
+              tema,
+              formato,
+              estilo,
+              pecas,
+              usarUltimaLista,
+            }) => {
               const limpo = String(nome ?? '').trim();
               if (!limpo) {
                 return {
@@ -2800,12 +2820,44 @@ export class FerramentasGestaoService {
                 status: 'COLETANDO',
               });
 
+              // ============================================================
+              // E AS PECAS, QUANDO ELA DISSE QUAIS — RF32, 22/10/2026.
+              //
+              // *"Me lista colar de até 10 mil"* e, quando a lista sai,
+              // *"coloca essas peças no catálogo com o nome de under 10k"*.
+              //
+              // "ESSAS" SAI DA ULTIMA LISTA, E NAO DO MODELO. Os codigos sao
+              // lidos da tabela que a propria ferramenta guardou — a mesma
+              // que vira PDF. Se o modelo os redigitasse, uma lista de doze
+              // poderia voltar com dez, e o catalogo sairia com duas pecas a
+              // menos sem ninguem notar: e a Camila de quatro contatos que
+              // vira tres, da concepcao de 24/09.
+              //
+              // Quando ela NOMEIA as pecas ("coloca a AN2568 e a GD5478"),
+              // os codigos vem pelo `pecas` — e aí cada um e CONFERIDO no
+              // banco. Codigo que o modelo invente nao vira peca: vira "nao
+              // achei esse".
+              // ============================================================
+              const codigos = usarUltimaLista
+                ? this.codigosDaUltimaLista(chaveDaConversa)
+                : (pecas ?? []).map((c) => String(c).trim().toUpperCase());
+
+              const posto = codigos.length
+                ? await this.porPecasNoCatalogo(
+                    catalogo.id,
+                    codigos,
+                    solicitante ?? null,
+                  )
+                : null;
+
               return {
                 mensagem:
                   `Catálogo ${catalogo.numero} — "${catalogo.nome}" criado e ` +
                   'liberado para receber fotos' +
                   (descricao ? ', com o estilo que ela descreveu' : '') +
-                  '. Diga o número e o nome, e que ela já pode mandar as ' +
+                  '.' +
+                  (posto ? ` ${posto}` : '') +
+                  ' Diga o número e o nome, e que ela já pode mandar mais ' +
                   'fotos dizendo que são deste catálogo' +
                   (descricao
                     ? '.'
@@ -2816,6 +2868,122 @@ export class FerramentasGestaoService {
           }
         : {}),
     };
+  }
+
+  /**
+   * OS CODIGOS DA ULTIMA LISTA — RF32, 22/10/2026.
+   *
+   * ========================================================================
+   * O DADO NAO PASSA PELO MODELO, e aqui isso tem consequencia pratica.
+   *
+   * A tabela guardada e a mesma que vira PDF: ela foi escrita pela
+   * FERRAMENTA, com os codigos que o banco devolveu. Lendo dali, "essas
+   * pecas" quer dizer exatamente as que sairam na tela dela.
+   *
+   * O formato da linha e o que o `consultar_produtos` monta —
+   * "DESCRICAO — codigo AN22083: R$ 8.900,00, disponivel" —, e o codigo e o
+   * mesmo par de letras e digitos que o canal de fotos ja reconhece. Lista
+   * sem codigo nenhum devolve vazio, e quem chama diz que nao entendeu quais
+   * eram as pecas.
+   * ========================================================================
+   */
+  private codigosDaUltimaLista(chave: string | null): string[] {
+    const tabela = this.ultimoRelatorio.pegar(chave);
+    if (!tabela) return [];
+
+    const vistos = new Set<string>();
+    for (const linha of tabela.linhas) {
+      for (const celula of Object.values(linha)) {
+        const achado = String(celula ?? '').match(/\b([A-Za-z]{2}\d{3,})\b/);
+        if (achado) vistos.add(achado[1].toUpperCase());
+      }
+    }
+    return [...vistos];
+  }
+
+  /**
+   * POE AS FOTOS JA CADASTRADAS DA PECA DENTRO DO CATALOGO — RF32.
+   *
+   * ========================================================================
+   * TODAS AS FOTOS DA PECA, e foi escolha dele em 22/10: *"letra A, usa
+   * todas; hoje tem poucas fotos, no maximo 3"*.
+   *
+   * E NAO BAIXA NADA: `produto_fotos` e `catalogo_referencias` guardam a
+   * mesma especie de chave de armazenamento, entao por a foto no catalogo e
+   * apontar para o arquivo que ja esta la. O risco de 404 e de timeout era
+   * da URL da Conexa; a nossa nao tem nenhum dos dois.
+   *
+   * A frase de volta diz o que NAO entrou, e isso nao e detalhe: peca sem
+   * foto cadastrada e o caso comum da base, e um catalogo que sai menor do
+   * que a lista precisa dizer por que.
+   * ========================================================================
+   */
+  private async porPecasNoCatalogo(
+    catalogoId: string,
+    codigos: string[],
+    remetente: string | null,
+  ): Promise<string> {
+    const semFoto: string[] = [];
+    const naoAchadas: string[] = [];
+    let fotos = 0;
+    let pecas = 0;
+
+    for (const codigo of codigos) {
+      const produto = await this.produtos.findByCodigoErp(codigo);
+      if (!produto?.id) {
+        naoAchadas.push(codigo);
+        continue;
+      }
+
+      const daPeca = await this.fotosDaPeca.listar(produto.id);
+      if (daPeca.length === 0) {
+        semFoto.push(codigo);
+        continue;
+      }
+
+      pecas += 1;
+      for (const foto of daPeca) {
+        await this.catalogos.criarFoto({
+          catalogoId,
+          codigoErp: produto.codigoErp ?? codigo,
+          descricao:
+            produto.descricaoEtiqueta?.trim() ||
+            `${produto.categoria ?? ''} ${produto.familia ?? ''}`.trim() ||
+            null,
+          precoAVista: produto.valorVenda ?? null,
+          parcelas: PARCELAS_DO_CATALOGO,
+          jurosPercentual: null,
+          origem: 'UPLOAD',
+          remetente,
+          // AS DUAS COLUNAS APONTAM PARA A MESMA IMAGEM, como no RF31: a
+          // tratada so nasce quando alguem pede tratamento.
+          arquivoOriginalId: foto.arquivoId,
+          arquivoId: foto.arquivoId,
+          mime: foto.mime,
+          status: 'APROVADA',
+        });
+        fotos += 1;
+      }
+    }
+
+    const partes: string[] = [];
+    if (pecas > 0) {
+      partes.push(
+        `Entraram ${pecas} peça(s), ${fotos} foto(s), no catálogo.`,
+      );
+    }
+    if (semFoto.length) {
+      partes.push(
+        `Sem foto cadastrada, e por isso ficaram de fora: ${semFoto.join(', ')}.`,
+      );
+    }
+    if (naoAchadas.length) {
+      partes.push(`Não achei no cadastro: ${naoAchadas.join(', ')}.`);
+    }
+    if (partes.length === 0) {
+      partes.push('Nenhuma peça entrou.');
+    }
+    return `${partes.join(' ')} Repasse isso como está, sem omitir o que ficou de fora.`;
   }
 
   /**

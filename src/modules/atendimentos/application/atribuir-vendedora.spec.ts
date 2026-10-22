@@ -90,6 +90,9 @@ describe('atribuir vendedora ao cliente', () => {
       { execute: jest.fn() } as never,
       { texto: jest.fn() } as never,
       { execute: jest.fn() } as never,
+      // RF32: as pecas da lista entrando no catalogo.
+      { findByCodigoErp: jest.fn() } as never,
+      { criarFoto: jest.fn() } as never,
     );
   });
 
