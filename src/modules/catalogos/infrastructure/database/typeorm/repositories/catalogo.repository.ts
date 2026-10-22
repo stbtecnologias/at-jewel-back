@@ -118,8 +118,19 @@ export class CatalogoRepository implements ICatalogoRepository {
   async listar(filtro: FiltroCatalogo): Promise<ListaCatalogos> {
     const qb = this.repo.createQueryBuilder('c');
 
+    // ====================================================================
+    // O EXCLUIDO SO APARECE A QUEM PEDIR POR ELE — 22/10/2026.
+    //
+    // "Status: Todos" quer dizer todos os que estao EM USO, e nao todas as
+    // linhas da tabela. Sem esta linha, o catalogo que ela mandou excluir
+    // continuaria na primeira tela que ela abre — e o botao teria mentido.
+    //
+    // Filtrando por 'EXCLUIDO' ele volta, inteiro, para ser restaurado.
+    // ====================================================================
     if (filtro.status) {
       qb.andWhere('c.status = :status', { status: filtro.status });
+    } else {
+      qb.andWhere('c.status <> :excluido', { excluido: 'EXCLUIDO' });
     }
 
     if (filtro.busca?.trim()) {

@@ -2391,8 +2391,25 @@ export class ProcessarFotoCatalogoUseCase {
    * evita o segundo `remover` numa chave que ja saiu.
    */
   private async jogarFora(foto: FotoItem): Promise<void> {
+    // ====================================================================
+    // SO APAGA O ARQUIVO QUE NASCEU NO CATALOGO — 22/10/2026.
+    //
+    // Era seguro enquanto toda foto daqui vinha do WhatsApp e morava em
+    // `catalogo/...`. Com o RF32 a peca entra APONTANDO para a foto dela,
+    // em `produtos/<codigo>/` — e um "joga fora essa" na conversa apagaria
+    // do disco a foto do CADASTRO da peca, que serve o painel, a agente e
+    // os proximos catalogos.
+    //
+    // A LINHA SAI DE QUALQUER JEITO: o filtro e sobre o ARQUIVO, e nao
+    // sobre a decisao dela. Tirar a peca do catalogo continua tirando.
+    //
+    // Mesmo criterio do `RemoverCatalogoUseCase`, e o spec de la explica o
+    // estrago por extenso.
+    // ====================================================================
     const chaves = new Set(
-      [foto.arquivoOriginalId, foto.arquivoId].filter((c): c is string => !!c),
+      [foto.arquivoOriginalId, foto.arquivoId].filter(
+        (c): c is string => !!c && c.startsWith('catalogo/'),
+      ),
     );
     for (const chave of chaves) {
       await this.armazenamento.remover(chave);

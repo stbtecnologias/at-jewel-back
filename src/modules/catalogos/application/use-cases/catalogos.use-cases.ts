@@ -153,7 +153,15 @@ export class AtualizarCatalogoUseCase {
         );
       }
       const atual = await this.repositorio.buscarPorId(id);
-      if (atual?.status === 'PUBLICADO') {
+      // EXCLUIR O APROVADO É PERMITIDO — 22/10/2026.
+      //
+      // A trava existe para o status não CONTRADIZER a aprovação gravada:
+      // voltar um aprovado para "coletando" deixaria a aprovação pendurada
+      // num catálogo que já não está aprovado. Excluir não contradiz nada —
+      // tira da vista, e a aprovação continua de pé lá dentro, inteira, para
+      // quando ele for restaurado. E é justamente o aprovado que alguém mais
+      // precisa poder tirar da frente.
+      if (atual?.status === 'PUBLICADO' && input.status !== 'EXCLUIDO') {
         throw new BadRequestException(
           'Catálogo aprovado — desfaça a aprovação antes de mudar o status.',
         );
@@ -233,7 +241,7 @@ export class RemoverCatalogoUseCase {
       ...catalogo.referencias.map((r) => r.arquivoId),
       ...catalogo.fotos.map((f) => f.arquivoId),
       catalogo.finalArquivoId,
-    ].filter((c): c is string => Boolean(c) && c.startsWith(meu));
+    ].filter((c): c is string => !!c && c.startsWith(meu));
 
     await this.repositorio.remover(id);
     await Promise.all(chaves.map((c) => this.armazenamento.remover(c)));
