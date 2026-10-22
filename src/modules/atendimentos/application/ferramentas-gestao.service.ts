@@ -2913,9 +2913,22 @@ export class FerramentasGestaoService {
    * apontar para o arquivo que ja esta la. O risco de 404 e de timeout era
    * da URL da Conexa; a nossa nao tem nenhum dos dois.
    *
-   * A frase de volta diz o que NAO entrou, e isso nao e detalhe: peca sem
-   * foto cadastrada e o caso comum da base, e um catalogo que sai menor do
-   * que a lista precisa dizer por que.
+   * ========================================================================
+   * SO AS NOSSAS, E A FOTO DA CONEXA NAO ENTRA AQUI — decisao dele em 22/10:
+   *
+   *   *"ta certo, so pra entrar nossas fotos. A foto da conexa e pequena e
+   *   sem resolucao; ela ja enviou muitos para producao."*
+   *
+   * Eu ia implementar a queda para a Conexa, pela ordem decidida no RF40.
+   * A ordem continua valendo para MOSTRAR — na lista do painel e na resposta
+   * da agente, uma imagem pequena e melhor que nenhuma. NAO vale para MONTAR:
+   * das 196 fotos do ERP que respondem, 43 sao miniatura (medido em 07/10 —
+   * 73x93, 51x63, 92x97 pixels, ~30 KB), e uma imagem dessas numa pagina de
+   * catalogo e pior que a peca nao aparecer.
+   *
+   * O caminho de ter foto boa ja existe, e e o RF33: ela manda a foto da
+   * peca, uma vez, e a peca passa a ter foto nossa para sempre. Por isso a
+   * frase de volta CONVIDA a mandar, em vez de so lamentar.
    * ========================================================================
    */
   private async porPecasNoCatalogo(
@@ -2973,8 +2986,12 @@ export class FerramentasGestaoService {
       );
     }
     if (semFoto.length) {
+      // O CONVITE VEM JUNTO DA FALTA. Dizer so "ficou de fora" deixa ela sem
+      // saber o que fazer; mandar a foto e o caminho, e e de um minuto.
       partes.push(
-        `Sem foto cadastrada, e por isso ficaram de fora: ${semFoto.join(', ')}.`,
+        `Sem foto nossa, e por isso ficaram de fora: ${semFoto.join(', ')}. ` +
+          'Diga que, se ela mandar as fotos dessas peças aqui, elas passam a ' +
+          'ter foto e entram no catálogo.',
       );
     }
     if (naoAchadas.length) {
