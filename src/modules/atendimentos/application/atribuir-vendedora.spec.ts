@@ -93,6 +93,8 @@ describe('atribuir vendedora ao cliente', () => {
       // RF32: as pecas da lista entrando no catalogo.
       { findByCodigoErp: jest.fn() } as never,
       { criarFoto: jest.fn() } as never,
+      // RF38: o dossie da estrategia de vendas.
+      { montar: jest.fn().mockResolvedValue('dossie') } as never,
     );
   });
 

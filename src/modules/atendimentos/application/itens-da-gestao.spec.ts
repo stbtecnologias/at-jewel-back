@@ -128,6 +128,8 @@ describe('itens_mais_vendidos e o escopo de quem pergunta', () => {
       // RF32: as pecas da lista entrando no catalogo.
       { findByCodigoErp: jest.fn() } as never,
       { criarFoto: jest.fn() } as never,
+      // RF38: o dossie da estrategia de vendas.
+      { montar: jest.fn().mockResolvedValue('dossie') } as never,
     );
   });
 
@@ -283,6 +285,8 @@ describe('consultar_produtos da gestao e a quantidade', () => {
       // RF32: as pecas da lista entrando no catalogo.
       { findByCodigoErp: jest.fn() } as never,
       { criarFoto: jest.fn() } as never,
+      // RF38: o dossie da estrategia de vendas.
+      { montar: jest.fn().mockResolvedValue('dossie') } as never,
     );
   });
 
@@ -449,6 +453,8 @@ describe('o recorte de equipe nas ferramentas de gestao', () => {
       // RF32: as pecas da lista entrando no catalogo.
       { findByCodigoErp: jest.fn() } as never,
       { criarFoto: jest.fn() } as never,
+      // RF38: o dossie da estrategia de vendas.
+      { montar: jest.fn().mockResolvedValue('dossie') } as never,
     );
   });
 
@@ -773,6 +779,8 @@ describe('o periodo livre nas ferramentas de venda', () => {
       // RF32: as pecas da lista entrando no catalogo.
       { findByCodigoErp: jest.fn() } as never,
       { criarFoto: jest.fn() } as never,
+      // RF38: o dossie da estrategia de vendas.
+      { montar: jest.fn().mockResolvedValue('dossie') } as never,
     );
   });
 
@@ -937,6 +945,8 @@ describe('o ranking por tipo de peça', () => {
       // RF32: as pecas da lista entrando no catalogo.
       { findByCodigoErp: jest.fn() } as never,
       { criarFoto: jest.fn() } as never,
+      // RF38: o dossie da estrategia de vendas.
+      { montar: jest.fn().mockResolvedValue('dossie') } as never,
     );
   });
 

@@ -16,6 +16,8 @@ import { faixaDePreco } from '../../../shared/catalogo/faixa-de-preco';
 import { FotosDeProdutoService } from './fotos-de-produto.service';
 import { FotosDaPecaUseCase } from '../../produtos/application/use-cases/fotos-da-peca.use-case';
 import { UltimoRelatorioService } from '../../relatorios/application/ultimo-relatorio.service';
+import { EstrategiaDeVendasService } from './estrategia-de-vendas.service';
+import { moeda } from '../../../shared/formato/moeda';
 import { PRODUTO_REPOSITORY } from '../../erp/domain/ports/injection-tokens';
 import type { IProdutoRepository } from '../../erp/domain/ports/repositories/produto-repository.port';
 import { CATALOGO_REPOSITORY } from '../../catalogos/domain/ports/injection-tokens';
@@ -64,6 +66,7 @@ import type {
   GestaoVendasHandler,
   GestaoAgendaHandler,
   GestaoCriarCatalogoHandler,
+  GestaoEstrategiaHandler,
 } from '../../agentes/domain/ports/llm-client.port';
 import { janelaDoDia } from '../../../shared/tempo/janela-do-dia';
 import { CONVERSA_WHATSAPP_REPOSITORY } from '../domain/ports/injection-tokens';
@@ -301,6 +304,8 @@ export interface FerramentasGestao {
    * `if` dentro do handler, que existiria so para ser recusado.
    */
   gestaoAtribuirVendedora?: GestaoAtribuirVendedoraHandler;
+  /** RF38 — o plano de vendas de uma vendedora, pedido pela gestao. */
+  gestaoEstrategia: GestaoEstrategiaHandler;
   /**
    * CRIAR CATALOGO PELA CONVERSA — 22/10/2026.
    *
@@ -534,6 +539,9 @@ export class FerramentasGestaoService {
     private readonly produtos: IProdutoRepository,
     @Inject(CATALOGO_REPOSITORY)
     private readonly catalogos: ICatalogoRepository,
+    // RF38 — o dossie que vira plano de vendas. A receita mora nele, e os
+    // dois canais a pedem: a vendedora para si, a gestao para a equipe.
+    private readonly estrategia: EstrategiaDeVendasService,
   ) {}
 
   /**
@@ -635,6 +643,25 @@ export class FerramentasGestaoService {
               `${moeda(v.receita)} em receita, ticket médio ${moeda(v.ticketMedio)}`,
           ];
         }),
+
+      // ====================================================================
+      // A ESTRATÉGIA DE VENDAS — RF38, 22/10/2026.
+      //
+      // *"A gerente de vendas pergunta: monte uma estratégia de vendas para a
+      // Camila. Você tem acesso às vendas delas, à carteira de clientes
+      // delas — então com base nisso pode montar um plano de vendas dela ou
+      // de qualquer outro usuário."*
+      //
+      // PASSA PELO `comVendedora` como todas as outras: quem gerencia um time
+      // só alcança o time dela, e o nome ambíguo vira pergunta em vez de
+      // palpite. O dossiê vai num pedaço só — quem escreve o plano é a
+      // agente, e o texto dela precisa das seções inteiras, não de uma lista
+      // picada.
+      // ====================================================================
+      gestaoEstrategia: async ({ vendedora }) =>
+        this.comVendedora(equipe, vendedora, async (id, codigoErp, nome) => [
+          await this.estrategia.montar(id, nome, codigoErp),
+        ]),
 
       gestaoMetas: async ({ vendedora }) =>
         this.comVendedora(equipe, vendedora, async (id) => {
@@ -3068,6 +3095,9 @@ export class FerramentasGestaoService {
     consulta: (
       vendedoraId: string,
       codigoErp: string | null,
+      // O NOME RESOLVIDO, para quem precisa ESCREVER sobre ela — a estratégia
+      // de vendas fala "a Camila" no meio do texto. Os outros ignoram.
+      nome: string,
     ) => Promise<string[]>,
   ): Promise<GestaoLeituraResultado> {
     // ======================================================================
@@ -3101,7 +3131,7 @@ export class FerramentasGestaoService {
     return {
       status: 'OK',
       vendedora: r.nome,
-      linhas: await consulta(r.id, r.codigoErp),
+      linhas: await consulta(r.id, r.codigoErp, r.nome),
     };
   }
 }
@@ -3235,13 +3265,10 @@ function cap(t: string): string {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
-export function moeda(v: number): string {
-  return v.toLocaleString('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-    maximumFractionDigits: 0,
-  });
-}
+// A FUNCAO MUDOU DE CASA em 22/10 — ver `shared/formato/moeda.ts`. O
+// re-export fica porque meia duzia de arquivos a importa daqui, e trocar o
+// import de todos so para mover uma funcao seria barulho sem ganho.
+export { moeda };
 
 /**
  * O saldo da peca em palavras, no nivel que quem pergunta pode ver.

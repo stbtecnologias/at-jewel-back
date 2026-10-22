@@ -703,6 +703,29 @@ export type GestaoAtribuirVendedoraHandler = (input: {
  * A frase de volta e montada no SERVIDOR, como em toda escrita: ela carrega o
  * NUMERO do catalogo, que e exatamente o que o modelo inventaria.
  */
+/**
+ * O PLANO DE VENDAS DE UMA VENDEDORA — RF38, 22/10/2026.
+ *
+ * Devolve o DOSSIE, e nao o plano: cinco leituras que ja existiam, com nome,
+ * data e numero como o banco os deu. Quem escreve o plano e a agente, em cima
+ * disto — a mesma divisao de 24/09, aplicada a outra coisa: o dado nao passa
+ * pelo modelo, a redacao passa.
+ *
+ * O resultado e o mesmo das outras leituras por vendedora, entao nome ambiguo
+ * vira pergunta e quem gerencia um time so alcanca o time dela.
+ */
+/**
+ * O MESMO DOSSIE, no canal DELA — RF38, 22/10/2026.
+ *
+ * Sem parametro: o plano e o dela porque nao ha onde dizer de quem. Escopo
+ * por ausencia de caminho, como toda ferramenta da vendedora.
+ */
+export type EstrategiaDeVendasHandler = () => Promise<{ texto: string }>;
+
+export type GestaoEstrategiaHandler = (input: {
+  vendedora: string;
+}) => Promise<GestaoLeituraResultado>;
+
 export type GestaoCriarCatalogoHandler = (input: {
   nome: string;
   tema?: string;
@@ -1342,6 +1365,10 @@ export interface ChatParams {
   gestaoAtribuirVendedora?: GestaoAtribuirVendedoraHandler;
   // Idem para `criar_catalogo` — so existe com `catalogo:write`.
   gestaoCriarCatalogo?: GestaoCriarCatalogoHandler;
+  // RF38 — o plano de vendas de uma vendedora, pedido pela gestao.
+  gestaoEstrategia?: GestaoEstrategiaHandler;
+  // RF38 — a versao do canal dela, sem parametro nenhum.
+  estrategiaDeVendas?: EstrategiaDeVendasHandler;
   gestaoAgendar?: GestaoAgendarHandler;
   gestaoFeedbacks?: GestaoFeedbacksHandler;
   gestaoDiaDaVendedora?: GestaoDiaDaVendedoraHandler;

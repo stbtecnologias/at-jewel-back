@@ -21,6 +21,7 @@ import { ConsultarDesempenhoVendedoraUseCase } from './application/use-cases/con
 import { AgendarContatoVendedoraUseCase } from './application/use-cases/agendar-contato-vendedora.use-case';
 import { ConsultarCarteiraVendedoraUseCase } from './application/use-cases/consultar-carteira-vendedora.use-case';
 import { FotosDeProdutoService } from './application/fotos-de-produto.service';
+import { EstrategiaDeVendasService } from './application/estrategia-de-vendas.service';
 import { LeitorDeArquivoService } from './application/leitor-de-arquivo.service';
 import { AnalisarArquivoService } from './application/analisar-arquivo.service';
 import { ConsultarProdutosVendedoraUseCase } from './application/use-cases/consultar-produtos-vendedora.use-case';
@@ -149,6 +150,8 @@ import { AnalisarTomUseCase } from '../atendimento/application/analisar-tom.use-
     ConsultarAgendaVendedoraUseCase,
     ConsultarDesempenhoVendedoraUseCase,
     FotosDeProdutoService,
+    // RF38 — o dossie que vira plano de vendas, 22/10/2026.
+    EstrategiaDeVendasService,
     // RF9 — o arquivo que a gestao manda. Os dois andam juntos: o leitor
     // ABRE, a analise LE atras de uma porta sem ferramenta. Ver o cabecalho
     // de `analisar-arquivo.service.ts` para o motivo da separacao.

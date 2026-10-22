@@ -63,7 +63,9 @@ export const TITULOS_POR_FERRAMENTA: Record<string, string> = {
   de_quem_e_o_cliente: 'De quem é o cliente',
   pecas_por_valor: 'Peças por valor',
   consultar_produtos: 'Peças',
+  estrategia_de_vendedora: 'Plano de vendas',
   // Vendedora
+  estrategia_de_vendas: 'Meu plano de vendas',
   consultar_minha_carteira: 'Minha carteira',
   meus_leads: 'Meus leads',
   consultar_agenda: 'Minha agenda',

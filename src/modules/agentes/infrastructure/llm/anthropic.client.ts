@@ -1184,6 +1184,64 @@ const GESTAO_ATRIBUIR_VENDEDORA_TOOL: Anthropic.Tool = {
 };
 
 /**
+ * A ESTRATEGIA DE VENDAS — RF38, 22/10/2026.
+ *
+ * ==========================================================================
+ * SAO DUAS FERRAMENTAS COM O MESMO DOSSIE POR TRAS, e a diferenca nao e
+ * cosmetica: a da VENDEDORA nao tem parametro, e e isso que mantem o escopo
+ * — nao ha onde dizer de quem. A da GESTAO exige o nome, e passa pelo mesmo
+ * portao das outras leituras por vendedora: quem gerencia um time so alcanca
+ * o time dela.
+ *
+ * A DESCRICAO DIZ QUE ELA ESCREVE O PLANO, e nao que a ferramenta o escreve.
+ * O que volta e materia-prima — vendas do mes, meta, clientes parados, quem
+ * compra neste mes, o que ela mais vendeu. O plano e a redacao em cima disso,
+ * e e trabalho do modelo. O dado e nosso; a opiniao e dele.
+ * ==========================================================================
+ */
+/**
+ * O QUE SE PEDE AO MODELO DEPOIS DO DOSSIE — RF38.
+ *
+ * Fica numa constante porque as duas ferramentas pedem a MESMA coisa, e duas
+ * copias divergiriam no dia em que uma fosse ajustada. E a ultima frase e a
+ * que mais importa: o plano e opiniao, os nomes e numeros nao sao.
+ */
+const PEDIDO_DO_PLANO =
+  'Agora ESCREVA O PLANO em cima disto: por quem comecar e por que, o que ' +
+  'oferecer a cada grupo, e onde esta a chance mais proxima. Fale como quem ' +
+  'conhece a carteira, e nao como relatorio. Os nomes, as datas e os numeros ' +
+  'sao os de cima — nao invente nenhum, e nao arredonde valor.';
+
+const ESTRATEGIA_VENDEDORA_TOOL: Anthropic.Tool = {
+  name: 'estrategia_de_vendas',
+  description:
+    'Traz a materia-prima para montar o PLANO DE VENDAS dela: como ela esta no mes, a meta, os clientes da carteira dela parados ha mais de 90 dias, os que costumam comprar NESTE mes do ano, e o que ela mais vendeu nos ultimos 12 meses. ' +
+    'Use quando ela pedir "monte uma estrategia de venda para mim", "o que eu foco esta semana", "me ajuda a vender mais", "quem eu devo procurar". ' +
+    'Depois de receber, ESCREVA O PLANO: quem procurar primeiro e por que, o que oferecer a cada grupo, e onde esta a chance mais proxima. Use os nomes e numeros como vieram, sem inventar nenhum. ' +
+    'Nao e consulta de numero solto: para "quantas vendas eu fiz" use consultar_vendas.',
+  input_schema: { type: 'object', properties: {} },
+};
+
+const GESTAO_ESTRATEGIA_TOOL: Anthropic.Tool = {
+  name: 'estrategia_de_vendedora',
+  description:
+    'A mesma materia-prima do plano de vendas, de UMA vendedora da equipe: como ela esta no mes, a meta, os clientes parados da carteira dela, os que compram neste mes do ano, e o que ela mais vendeu. ' +
+    'Use quando pedirem "monte uma estrategia de vendas para a Camila", "o que a Fernanda deveria focar", "ajuda a montar o plano dela". ' +
+    'Depois de receber, ESCREVA O PLANO com base no perfil dela — quem procurar, o que oferecer, onde esta a chance mais proxima. Use os nomes e numeros exatamente como vieram. ' +
+    'Informe SEMPRE de qual vendedora e: sem nome nao ha plano.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      vendedora: {
+        type: 'string',
+        description: 'Nome da vendedora, como veio na conversa.',
+      },
+    },
+    required: ['vendedora'],
+  },
+};
+
+/**
  * CRIAR CATALOGO PELA CONVERSA — 22/10/2026.
  *
  * ==========================================================================
@@ -2028,6 +2086,8 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoAtribuirVendedora)
       tools.push(GESTAO_ATRIBUIR_VENDEDORA_TOOL);
     if (params.gestaoCriarCatalogo) tools.push(GESTAO_CRIAR_CATALOGO_TOOL);
+    if (params.gestaoEstrategia) tools.push(GESTAO_ESTRATEGIA_TOOL);
+    if (params.estrategiaDeVendas) tools.push(ESTRATEGIA_VENDEDORA_TOOL);
     if (params.gestaoAgendar) tools.push(GESTAO_AGENDAR_TOOL);
     if (params.gestaoFeedbacks) tools.push(GESTAO_FEEDBACKS_TOOL);
     if (params.gestaoFunil) tools.push(GESTAO_FUNIL_TOOL);
@@ -2437,6 +2497,49 @@ export class AnthropicClient implements ILlmClient {
             ),
           );
         }
+      } else if (
+        toolUse.name === 'estrategia_de_vendas' &&
+        params.estrategiaDeVendas
+      ) {
+        toolResults.push(
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const r = await params.estrategiaDeVendas!();
+              return `${r.texto}\n\n${PEDIDO_DO_PLANO}`;
+            },
+          ),
+        );
+      } else if (
+        toolUse.name === 'estrategia_de_vendedora' &&
+        params.gestaoEstrategia
+      ) {
+        toolResults.push(
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as { vendedora?: string };
+              const r = await params.gestaoEstrategia!({
+                vendedora: String(e.vendedora ?? '').slice(0, 80),
+              });
+              if (r.status === 'AMBIGUA') {
+                return (
+                  `Ha mais de uma vendedora com esse nome: ${(r.nomes ?? []).join(', ')}. ` +
+                  'Pergunte qual delas. Nada foi montado.'
+                );
+              }
+              if (r.status === 'NAO_ENCONTRADA') {
+                return 'Nao achei essa vendedora na equipe que voce alcanca. Diga isso e pergunte o nome de novo.';
+              }
+              // AS SECOES VAO INTEIRAS, sem `- ` por cima: o dossie ja traz
+              // titulo e marcador proprios, e prefixar aqui quebraria os
+              // titulos no meio.
+              return `Plano de ${r.vendedora ?? 'ela'}:\n\n${r.linhas.join('\n')}\n\n${PEDIDO_DO_PLANO}`;
+            },
+          ),
+        );
       } else if (
         toolUse.name === 'criar_catalogo' &&
         params.gestaoCriarCatalogo

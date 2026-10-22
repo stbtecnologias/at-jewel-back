@@ -179,6 +179,8 @@ describe('FerramentasGestaoService', () => {
       // RF32: as pecas da lista entrando no catalogo.
       produtosRepo as never,
       catalogosRepo as never,
+      // RF38: o dossie da estrategia de vendas.
+      { montar: jest.fn().mockResolvedValue('dossie') } as never,
     );
   });
 

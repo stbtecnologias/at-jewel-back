@@ -1,5 +1,6 @@
 import { datasDeRecorte } from '../../../shared/tempo/recorte-de-datas';
 import { UltimoRelatorioService } from '../../relatorios/application/ultimo-relatorio.service';
+import { EstrategiaDeVendasService } from './estrategia-de-vendas.service';
 import {
   linhaDoClienteFiel,
   nivelDaPergunta,
@@ -21,6 +22,7 @@ import type {
   ConsultarVendasHandler,
   MelhoresClientesHandler,
   RegistrarRelatoHandler,
+  EstrategiaDeVendasHandler,
 } from '../../agentes/domain/ports/llm-client.port';
 import { AgendarContatoVendedoraUseCase } from './use-cases/agendar-contato-vendedora.use-case';
 import { ConsultarAgendaVendedoraUseCase } from './use-cases/consultar-agenda-vendedora.use-case';
@@ -127,6 +129,8 @@ export interface FerramentasVendedora {
   consultarAgenda: ConsultarAgendaHandler;
   consultarVendas: ConsultarVendasHandler;
   consultarMetas: ConsultarMetasHandler;
+  /** RF38 — o dossie que ela usa para escrever o plano DELA. */
+  estrategiaDeVendas: EstrategiaDeVendasHandler;
   consultarProdutos: ConsultarProdutosHandler;
   consultarCarteiraAgora: ConsultarCarteiraAgoraHandler;
   consultarMeusLeads: ConsultarMeusLeadsHandler;
@@ -274,6 +278,9 @@ export class FerramentasVendedoraService {
     private readonly vendas: ConsultarVendasUseCase,
     // RF36/RF37 — guarda a tabela para ela poder virar arquivo. NO FIM.
     private readonly ultimoRelatorio: UltimoRelatorioService,
+    // RF38 — o dossie que vira plano de vendas. O MESMO servico da gestao:
+    // uma receita, dois canais.
+    private readonly estrategia: EstrategiaDeVendasService,
   ) {}
 
   /**
@@ -500,6 +507,20 @@ export class FerramentasVendedoraService {
             `${moeda(v.receita)} em receita, ticket médio ${moeda(v.ticketMedio)}`,
         };
       },
+
+      // ====================================================================
+      // "MONTE UMA ESTRATÉGIA DE VENDA PARA MIM" — RF38, 22/10/2026.
+      //
+      // SEM PARÂMETRO, e é isso que mantém o escopo: o plano é o DELA porque
+      // não há onde dizer de quem. A gestão tem a versão com nome, e é outra
+      // ferramenta, em outro canal — a assimetria de sempre.
+      //
+      // O dossiê vem pronto do serviço, inteiro: quem escreve o plano é a
+      // agente, e o texto dela precisa das seções, não de uma lista picada.
+      // ====================================================================
+      estrategiaDeVendas: async () => ({
+        texto: await this.estrategia.montar(vendedoraId, 'você', codigoErp),
+      }),
 
       consultarMetas: async () => {
         const metas = await this.desempenho.metas(vendedoraId);

@@ -92,6 +92,8 @@ describe('os leads da vendedora (Elena)', () => {
       { pecasPorFaixa: jest.fn() } as never,
       // RF36/RF37: guarda a tabela para virar arquivo. Mudo nestes testes.
       { guardar: jest.fn(), pegar: jest.fn() } as never,
+      // RF38: o dossie da estrategia. Mudo aqui.
+      { montar: jest.fn().mockResolvedValue('dossie') } as never,
     );
   });
 
@@ -496,6 +498,8 @@ describe('o panorama de leads da gestao (Anastasia)', () => {
       // RF32: as pecas da lista entrando no catalogo.
       { findByCodigoErp: jest.fn() } as never,
       { criarFoto: jest.fn() } as never,
+      // RF38: o dossie da estrategia de vendas.
+      { montar: jest.fn().mockResolvedValue('dossie') } as never,
     );
   });
 

@@ -129,6 +129,8 @@ describe('ProcessarMensagemInternaUseCase', () => {
       { pecasPorFaixa: jest.fn() } as never,
       // RF36/RF37: guarda a tabela para virar arquivo. Mudo nestes testes.
       { guardar: jest.fn(), pegar: jest.fn() } as never,
+      // RF38: o dossie da estrategia. Mudo aqui.
+      { montar: jest.fn().mockResolvedValue('dossie') } as never,
     );
 
     useCase = new ProcessarMensagemInternaUseCase(
