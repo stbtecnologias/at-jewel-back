@@ -208,11 +208,32 @@ export class RemoverCatalogoUseCase {
     const catalogo = await this.repositorio.buscarPorId(id);
     if (!catalogo) throw new NotFoundException('Catálogo não encontrado');
 
+    // ====================================================================
+    // SO APAGA O ARQUIVO QUE E DESTE CATALOGO — 22/10/2026.
+    //
+    // Ate hoje toda chave da linha era um arquivo que nascera aqui dentro,
+    // e apagar tudo era seguro. Com o RF32 deixou de ser: a peca entra no
+    // catalogo APONTANDO para a foto dela, que mora em `produtos/<codigo>/`
+    // e serve o painel, a agente e os proximos catalogos.
+    //
+    // Sem este filtro, excluir uma campanha apagaria do disco a foto da
+    // peca e deixaria `produto_fotos` apontando para o nada — o estrago
+    // apareceria semanas depois, numa tela que mostra moldura vazia.
+    //
+    // E a regra ja estava escrita no proprio armazenamento: *"a foto e da
+    // PECA, e pendura-la no catalogo faria a imagem morrer junto com a
+    // campanha"*. O filtro e o que mantem essa frase verdadeira agora que a
+    // mesma chave pode estar nos dois lugares.
+    //
+    // O criterio e a PASTA, que ja e por numero de catalogo justamente para
+    // "apagar tudo junto quando ele morrer".
+    // ====================================================================
+    const meu = `catalogo/${catalogo.numero}/`;
     const chaves = [
       ...catalogo.referencias.map((r) => r.arquivoId),
       ...catalogo.fotos.map((f) => f.arquivoId),
       catalogo.finalArquivoId,
-    ].filter((c): c is string => Boolean(c));
+    ].filter((c): c is string => Boolean(c) && c.startsWith(meu));
 
     await this.repositorio.remover(id);
     await Promise.all(chaves.map((c) => this.armazenamento.remover(c)));
