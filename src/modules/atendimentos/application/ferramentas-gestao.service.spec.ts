@@ -1123,10 +1123,13 @@ describe('FerramentasGestaoService', () => {
    * *"Vamos colocar para ela criar também o catálogo pelo WhatsApp; você pega
    * as informações importantes."*
    *
-   * E as importantes são duas — nome e estilo. O estilo não é capricho: sem
-   * ao menos uma referência o catálogo NÃO PODE ser liberado, e essa regra já
-   * existia no painel com a razão escrita: sem referência a IA não tem o que
-   * seguir, e a foto volta tratada em qualquer estilo.
+   * E a importante é UMA — o nome. A primeira versão pedia também o estilo,
+   * e ele cortou no mesmo dia: *"pergunta o básico, nome do catálogo; o resto
+   * deixa padrão e depois ela muda"*. Uma pergunta a mais por catálogo parece
+   * pouco, e é exatamente o que transforma conversa em formulário.
+   *
+   * O padrão não é ausência: sem observação a montagem sai branca, grade de
+   * oito — decisão dele em 16/09.
    * ========================================================================
    */
   describe('criar catálogo pela conversa', () => {
@@ -1146,21 +1149,34 @@ describe('FerramentasGestaoService', () => {
     });
 
     // ======================================================================
-    // SEM ESTILO ELE NASCE EM RASCUNHO — e a frase diz isso em voz alta.
+    // SÓ O NOME — e ele já nasce recebendo foto.
     //
-    // Calar seria pior que recusar: ela mandaria as fotos para um catálogo
-    // que não as recebe, e só descobriria quando nada chegasse.
+    // *"Pergunta o básico, nome do catálogo; o resto deixa padrão e depois
+    // ela muda."* Um catálogo que ela acabou de pedir e que não recebe foto
+    // seria pior que não ter criado.
     // ======================================================================
-    it('sem estilo, cria em rascunho e avisa que NÃO recebe foto', async () => {
+    it('só com o nome, cria e já LIBERA', async () => {
       const r = await comPermissao().gestaoCriarCatalogo!({
         nome: 'Dia das Mães',
       });
 
       expect(criarCat.execute).toHaveBeenCalledTimes(1);
+      // Sem estilo não se inventa observação: observação vira TEMA, e o
+      // padrão da casa é justamente não ter tema — branco, grade de oito.
       expect(anexarRef.texto).not.toHaveBeenCalled();
-      expect(atualizarCat.execute).not.toHaveBeenCalled();
+      expect(atualizarCat.execute).toHaveBeenCalledWith('cat-1', {
+        status: 'COLETANDO',
+      });
       expect(r.mensagem).toContain('0042');
-      expect(r.mensagem).toMatch(/NÃO recebe foto/i);
+      expect(r.mensagem).not.toMatch(/rascunho/i);
+    });
+
+    it('e o tema nasce vazio — padrão é ausência de tema', async () => {
+      await comPermissao().gestaoCriarCatalogo!({ nome: 'Alianças' });
+
+      expect(criarCat.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ tema: null }),
+      );
     });
 
     it('com estilo, cria, guarda a referência e libera', async () => {

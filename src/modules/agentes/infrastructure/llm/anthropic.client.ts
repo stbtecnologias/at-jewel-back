@@ -1187,26 +1187,24 @@ const GESTAO_ATRIBUIR_VENDEDORA_TOOL: Anthropic.Tool = {
  * CRIAR CATALOGO PELA CONVERSA — 22/10/2026.
  *
  * ==========================================================================
- * A DESCRICAO PEDE O ESTILO PORQUE SEM ELE O CATALOGO NASCE INUTIL.
+ * PERGUNTA SO O NOME. O RESTO E PADRAO, E ELA MUDA DEPOIS.
  *
- * Catalogo sem nenhuma referencia nao pode ser liberado — e a regra do
- * painel, e a razao esta escrita la: sem referencia a IA nao tem o que
- * seguir, e a foto volta tratada em qualquer estilo. Entao a ferramenta
- * aceita criar sem estilo (a pessoa pode nao ter decidido ainda), mas a
- * resposta diz, em voz alta, que ele ainda NAO recebe foto.
+ * A primeira versao pedia tambem o estilo, e o Lucas cortou no mesmo dia:
+ * *"pergunta o basico, nome do catalogo; o resto deixa padrao e depois ela
+ * muda"*. Uma pergunta a mais por catalogo parece pouca coisa — e e
+ * exatamente o que transforma conversa em formulario.
  *
- * NOME E ESTILO sao "as informacoes importantes" do pedido do Lucas. Tema e
- * formato tem padrao, e perguntar os quatro faria um formulario — que e
- * exatamente o que o painel ja e.
+ * O padrao nao e ausencia: sem observacao a montagem sai branca, grade de
+ * oito, que foi decisao dele em 16/09.
  * ==========================================================================
  */
 const GESTAO_CRIAR_CATALOGO_TOOL: Anthropic.Tool = {
   name: 'criar_catalogo',
   description:
-    'Cria um catalogo NOVO para receber fotos de pecas. ' +
+    'Cria um catalogo NOVO, ja liberado para receber fotos de pecas. ' +
     'Use quando pedirem "cria um catalogo", "abre um catalogo de dia das maes", "quero um catalogo novo". ' +
-    'PERGUNTE O NOME se ela nao disser — todo catalogo precisa de um. ' +
-    'E PERGUNTE O ESTILO antes de criar, se ela nao descrever: o padrao visual em palavras (fundo, luz, enquadramento, fonte). Sem estilo o catalogo nasce em rascunho e NAO recebe foto. ' +
+    'PERGUNTE SO O NOME, e so se ela nao disser — todo catalogo precisa de um. ' +
+    'NAO pergunte estilo, tema nem formato: tudo isso tem padrao e ela muda depois. So preencha se ela mesma falar. ' +
     'Nao use para mandar foto para um catalogo que ja existe — para isso ela so manda a foto dizendo de qual catalogo e.',
   input_schema: {
     type: 'object',
@@ -1229,7 +1227,7 @@ const GESTAO_CRIAR_CATALOGO_TOOL: Anthropic.Tool = {
       estilo: {
         type: 'string',
         description:
-          'O padrao visual EM PALAVRAS, como ela descreveu: fundo, luz, enquadramento, fonte, referencia de campanha. E o que libera o catalogo para receber foto.',
+          'O padrao visual EM PALAVRAS, SO se ela descrever por conta propria (fundo, luz, enquadramento, fonte). NAO pergunte por ele: sem estilo o catalogo sai com o padrao da casa.',
       },
     },
     required: ['nome'],

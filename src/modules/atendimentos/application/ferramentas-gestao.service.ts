@@ -2743,18 +2743,20 @@ export class FerramentasGestaoService {
       // *"Vamos colocar para ela criar também o catálogo pelo WhatsApp; você
       // pega as informações importantes."*
       //
-      // E AS IMPORTANTES SAO DUAS, nao quatro:
+      // A IMPORTANTE E UMA SO: O NOME — refinado por ele em 22/10, depois de
+      // ver a primeira versao pedir tambem o estilo:
       //
-      //   NOME    — obrigatorio no banco, e e por ele que a foto acha o
-      //             catalogo depois ("manda pro Dia das Maes");
-      //   ESTILO  — porque sem ao menos UMA referencia o catalogo NAO PODE
-      //             ser liberado. Essa regra ja existia no painel, com a
-      //             razao escrita: "sem referencia a IA nao tem o que
-      //             seguir, e a foto volta tratada em qualquer estilo".
+      //   *"pergunta o basico, nome do catalogo; o resto deixa padrao e
+      //   depois ela muda"*.
       //
-      // Tema e formato tem padrao (9:16, o do story) e so entram se ela
-      // disser. Perguntar os quatro faria um formulario — e formulario em
-      // conversa e exatamente o que ela ja tem no painel.
+      // Entao o catalogo nasce JA LIBERADO para receber foto, com o padrao
+      // da casa: tema vazio, formato 9:16 (o do story) e nenhuma observacao
+      // — que e o que faz a montagem sair branca, grade de oito, como ele
+      // decidiu em 16/09 (*"sem observacao voce deixa branco mesmo"*).
+      //
+      // O ESTILO CONTINUA ACEITO, e nao e contradicao: se ela ja disser o
+      // padrao na mesma frase, guardar e de graca e poupa a ida ao painel.
+      // O que caiu foi PERGUNTAR por ele.
       //
       // SEM `catalogo:write`, A CHAVE NEM EXISTE no objeto devolvido, entao
       // a ferramenta nao e declarada ao modelo. Nao ha versao recusavel.
@@ -2779,27 +2781,21 @@ export class FerramentasGestaoService {
                 criadoPorNomeFallback: solicitante ?? undefined,
               });
 
+              // O ESTILO E UM BONUS, e nunca um passo: se ela descreveu o
+              // padrao na mesma frase, fica guardado; se nao, o catalogo sai
+              // com o da casa e ela muda quando quiser.
               const descricao = String(estilo ?? '').trim();
-              if (!descricao) {
-                // NASCE EM RASCUNHO, e rascunho nao aparece para a agente.
-                // Dizer isso em voz alta e o que evita ela mandar foto para
-                // um catalogo que ainda nao recebe.
-                return {
-                  mensagem:
-                    `Catálogo ${catalogo.numero} — "${catalogo.nome}" criado, ` +
-                    'em rascunho. Ele ainda NÃO recebe foto: falta a ' +
-                    'referência de estilo. Peça para ela descrever o padrão ' +
-                    '(fundo, luz, enquadramento, fonte) ou mandar uma imagem ' +
-                    'de exemplo, e então use esta ferramenta de novo com o ' +
-                    'estilo preenchido.',
-                };
+              if (descricao) {
+                await this.anexarReferencia.texto(
+                  catalogo.id,
+                  'OBSERVACAO',
+                  descricao.slice(0, 2000),
+                );
               }
 
-              await this.anexarReferencia.texto(
-                catalogo.id,
-                'OBSERVACAO',
-                descricao.slice(0, 2000),
-              );
+              // LIBERA SEMPRE. Rascunho nao aparece para a agente, e um
+              // catalogo que ela acabou de pedir e que nao recebe foto seria
+              // pior que nao ter criado.
               await this.atualizarCatalogo.execute(catalogo.id, {
                 status: 'COLETANDO',
               });
@@ -2807,8 +2803,14 @@ export class FerramentasGestaoService {
               return {
                 mensagem:
                   `Catálogo ${catalogo.numero} — "${catalogo.nome}" criado e ` +
-                  'liberado para receber fotos. Diga o número e o nome, e que ' +
-                  'ela já pode mandar as fotos dizendo que são deste catálogo.',
+                  'liberado para receber fotos' +
+                  (descricao ? ', com o estilo que ela descreveu' : '') +
+                  '. Diga o número e o nome, e que ela já pode mandar as ' +
+                  'fotos dizendo que são deste catálogo' +
+                  (descricao
+                    ? '.'
+                    : '. Se ela quiser um estilo diferente do padrão, é só ' +
+                      'dizer depois.'),
               };
             },
           }

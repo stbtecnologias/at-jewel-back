@@ -160,18 +160,30 @@ export class AtualizarCatalogoUseCase {
       }
     }
 
-    // Liberar para COLETANDO significa entrar na lista que a agente oferece no
-    // WhatsApp. Sem referencia, a IA nao tem o que seguir — e a foto volta
-    // tratada em qualquer estilo. Barrado aqui, e nao na tela: a tela pode ser
-    // contornada, o caso de uso nao.
+    // ====================================================================
+    // A EXIGENCIA DE REFERENCIA PARA LIBERAR CAIU — 22/10/2026.
+    //
+    // A regra era: sem referencia nao se libera, porque "a IA nao tem o que
+    // seguir e a foto volta tratada em qualquer estilo". Essa frase deixou
+    // de descrever o sistema em 20/10, com o RF31: a foto passou a entrar
+    // CRUA, e o tratamento so acontece a pedido. Sem tratamento automatico
+    // nao ha estilo errado para evitar.
+    //
+    // E sem observacao o catalogo nao fica sem padrao — ele fica com O
+    // PADRAO: `EstiloDoCatalogoService` devolve `direcao` nula e a montagem
+    // sai branca, grade de oito. Foi decisao sua em 16/09: *"sem observacao
+    // voce deixa branco mesmo"*.
+    //
+    // O que destravou foi pedido seu em 22/10, para a criacao pela conversa:
+    // *"pergunta o basico, nome do catalogo; o resto deixa padrao e depois
+    // ela muda"*. Guardar a regra so no canal do WhatsApp criaria duas
+    // verdades sobre a mesma coisa — entao ela cai aqui, para os dois.
+    //
+    // O catalogo continua precisando EXISTIR: o `buscarPorId` fica.
+    // ====================================================================
     if (input.status === 'COLETANDO') {
       const atual = await this.repositorio.buscarPorId(id);
       if (!atual) throw new NotFoundException('Catálogo não encontrado');
-      if (atual.referencias.length === 0) {
-        throw new BadRequestException(
-          'Cadastre ao menos uma referência antes de liberar o catálogo para receber fotos',
-        );
-      }
     }
 
     return this.repositorio.atualizar(id, input);
