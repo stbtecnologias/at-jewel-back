@@ -26,6 +26,8 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
     "@aws-sdk/client-s3": "^3.1121.0",
+    "@fontsource/great-vibes": "^5.2.5",
+    "@fontsource/jost": "^5.2.5",
     "@nestjs/cache-manager": "^3.1.2",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.4",

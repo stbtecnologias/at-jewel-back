@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { PERMISSAO_CATALOGO } from './processar-foto-catalogo.use-case';
 import {
   respostaQuandoNaoVeioTexto,
   respostaQuandoVeioSoArtefato,
@@ -545,6 +546,23 @@ export class ProcessarMensagemInternaUseCase {
         // AS VENDEDORAS QUE ELA ALCANCA, do MESMO servico que a tela de
         // Vendas usa: uma regra, tres portas.
         equipe: await this.escopoVendas.equipeDoUsuario(gestao.usuarioId),
+        // ================================================================
+        // O CATALOGO TAMBEM PELA HELENA — pedido dele em 22/10: *"isso a
+        // Anastasia e a Helena devem fazer"*.
+        //
+        // E e aqui que faz mais sentido: a FOTO entra por este numero. Sem
+        // esta linha, quem acumula gestao e vendedora criaria o catalogo num
+        // numero e mandaria a foto no outro.
+        //
+        // A chave continua sendo a mesma do painel — `catalogo:write` —,
+        // entao quem nao a tem nao recebe o handler e a ferramenta nem e
+        // declarada.
+        // ================================================================
+        podeCatalogo: await this.permissoes.possui(
+          gestao.role,
+          PERMISSAO_CATALOGO,
+        ),
+        usuarioId: gestao.usuarioId,
       }),
     } as unknown as Record<string, unknown>;
   }

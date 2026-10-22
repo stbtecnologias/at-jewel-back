@@ -275,16 +275,21 @@ export class PdfDeFotosUseCase {
   ): void {
     // Proporcional à página: a capa pode ser um story de 1080 ou um JPEG de
     // 4000 pixels, e tamanho fixo ficaria minúsculo num e gigante no outro.
-    const corpo = Math.max(18, Math.round(largura * 0.085));
-    const marca = Math.max(9, Math.round(largura * 0.022));
+    const nome = Math.max(28, Math.round(largura * 0.22));
+    const marca = Math.max(9, Math.round(largura * 0.028));
+    const chamada = Math.max(7, Math.round(largura * 0.021));
     const margem = Math.round(largura * 0.08);
     const util = largura - margem * 2;
+
+    const temFonte = this.carregarFontes(doc);
+    const script = temFonte ? FONTE_NOME : 'Helvetica-Oblique';
+    const sans = temFonte ? FONTE_MARCA : 'Helvetica';
 
     const escrever = (
       texto: string,
       y: number,
       tamanho: number,
-      fonte: 'Helvetica' | 'Helvetica-Bold',
+      fonte: string,
       espaco = 0,
     ) => {
       const comum = {
@@ -294,26 +299,90 @@ export class PdfDeFotosUseCase {
         lineBreak: false,
       };
       doc.font(fonte).fontSize(tamanho);
+      // A SOMBRA É O QUE MANTÉM O TEXTO LEGÍVEL sobre cabelo claro e sobre
+      // pele — e as duas coisas aparecem na mesma capa. Sem ela, metade do
+      // nome some. Desenhar duas vezes é o jeito do pdfkit: ele não tem
+      // sombra.
       doc
         .fillColor('#000000')
-        .opacity(0.35)
-        .text(texto, margem + 2, y + 2, comum);
-      doc.fillColor('#ffffff').opacity(1).text(texto, margem, y, comum);
+        .opacity(0.3)
+        .text(texto, margem + Math.max(1, tamanho * 0.02), y + Math.max(1, tamanho * 0.02), comum);
+      doc.fillColor(COR_CREME).opacity(1).text(texto, margem, y, comum);
     };
 
-    escrever('A.T JEWEL', altura * 0.06, marca, 'Helvetica', marca * 0.35);
-    escrever(titulo.toUpperCase(), altura * 0.72, corpo, 'Helvetica-Bold');
+    // A MARCA EM CAIXA ALTA E ESPAÇADA, no alto — como na referência.
+    escrever('A.T JEWEL', altura * 0.05, marca, sans, marca * 0.45);
 
-    // O filete dourado, a mesma marca gráfica da capa do painel e do montador.
-    const y = altura * 0.72 + corpo * 1.45;
+    // O NOME EM MANUSCRITO, no terço de baixo. `titulo` NÃO vai em caixa
+    // alta: a Great Vibes é desenhada para maiúscula só na inicial, e tudo
+    // em caixa alta vira um emaranhado ilegível.
+    const yNome = altura * 0.62;
+    escrever(titulo, yNome, nome, script);
+
+    // O filete e o "SHOP NOW" fecham o bloco, como no material dela.
+    const yFilete = yNome + nome * 0.95;
     doc
-      .opacity(1)
-      .moveTo(largura / 2 - corpo, y)
-      .lineTo(largura / 2 + corpo, y)
-      .lineWidth(Math.max(1, corpo * 0.045))
-      .strokeColor('#b8912f')
+      .opacity(0.9)
+      .moveTo(largura / 2 - nome * 0.22, yFilete)
+      .lineTo(largura / 2 + nome * 0.22, yFilete)
+      .lineWidth(Math.max(1, nome * 0.012))
+      .strokeColor(COR_CREME)
       .stroke();
+
+    escrever('SHOP NOW', yFilete + chamada * 1.2, chamada, sans, chamada * 0.5);
+    doc.opacity(1);
   }
+
+  /**
+   * AS FONTES DA MARCA, UMA VEZ POR DOCUMENTO.
+   *
+   * ========================================================================
+   * VÊM DO `node_modules`, e não de um arquivo no repositório: os pacotes do
+   * Fontsource trazem a fonte com a licença (OFL) junto, versionada no
+   * `package.json`, e chegam ao servidor pelo mesmo `npm ci` que traz o
+   * resto. Binário no git precisaria também de uma linha no Dockerfile para
+   * sobreviver ao `dist` — e é a linha que alguém esquece.
+   *
+   * SE FALTAR, O PDF SAI COM HELVETICA. Capa com a fonte errada é um
+   * problema de acabamento; capa que não sai é um problema de verdade.
+   * ========================================================================
+   */
+  private carregarFontes(doc: PDFKit.PDFDocument): boolean {
+    try {
+      doc.registerFont(FONTE_NOME, caminhoDaFonte(ARQUIVO_NOME));
+      doc.registerFont(FONTE_MARCA, caminhoDaFonte(ARQUIVO_MARCA));
+      return true;
+    } catch (e) {
+      this.logger.warn(
+        `Fontes da capa não carregaram, saindo em Helvetica: ${e instanceof Error ? e.message : e}`,
+      );
+      return false;
+    }
+  }
+}
+
+/** O creme da referência — branco puro sobre pele clara some. */
+const COR_CREME = '#f6ece0';
+
+const FONTE_NOME = 'capa-nome';
+const FONTE_MARCA = 'capa-marca';
+
+/** Manuscrita formal, a mais próxima do material que o marketing usa. */
+const ARQUIVO_NOME =
+  '@fontsource/great-vibes/files/great-vibes-latin-400-normal.woff';
+/** Geométrica fina, para a marca em caixa alta espaçada. */
+const ARQUIVO_MARCA = '@fontsource/jost/files/jost-latin-300-normal.woff';
+
+/**
+ * O caminho do arquivo da fonte, resolvido pelo Node.
+ *
+ * `require.resolve` acha o pacote onde quer que o `node_modules` esteja —
+ * raiz, hoisted, dentro do container. Montar o caminho à mão com
+ * `path.join(__dirname, '../../..')` quebraria no dia em que o `dist` mudasse
+ * de profundidade.
+ */
+function caminhoDaFonte(arquivo: string): string {
+  return require.resolve(arquivo);
 }
 
 /** O nome vira nome de arquivo: sem acento, sem espaço, sem surpresa. */
