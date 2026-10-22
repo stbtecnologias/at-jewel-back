@@ -1656,6 +1656,38 @@ describe('RotearMensagemInternaUseCase', () => {
     });
 
     /**
+     * ====================================================================
+     * O DESVIO NÃO PODE NEGAR O QUE A GESTÃO ACABOU DE FAZER — 22/10/2026.
+     *
+     * No primeiro teste em produção, o Lucas criou um catálogo pela
+     * Anastasia, gerou o PDF por ela, mandou a foto da capa — e ouviu
+     * *"catálogo eu atendo como Helena, no outro número"*. Contradição em
+     * dois minutos de conversa.
+     *
+     * O que mudou foi o canal: desde 22/10 a gestão cria catálogo, põe peça
+     * e gera o PDF por aqui. O que continua no número da Helena é a FOTO.
+     * ====================================================================
+     */
+    it('o desvio da foto fala da FOTO, e não do catálogo inteiro', async () => {
+      identificarAdmin.execute.mockResolvedValue({
+        id: 'ad-9',
+        nome: 'Lucas Barbosa',
+        role: 'ADMIN',
+      });
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'cria uma capa assim',
+        agente: 'ANASTASIA',
+        imagem: { url: 'http://x/y.jpg', mimetype: 'image/jpeg' },
+      });
+
+      expect(r.resposta).toMatch(/foto/i);
+      // E NÃO diz que catálogo é no outro número: aqui ele cria e gera o PDF.
+      expect(r.resposta).not.toMatch(/catálogo eu atendo/i);
+    });
+
+    /**
      * A VENDEDORA NÃO MANDA FOTO PARA A PEÇA — regra do Lucas, 20/10/2026.
      *
      * *"Todos menos as vendedoras. Mas ela pode pedir as fotos das peças."*

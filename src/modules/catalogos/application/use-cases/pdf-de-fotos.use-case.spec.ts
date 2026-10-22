@@ -34,6 +34,7 @@ describe('o catálogo em PDF', () => {
 
   const montar = (over: Record<string, unknown> = {}) => {
     const repositorio = {
+      registrarFinal: jest.fn().mockResolvedValue({ id: 'fin-1' }),
       buscarPorId: jest.fn().mockResolvedValue({
         id: 'cat-1',
         numero: '0042',
@@ -44,6 +45,7 @@ describe('o catálogo em PDF', () => {
     };
     const armazenamento = {
       ler: jest.fn().mockResolvedValue({ conteudo: JPEG_2x3, mime: 'image/jpeg' }),
+      guardar: jest.fn().mockResolvedValue('catalogo/0042/finais/novo.pdf'),
     };
     return {
       uc: new PdfDeFotosUseCase(repositorio as never, armazenamento as never),
@@ -125,6 +127,35 @@ describe('o catálogo em PDF', () => {
     expect(paginas(r.conteudo)).toBe(2);
   });
 
+  // ==========================================================================
+  // O PDF TAMBÉM FICA NO PAINEL — achado no primeiro teste em produção, em
+  // 22/10: *"o pdf criado não foi para o painel"*.
+  //
+  // Ela gera pela conversa, mas quem revisa e manda para a cliente trabalha na
+  // tela. Arquivo que só existe no WhatsApp some no primeiro "limpar
+  // conversa", e o painel continuaria dizendo "ainda não montado".
+  // ==========================================================================
+  it('grava o PDF na pasta do catálogo e registra a versão', async () => {
+    const { uc, armazenamento, repositorio } = montar();
+
+    const r = await uc.execute('cat-1');
+
+    expect(armazenamento.guardar).toHaveBeenCalledWith(
+      expect.objectContaining({ mime: 'application/pdf', nomeOriginal: r.nome }),
+      'catalogo/0042/finais',
+    );
+    expect(repositorio.registrarFinal).toHaveBeenCalledWith(
+      'cat-1',
+      expect.objectContaining({
+        // A tela lê 'IA' como "Montado pelo sistema" — e foi o sistema.
+        origem: 'IA',
+        arquivoId: 'catalogo/0042/finais/novo.pdf',
+        nomeArquivo: r.nome,
+        enviadoPor: null,
+      }),
+    );
+  });
+
   it('catálogo sem foto nenhuma não vira PDF vazio', async () => {
     const { uc } = montar({ fotos: [] });
 
@@ -135,7 +166,7 @@ describe('o catálogo em PDF', () => {
     const repositorio = { buscarPorId: jest.fn().mockResolvedValue(null) };
     const uc = new PdfDeFotosUseCase(
       repositorio as never,
-      { ler: jest.fn() } as never,
+      { ler: jest.fn(), guardar: jest.fn() } as never,
     );
 
     await expect(uc.execute('cat-1')).rejects.toThrow(/não encontrado/i);

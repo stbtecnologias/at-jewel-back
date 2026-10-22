@@ -1,6 +1,10 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
 import { ARMAZENAMENTO, CATALOGO_REPOSITORY } from '../../domain/ports/injection-tokens';
+import {
+  PASTA_FINAIS,
+  pastaDoCatalogo,
+} from '../../domain/ports/armazenamento.port';
 import type { IArmazenamento } from '../../domain/ports/armazenamento.port';
 import type { ICatalogoRepository } from '../../domain/ports/repositories/catalogo-repository.port';
 
@@ -98,12 +102,40 @@ export class PdfDeFotosUseCase {
     }
 
     const conteudo = await this.desenhar(imagens);
-    return {
-      conteudo,
-      nome: `catalogo-${catalogo.numero}-${semAcento(catalogo.nome)}.pdf`,
-      paginas: imagens.length,
-      cortadas,
-    };
+    const nome = `catalogo-${catalogo.numero}-${semAcento(catalogo.nome)}.pdf`;
+
+    // ====================================================================
+    // O PDF TAMBÉM FICA NO PAINEL — 22/10/2026, achado no primeiro teste em
+    // produção: *"o pdf criado não foi para o painel"*.
+    //
+    // E é justo: ela gerou pela conversa, mas quem revisa, aprova e manda
+    // para a cliente trabalha na tela. Um arquivo que só existe no WhatsApp
+    // some no primeiro "limpar conversa" — e o painel continuaria dizendo
+    // "ainda não montado" sobre um catálogo que ela já mandou.
+    //
+    // ACRESCENTA UMA VERSÃO, não substitui — a mesma regra do "Montar" do
+    // painel, desde a migração 44. Gerar de novo depois de trocar a capa
+    // deixa as duas à vista.
+    //
+    // `origem: 'IA'` porque é o valor que a tela lê como "Montado pelo
+    // sistema" — e foi o sistema. 'MARKETING' é o arquivo que uma pessoa
+    // subiu, e seria mentira.
+    // ====================================================================
+    const arquivoId = await this.armazenamento.guardar(
+      { conteudo, mime: 'application/pdf', nomeOriginal: nome },
+      pastaDoCatalogo(catalogo.numero, PASTA_FINAIS),
+    );
+    await this.repositorio.registrarFinal(catalogo.id, {
+      origem: 'IA',
+      arquivoId,
+      nomeArquivo: nome,
+      mime: 'application/pdf',
+      tamanhoBytes: conteudo.length,
+      // Nulo: quem montou foi o sistema, e não uma pessoa subindo arquivo.
+      enviadoPor: null,
+    });
+
+    return { conteudo, nome, paginas: imagens.length, cortadas };
   }
 
   /**

@@ -973,9 +973,23 @@ export class RotearMensagemInternaUseCase {
       ? ` Me chama no ${formatarNumero(numero)}.`
       : ' Me chama no outro número da loja.';
 
+    // ======================================================================
+    // A FRASE DO DESVIO DEIXOU DE SER VERDADE EM 22/10, e o Lucas viu no
+    // primeiro teste: ele criou um catálogo pela Anastasia, gerou o PDF por
+    // ela, mandou uma foto de capa — e ouviu *"catálogo eu atendo como
+    // Helena, no outro número"*. Contradição em dois minutos de conversa.
+    //
+    // O que mudou foi o canal, e não o desvio: desde hoje a gestão CRIA
+    // catálogo, põe peça e gera o PDF por aqui. O que continua morando no
+    // número da Helena é a FOTO — é lá que o catálogo recebe imagem.
+    //
+    // Então a frase passou a dizer o que ESTE número faz, e desviar só o que
+    // de fato não dá. Desvio que nega o que a pessoa acabou de fazer gasta a
+    // confiança dela no resto.
+    // ======================================================================
     const texto =
       para === 'ELENA'
-        ? `${ola}Este número é o da Anastasia, que atende a gestão. Vendedoras e catálogo eu atendo como Helena, no outro número.${onde}`
+        ? `${ola}Aqui eu faço o catálogo em texto: crio, ponho as peças e gero o PDF. Foto é no número da Helena — é por lá que a imagem entra no catálogo.${onde}`
         : `${ola}Este número é o da Helena, que atende as vendedoras e o catálogo. Os dados da equipe eu vejo como Anastasia, no outro número.${onde}`;
 
     return { resposta: texto, motivo: `desvio_para_${para.toLowerCase()}` };
