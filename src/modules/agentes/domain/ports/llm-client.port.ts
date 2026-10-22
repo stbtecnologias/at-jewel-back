@@ -1417,6 +1417,8 @@ export interface ArquivoDoAgenteLlm {
 export type PdfDoCatalogoHandler = (input: {
   catalogo: string;
   capa?: string;
+  /** O que vai ESCRITO na capa. Ausente, vale o nome do catalogo. */
+  textoCapa?: string;
 }) => Promise<{ arquivo: ArquivoDoAgenteLlm | null; mensagem: string }>;
 
 export type MandarRelatorioHandler = (p: {

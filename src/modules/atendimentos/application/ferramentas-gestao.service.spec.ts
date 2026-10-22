@@ -1398,7 +1398,7 @@ describe('FerramentasGestaoService', () => {
             catalogo: dito,
           });
 
-          expect(pdfDeFotos.execute).toHaveBeenCalledWith('cat-1', null);
+          expect(pdfDeFotos.execute).toHaveBeenCalledWith('cat-1', null, null);
           expect(r.arquivo?.nome).toBe('catalogo-0042-under-25k.pdf');
           expect(r.mensagem).toContain('3 páginas');
         },
@@ -1410,7 +1410,39 @@ describe('FerramentasGestaoService', () => {
           capa: 'CO26217',
         });
 
-        expect(pdfDeFotos.execute).toHaveBeenCalledWith('cat-1', 'CO26217');
+        expect(pdfDeFotos.execute).toHaveBeenCalledWith('cat-1', 'CO26217', null);
+      });
+
+      // ====================================================================
+      // E O TEXTO DA CAPA TAMBÉM — *"tira o Under 25k e coloca News"*.
+      // ====================================================================
+      it('o texto pedido para a capa chega ao montador', async () => {
+        await comPermissao().gestaoPdfDoCatalogo!({
+          catalogo: '0042',
+          textoCapa: 'News',
+        });
+
+        expect(pdfDeFotos.execute).toHaveBeenCalledWith('cat-1', null, 'News');
+      });
+
+      // A capa é escolhida por padrão, e escolha calada é escolha que
+      // ninguém revisa: a frase conta qual peça abriu e o que ficou escrito.
+      it('a resposta DIZ qual capa saiu e o que foi escrito', async () => {
+        pdfDeFotos.execute.mockResolvedValue({
+          conteudo: Buffer.from('%PDF-1.3'),
+          nome: 'catalogo-0042.pdf',
+          paginas: 4,
+          cortadas: 0,
+          capa: { codigo: 'CO26217', texto: 'News' },
+        });
+
+        const r = await comPermissao().gestaoPdfDoCatalogo!({
+          catalogo: '0042',
+        });
+
+        expect(r.mensagem).toContain('CO26217');
+        expect(r.mensagem).toContain('News');
+        expect(r.mensagem).toMatch(/trocar a foto ou o texto/i);
       });
 
       // ====================================================================

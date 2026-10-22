@@ -17,6 +17,14 @@ export interface PdfDeFotos {
   /** Quantas entraram e quantas ficaram de fora do teto. */
   paginas: number;
   cortadas: number;
+  /**
+   * O que foi para a capa — volta para quem chama poder DIZER.
+   *
+   * A capa é escolhida por padrão, e escolha calada é escolha que ninguém
+   * revisa: a agente conta qual peça abriu e o que ficou escrito, e aí ela
+   * corrige numa frase se não era isso.
+   */
+  capa: { codigo: string | null; texto: string } | null;
 }
 
 /**
@@ -57,11 +65,19 @@ export class PdfDeFotosUseCase {
   ) {}
 
   /**
-   * @param capaDita o que ela disse para abrir o PDF — o CÓDIGO da peça
-   *   ("AN26369") ou o id da foto. Ela sobe para a primeira página e NÃO se
-   *   repete no meio: abrir e repetir faria o PDF parecer defeito.
+   * @param capaDita qual foto abre o PDF — o CÓDIGO da peça ("AN26369") ou o
+   *   id da foto. **Ausente, é a primeira do catálogo**: a capa é padrão, e
+   *   não um extra que ela precise pedir.
+   * @param textoDaCapa o que vai escrito sobre ela. Ausente, vale o NOME do
+   *   catálogo — mas no vídeo ela troca o texto sem trocar a coleção
+   *   (*"tirar o Under 25k e colocar News"*), e por isso ele é um parâmetro
+   *   e não uma leitura do cadastro.
    */
-  async execute(catalogoId: string, capaDita?: string | null): Promise<PdfDeFotos> {
+  async execute(
+    catalogoId: string,
+    capaDita?: string | null,
+    textoDaCapa?: string | null,
+  ): Promise<PdfDeFotos> {
     const catalogo = await this.repositorio.buscarPorId(catalogoId);
     if (!catalogo) throw new NotFoundException('Catálogo não encontrado');
 
@@ -77,16 +93,29 @@ export class PdfDeFotosUseCase {
     const procurado = String(capaDita ?? '')
       .trim()
       .toUpperCase();
-    const capa = procurado
+    const escolhida = procurado
       ? naOrdem.find(
           (f) =>
             f.id.toUpperCase() === procurado ||
             (f.codigoErp ?? '').toUpperCase() === procurado,
         )
       : undefined;
-    const fila = capa
-      ? [capa, ...naOrdem.filter((f) => f.id !== capa.id)]
-      : naOrdem;
+
+    // ====================================================================
+    // A CAPA É PADRÃO, E ELA SE REPETE — decisão dele em 22/10:
+    //
+    //   *"Deixa padrão: no gerar PDF, pega uma foto enviada e coloca o nome
+    //   A.T Jewel e o nome do catálogo. Se ela quiser outra, ela fala."*
+    //
+    // E REPETIR NÃO É DEFEITO AQUI — era o que eu achava, e o vídeo mostrou
+    // o contrário: o GPT fez *"uma capa usando uma das fotos que você
+    // enviou, SEGUIDA DE TODAS as fotos originais"*. As duas páginas não são
+    // iguais: a primeira tem a marca e o nome escritos por cima; a outra é a
+    // peça limpa, com o preço dela. Tirar a peça do meio custaria a página
+    // que a vende.
+    // ====================================================================
+    const capa = escolhida ?? naOrdem[0];
+    const fila = capa ? [capa, ...naOrdem] : naOrdem;
 
     const cabem = fila.slice(0, MAX_PAGINAS);
     const cortadas = fila.length - cabem.length;
@@ -94,20 +123,30 @@ export class PdfDeFotosUseCase {
     // AS IMAGENS SAEM DO ARMAZENAMENTO ANTES DE DESENHAR. Ler no meio do
     // desenho misturaria IO com a montagem do documento, e uma falha no meio
     // deixaria um PDF pela metade — que é pior que nenhum.
+    //
+    // E CADA ARQUIVO SE LÊ UMA VEZ: a foto da capa aparece duas na fila, e
+    // baixar 3 MB de novo para desenhar a mesma imagem seria pagar dobrado
+    // por página.
+    const lidas = new Map<string, Buffer>();
     const imagens: Buffer[] = [];
     for (const foto of cabem) {
       const chave = foto.arquivoId ?? foto.arquivoOriginalId;
       if (!chave) continue;
-      const arquivo = await this.armazenamento.ler(chave);
-      // LINHA SEM OBJETO É INCONSISTÊNCIA NOSSA, e não caminho feliz: a foto
-      // some do PDF, o resto continua, e o log diz qual foi.
-      if (!arquivo || arquivo.conteudo.length === 0) {
-        this.logger.warn(
-          `Foto ${foto.id} do catálogo ${catalogo.numero} está na base e não no armazenamento.`,
-        );
-        continue;
+      let conteudo = lidas.get(chave);
+      if (!conteudo) {
+        const arquivo = await this.armazenamento.ler(chave);
+        // LINHA SEM OBJETO É INCONSISTÊNCIA NOSSA, e não caminho feliz: a
+        // foto some do PDF, o resto continua, e o log diz qual foi.
+        if (!arquivo || arquivo.conteudo.length === 0) {
+          this.logger.warn(
+            `Foto ${foto.id} do catálogo ${catalogo.numero} está na base e não no armazenamento.`,
+          );
+          continue;
+        }
+        conteudo = arquivo.conteudo;
+        lidas.set(chave, conteudo);
       }
-      imagens.push(arquivo.conteudo);
+      imagens.push(conteudo);
     }
 
     if (imagens.length === 0) {
@@ -116,7 +155,11 @@ export class PdfDeFotosUseCase {
       );
     }
 
-    const conteudo = await this.desenhar(imagens, capa ? catalogo.nome : null);
+    // O TEXTO DA CAPA: o que ela pediu, ou o nome do catálogo.
+    const titulo = capa
+      ? (String(textoDaCapa ?? '').trim() || catalogo.nome).slice(0, 40)
+      : null;
+    const conteudo = await this.desenhar(imagens, titulo);
     const nome = `catalogo-${catalogo.numero}-${semAcento(catalogo.nome)}.pdf`;
 
     // ====================================================================
@@ -150,7 +193,16 @@ export class PdfDeFotosUseCase {
       enviadoPor: null,
     });
 
-    return { conteudo, nome, paginas: imagens.length, cortadas };
+    return {
+      conteudo,
+      nome,
+      paginas: imagens.length,
+      cortadas,
+      capa:
+        capa && titulo
+          ? { codigo: capa.codigoErp ?? null, texto: titulo }
+          : null,
+    };
   }
 
   /**

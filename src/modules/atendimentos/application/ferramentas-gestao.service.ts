@@ -2819,7 +2819,7 @@ export class FerramentasGestaoService {
             // O catálogo é achado pelo NÚMERO ou pelo NOME — as duas formas
             // que ela usa na conversa.
             // ================================================================
-            gestaoPdfDoCatalogo: async ({ catalogo, capa }) => {
+            gestaoPdfDoCatalogo: async ({ catalogo, capa, textoCapa }) => {
               const alvo = await this.acharCatalogo(catalogo);
               if (!alvo) {
                 return {
@@ -2830,7 +2830,11 @@ export class FerramentasGestaoService {
                 };
               }
 
-              const pdf = await this.pdfDeFotos.execute(alvo.id, capa ?? null);
+              const pdf = await this.pdfDeFotos.execute(
+                alvo.id,
+                capa ?? null,
+                textoCapa ?? null,
+              );
               return {
                 arquivo: {
                   conteudo: pdf.conteudo,
@@ -2841,6 +2845,13 @@ export class FerramentasGestaoService {
                 mensagem:
                   `O PDF do catálogo ${alvo.numero} — "${alvo.nome}" saiu com ` +
                   `${pdf.paginas} ${pdf.paginas === 1 ? 'página' : 'páginas'}, uma foto por página. ` +
+                  // A CAPA É ESCOLHIDA POR PADRÃO, e escolha calada é escolha
+                  // que ninguém revisa: a agente diz qual peça abriu e o que
+                  // ficou escrito, e ela corrige numa frase se não era isso.
+                  (pdf.capa
+                    ? `A capa é a foto${pdf.capa.codigo ? ` da ${pdf.capa.codigo}` : ''}, ` +
+                      `com "${pdf.capa.texto}" escrito por cima. DIGA isso, e que dá para trocar a foto ou o texto. `
+                    : '') +
                   (pdf.cortadas > 0
                     ? `Ficaram ${pdf.cortadas} de fora, que é o teto do arquivo — DIGA isso a ela. `
                     : '') +

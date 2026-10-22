@@ -60,15 +60,25 @@ describe('o catálogo em PDF', () => {
   const paginas = (b: Buffer): number =>
     (b.toString('latin1').match(/\/Type\s*\/Page[^s]/g) ?? []).length;
 
-  /* ESTE É O TESTE: uma foto, uma página. */
-  it('gera uma página por foto, na ordem do catálogo', async () => {
-    const { uc, armazenamento } = montar();
+  /* ESTE É O TESTE: capa de graça, e a peça continua na página dela. */
+  it('abre com capa e mostra TODAS as fotos depois', async () => {
+    const { uc } = montar();
 
     const r = await uc.execute('cat-1');
 
-    expect(r.paginas).toBe(3);
-    expect(paginas(r.conteudo)).toBe(3);
-    // A ordem é a `posicao`, e não a que o banco devolveu.
+    // 3 fotos + a capa. A primeira foto aparece duas vezes, e isso é o
+    // pedido: a capa tem marca e nome por cima; a página da peça é limpa.
+    expect(r.paginas).toBe(4);
+    expect(r.capa).toEqual({ codigo: 'AN26301', texto: 'Under 25k' });
+  });
+
+  it('cada arquivo é lido UMA vez, mesmo repetindo na capa', async () => {
+    const { uc, armazenamento } = montar();
+
+    await uc.execute('cat-1');
+
+    // A ordem é a `posicao`, e não a que o banco devolveu — e a foto da capa
+    // não é baixada duas vezes.
     expect(armazenamento.ler.mock.calls.map((c) => c[0])).toEqual([
       'catalogo/0042/originais/f1.jpg',
       'catalogo/0042/originais/f2.jpg',
@@ -85,18 +95,13 @@ describe('o catálogo em PDF', () => {
     expect(r.nome).toBe('catalogo-0042-under-25k.pdf');
   });
 
-  // ==========================================================================
-  // A CAPA SOBE, E NÃO SE REPETE.
-  //
-  // Abrir com uma foto e mostrá-la de novo no meio faria o PDF parecer
-  // defeito — e quem recebe não sabe que foi escolha.
-  // ==========================================================================
-  it('a capa escolhida vira a primeira página, uma vez só', async () => {
+  it('a capa escolhida abre o PDF, e a peça segue na página dela', async () => {
     const { uc, armazenamento } = montar();
 
     const r = await uc.execute('cat-1', 'f3');
 
-    expect(r.paginas).toBe(3);
+    expect(r.paginas).toBe(4);
+    expect(r.capa?.codigo).toBe('AN26303');
     expect(armazenamento.ler.mock.calls.map((c) => c[0])).toEqual([
       'catalogo/0042/originais/f3.jpg',
       'catalogo/0042/originais/f1.jpg',
@@ -104,12 +109,33 @@ describe('o catálogo em PDF', () => {
     ]);
   });
 
-  it('capa que não é deste catálogo é ignorada, e o PDF sai igual', async () => {
+  it('capa que não é deste catálogo cai na primeira foto', async () => {
     const { uc } = montar();
 
     const r = await uc.execute('cat-1', 'de-outro');
 
-    expect(r.paginas).toBe(3);
+    expect(r.paginas).toBe(4);
+    expect(r.capa?.codigo).toBe('AN26301');
+  });
+
+  // ==========================================================================
+  // O TEXTO DA CAPA É O QUE ELA PEDIR — no vídeo ela troca sem trocar a
+  // coleção: *"tirar o Under 25k e colocar News"*.
+  // ==========================================================================
+  it('o texto da capa é o que ela pediu, e não o nome do catálogo', async () => {
+    const { uc } = montar();
+
+    const r = await uc.execute('cat-1', null, 'News');
+
+    expect(r.capa?.texto).toBe('News');
+  });
+
+  it('sem texto pedido, vale o nome do catálogo', async () => {
+    const { uc } = montar();
+
+    expect((await uc.execute('cat-1', null, '   ')).capa?.texto).toBe(
+      'Under 25k',
+    );
   });
 
   // ==========================================================================
@@ -147,20 +173,6 @@ describe('o catálogo em PDF', () => {
   // Sem capa escolhida não há texto: o PDF é só a sequência de fotos, e
   // escrever sobre a primeira peça estragaria a página dela.
   // ==========================================================================
-  it('com capa, o nome do catálogo é escrito sobre ela', async () => {
-    const { uc } = montar();
-
-    const com = await uc.execute('cat-1', 'AN26303');
-    const sem = await uc.execute('cat-1');
-
-    // NÃO DÁ PARA PROCURAR A PALAVRA NO ARQUIVO: o pdfkit comprime o fluxo
-    // de desenho (FlateDecode), então o texto não aparece em texto claro. O
-    // que se vê de fora é o PDF ficar MAIOR — a fonte embarcada e o desenho
-    // do texto pesam, e a sequência de fotos é a mesma nos dois.
-    expect(com.conteudo.length).toBeGreaterThan(sem.conteudo.length);
-    expect(com.paginas).toBe(sem.paginas);
-  });
-
   // ==========================================================================
   // LINHA SEM OBJETO É INCONSISTÊNCIA NOSSA, e não caminho feliz: a foto some
   // do PDF, o resto continua, e o log diz qual foi.
@@ -174,8 +186,8 @@ describe('o catálogo em PDF', () => {
 
     const r = await uc.execute('cat-1');
 
-    expect(r.paginas).toBe(2);
-    expect(paginas(r.conteudo)).toBe(2);
+    // A capa (f1) e a página dela, mais a f3. A f2 sumiu com o arquivo.
+    expect(r.paginas).toBe(3);
   });
 
   // ==========================================================================
@@ -231,7 +243,8 @@ describe('o catálogo em PDF', () => {
 
     const r = await uc.execute('cat-1');
 
+    // 45 fotos + a capa = 46 na fila; 40 cabem.
     expect(r.paginas).toBe(40);
-    expect(r.cortadas).toBe(5);
+    expect(r.cortadas).toBe(6);
   });
 });

@@ -1278,8 +1278,8 @@ const GESTAO_PDF_CATALOGO_TOOL: Anthropic.Tool = {
     'Monta o PDF de um catalogo, UMA FOTO POR PAGINA, e manda na conversa. ' +
     'Use quando pedirem "gera o pdf", "monta o catalogo em pdf", "manda o catalogo para eu enviar as clientes". ' +
     'As fotos ja estao no catalogo e ja trazem o preco na imagem — este PDF nao escreve nada por cima delas. ' +
-    'A CAPA e OPCIONAL e e UMA DAS FOTOS que ja estao la: se ela disser qual quer na frente, mande o CODIGO DA PECA; se nao disser, nao pergunte, o PDF sai na ordem do catalogo. ' +
-    'Com capa escolhida, o NOME DO CATALOGO e escrito sobre ela — entao se ela quiser outro texto na capa, e so renomear o catalogo. ' +
+    'A CAPA E PADRAO: a primeira foto do catalogo abre o PDF com a marca e o nome do catalogo escritos por cima, e a peca continua aparecendo na pagina dela. NAO pergunte nada disso. ' +
+    'So preencha quando ela PEDIR: "capa" com o CODIGO da peca que ela quer na frente, e "texto_capa" com o que ela quer escrito ("tira o Under 25k e poe News"). ' +
     'Voce NAO cria imagem nova: se ela pedir uma capa desenhada, diga que da para escolher uma das fotos como abertura.',
   input_schema: {
     type: 'object',
@@ -1292,7 +1292,12 @@ const GESTAO_PDF_CATALOGO_TOOL: Anthropic.Tool = {
       capa: {
         type: 'string',
         description:
-          'O codigo da peca cuja foto abre o PDF, SO se ela escolher uma.',
+          'O CODIGO da peca cuja foto abre o PDF, SO se ela escolher outra. Sem isso, e a primeira do catalogo.',
+      },
+      texto_capa: {
+        type: 'string',
+        description:
+          'O que vai ESCRITO sobre a capa, SO quando ela disser — "News", "New Opala". Sem isso vale o nome do catalogo.',
       },
     },
     required: ['catalogo'],
@@ -2592,10 +2597,17 @@ export class AnthropicClient implements ILlmClient {
           // NAO AVISA O OUVINTE: isto nao e consulta. A frase de confirmacao
           // viraria "a ultima tabela", e o PDF seguinte sairia com ela.
           await this.executarLeitura(toolUse, undefined, async () => {
-            const e = toolUse.input as { catalogo?: string; capa?: string };
+            const e = toolUse.input as {
+              catalogo?: string;
+              capa?: string;
+              texto_capa?: string;
+            };
             const r = await params.gestaoPdfDoCatalogo!({
               catalogo: String(e.catalogo ?? '').slice(0, 120),
               capa: e.capa ? String(e.capa).slice(0, 40) : undefined,
+              textoCapa: e.texto_capa
+                ? String(e.texto_capa).slice(0, 40)
+                : undefined,
             });
             // O ARQUIVO VIAJA POR FORA, como o relatorio e as fotos: mandar
             // bytes pelo dialogo seria pagar o PDF inteiro em token, duas
