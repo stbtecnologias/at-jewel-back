@@ -130,6 +130,8 @@ describe('itens_mais_vendidos e o escopo de quem pergunta', () => {
       { criarFoto: jest.fn() } as never,
       // RF38: o dossie da estrategia de vendas.
       { montar: jest.fn().mockResolvedValue('dossie') } as never,
+      // RF47: o catalogo em PDF. Mudo nestes testes.
+      { execute: jest.fn() } as never,
     );
   });
 
@@ -287,6 +289,8 @@ describe('consultar_produtos da gestao e a quantidade', () => {
       { criarFoto: jest.fn() } as never,
       // RF38: o dossie da estrategia de vendas.
       { montar: jest.fn().mockResolvedValue('dossie') } as never,
+      // RF47: o catalogo em PDF. Mudo nestes testes.
+      { execute: jest.fn() } as never,
     );
   });
 
@@ -455,6 +459,8 @@ describe('o recorte de equipe nas ferramentas de gestao', () => {
       { criarFoto: jest.fn() } as never,
       // RF38: o dossie da estrategia de vendas.
       { montar: jest.fn().mockResolvedValue('dossie') } as never,
+      // RF47: o catalogo em PDF. Mudo nestes testes.
+      { execute: jest.fn() } as never,
     );
   });
 
@@ -781,6 +787,8 @@ describe('o periodo livre nas ferramentas de venda', () => {
       { criarFoto: jest.fn() } as never,
       // RF38: o dossie da estrategia de vendas.
       { montar: jest.fn().mockResolvedValue('dossie') } as never,
+      // RF47: o catalogo em PDF. Mudo nestes testes.
+      { execute: jest.fn() } as never,
     );
   });
 
@@ -947,6 +955,8 @@ describe('o ranking por tipo de peça', () => {
       { criarFoto: jest.fn() } as never,
       // RF38: o dossie da estrategia de vendas.
       { montar: jest.fn().mockResolvedValue('dossie') } as never,
+      // RF47: o catalogo em PDF. Mudo nestes testes.
+      { execute: jest.fn() } as never,
     );
   });
 

@@ -1369,6 +1369,8 @@ export interface ChatParams {
   gestaoEstrategia?: GestaoEstrategiaHandler;
   // RF38 — a versao do canal dela, sem parametro nenhum.
   estrategiaDeVendas?: EstrategiaDeVendasHandler;
+  // RF47 — o catalogo em PDF, uma foto por pagina.
+  gestaoPdfDoCatalogo?: PdfDoCatalogoHandler;
   gestaoAgendar?: GestaoAgendarHandler;
   gestaoFeedbacks?: GestaoFeedbacksHandler;
   gestaoDiaDaVendedora?: GestaoDiaDaVendedoraHandler;
@@ -1401,6 +1403,21 @@ export interface ArquivoDoAgenteLlm {
   nome: string;
   legenda: string;
 }
+
+/**
+ * O CATALOGO EM PDF, PELA CONVERSA — RF47, 22/10/2026.
+ *
+ * Devolve o arquivo E a frase: o arquivo viaja por fora do dialogo, como o
+ * relatorio e as fotos; a frase diz quantas paginas foram e o que ficou de
+ * fora, porque PDF cortado em silencio e pior que PDF grande.
+ *
+ * Arquivo `null` quando nao deu — catalogo nao achado, nenhuma foto —, e ai a
+ * mensagem explica. PDF vazio parece resposta.
+ */
+export type PdfDoCatalogoHandler = (input: {
+  catalogo: string;
+  capa?: string;
+}) => Promise<{ arquivo: ArquivoDoAgenteLlm | null; mensagem: string }>;
 
 export type MandarRelatorioHandler = (p: {
   formato: 'PDF' | 'PLANILHA';

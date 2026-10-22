@@ -382,6 +382,8 @@ describe('o funil pela gestao (Anastasia)', () => {
       { criarFoto: jest.fn() } as never,
       // RF38: o dossie da estrategia de vendas.
       { montar: jest.fn().mockResolvedValue('dossie') } as never,
+      // RF47: o catalogo em PDF. Mudo nestes testes.
+      { execute: jest.fn() } as never,
     );
   });
 

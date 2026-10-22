@@ -43,6 +43,7 @@ import { CatalogoFotoOrmEntity } from './infrastructure/database/typeorm/entitie
 import { CatalogoReferenciaOrmEntity } from './infrastructure/database/typeorm/entities/catalogo-referencia.orm-entity';
 import { CatalogoOrmEntity } from './infrastructure/database/typeorm/entities/catalogo.orm-entity';
 import { CatalogoRepository } from './infrastructure/database/typeorm/repositories/catalogo.repository';
+import { PdfDeFotosUseCase } from './application/use-cases/pdf-de-fotos.use-case';
 import { CatalogosController } from './infrastructure/http/controllers/catalogos.controller';
 import { MidiaController } from './infrastructure/http/controllers/midia.controller';
 
@@ -64,6 +65,7 @@ import { MidiaController } from './infrastructure/http/controllers/midia.control
   ],
   controllers: [CatalogosController, MidiaController],
   providers: [
+    PdfDeFotosUseCase,
     ListarCatalogosUseCase,
     BuscarCatalogoUseCase,
     CriarCatalogoUseCase,
@@ -131,6 +133,9 @@ import { MidiaController } from './infrastructure/http/controllers/midia.control
     CriarCatalogoUseCase,
     AnexarReferenciaUseCase,
     AtualizarCatalogoUseCase,
+    // RF47 — o catalogo em PDF, uma foto por pagina. Quem o chama e a
+    // conversa, em atendimentos.
+    PdfDeFotosUseCase,
   ],
 })
 export class CatalogosModule {}

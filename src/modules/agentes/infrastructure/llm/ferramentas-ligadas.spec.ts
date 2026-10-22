@@ -1,5 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import type { ChatParams } from '../../domain/ports/llm-client.port';
+import type { FerramentasGestao } from '../../../atendimentos/application/ferramentas-gestao.service';
 
 /**
  * TODA FERRAMENTA DECLARADA TEM DE TER DESPACHO — 29/09/2026.
@@ -346,5 +348,38 @@ describe('a descrição conta ao modelo o que a busca sabe', () => {
     for (const d of descricoesDeBusca) {
       expect(d).toMatch(/Sigla NAO e codigo/i);
     }
+  });
+
+  /**
+   * ==========================================================================
+   * O NOME DO HANDLER TEM DE SER O MESMO NOS DOIS LADOS — 22/10/2026.
+   *
+   * O `FerramentasGestaoService` devolve um objeto que é ESPALHADO dentro do
+   * `ChatParams`. Espalhamento NÃO passa pela checagem de propriedade
+   * excedente do TypeScript: um handler chamado `pdfDoCatalogo` de um lado e
+   * `gestaoPdfDoCatalogo` do outro **compila** — e o resultado é a ferramenta
+   * nunca ser declarada ao modelo. Ela simplesmente não existe, em silêncio.
+   *
+   * Aconteceu comigo neste mesmo dia, com o PDF do catálogo: o `tsc` passou, a
+   * suíte passou, e a agente teria respondido "não sei fazer isso".
+   *
+   * A asserção abaixo é de TIPO, e quem a executa é o `tsc`: se um nome sair
+   * do par, `Orfaos` deixa de ser `never` e o projeto não compila.
+   * ==========================================================================
+   */
+  it('todo handler da gestão existe com o MESMO nome no ChatParams', () => {
+    type Orfaos = Exclude<keyof FerramentasGestao, keyof ChatParams>;
+
+    // `SoNever` só aceita `never`. Com um nome órfão, `Orfaos` vira o literal
+    // do nome e esta linha deixa de compilar, dizendo qual é.
+    //
+    // E NÃO BASTA DECLARAR UM ARRAY: `const x: Orfaos[] = []` compila sempre,
+    // porque array vazio serve a qualquer tipo de elemento. Foi a primeira
+    // versão desta guarda, e ela não pegou a sabotagem de teste.
+    type SoNever<T extends never> = T;
+    type Conferido = SoNever<Orfaos>;
+
+    const conferido: Conferido[] = [];
+    expect(conferido).toEqual([]);
   });
 });

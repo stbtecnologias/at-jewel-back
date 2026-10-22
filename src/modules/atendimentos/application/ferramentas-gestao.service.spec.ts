@@ -49,7 +49,8 @@ describe('FerramentasGestaoService', () => {
   /** RF32: a ultima lista, o cadastro da peca e o catalogo que recebe. */
   let ultimoRel: { guardar: jest.Mock; guardarTexto: jest.Mock; pegar: jest.Mock };
   let produtosRepo: { findByCodigoErp: jest.Mock };
-  let catalogosRepo: { criarFoto: jest.Mock };
+  let catalogosRepo: { criarFoto: jest.Mock; listarAbertos: jest.Mock };
+  let pdfDeFotos: { execute: jest.Mock };
   let fotosDaPeca: { listar: jest.Mock };
   let anexarRef: { texto: jest.Mock };
   let atualizarCat: { execute: jest.Mock };
@@ -112,7 +113,20 @@ describe('FerramentasGestaoService', () => {
     atualizarCat = { execute: jest.fn().mockResolvedValue({ id: 'cat-1' }) };
     ultimoRel = { guardar: jest.fn(), guardarTexto: jest.fn(), pegar: jest.fn() };
     produtosRepo = { findByCodigoErp: jest.fn() };
-    catalogosRepo = { criarFoto: jest.fn().mockResolvedValue({ id: 'f-1' }) };
+    catalogosRepo = {
+      criarFoto: jest.fn().mockResolvedValue({ id: 'f-1' }),
+      listarAbertos: jest.fn().mockResolvedValue([
+        { id: 'cat-1', numero: '0042', nome: 'Under 25k' },
+      ]),
+    };
+    pdfDeFotos = {
+      execute: jest.fn().mockResolvedValue({
+        conteudo: Buffer.from('%PDF-1.3'),
+        nome: 'catalogo-0042-under-25k.pdf',
+        paginas: 3,
+        cortadas: 0,
+      }),
+    };
     fotosDaPeca = { listar: jest.fn().mockResolvedValue([]) };
 
     servico = new FerramentasGestaoService(
@@ -181,6 +195,8 @@ describe('FerramentasGestaoService', () => {
       catalogosRepo as never,
       // RF38: o dossie da estrategia de vendas.
       { montar: jest.fn().mockResolvedValue('dossie') } as never,
+      // RF47: o catalogo em PDF.
+      pdfDeFotos as never,
     );
   });
 
@@ -1363,6 +1379,86 @@ describe('FerramentasGestaoService', () => {
 
         expect(catalogosRepo.criarFoto).not.toHaveBeenCalled();
         expect(r.mensagem).toContain('criado');
+      });
+    });
+
+    /**
+     * ======================================================================
+     * O PDF DO CATÁLOGO — RF47, 22/10/2026.
+     *
+     * É o trabalho que hoje sai do sistema e vai para o ChatGPT. O catálogo
+     * é achado como ela o chama: pelo número ou pelo nome.
+     * ======================================================================
+     */
+    describe('o PDF do catálogo', () => {
+      it.each([['0042'], ['42'], ['#0042'], ['under 25k'], ['Under 25K']])(
+        'acha o catálogo por "%s"',
+        async (dito) => {
+          const r = await comPermissao().gestaoPdfDoCatalogo!({
+            catalogo: dito,
+          });
+
+          expect(pdfDeFotos.execute).toHaveBeenCalledWith('cat-1', null);
+          expect(r.arquivo?.nome).toBe('catalogo-0042-under-25k.pdf');
+          expect(r.mensagem).toContain('3 páginas');
+        },
+      );
+
+      it('a capa escolhida vai junto', async () => {
+        await comPermissao().gestaoPdfDoCatalogo!({
+          catalogo: '0042',
+          capa: 'CO26217',
+        });
+
+        expect(pdfDeFotos.execute).toHaveBeenCalledWith('cat-1', 'CO26217');
+      });
+
+      // ====================================================================
+      // DOIS COM O MESMO NOME NÃO VIRAM PALPITE — PDF do catálogo errado sai
+      // para a cliente, e ninguém confere dez páginas.
+      // ====================================================================
+      it('nome que serve a dois catálogos não escolhe nenhum', async () => {
+        catalogosRepo.listarAbertos.mockResolvedValue([
+          { id: 'cat-1', numero: '0042', nome: 'Under 25k' },
+          { id: 'cat-2', numero: '0043', nome: 'Under 25k — outubro' },
+        ]);
+
+        const r = await comPermissao().gestaoPdfDoCatalogo!({
+          catalogo: 'under 25k',
+        });
+
+        expect(pdfDeFotos.execute).not.toHaveBeenCalled();
+        expect(r.arquivo).toBeNull();
+      });
+
+      it('catálogo que não recebe foto não vira PDF', async () => {
+        catalogosRepo.listarAbertos.mockResolvedValue([]);
+
+        const r = await comPermissao().gestaoPdfDoCatalogo!({
+          catalogo: '0042',
+        });
+
+        expect(r.arquivo).toBeNull();
+        expect(r.mensagem).toMatch(/não achei/i);
+      });
+
+      it('o corte no teto é DITO, e não calado', async () => {
+        pdfDeFotos.execute.mockResolvedValue({
+          conteudo: Buffer.from('%PDF-1.3'),
+          nome: 'catalogo-0042.pdf',
+          paginas: 40,
+          cortadas: 5,
+        });
+
+        const r = await comPermissao().gestaoPdfDoCatalogo!({
+          catalogo: '0042',
+        });
+
+        expect(r.mensagem).toContain('5 de fora');
+      });
+
+      it('sem catalogo:write, a ferramenta nem existe', () => {
+        expect(servico.montar({}).gestaoPdfDoCatalogo).toBeUndefined();
       });
     });
   });

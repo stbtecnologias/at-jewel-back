@@ -22,6 +22,7 @@ import { PRODUTO_REPOSITORY } from '../../erp/domain/ports/injection-tokens';
 import type { IProdutoRepository } from '../../erp/domain/ports/repositories/produto-repository.port';
 import { CATALOGO_REPOSITORY } from '../../catalogos/domain/ports/injection-tokens';
 import type { ICatalogoRepository } from '../../catalogos/domain/ports/repositories/catalogo-repository.port';
+import { PdfDeFotosUseCase } from '../../catalogos/application/use-cases/pdf-de-fotos.use-case';
 import {
   AnexarReferenciaUseCase,
   AtualizarCatalogoUseCase,
@@ -67,6 +68,7 @@ import type {
   GestaoAgendaHandler,
   GestaoCriarCatalogoHandler,
   GestaoEstrategiaHandler,
+  PdfDoCatalogoHandler,
 } from '../../agentes/domain/ports/llm-client.port';
 import { janelaDoDia } from '../../../shared/tempo/janela-do-dia';
 import { CONVERSA_WHATSAPP_REPOSITORY } from '../domain/ports/injection-tokens';
@@ -314,6 +316,8 @@ export interface FerramentasGestao {
    * chega a ser declarada ao modelo.
    */
   gestaoCriarCatalogo?: GestaoCriarCatalogoHandler;
+  /** RF47 — o catalogo em PDF, so com `catalogo:write`. */
+  gestaoPdfDoCatalogo?: PdfDoCatalogoHandler;
   gestaoFeedbacks: GestaoFeedbacksHandler;
   gestaoDiaDaVendedora: GestaoDiaDaVendedoraHandler;
   gestaoConversasAgora: GestaoConversasAgoraHandler;
@@ -542,6 +546,8 @@ export class FerramentasGestaoService {
     // RF38 — o dossie que vira plano de vendas. A receita mora nele, e os
     // dois canais a pedem: a vendedora para si, a gestao para a equipe.
     private readonly estrategia: EstrategiaDeVendasService,
+    // RF47 — o catalogo em PDF, uma foto por pagina.
+    private readonly pdfDeFotos: PdfDeFotosUseCase,
   ) {}
 
   /**
@@ -2803,6 +2809,45 @@ export class FerramentasGestaoService {
       // ====================================================================
       ...(podeCatalogo
         ? {
+            // ================================================================
+            // O CATÁLOGO EM PDF — RF47, 22/10/2026.
+            //
+            // *"As fotos já são a página inteira, e os preços já estão nas
+            // fotos. O que falta é pegar a foto e colocar no PDF inteiro. E a
+            // capa ela diz qual seria."*
+            //
+            // O catálogo é achado pelo NÚMERO ou pelo NOME — as duas formas
+            // que ela usa na conversa.
+            // ================================================================
+            gestaoPdfDoCatalogo: async ({ catalogo, capa }) => {
+              const alvo = await this.acharCatalogo(catalogo);
+              if (!alvo) {
+                return {
+                  arquivo: null,
+                  mensagem:
+                    'Não achei esse catálogo entre os que estão recebendo foto. ' +
+                    'Diga isso e pergunte o número ou o nome dele.',
+                };
+              }
+
+              const pdf = await this.pdfDeFotos.execute(alvo.id, capa ?? null);
+              return {
+                arquivo: {
+                  conteudo: pdf.conteudo,
+                  mime: 'application/pdf',
+                  nome: pdf.nome,
+                  legenda: `${alvo.nome} — ${pdf.paginas} ${pdf.paginas === 1 ? 'página' : 'páginas'}`,
+                },
+                mensagem:
+                  `O PDF do catálogo ${alvo.numero} — "${alvo.nome}" saiu com ` +
+                  `${pdf.paginas} ${pdf.paginas === 1 ? 'página' : 'páginas'}, uma foto por página. ` +
+                  (pdf.cortadas > 0
+                    ? `Ficaram ${pdf.cortadas} de fora, que é o teto do arquivo — DIGA isso a ela. `
+                    : '') +
+                  'Diga em uma frase curta que mandou, e NÃO repita a lista de peças.',
+              };
+            },
+
             gestaoCriarCatalogo: async ({
               nome,
               tema,
@@ -2895,6 +2940,44 @@ export class FerramentasGestaoService {
           }
         : {}),
     };
+  }
+
+  /**
+   * ACHA O CATALOGO PELO QUE ELA DISSE — numero ou nome.
+   *
+   * ========================================================================
+   * SO ENTRE OS QUE RECEBEM FOTO, e isso e de proposito: e a mesma lista que
+   * a agente ja usa quando a foto chega. Um PDF gerado de um catalogo
+   * encerrado ou excluido seria material velho saindo com cara de novo.
+   *
+   * O NUMERO GANHA DO NOME: "0042" e exato, e nome tem homonimo. E o nome
+   * casa por CONTER, porque ela diz "o Under 25k" e o cadastro e "Under 25k
+   * — outubro".
+   * ========================================================================
+   */
+  private async acharCatalogo(
+    dito: string,
+  ): Promise<{ id: string; numero: string; nome: string } | null> {
+    const limpo = String(dito ?? '')
+      .trim()
+      .toLowerCase();
+    if (!limpo) return null;
+
+    const abertos = await this.catalogos.listarAbertos();
+    const soDigitos = limpo.replace(/\D/g, '');
+    if (soDigitos) {
+      // "0042", "42", "#0042" — todos chegam no mesmo lugar.
+      const porNumero = abertos.find(
+        (c) => c.numero.replace(/\D/g, '') === soDigitos.padStart(4, '0'),
+      );
+      if (porNumero) return porNumero;
+    }
+
+    const porNome = abertos.filter((c) =>
+      c.nome.toLowerCase().includes(limpo),
+    );
+    // DOIS COM O MESMO NOME NAO VIRAM PALPITE: quem chama devolve a pergunta.
+    return porNome.length === 1 ? porNome[0] : null;
   }
 
   /**

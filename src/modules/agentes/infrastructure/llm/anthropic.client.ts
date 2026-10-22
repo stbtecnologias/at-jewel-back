@@ -1256,6 +1256,48 @@ const GESTAO_ESTRATEGIA_TOOL: Anthropic.Tool = {
  * oito, que foi decisao dele em 16/09.
  * ==========================================================================
  */
+/**
+ * O CATALOGO EM PDF — RF47, 22/10/2026.
+ *
+ * ==========================================================================
+ * É O TRABALHO QUE HOJE SAI DO SISTEMA E VAI PARA O CHATGPT.
+ *
+ * Ela sobe as fotos la, pede "cria um pdf para enviar para as clientes" e
+ * recebe o arquivo. Aqui as fotos JA ESTAO no catalogo, e o PDF e so
+ * empilha-las — *"as fotos ja sao a pagina inteira, e os precos ja estao nas
+ * fotos"*.
+ *
+ * A DESCRICAO DIZ QUE A CAPA E UMA DAS FOTOS, e nao um desenho novo: o
+ * modelo nao gera imagem. Se ela pedir uma capa que nao existe, a resposta
+ * certa e perguntar qual das fotos ela quer na frente.
+ * ==========================================================================
+ */
+const GESTAO_PDF_CATALOGO_TOOL: Anthropic.Tool = {
+  name: 'gerar_pdf_do_catalogo',
+  description:
+    'Monta o PDF de um catalogo, UMA FOTO POR PAGINA, e manda na conversa. ' +
+    'Use quando pedirem "gera o pdf", "monta o catalogo em pdf", "manda o catalogo para eu enviar as clientes". ' +
+    'As fotos ja estao no catalogo e ja trazem o preco na imagem — este PDF nao escreve nada por cima delas. ' +
+    'A CAPA e OPCIONAL e e UMA DAS FOTOS que ja estao la: se ela disser qual quer na frente, mande o codigo da peca; se nao disser, nao pergunte, o PDF sai na ordem do catalogo. ' +
+    'Voce NAO cria imagem nova: se ela pedir uma capa desenhada, diga que da para escolher uma das fotos como abertura.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      catalogo: {
+        type: 'string',
+        description:
+          'O numero ("0042") ou o nome do catalogo, como ela disse.',
+      },
+      capa: {
+        type: 'string',
+        description:
+          'O codigo da peca cuja foto abre o PDF, SO se ela escolher uma.',
+      },
+    },
+    required: ['catalogo'],
+  },
+};
+
 const GESTAO_CRIAR_CATALOGO_TOOL: Anthropic.Tool = {
   name: 'criar_catalogo',
   description:
@@ -2086,6 +2128,7 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoAtribuirVendedora)
       tools.push(GESTAO_ATRIBUIR_VENDEDORA_TOOL);
     if (params.gestaoCriarCatalogo) tools.push(GESTAO_CRIAR_CATALOGO_TOOL);
+    if (params.gestaoPdfDoCatalogo) tools.push(GESTAO_PDF_CATALOGO_TOOL);
     if (params.gestaoEstrategia) tools.push(GESTAO_ESTRATEGIA_TOOL);
     if (params.estrategiaDeVendas) tools.push(ESTRATEGIA_VENDEDORA_TOOL);
     if (params.gestaoAgendar) tools.push(GESTAO_AGENDAR_TOOL);
@@ -2539,6 +2582,26 @@ export class AnthropicClient implements ILlmClient {
               return `Plano de ${r.vendedora ?? 'ela'}:\n\n${r.linhas.join('\n')}\n\n${PEDIDO_DO_PLANO}`;
             },
           ),
+        );
+      } else if (
+        toolUse.name === 'gerar_pdf_do_catalogo' &&
+        params.gestaoPdfDoCatalogo
+      ) {
+        toolResults.push(
+          // NAO AVISA O OUVINTE: isto nao e consulta. A frase de confirmacao
+          // viraria "a ultima tabela", e o PDF seguinte sairia com ela.
+          await this.executarLeitura(toolUse, undefined, async () => {
+            const e = toolUse.input as { catalogo?: string; capa?: string };
+            const r = await params.gestaoPdfDoCatalogo!({
+              catalogo: String(e.catalogo ?? '').slice(0, 120),
+              capa: e.capa ? String(e.capa).slice(0, 40) : undefined,
+            });
+            // O ARQUIVO VIAJA POR FORA, como o relatorio e as fotos: mandar
+            // bytes pelo dialogo seria pagar o PDF inteiro em token, duas
+            // vezes — na ida e no historico.
+            if (r.arquivo) arquivo = r.arquivo;
+            return r.mensagem;
+          }),
         );
       } else if (
         toolUse.name === 'criar_catalogo' &&
