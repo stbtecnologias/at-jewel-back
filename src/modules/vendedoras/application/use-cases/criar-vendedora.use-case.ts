@@ -97,7 +97,25 @@ export class CriarVendedoraUseCase {
     const codigo =
       input.codigoErp?.trim() || (await this.repo.proximoCodigoInterno());
 
+    // ====================================================================
+    // ELA NASCE NA EQUIPE — 23/10/2026.
+    //
+    // Sem isto, a vendedora que o ERP cria chega sem equipe e fica INVISIVEL
+    // para a gerente de vendas, cujo recorte e a equipe dela. Ninguem seria
+    // avisado: o painel da gerente simplesmente teria uma pessoa a menos, e o
+    // faturamento dela viria menor sem nada acusando.
+    //
+    // E a defesa na ORIGEM, e nao um aviso na tela: aviso que nunca apaga
+    // ensina todo mundo a ignorar aviso (as quatro de fora sao de proposito,
+    // e apareceriam nele para sempre).
+    //
+    // QUEM ESTA FORA CONTINUA FORA: isto vale para quem NASCE agora, e nao
+    // mexe em ninguem ja cadastrado.
+    // ====================================================================
+    const equipeId = await this.repo.equipePadrao();
+
     const vendedora = Vendedora.create({
+      equipeId,
       idErp: input.idErp ?? null,
       codigoErp: codigo,
       nome: input.nome,

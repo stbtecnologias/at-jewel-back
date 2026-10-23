@@ -25,6 +25,19 @@ export interface EncaminharLeadInput {
   /** Nome (ou parte) da vendedora, como o ADM escreveu. */
   vendedora: string;
   /**
+   * AS VENDEDORAS QUE QUEM PEDE ALCANCA — 23/10/2026. `null`/ausente = todas.
+   *
+   * ========================================================================
+   * A GUARDA MORA AQUI, E NAO NO CHAMADOR. O comentario da ferramenta que
+   * LISTA vendedoras ja dizia que esta aqui recusaria um nome de fora — e nao
+   * recusava: a lista era recortada e o encaminhamento nao. A gerente nao
+   * veria o nome, mas encaminharia para ele se o digitasse.
+   *
+   * Regra que mora no chamador nao e regra: basta uma porta nova esquecer.
+   * ========================================================================
+   */
+  equipe?: string[] | null;
+  /**
    * Nome do lead, quando o ADM disser qual. Opcional: com um so esperando,
    * "manda pro Thiago" nao precisa repetir de quem se trata.
    */
@@ -126,6 +139,16 @@ export class EncaminharLeadUseCase {
     }
     if (alvo.status === 'AMBIGUA') {
       return { status: 'VENDEDORA_AMBIGUA', nomes: alvo.nomes };
+    }
+
+    // FORA DA EQUIPE RESPONDE "NAO ACHEI" — e sem sugestao: sugerir seria
+    // dizer o nome que o recorte acabou de esconder.
+    if (input.equipe && !input.equipe.includes(alvo.id)) {
+      return {
+        status: 'VENDEDORA_NAO_ENCONTRADA',
+        termo: input.vendedora,
+        sugestoes: [],
+      };
     }
 
     if (!alvo.codigoErp) {

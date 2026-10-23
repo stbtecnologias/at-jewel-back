@@ -136,12 +136,22 @@ export class ConsultarLinhaDoTempoUseCase {
    * escolhe o dia 26 — a navegacao por data continua ali.
    * ========================================================================
    */
-  async execute(dia?: string): Promise<LinhaDoTempo> {
+  /**
+   * @param equipe as vendedoras que quem pergunta alcanca. `undefined` ou
+   *   `null` = todas — ver o recorte de 23/10/2026. A regua e uma faixa por
+   *   vendedora, entao recortar aqui e recortar a tela inteira.
+   */
+  async execute(dia?: string, equipe?: string[] | null): Promise<LinhaDoTempo> {
     const { de: alvo, ate } = janelaDoDia(dia);
-    const pontos = await this.repo.linhaDoTempo(alvo, ate);
+    const pontos = (await this.repo.linhaDoTempo(alvo, ate)).filter(
+      (p) => !equipe || equipe.includes(p.vendedoraId),
+    );
     await this.marcarGenteDaCasa(pontos);
 
-    const ativas = await this.vendedoras.listar({ ativo: true });
+    const todasAtivas = await this.vendedoras.listar({ ativo: true });
+    const ativas = equipe
+      ? todasAtivas.filter((v) => v.id && equipe.includes(v.id))
+      : todasAtivas;
 
     const porVendedora = new Map<string, PontoDaLinha[]>();
     for (const p of pontos) {

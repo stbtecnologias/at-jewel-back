@@ -258,7 +258,14 @@ export interface ILeadRepository {
    * centenas de linhas para somar em memoria seria pagar caro pela mesma
    * resposta.
    */
-  panoramaDeLeads(): Promise<PanoramaDeLeads>;
+  /**
+   * @param codigos as vendedoras que quem pergunta alcanca, por CODIGO ERP —
+   *   que e a chave do lead. `null` ou ausente = a loja inteira.
+   *
+   *   O LEAD SEM DONO ENTRA SEMPRE: e a fila que a gestao encaminha, e
+   *   esconde-la tiraria o trabalho junto com o recorte.
+   */
+  panoramaDeLeads(codigos?: string[] | null): Promise<PanoramaDeLeads>;
 }
 
 /** O retrato da fila de leads. */

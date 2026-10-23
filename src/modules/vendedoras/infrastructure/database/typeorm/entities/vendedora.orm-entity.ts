@@ -87,6 +87,17 @@ export class VendedoraOrmEntity {
   @Column({ name: 'admin_user_id', type: 'uuid', nullable: true })
   adminUserId: string | null;
 
+  /**
+   * A EQUIPE DELA — coluna da migracao 67, mapeada so em 23/10/2026.
+   *
+   * Ficou dois meses sem mapeamento porque o unico leitor era o recorte de
+   * vendas, que consulta por SQL direto. Passou a existir aqui quando o
+   * CADASTRO virou a regra: vendedora nova nasce na equipe padrao, e para
+   * nascer nela alguem tem de escrever a coluna.
+   */
+  @Column({ name: 'equipe_id', type: 'uuid', nullable: true })
+  equipeId: string | null;
+
   @CreateDateColumn({ name: 'criado_em', type: 'timestamptz' })
   criadoEm: Date;
 

@@ -79,7 +79,7 @@ export class ConsultarAuditoriaUseCase {
   async resumo(
     filtros: Pick<
       FiltroAuditoria,
-      'de' | 'ate' | 'etapa' | 'vendedoraId' | 'apenasAbertos'
+      'de' | 'ate' | 'etapa' | 'vendedoraId' | 'apenasAbertos' | 'equipe'
     >,
   ): Promise<ResumoAuditoria> {
     return this.atendimentos.resumoAuditoria(filtros);
@@ -94,7 +94,10 @@ export class ConsultarAuditoriaUseCase {
    * a tela precisa poder mostra-lo.
    */
   async serie(
-    filtros: Pick<FiltroAuditoria, 'de' | 'ate' | 'etapa' | 'vendedoraId'>,
+    filtros: Pick<
+      FiltroAuditoria,
+      'de' | 'ate' | 'etapa' | 'vendedoraId' | 'equipe'
+    >,
     granularidade: GranularidadeSerie,
   ): Promise<BucketSerie[]> {
     const [baldes, vendas] = await Promise.all([
@@ -103,7 +106,12 @@ export class ConsultarAuditoriaUseCase {
         {
           dataDe: filtros.de,
           dataAte: filtros.ate,
-          vendedoraId: filtros.vendedoraId ? [filtros.vendedoraId] : undefined,
+          // A SERIE TEM DOIS LADOS, e os dois precisam do mesmo recorte: sem
+          // isto a linha de ATENDIMENTOS sairia so da equipe e a de VENDAS da
+          // loja inteira, no mesmo grafico. Duas escalas, uma legenda.
+          vendedoraId: filtros.vendedoraId
+            ? [filtros.vendedoraId]
+            : filtros.equipe,
         },
         granularidade,
       ),
@@ -129,12 +137,14 @@ export class ConsultarAuditoriaUseCase {
    * traz `interacoes` — e o nome do cliente e da vendedora sao resolvidos
    * aqui, um a um, o que so faz sentido para UM atendimento.
    */
-  async detalhe(id: string): Promise<DetalheAtendimento> {
+  async detalhe(id: string, equipe?: string[]): Promise<DetalheAtendimento> {
     // A MESMA view da listagem, filtrada por id. Recalcular a etapa aqui
     // criaria uma segunda definicao dela — que e exatamente o que a migracao
     // 38 existe para evitar.
     const [pagina, interacoes] = await Promise.all([
-      this.atendimentos.listarAuditoria({ id, limit: 1, offset: 0 }),
+      // O RECORTE VAI JUNTO: sem ele, o atendimento de fora da equipe sairia
+      // inteiro pelo id — com o relato da vendedora dentro.
+      this.atendimentos.listarAuditoria({ id, equipe, limit: 1, offset: 0 }),
       this.atendimentos.listarInteracoes(id),
     ]);
 

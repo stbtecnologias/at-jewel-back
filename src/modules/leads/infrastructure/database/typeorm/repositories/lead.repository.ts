@@ -215,13 +215,28 @@ export class LeadRepository implements ILeadRepository {
     return paraDominio(await this.repo.save(row));
   }
 
-  async panoramaDeLeads(): Promise<PanoramaDeLeads> {
+  async panoramaDeLeads(codigos?: string[] | null): Promise<PanoramaDeLeads> {
+    // ======================================================================
+    // O RECORTE DA EQUIPE — 23/10/2026.
+    //
+    // Ate aqui este panorama respondia sempre pela LOJA, e a gerente de
+    // vendas via a quebra por vendedora inteira: os nomes que o recorte dela
+    // existe para nao mostrar, com numero ao lado.
+    //
+    // O LEAD SEM DONO CONTA PARA ELA, e e de proposito: e justamente a fila
+    // que ela encaminha. Tira-lo do total esconderia o trabalho dela junto
+    // com o recorte — e o total tem de bater com as linhas que ela ve.
+    // ======================================================================
+    const recorte = codigos ?? null;
+
     // SO CONTAGEM ATRAVESSA AQUI. Nenhuma coluna cifrada entra no SQL cru.
     const porEstado: { estado: EstadoLead; quantos: string }[] =
       await this.repo.manager.query(
         `SELECT estado, count(*)::int AS quantos
            FROM leads
+          ${recorte ? 'WHERE vendedora_aprovada_codigo IS NULL OR vendedora_aprovada_codigo = ANY($1::text[])' : ''}
           GROUP BY estado`,
+        recorte ? [recorte] : undefined,
       );
 
     const porVendedora: { codigo: string; quantos: string }[] =
@@ -229,8 +244,10 @@ export class LeadRepository implements ILeadRepository {
         `SELECT vendedora_aprovada_codigo AS codigo, count(*)::int AS quantos
            FROM leads
           WHERE vendedora_aprovada_codigo IS NOT NULL
+            ${recorte ? 'AND vendedora_aprovada_codigo = ANY($1::text[])' : ''}
           GROUP BY vendedora_aprovada_codigo
           ORDER BY count(*) DESC`,
+        recorte ? [recorte] : undefined,
       );
 
     const total = porEstado.reduce((s, l) => s + Number(l.quantos), 0);

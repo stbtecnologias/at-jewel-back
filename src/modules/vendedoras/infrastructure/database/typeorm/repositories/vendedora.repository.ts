@@ -21,6 +21,31 @@ export class VendedoraRepository implements IVendedoraRepository {
     return this.toDomain(saved);
   }
 
+  /**
+   * A EQUIPE PADRAO — `null` quando nao da para saber qual e.
+   *
+   * ======================================================================
+   * EXISTE PARA UM MODO DE FALHA SILENCIOSO — 23/10/2026.
+   *
+   * O recorte da gerente de vendas e a equipe dela, cadastrada em produção em
+   * 23/10. O preco desse desenho e que vendedora SEM equipe nao aparece para
+   * nenhuma gerente — e vendedora nova chega sozinha, pela API do ERP: 21 das
+   * 23 nasceram assim em agosto/2026. Sem esta regra, a proxima sumiria do
+   * painel da gerente e ninguem seria avisado.
+   *
+   * UMA SO EQUIPE ATIVA = NAO HA O QUE ESCOLHER, e e o caso da casa hoje.
+   * Com duas (quando SP entrar), escolher seria adivinhar de qual time a
+   * pessoa e — ai a vendedora nasce sem equipe e quem cadastra decide, que e
+   * o comportamento de antes desta linha.
+   * ======================================================================
+   */
+  async equipePadrao(): Promise<string | null> {
+    const linhas = await this.repo.manager.query<{ id: string }[]>(
+      `SELECT id FROM equipes WHERE ativo LIMIT 2`,
+    );
+    return linhas.length === 1 ? linhas[0].id : null;
+  }
+
   async buscarPorId(id: string): Promise<Vendedora | null> {
     const row = await this.repo.findOne({ where: { id } });
     return row ? this.toDomain(row) : null;
@@ -138,6 +163,7 @@ export class VendedoraRepository implements IVendedoraRepository {
       whatsappExterno: v.whatsappExterno,
       whatsappExternoHash: v.whatsappExternoHash,
       adminUserId: v.adminUserId,
+      equipeId: v.equipeId,
     };
   }
 
@@ -158,6 +184,7 @@ export class VendedoraRepository implements IVendedoraRepository {
       whatsappExterno: o.whatsappExterno,
       whatsappExternoHash: o.whatsappExternoHash,
       adminUserId: o.adminUserId,
+      equipeId: o.equipeId,
       criadoEm: o.criadoEm,
       atualizadoEm: o.atualizadoEm,
     });

@@ -1279,6 +1279,7 @@ const GESTAO_PDF_CATALOGO_TOOL: Anthropic.Tool = {
     'Use quando pedirem "gera o pdf", "monta o catalogo em pdf", "manda o catalogo para eu enviar as clientes". ' +
     'As fotos ja estao no catalogo e ja trazem o preco na imagem — este PDF nao escreve nada por cima delas. ' +
     'A CAPA E PADRAO: a primeira foto do catalogo abre o PDF com a marca e o nome do catalogo escritos por cima, e a peca continua aparecendo na pagina dela. NAO pergunte nada disso. ' +
+    'SE O CATALOGO JA TIVER UMA IMAGEM DE CAPA — aquela que ela mandou dizendo "essa e a capa" —, e essa que abre o PDF, e ela NAO se repete como pagina de peca. ' +
     'So preencha quando ela PEDIR: "capa" com o CODIGO da peca que ela quer na frente, e "texto_capa" com o que ela quer escrito ("tira o Under 25k e poe News"). ' +
     'Voce NAO cria imagem nova: se ela pedir uma capa desenhada, diga que da para escolher uma das fotos como abertura.',
   input_schema: {
@@ -1350,6 +1351,52 @@ const GESTAO_CRIAR_CATALOGO_TOOL: Anthropic.Tool = {
       },
     },
     required: ['nome'],
+  },
+};
+
+/**
+ * O AJUSTE DO CATALOGO PELA CONVERSA — RF47, 23/10/2026.
+ *
+ * ==========================================================================
+ * O QUE ESTE CATALOGO TEM PARA AJUSTAR SAO DUAS COISAS: o NOME, que e o texto
+ * da capa, e QUAIS PECAS ficam. Nada de tema, formato ou cor — o PDF empilha
+ * as fotos como elas sao, e os precos ja estao nelas.
+ *
+ * A CAPA NAO ESTA AQUI DE PROPOSITO. Trocar a capa por imagem nova e mandar a
+ * imagem dizendo que e a capa; escolher uma das PECAS como abertura e
+ * parametro do `gerar_pdf_do_catalogo`. Um terceiro caminho so faria o modelo
+ * escolher errado entre tres.
+ * ==========================================================================
+ */
+const GESTAO_AJUSTAR_CATALOGO_TOOL: Anthropic.Tool = {
+  name: 'ajustar_catalogo',
+  description:
+    'Muda um catalogo que JA EXISTE: o nome dele, e as pecas que ficam de fora. ' +
+    'Use quando pedirem "muda o nome do catalogo para X", "troca o nome desse catalogo", "tira a AN2568 desse catalogo", "nao quero mais essa peca no catalogo". ' +
+    'O NOME E O QUE VAI ESCRITO NA CAPA do PDF — mudar o nome muda a capa do proximo PDF. ' +
+    'Em "tirar" mande os CODIGOS das pecas. Elas saem da edicao e do PDF, e da para devolver pelo painel: nada e apagado. ' +
+    'NAO use para criar catalogo (criar_catalogo), para gerar o PDF (gerar_pdf_do_catalogo) nem para trocar a capa — a capa nova ela manda como imagem, dizendo que e a capa.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      catalogo: {
+        type: 'string',
+        description:
+          'O numero ("0042") ou o nome do catalogo, como ela disse.',
+      },
+      nome: {
+        type: 'string',
+        description:
+          'O nome NOVO do catalogo, so quando ela pedir para trocar. E ele que vai escrito na capa.',
+      },
+      tirar: {
+        type: 'array',
+        items: { type: 'string' },
+        description:
+          'Codigos das pecas que saem do catalogo, como ela disse ("AN2568"). So o que ela nomear.',
+      },
+    },
+    required: ['catalogo'],
   },
 };
 
@@ -2135,6 +2182,8 @@ export class AnthropicClient implements ILlmClient {
       tools.push(GESTAO_ATRIBUIR_VENDEDORA_TOOL);
     if (params.gestaoCriarCatalogo) tools.push(GESTAO_CRIAR_CATALOGO_TOOL);
     if (params.gestaoPdfDoCatalogo) tools.push(GESTAO_PDF_CATALOGO_TOOL);
+    if (params.gestaoAjustarCatalogo)
+      tools.push(GESTAO_AJUSTAR_CATALOGO_TOOL);
     if (params.gestaoEstrategia) tools.push(GESTAO_ESTRATEGIA_TOOL);
     if (params.estrategiaDeVendas) tools.push(ESTRATEGIA_VENDEDORA_TOOL);
     if (params.gestaoAgendar) tools.push(GESTAO_AGENDAR_TOOL);
@@ -2646,6 +2695,31 @@ export class AnthropicClient implements ILlmClient {
               usarUltimaLista: e.usar_ultima_lista === true,
             });
             return `${r.mensagem}\n\nNao invente numero de catalogo: use o que esta aqui.`;
+          }),
+        );
+      } else if (
+        toolUse.name === 'ajustar_catalogo' &&
+        params.gestaoAjustarCatalogo
+      ) {
+        toolResults.push(
+          // NAO AVISA O OUVINTE DE RELATORIO: isto e escrita, nao consulta —
+          // a frase de confirmacao viraria "a ultima tabela".
+          await this.executarLeitura(toolUse, undefined, async () => {
+            const e = toolUse.input as {
+              catalogo?: string;
+              nome?: string;
+              tirar?: unknown;
+            };
+            const r = await params.gestaoAjustarCatalogo!({
+              catalogo: String(e.catalogo ?? '').slice(0, 120),
+              nome: e.nome ? String(e.nome).slice(0, 120) : undefined,
+              // TETO DE CODIGOS, como no criar: lista nomeada a mao nao passa
+              // de vinte, e aqui ela nomeia uma ou duas.
+              tirar: Array.isArray(e.tirar)
+                ? e.tirar.slice(0, 20).map((c) => String(c))
+                : undefined,
+            });
+            return r.mensagem;
           }),
         );
       } else if (

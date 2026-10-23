@@ -17,6 +17,13 @@ export interface VendedoraProps {
   whatsappExterno?: string | null;
   whatsappExternoHash?: string | null;
   adminUserId?: string | null;
+  /**
+   * A equipe dela (migracao 67).
+   *
+   * `null` NAO e detalhe de cadastro: sem equipe, ela fica fora do recorte de
+   * toda gerente de vendas — nao aparece no painel delas nem nas agentes.
+   */
+  equipeId?: string | null;
   criadoEm?: Date;
   atualizadoEm?: Date;
 }
@@ -65,6 +72,7 @@ export class Vendedora {
   readonly whatsappExternoHash: string | null;
 
   readonly adminUserId: string | null;
+  readonly equipeId: string | null;
   readonly criadoEm: Date | undefined;
   readonly atualizadoEm: Date | undefined;
 
@@ -84,6 +92,7 @@ export class Vendedora {
     this.whatsappExterno = props.whatsappExterno ?? null;
     this.whatsappExternoHash = props.whatsappExternoHash ?? null;
     this.adminUserId = props.adminUserId ?? null;
+    this.equipeId = props.equipeId ?? null;
     this.criadoEm = props.criadoEm;
     this.atualizadoEm = props.atualizadoEm;
   }

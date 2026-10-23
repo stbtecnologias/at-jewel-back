@@ -49,7 +49,12 @@ describe('FerramentasGestaoService', () => {
   /** RF32: a ultima lista, o cadastro da peca e o catalogo que recebe. */
   let ultimoRel: { guardar: jest.Mock; guardarTexto: jest.Mock; pegar: jest.Mock };
   let produtosRepo: { findByCodigoErp: jest.Mock };
-  let catalogosRepo: { criarFoto: jest.Mock; listarAbertos: jest.Mock };
+  let catalogosRepo: {
+    criarFoto: jest.Mock;
+    listarAbertos: jest.Mock;
+    buscarPorId: jest.Mock;
+    atualizarFoto: jest.Mock;
+  };
   let pdfDeFotos: { execute: jest.Mock };
   let fotosDaPeca: { listar: jest.Mock };
   let anexarRef: { texto: jest.Mock };
@@ -118,6 +123,20 @@ describe('FerramentasGestaoService', () => {
       listarAbertos: jest.fn().mockResolvedValue([
         { id: 'cat-1', numero: '0042', nome: 'Under 25k' },
       ]),
+      // RF47 — o ajuste pela conversa le as fotos do catalogo para achar a
+      // peca pelo CODIGO, que e como ela a chama.
+      buscarPorId: jest.fn().mockResolvedValue({
+        id: 'cat-1',
+        numero: '0042',
+        nome: 'Under 25k',
+        fotos: [
+          { id: 'f-1', codigoErp: 'AN2568', status: 'APROVADA' },
+          { id: 'f-2', codigoErp: 'AN2568', status: 'APROVADA' },
+          { id: 'f-3', codigoErp: 'GD5478', status: 'APROVADA' },
+          { id: 'f-4', codigoErp: 'BR1111', status: 'REPROVADA' },
+        ],
+      }),
+      atualizarFoto: jest.fn().mockResolvedValue(undefined),
     };
     pdfDeFotos = {
       execute: jest.fn().mockResolvedValue({
@@ -1433,7 +1452,7 @@ describe('FerramentasGestaoService', () => {
           nome: 'catalogo-0042.pdf',
           paginas: 4,
           cortadas: 0,
-          capa: { codigo: 'CO26217', texto: 'News' },
+          capa: { codigo: 'CO26217', texto: 'News', enviada: false },
         });
 
         const r = await comPermissao().gestaoPdfDoCatalogo!({
@@ -1442,7 +1461,35 @@ describe('FerramentasGestaoService', () => {
 
         expect(r.mensagem).toContain('CO26217');
         expect(r.mensagem).toContain('News');
-        expect(r.mensagem).toMatch(/trocar a foto ou o texto/i);
+        expect(r.mensagem).toMatch(/trocar a foto/i);
+        // E O CONVITE DA CAPA QUE NAO E PECA — RF47, 23/10/2026: a capa que
+        // ela quer pode nao ser nenhuma das pecas, e esse caminho so existe
+        // se alguem contar que ele existe.
+        expect(r.mensagem).toMatch(/essa é a capa/i);
+      });
+
+      /*
+       * A CAPA ENVIADA TEM OUTRA FRASE — e nao e capricho: dizer "a capa é a
+       * foto da CO26217" sobre uma imagem que nao e peca nenhuma mandaria ela
+       * procurar um codigo que nao existe. E quem ja tem capa propria nao
+       * precisa ouvir o convite para mandar uma.
+       */
+      it('capa enviada: a frase diz que é a imagem dela, e não uma peça', async () => {
+        pdfDeFotos.execute.mockResolvedValue({
+          conteudo: Buffer.from('%PDF-1.3'),
+          nome: 'catalogo-0042.pdf',
+          paginas: 4,
+          cortadas: 0,
+          capa: { codigo: null, texto: 'News', enviada: true },
+        });
+
+        const r = await comPermissao().gestaoPdfDoCatalogo!({
+          catalogo: '0042',
+        });
+
+        expect(r.mensagem).toMatch(/IMAGEM DE CAPA/i);
+        expect(r.mensagem).toContain('News');
+        expect(r.mensagem).not.toMatch(/trocar a foto/i);
       });
 
       // ====================================================================
@@ -1491,6 +1538,109 @@ describe('FerramentasGestaoService', () => {
 
       it('sem catalogo:write, a ferramenta nem existe', () => {
         expect(servico.montar({}).gestaoPdfDoCatalogo).toBeUndefined();
+      });
+    });
+
+    /**
+     * ======================================================================
+     * O AJUSTE PELA CONVERSA — RF47, 23/10/2026.
+     *
+     * *"Ela pode pedir algum ajuste igual como ela pede no painel: muda isso,
+     * muda aquilo."*
+     *
+     * SAO DUAS COISAS, e nao o formulario inteiro: o NOME — que e o texto da
+     * capa — e QUAIS PECAS ficam. Tema e formato nao mudam nada neste
+     * produto, que empilha as fotos como elas sao.
+     *
+     * TIRAR NAO APAGA: grava REPROVADA, igual ao botao do painel, e o painel
+     * devolve. A imagem fica onde esta — com o RF32 ela pode ser a foto do
+     * CADASTRO da peca, e apagar aquilo estragaria os proximos catalogos.
+     * ======================================================================
+     */
+    describe('ajustar o catálogo pela conversa', () => {
+      const comPermissao = () => servico.montar({ podeCatalogo: true });
+
+      it('sem catalogo:write a ferramenta NEM EXISTE', () => {
+        expect(servico.montar({}).gestaoAjustarCatalogo).toBeUndefined();
+        expect(comPermissao().gestaoAjustarCatalogo).toBeDefined();
+      });
+
+      it('catálogo que não existe não muda nada', async () => {
+        const r = await comPermissao().gestaoAjustarCatalogo!({
+          catalogo: '9999',
+          nome: 'News',
+        });
+
+        expect(atualizarCat.execute).not.toHaveBeenCalled();
+        expect(r.mensagem).toContain('Não achei');
+      });
+
+      /* O NOME É A CAPA — e é por isso que ele mudou de lugar. */
+      it('troca o nome, e diz que é ele que vai na capa', async () => {
+        const r = await comPermissao().gestaoAjustarCatalogo!({
+          catalogo: '0042',
+          nome: 'News',
+        });
+
+        expect(atualizarCat.execute).toHaveBeenCalledWith('cat-1', {
+          nome: 'News',
+        });
+        expect(r.mensagem).toContain('News');
+        expect(r.mensagem).toContain('capa');
+      });
+
+      /* TODAS AS FOTOS DAQUELA PEÇA: com o RF33 uma peça tem várias, e tirar
+       * só a primeira deixaria a peça no PDF pelas outras. */
+      it('tirar a peça tira TODAS as fotos dela, sem apagar nada', async () => {
+        const r = await comPermissao().gestaoAjustarCatalogo!({
+          catalogo: '0042',
+          tirar: ['an2568'],
+        });
+
+        expect(catalogosRepo.atualizarFoto).toHaveBeenCalledTimes(2);
+        expect(catalogosRepo.atualizarFoto).toHaveBeenCalledWith('f-1', {
+          status: 'REPROVADA',
+        });
+        expect(catalogosRepo.atualizarFoto).toHaveBeenCalledWith('f-2', {
+          status: 'REPROVADA',
+        });
+        expect(r.mensagem).toContain('AN2568 (2 fotos)');
+        expect(r.mensagem).toContain('devolver pelo painel');
+      });
+
+      it('peça que não está no catálogo é DITA, e não calada', async () => {
+        const r = await comPermissao().gestaoAjustarCatalogo!({
+          catalogo: '0042',
+          tirar: ['GD5478', 'CO9999'],
+        });
+
+        expect(r.mensagem).toContain('tirei GD5478');
+        expect(r.mensagem).toContain('não achei CO9999');
+      });
+
+      it('os dois ajustes numa frase só', async () => {
+        const r = await comPermissao().gestaoAjustarCatalogo!({
+          catalogo: 'under 25k',
+          nome: 'News',
+          tirar: ['GD5478'],
+        });
+
+        expect(atualizarCat.execute).toHaveBeenCalled();
+        expect(catalogosRepo.atualizarFoto).toHaveBeenCalledWith('f-3', {
+          status: 'REPROVADA',
+        });
+        expect(r.mensagem).toContain('News');
+        expect(r.mensagem).toContain('GD5478');
+      });
+
+      it('sem nome e sem peça, não mexe em nada e diz isso', async () => {
+        const r = await comPermissao().gestaoAjustarCatalogo!({
+          catalogo: '0042',
+        });
+
+        expect(atualizarCat.execute).not.toHaveBeenCalled();
+        expect(catalogosRepo.atualizarFoto).not.toHaveBeenCalled();
+        expect(r.mensagem).toContain('nada foi');
       });
     });
   });

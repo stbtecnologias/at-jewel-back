@@ -507,6 +507,63 @@ describe('o panorama de leads da gestao (Anastasia)', () => {
 
   const montar = () => servico.montar();
 
+  // =========================================================================
+  // O PANORAMA TAMBÉM É RECORTADO — 23/10/2026.
+  //
+  // Ele responde pela LOJA, e para a gerente de vendas isso trazia a quebra
+  // por vendedora inteira: os nomes que o recorte existe para não mostrar, com
+  // o número de leads ao lado.
+  //
+  // O furo estava escondido por uma SOMBRA: dentro do bloco que troca código
+  // por nome, a lista de vendedoras se chamava `equipe` — e ali `equipe`
+  // deixava de ser a equipe.
+  // =========================================================================
+  it('o panorama só conta os leads da equipe, e a fila sem dono', async () => {
+    vendedoras.listar.mockResolvedValue([
+      { id: 'v-1', nome: 'Marina Albuquerque', codigoErp: 'SEED-VD01' },
+      { id: 'v-9', nome: 'Faby Lima', codigoErp: 'SEED-VD09' },
+    ]);
+    leads.panoramaDeLeads.mockResolvedValue({
+      porEstado: [{ estado: 'NOVO', quantos: 1 }],
+      porVendedora: [{ codigo: 'SEED-VD01', quantos: 3 }],
+      total: 4,
+    });
+    leads.listarAguardandoGestao.mockResolvedValue([]);
+
+    await servico.montar({ equipe: ['v-1'] }).gestaoPanoramaLeads({});
+
+    // O RECORTE VAI PARA O BANCO, e não é um filtro depois: o total tem de
+    // bater com as linhas que ela vê.
+    expect(leads.panoramaDeLeads).toHaveBeenCalledWith(['SEED-VD01']);
+  });
+
+  it('e para a gestão continua sendo a loja inteira', async () => {
+    await montar().gestaoPanoramaLeads({});
+
+    expect(leads.panoramaDeLeads).toHaveBeenCalledWith(null);
+  });
+
+  it('vendedora de fora não vira linha, mesmo se o banco devolver', async () => {
+    vendedoras.listar.mockResolvedValue([
+      { id: 'v-1', nome: 'Marina Albuquerque', codigoErp: 'SEED-VD01' },
+      { id: 'v-9', nome: 'Faby Lima', codigoErp: 'SEED-VD09' },
+    ]);
+    leads.panoramaDeLeads.mockResolvedValue({
+      porEstado: [{ estado: 'NOVO', quantos: 1 }],
+      porVendedora: [
+        { codigo: 'SEED-VD01', quantos: 3 },
+        { codigo: 'SEED-VD09', quantos: 9 },
+      ],
+      total: 12,
+    });
+    leads.listarAguardandoGestao.mockResolvedValue([]);
+
+    const r = await servico.montar({ equipe: ['v-1'] }).gestaoPanoramaLeads({});
+
+    expect(r.linhas.join('\n')).toContain('Marina');
+    expect(r.linhas.join('\n')).not.toContain('Faby');
+  });
+
   it('sem nome: conta os estados, mostra a fila e soma por vendedora', async () => {
     leads.panoramaDeLeads.mockResolvedValue({
       porEstado: [

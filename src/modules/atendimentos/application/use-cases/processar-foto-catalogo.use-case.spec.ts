@@ -1906,3 +1906,177 @@ describe('ProcessarFotoCatalogoUseCase — a conferencia da foto', () => {
   });
 });
 
+/**
+ * A CAPA QUE NAO E PECA — RF47, 23/10/2026.
+ *
+ * ==========================================================================
+ * Era o que faltava do requisito: o PDF abria sempre com uma das PECAS, e a
+ * capa de verdade dela nao e peca — e imagem de campanha, sem preco, com a
+ * marca e o nome escritos por cima. Ela chega pelo caminho de sempre, pela
+ * Helena, com a legenda dizendo o que e: *"essa e a capa do 0003"*.
+ *
+ * O QUE ESTES TESTES GUARDAM E O QUE A CAPA **NAO** FAZ: nao vira linha em
+ * `catalogo_fotos`, nao espera codigo de peca e nao passa pela conferencia —
+ * cuja pergunta ("tem joia nesta foto?") e a pergunta errada para uma capa.
+ * ==========================================================================
+ */
+describe('ProcessarFotoCatalogoUseCase — a capa que nao e peca', () => {
+  const DE = '558586467241@c.us';
+  const IMAGEM = {
+    url: 'http://waha:3000/api/files/default/foto.jpg',
+    mimetype: 'image/jpeg',
+  };
+
+  let catalogos: {
+    listarAbertos: jest.Mock;
+    listarEmAprovacao: jest.Mock;
+    criarFoto: jest.Mock;
+    criarReferencia: jest.Mock;
+    definirCapa: jest.Mock;
+    atualizarFoto: jest.Mock;
+  };
+  let armazenamento: { guardar: jest.Mock; mover: jest.Mock; remover: jest.Mock };
+  let conferencia: { disponivel: jest.Mock; conferir: jest.Mock };
+  let useCase: ProcessarFotoCatalogoUseCase;
+
+  const mandar = (legenda: string) =>
+    useCase.foto({
+      de: DE,
+      nomeRemetente: 'Helena',
+      legenda,
+      imagem: IMAGEM,
+    });
+
+  beforeEach(() => {
+    catalogos = {
+      listarAbertos: jest
+        .fn()
+        .mockResolvedValue([
+          { id: 'uuid-3', numero: '0003', nome: 'Verão 2027' },
+        ]),
+      listarEmAprovacao: jest.fn().mockResolvedValue([]),
+      criarFoto: jest.fn().mockResolvedValue({ id: 'f-1' }),
+      criarReferencia: jest.fn().mockResolvedValue({ id: 'ref-1' }),
+      definirCapa: jest.fn().mockResolvedValue({ id: 'uuid-3' }),
+      atualizarFoto: jest.fn().mockResolvedValue(undefined),
+    };
+    armazenamento = {
+      guardar: jest.fn().mockResolvedValue('catalogo/pendentes/a.jpg'),
+      // Devolve a pasta que recebeu: e assim que o teste ve PARA ONDE o
+      // arquivo foi, que e metade do recurso.
+      mover: jest.fn((_chave: string, pasta: string) =>
+        Promise.resolve(`${pasta}/a.jpg`),
+      ),
+      remover: jest.fn(),
+    };
+    conferencia = {
+      disponivel: jest.fn(() => true),
+      conferir: jest.fn().mockResolvedValue({ serve: true }),
+    };
+
+    useCase = new ProcessarFotoCatalogoUseCase(
+      catalogos as never,
+      armazenamento as never,
+      {
+        findByCodigoErp: jest.fn().mockResolvedValue(null),
+        buscarCodigosPresentesEm: jest.fn().mockResolvedValue([]),
+      } as never,
+      {
+        baixarMidia: jest.fn().mockResolvedValue({
+          conteudo: Buffer.from('jpeg'),
+          mimetype: 'image/jpeg',
+        }),
+        enviarTexto: jest.fn(),
+      } as never,
+      new SessaoCatalogoService(),
+      { execute: jest.fn().mockResolvedValue(null) } as never,
+      { execute: jest.fn().mockResolvedValue([]) } as never,
+      conferencia as never,
+    );
+  });
+
+  it('"essa e a capa do 0003" vira REFERENCIA escolhida, e nao peca', async () => {
+    const r = await mandar('essa é a capa do 0003');
+
+    expect(r.motivo).toBe('capa_guardada');
+    expect(catalogos.criarFoto).not.toHaveBeenCalled();
+    expect(catalogos.criarReferencia).toHaveBeenCalledWith(
+      expect.objectContaining({
+        catalogoId: 'uuid-3',
+        tipo: 'IMAGEM',
+        arquivoId: 'catalogo/0003/referencias/a.jpg',
+        mime: 'image/jpeg',
+      }),
+    );
+    expect(catalogos.definirCapa).toHaveBeenCalledWith('uuid-3', 'ref-1');
+  });
+
+  it('e a resposta diz que ela abre o PDF e nao entra como peca', async () => {
+    const r = await mandar('essa é a capa do 0003');
+
+    expect(r.resposta).toContain('capa do #0003');
+    expect(r.resposta).toContain('abre o PDF');
+    expect(r.resposta).toContain('não entra');
+  });
+
+  /*
+   * A CONFERENCIA NAO VALE PARA A CAPA. A pergunta dela e "tem joia nesta
+   * foto?", e a capa pode nao ter: no material da casa ha capa de modelo de
+   * corpo inteiro, capa de detalhe, capa de fundo. Recusar seria a guarda
+   * certa aplicada a pergunta errada.
+   */
+  it('nao passa pela conferencia — nem e recusada por nao ter peca', async () => {
+    conferencia.conferir.mockResolvedValue({
+      serve: false,
+      motivo: 'sem_peca',
+      viu: 'uma modelo de corpo inteiro',
+    });
+
+    const r = await mandar('essa é a capa do 0003');
+
+    expect(conferencia.conferir).not.toHaveBeenCalled();
+    expect(r.motivo).toBe('capa_guardada');
+  });
+
+  /* "CAPA NESSE ESTILO" E PEDIDO DE ESTILO, e nao a capa. */
+  it('"quero a capa nesse estilo" continua sendo foto, e nao capa', async () => {
+    const r = await mandar('0003 quero a capa nesse estilo');
+
+    expect(catalogos.definirCapa).not.toHaveBeenCalled();
+    expect(catalogos.criarFoto).toHaveBeenCalled();
+    expect(r.motivo).toBe('foto_guardada');
+  });
+
+  it('sem dizer capa, a foto segue o caminho da peca', async () => {
+    await mandar('0003');
+
+    expect(catalogos.criarFoto).toHaveBeenCalled();
+    expect(catalogos.criarReferencia).not.toHaveBeenCalled();
+  });
+
+  /*
+   * A ORDEM E DE QUEM FALA — a mesma regra de 11/09. Ela manda a imagem e so
+   * depois diz de qual catalogo e; a palavra "capa" pode estar em qualquer
+   * uma das duas mensagens.
+   */
+  it('a imagem primeiro e "e a capa do 0003" depois tambem funciona', async () => {
+    const primeira = await mandar('');
+    expect(primeira.motivo).toBe('aguardando_catalogo');
+
+    const r = await useCase.resposta(DE, 'Helena', 'é a capa do 0003');
+
+    expect(r.motivo).toBe('capa_classificada');
+    expect(catalogos.definirCapa).toHaveBeenCalledWith('uuid-3', 'ref-1');
+    expect(catalogos.criarFoto).not.toHaveBeenCalled();
+  });
+
+  it('"essa e a capa" dito na imagem vale quando o catalogo chega depois', async () => {
+    await mandar('essa é a capa');
+
+    const r = await useCase.resposta(DE, 'Helena', '0003');
+
+    expect(r.motivo).toBe('capa_classificada');
+    expect(catalogos.criarReferencia).toHaveBeenCalled();
+    expect(catalogos.criarFoto).not.toHaveBeenCalled();
+  });
+});

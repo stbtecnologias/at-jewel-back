@@ -75,6 +75,53 @@ describe('ConsultarLinhaDoTempoUseCase', () => {
 
   afterEach(() => jest.useRealTimers());
 
+  // =========================================================================
+  // O RECORTE DA EQUIPE — 23/10/2026.
+  //
+  // A regua tem uma faixa por vendedora, com o nome dela em cima. Para a
+  // gerente de vendas, as quatro de fora da equipe nao podem aparecer — nem
+  // como faixa vazia, que e justamente o que esta tela faz questao de mostrar
+  // para todo mundo mais.
+  // =========================================================================
+  describe('o recorte da equipe', () => {
+    beforeEach(() => {
+      vendedoras.listar.mockResolvedValue([
+        { id: 'v-1', nome: 'Camila' },
+        { id: 'v-9', nome: 'Faby' },
+      ]);
+      repo.linhaDoTempo.mockResolvedValue([
+        ponto('v-1', 'Camila', 9),
+        ponto('v-9', 'Faby', 10),
+      ]);
+    });
+
+    it('sem equipe, a regua tem as duas — nada muda para a gestao', async () => {
+      const r = await uc.execute('2026-09-08');
+
+      expect(r.faixas.map((f) => f.vendedoraId).sort()).toEqual(['v-1', 'v-9']);
+    });
+
+    it('com equipe, a de fora some da regua — faixa e pontos', async () => {
+      const r = await uc.execute('2026-09-08', ['v-1']);
+
+      expect(r.faixas.map((f) => f.vendedoraId)).toEqual(['v-1']);
+      expect(JSON.stringify(r)).not.toContain('Faby');
+    });
+
+    /*
+     * QUEM TEVE MOVIMENTO E NAO ESTA MAIS ATIVA AINDA APARECE — e a regra
+     * desta tela desde sempre. O recorte nao pode trazer de volta por essa
+     * porta quem ele acabou de tirar pela outra.
+     */
+    it('nem pela porta de quem saiu: ponto de fora da equipe nao vira faixa', async () => {
+      vendedoras.listar.mockResolvedValue([{ id: 'v-1', nome: 'Camila' }]);
+
+      const r = await uc.execute('2026-09-08', ['v-1']);
+
+      expect(r.faixas).toHaveLength(1);
+    });
+  });
+
   it('sem dia pedido, olha hoje — da meia-noite a meia-noite', async () => {
     await uc.execute();
 

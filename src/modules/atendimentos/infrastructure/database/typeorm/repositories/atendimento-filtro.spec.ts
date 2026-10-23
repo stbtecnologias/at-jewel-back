@@ -106,6 +106,43 @@ describe('montarFiltro — o WHERE da auditoria', () => {
       expect(where).not.toContain('EM_NEGOCIACAO');
     });
 
+    // ======================================================================
+    // O RECORTE DA EQUIPE — 23/10/2026.
+    //
+    // Mora no MESMO `montarFiltro` que o resto, e e isso que faz resumo,
+    // serie e listagem o respeitarem sem que nenhuma delas precise lembrar.
+    // ======================================================================
+    it('a equipe vira um ANY de uuid[], com $N como todo o resto', () => {
+      const { where, params } = montarFiltro({ equipe: ['v-1', 'v-2'] });
+
+      expect(where).toBe('WHERE v.vendedora_id = ANY($1::uuid[])');
+      expect(params).toEqual([['v-1', 'v-2']]);
+    });
+
+    /*
+     * OS DOIS CONVIVEM, e essa e a regra: `vendedoraId` e o filtro que a
+     * pessoa escolheu; `equipe` e o recorte que ela nao escolhe. Com os dois,
+     * valem os dois — e e o que impede escolher no filtro alguem de fora.
+     */
+    it('o filtro escolhido e o recorte somam, nao se substituem', () => {
+      const { where, params } = montarFiltro({
+        vendedoraId: 'v-1',
+        equipe: ['v-1', 'v-2'],
+      });
+
+      expect(where).toBe(
+        'WHERE v.vendedora_id = $1 AND v.vendedora_id = ANY($2::uuid[])',
+      );
+      expect(params).toEqual(['v-1', ['v-1', 'v-2']]);
+    });
+
+    /* Equipe vazia e recorte legitimo: o time dela nao tem ninguem. */
+    it('equipe vazia filtra tudo, e nao e ignorada', () => {
+      const { where } = montarFiltro({ equipe: [] });
+
+      expect(where).toBe('WHERE v.vendedora_id = ANY($1::uuid[])');
+    });
+
     it('as condicoes entram todas, unidas por AND', () => {
       const { where, params } = montarFiltro(CHEIO);
 

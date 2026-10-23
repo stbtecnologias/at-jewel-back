@@ -7,6 +7,7 @@ import {
   MIMES_IMAGEM,
   PASTA_ORIGINAIS,
   PASTA_PENDENTES,
+  PASTA_REFERENCIAS,
   pastaDoCatalogo,
   type IArmazenamento,
 } from '../../../catalogos/domain/ports/armazenamento.port';
@@ -88,6 +89,43 @@ const RE_SEM_JUROS =
 
 /** `0042`, `#42`, `42` — o numero do catalogo. */
 const RE_NUMERO = /#?\b(\d{1,6})\b/;
+
+/**
+ * ===========================================================================
+ * "ESSA E A CAPA" — RF47, 23/10/2026, e era o que faltava do requisito.
+ *
+ * O PDF do catalogo abria sempre com uma das PECAS. A capa de verdade dela
+ * nao e peca: e imagem de campanha, sem preco, com a marca e o nome escritos
+ * por cima. E ela chega pelo caminho de sempre — pela Helena, com a legenda
+ * dizendo o que e: *"essa e a capa do 0042"*.
+ *
+ * POR PALAVRA, SEM LLM, como todo o resto deste arquivo: e classificar uma
+ * frase, e um modelo so acrescentaria latencia, custo e uma superficie de
+ * injecao onde hoje nao existe nenhuma.
+ * ===========================================================================
+ */
+const RE_CAPA = /\bcapas?\b/i;
+
+/**
+ * "CAPA NESSE ESTILO" NAO E A CAPA — e pedido de estilo.
+ *
+ * A diferenca e real, e ela usa as duas: *"essa e a capa"* manda usar AQUELA
+ * imagem; *"quero a capa nesse estilo"* manda imitar. A segunda e material de
+ * consulta de GENTE, e quem a trata e o painel — virar capa do PDF poria uma
+ * pagina de catalogo alheio na frente da colecao nova.
+ *
+ * A janela entre as duas palavras e curta de proposito: "e a capa, e nesse
+ * estilo que eu quero as fotos" nao e pedido de imitacao.
+ */
+const RE_CAPA_DE_ESTILO =
+  /\bcapas?\b.{0,24}\b(estilo|parecid[ao]|igual|assim|desse jeito|nesse jeito|layout|modelo)\b/i;
+
+/** A legenda (ou a resposta) esta dizendo que a imagem E a capa. */
+function ehPedidoDeCapa(texto: string | null | undefined): boolean {
+  const t = (texto ?? '').trim();
+  if (!t) return false;
+  return RE_CAPA.test(t) && !RE_CAPA_DE_ESTILO.test(t);
+}
 
 /**
  * ===========================================================================
@@ -189,7 +227,7 @@ const PALAVRAS_CONFIRMA = [
  * dentro de "catalogo" (deixando "alogo") e "foto" dentro de "fotografia".
  */
 const PALAVRAS_DE_COMANDO =
-  /\b(catalogo|catálogo|cat|ref|referencia|referência|codigo|código|peca|peça|foto)\b/gi;
+  /\b(catalogo|catálogo|cat|ref|referencia|referência|codigo|código|peca|peça|foto|capa)\b/gi;
 
 /**
  * ===========================================================================
@@ -836,10 +874,19 @@ export class ProcessarFotoCatalogoUseCase {
     // "nao serve". Nesse caso a foto segue o caminho de sempre: uma
     // indisponibilidade do provedor nao pode fechar o canal do catalogo.
     // ------------------------------------------------------------------
-    const veredito = await this.conferencia.conferir({
-      conteudo: arquivo.conteudo,
-      mime,
-    });
+    //
+    // E ELA NAO VALE PARA A CAPA — RF47, 23/10/2026. A pergunta da conferencia
+    // e "tem joia nesta foto?", e a capa pode nao ter: no material dela ha
+    // capa de modelo de corpo inteiro, capa de detalhe, capa de fundo. Uma
+    // capa recusada por "nao vi peca" seria a guarda certa aplicada a pergunta
+    // errada — e a legenda ja disse o que a imagem e.
+    const pedeCapa = ehPedidoDeCapa(msg.legenda);
+    const veredito = pedeCapa
+      ? null
+      : await this.conferencia.conferir({
+          conteudo: arquivo.conteudo,
+          mime,
+        });
     if (veredito && !veredito.serve) {
       return {
         resposta: this.pedirOutraFoto(veredito),
@@ -890,6 +937,9 @@ export class ProcessarFotoCatalogoUseCase {
         parcelas,
         juros,
         pedidoDeEstilo: analise.pedidoDeEstilo,
+        // DITO AGORA, VALE QUANDO O CATALOGO CHEGAR: ela manda a imagem
+        // dizendo "essa e a capa" e so depois diz de qual catalogo e.
+        comoCapa: analise.capa,
       });
       if (!pendurou) {
         await this.armazenamento.remover(chave);
@@ -909,6 +959,19 @@ export class ProcessarFotoCatalogoUseCase {
     }
 
     this.sessao.lembrarCatalogo(msg.de, catalogo);
+
+    // A CAPA NAO E PECA, e por isso nao passa por aqui: nao vira linha em
+    // `catalogo_fotos`, nao espera codigo e nao ganha pagina propria no PDF.
+    if (analise.capa) {
+      return {
+        resposta: await this.guardarComoCapa(catalogo, {
+          arquivoId: chave,
+          mime,
+        }),
+        motivo: 'capa_guardada',
+      };
+    }
+
     const guardada = await this.guardarFoto(
       catalogo,
       msg.nomeRemetente,
@@ -977,6 +1040,12 @@ export class ProcessarFotoCatalogoUseCase {
 
     const linhas: string[] = [];
     for (const pendente of fila) {
+      // A CAPA SAI POR OUTRA PORTA — e vale tanto a palavra dita na legenda da
+      // imagem quanto a desta resposta ("essa e a capa do 0042" depois dela).
+      if (pendente.comoCapa || analise.capa) {
+        linhas.push(await this.guardarComoCapa(catalogo, pendente));
+        continue;
+      }
       // O codigo da legenda de agora vale para as fotos que vieram sem codigo.
       const comCodigo: FotoPendente = {
         ...pendente,
@@ -989,12 +1058,16 @@ export class ProcessarFotoCatalogoUseCase {
       );
     }
 
+    // QUANDO HOUVE CAPA, A FRASE E A DAS LINHAS. O resumo "3 fotos foram para
+    // o #0042" nao serve: uma delas nao e foto do catalogo, e nao dizer isso
+    // deixaria a capa parecer peca perdida no meio da colecao.
+    const houveCapa = analise.capa || fila.some((f) => f.comoCapa);
     return {
       resposta:
-        fila.length === 1
-          ? linhas[0]
+        fila.length === 1 || houveCapa
+          ? linhas.join('\n')
           : `${fila.length} fotos foram para o #${catalogo.numero} ${catalogo.nome}.`,
-      motivo: 'fotos_classificadas',
+      motivo: houveCapa ? 'capa_classificada' : 'fotos_classificadas',
     };
   }
 
@@ -2155,6 +2228,59 @@ export class ProcessarFotoCatalogoUseCase {
    * Grava a linha e monta a confirmacao. O descritivo vem do ERP pelo codigo —
    * ninguem redigita preco, que e onde o erro caro acontece.
    */
+  /**
+   * A IMAGEM DE CAPA DO CATALOGO — RF47, 23/10/2026.
+   *
+   * ==========================================================================
+   * ELA ENTRA COMO REFERENCIA, E NAO COMO FOTO. A tabela da capa ja existia:
+   * `catalogos.capa_referencia_id` e da migracao 48, feita para o cartao do
+   * painel, e a regra dela e justamente esta — a capa e uma imagem ESCOLHIDA
+   * do catalogo. O RF47 passou a usa-la como primeira pagina do PDF.
+   *
+   * POR QUE NAO VIRAR UMA FOTO COM UMA MARCA: foto do catalogo e peca. Ela
+   * tem codigo, preco, parcelamento, entra na pagina que vende e conta na
+   * contagem que a agente diz. Capa nao tem nada disso — seria uma linha de
+   * peca com todos os campos vazios, e cada consulta de peca teria de aprender
+   * a ignora-la. Caber na tabela nao e pertencer a ela.
+   *
+   * A ESCOLHA E SUBSTITUIDA, e nao acumulada: mandar outra capa troca a capa.
+   * A anterior continua anexada como referencia, e da para voltar a ela pelo
+   * painel — perder a imagem seria pior que guardar duas.
+   * ==========================================================================
+   */
+  private async guardarComoCapa(
+    catalogo: CatalogoAberto,
+    foto: { arquivoId: string; mime: string },
+  ): Promise<string> {
+    // ATE AQUI ELA VIVEU EM `catalogo/pendentes/` — a mesma razao da foto de
+    // peca: gravar antes de perguntar e o que impede a imagem de se perder
+    // enquanto a vendedora responde de qual catalogo e.
+    const arquivoId = await this.armazenamento.mover(
+      foto.arquivoId,
+      pastaDoCatalogo(catalogo.numero, PASTA_REFERENCIAS),
+    );
+
+    const referencia = await this.catalogos.criarReferencia({
+      catalogoId: catalogo.id,
+      tipo: 'IMAGEM',
+      valor: 'Capa pelo WhatsApp',
+      arquivoId,
+      mime: foto.mime,
+    });
+
+    await this.catalogos.definirCapa(catalogo.id, referencia.id);
+
+    this.logger.log(
+      `Capa do catalogo ${catalogo.numero} definida pelo WhatsApp.`,
+    );
+
+    return (
+      `Essa virou a capa do #${catalogo.numero} ${catalogo.nome}. ` +
+      'Ela abre o PDF com a marca e o nome escritos por cima, e não entra ' +
+      'como peça. Se quiser trocar, manda outra imagem dizendo que é a capa.'
+    );
+  }
+
   private async guardarFoto(
     catalogo: CatalogoAberto,
     remetente: string,
@@ -2311,6 +2437,8 @@ export class ProcessarFotoCatalogoUseCase {
   ): Promise<{
     catalogo: CatalogoAberto | null;
     codigo: string | null;
+    /** A imagem E a capa do catalogo, e nao uma peca dele — RF47. */
+    capa: boolean;
     parcelas: number | null;
     /** Juro em %. `null` = nao informado, vale a regra da casa. */
     juros: number | null;
@@ -2371,6 +2499,7 @@ export class ProcessarFotoCatalogoUseCase {
       juros,
       porNome,
       resto,
+      capa: ehPedidoDeCapa(bruto),
       parcelas: parcelas && parcelas > 0 ? parcelas : null,
       // O QUE SOBROU E PEDIDO DE ESTILO. Tirados catalogo, codigo e parcelas, o
       // resto so pode ser instrucao para a imagem: "fundo rosa", "mais claro".

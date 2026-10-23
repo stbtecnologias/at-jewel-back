@@ -5,14 +5,17 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
   Query,
+  Request,
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import { EscopoVendasService } from '../../../../vendas/application/escopo-vendas.service';
 import { Permissions } from '../../../../auth/infrastructure/http/decorators/permissions.decorator';
 import { Roles } from '../../../../auth/infrastructure/http/decorators/roles.decorator';
 import { RequireScopes } from '../../../../auth/infrastructure/http/decorators/scopes.decorator';
@@ -71,6 +74,18 @@ export class VendedorasController {
     private readonly refreshMetricas: RefreshVendedorasMetricasUseCase,
     private readonly sugerir: SugerirVendedorasUseCase,
     private readonly remover: RemoverVendedoraUseCase,
+    // ====================================================================
+    // QUEM ESTE USUARIO ALCANCA — 23/10/2026. NO FIM DA LISTA, para o
+    // diff de quem adicionou ser uma linha e nao um deslocamento.
+    //
+    // O pedido: *"o perfil de gerente de vendas nao pode ver essas
+    // vendedoras e tudo que contem elas"*. A resposta nao e uma regra nova:
+    // e a EQUIPE, que existe desde a migracao 67 e so agora foi cadastrada.
+    //
+    // O modulo ja importava o de vendas (o score da sugestao le venda), entao
+    // nao ha ciclo nem provider novo — so passar a perguntar.
+    // ====================================================================
+    private readonly escopo: EscopoVendasService,
   ) {}
 
   // Rotas estaticas de metricas declaradas ANTES de GET /:id para nao
@@ -133,9 +148,19 @@ export class VendedorasController {
   @UseGuards(JwtOrApiKeyGuard)
   @Permissions('vendedoras:read')
   @RequireScopes('vendedoras:read')
-  async listarVendedoras(@Query() filtros: FiltroVendedoraDto) {
+  async listarVendedoras(
+    @Query() filtros: FiltroVendedoraDto,
+    @Request() req: RequisicaoComUsuario,
+  ) {
     const lista = await this.listar.execute(filtros);
-    return lista.map((v) => v.toPublic());
+    const equipe = await this.daEquipe(req);
+    // FILTRA DEPOIS DE BUSCAR, e nao no SQL: sao 23 vendedoras na base
+    // inteira, e o filtro do `listar` ja e o da tela. Empurrar a equipe para
+    // dentro do repositorio custaria uma assinatura nova em todo o caminho
+    // para economizar nada.
+    const visiveis =
+      equipe === null ? lista : lista.filter((v) => v.id && equipe.includes(v.id));
+    return visiveis.map((v) => v.toPublic());
   }
 
   // Busca pela identidade no ERP. Declarada ANTES de @Get(':id') porque o Nest
@@ -145,8 +170,12 @@ export class VendedorasController {
   @UseGuards(JwtOrApiKeyGuard)
   @Permissions('vendedoras:read')
   @RequireScopes('vendedoras:read')
-  async buscarPeloIdErp(@Param('id') idErp: string) {
+  async buscarPeloIdErp(
+    @Param('id') idErp: string,
+    @Request() req: RequisicaoComUsuario,
+  ) {
     const v = await this.buscarPorIdErp.execute(idErp);
+    await this.exigirDaEquipe(req, v.id);
     return v.toPublic();
   }
 
@@ -154,9 +183,51 @@ export class VendedorasController {
   @UseGuards(JwtOrApiKeyGuard)
   @Permissions('vendedoras:read')
   @RequireScopes('vendedoras:read')
-  async buscarPorId(@Param('id', ParseUUIDPipe) id: string) {
+  async buscarPorId(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Request() req: RequisicaoComUsuario,
+  ) {
     const v = await this.buscar.execute(id);
+    await this.exigirDaEquipe(req, v.id);
     return v.toPublic();
+  }
+
+  /**
+   * AS VENDEDORAS QUE ESTE USUARIO ALCANCA — `null` = todas.
+   *
+   * ======================================================================
+   * SEM `req.user` E CHAVE DE API, e ela ve tudo. O `JwtOrApiKeyGuard`
+   * popula `req.user` so no caminho do JWT; a integracao do ERP entra pela
+   * chave, e recortar a integracao faria o Safira deixar de enxergar as
+   * vendedoras que ele mesmo cadastrou.
+   *
+   * E `equipeDoUsuario` em vez de `recorteDeVendas` de proposito: aquele
+   * exige `vendas:read_all` ou vinculo com vendedora e lanca 403 para quem
+   * nao tem nenhum dos dois — o ESTOQUISTA tem `vendedoras:read` e nao tem
+   * venda nenhuma, e passaria a levar 403 numa tela que sempre abriu.
+   * ======================================================================
+   */
+  private async daEquipe(req: RequisicaoComUsuario): Promise<string[] | null> {
+    const sub = req?.user?.sub;
+    if (!sub) return null;
+    return this.escopo.equipeDoUsuario(sub);
+  }
+
+  /**
+   * Fora da equipe responde "nao achei", e nao "voce nao pode".
+   *
+   * Dizer que existe uma vendedora que ela nao pode ver ja e contar que ela
+   * existe — a mesma regra que o canal da Anastasia usa desde 28/09.
+   */
+  private async exigirDaEquipe(
+    req: RequisicaoComUsuario,
+    id: string | undefined,
+  ): Promise<void> {
+    const equipe = await this.daEquipe(req);
+    if (equipe === null) return;
+    if (!id || !equipe.includes(id)) {
+      throw new NotFoundException('Vendedora não encontrada');
+    }
   }
 
   @Get(':id/metricas')
@@ -224,4 +295,14 @@ export class VendedorasController {
   async removerVendedora(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
     await this.remover.execute(id);
   }
+}
+
+/**
+ * O que este controller le da requisicao — e so isso.
+ *
+ * `sub` e o id do usuario do painel; ausente quando a credencial foi chave de
+ * API, e e por isso que ele e opcional.
+ */
+interface RequisicaoComUsuario {
+  user?: { sub?: string };
 }

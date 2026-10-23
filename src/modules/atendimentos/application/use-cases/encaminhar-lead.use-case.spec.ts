@@ -94,6 +94,54 @@ describe('EncaminharLeadUseCase', () => {
     expect(leads.encaminhar).toHaveBeenCalledWith('lead-1', 'SEED-VD02');
   });
 
+  // =========================================================================
+  // FORA DA EQUIPE É "NÃO ACHEI" — 23/10/2026.
+  //
+  // A ferramenta que LISTA vendedoras já recortava pela equipe, e o comentário
+  // dela dizia que ESTA recusaria o nome de fora. Não recusava: a gerente não
+  // via o nome na lista, mas encaminhava para ele se o digitasse.
+  //
+  // A guarda ficou AQUI, e não no chamador: regra que mora no chamador não é
+  // regra — basta uma porta nova esquecer.
+  // =========================================================================
+  describe('o recorte da equipe', () => {
+    it('recusa quem está fora, como se não existisse', async () => {
+      const r = await useCase.execute({
+        vendedora: 'Thiago',
+        equipe: ['outra-vd'],
+      });
+
+      expect(r.status).toBe('VENDEDORA_NAO_ENCONTRADA');
+      expect(leads.encaminhar).not.toHaveBeenCalled();
+      expect(whatsapp.enviarTexto).not.toHaveBeenCalled();
+    });
+
+    /* E SEM SUGESTÃO: sugerir seria dizer o nome que o recorte escondeu. */
+    it('e não sugere o nome que acabou de esconder', async () => {
+      const r = await useCase.execute({
+        vendedora: 'Thiago',
+        equipe: ['outra-vd'],
+      });
+
+      expect(JSON.stringify(r)).not.toContain('Thiago Souza');
+    });
+
+    it('quem é da equipe continua passando', async () => {
+      const r = await useCase.execute({
+        vendedora: 'Thiago',
+        equipe: ['vd-1'],
+      });
+
+      expect(r.status).toBe('ENCAMINHADO');
+    });
+
+    it('sem equipe (a gestão), nada muda', async () => {
+      expect((await useCase.execute({ vendedora: 'Thiago' })).status).toBe(
+        'ENCAMINHADO',
+      );
+    });
+  });
+
   it('a mensagem leva o telefone, e é o que a torna acionável', async () => {
     await useCase.execute({ vendedora: 'Thiago' });
 

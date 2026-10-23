@@ -81,6 +81,14 @@ export interface FotoPendente {
    * "fundo rosa", "mais claro". Vai para a IA como pedido pontual.
    */
   pedidoDeEstilo?: string | null;
+  /**
+   * A imagem E A CAPA do catalogo, e nao uma peca — RF47, 23/10/2026.
+   *
+   * Fica na foto que espera porque a ordem e de quem fala: ela manda a imagem
+   * dizendo "essa e a capa" e so depois responde de qual catalogo e. Sem isto,
+   * a resposta com o numero faria a capa entrar como peca sem codigo.
+   */
+  comoCapa?: boolean;
   em: number;
 }
 

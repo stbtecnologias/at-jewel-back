@@ -66,6 +66,7 @@ import type {
   GestaoPanoramaHandler,
   GestaoVendasHandler,
   GestaoAgendaHandler,
+  GestaoAjustarCatalogoHandler,
   GestaoCriarCatalogoHandler,
   GestaoEstrategiaHandler,
   PdfDoCatalogoHandler,
@@ -318,6 +319,8 @@ export interface FerramentasGestao {
   gestaoCriarCatalogo?: GestaoCriarCatalogoHandler;
   /** RF47 — o catalogo em PDF, so com `catalogo:write`. */
   gestaoPdfDoCatalogo?: PdfDoCatalogoHandler;
+  /** RF47 — mudar o nome e tirar peca, so com `catalogo:write`. */
+  gestaoAjustarCatalogo?: GestaoAjustarCatalogoHandler;
   gestaoFeedbacks: GestaoFeedbacksHandler;
   gestaoDiaDaVendedora: GestaoDiaDaVendedoraHandler;
   gestaoConversasAgora: GestaoConversasAgoraHandler;
@@ -1819,7 +1822,9 @@ export class FerramentasGestaoService {
       // A RESPOSTA AO AVISO DE LEAD NOVO. Nao passa por aqui nada que decida
       // quem atende: quem escolhe e a usuaria, e o use case so resolve o nome.
       gestaoEncaminharLead: async ({ vendedora, lead, quando }) =>
-        this.encaminharLead.execute({ vendedora, lead, quando }),
+        // O RECORTE VAI JUNTO — 23/10/2026. Sem ele, a gerente encaminhava
+        // para uma vendedora que a lista dela nem mostra.
+        this.encaminharLead.execute({ vendedora, lead, quando, equipe }),
 
       gestaoCarteiraDoCliente: async ({ cliente }) => {
         const achados = await this.clientes.buscarPorNomeParcial(
@@ -2602,8 +2607,27 @@ export class FerramentasGestaoService {
           );
         }
 
+        // ================================================================
+        // O RECORTE TAMBEM AQUI — 23/10/2026.
+        //
+        // O panorama responde pela LOJA, e a quebra por vendedora vinha
+        // inteira: para a gerente de vendas, era a lista de quem nao e da
+        // equipe dela com o numero de leads ao lado.
+        //
+        // O panorama trabalha por CODIGO (e a chave do lead) e o recorte vem
+        // em ID — a traducao e esta lista, que esta ferramenta ja buscava
+        // para trocar codigo por nome.
+        // ================================================================
+        const todasAsVendedoras = await this.vendedoras.listar({});
+        const codigosDaEquipe =
+          equipe === null
+            ? null
+            : todasAsVendedoras
+                .filter((v) => !!v.id && alcanca(v.id) && !!v.codigoErp)
+                .map((v) => v.codigoErp as string);
+
         const [panorama, esperando] = await Promise.all([
-          this.leads.panoramaDeLeads(),
+          this.leads.panoramaDeLeads(codigosDaEquipe),
           this.leads.listarAguardandoGestao(MAXIMO_LEADS),
         ]);
 
@@ -2624,13 +2648,21 @@ export class FerramentasGestaoService {
 
         // E o codigo da vendedora vira NOME — ninguem decide olhando "012".
         if (panorama.porVendedora.length > 0) {
-          const equipe = await this.vendedoras.listar({});
+          // A LISTA JA VEIO ACIMA. Ela se chamava `equipe` aqui dentro e
+          // SOMBREAVA o recorte — foi o que escondeu este furo: dentro deste
+          // bloco, `equipe` deixava de ser a equipe.
           const nomePorCodigo = new Map(
-            equipe
+            todasAsVendedoras
               .filter((v) => v.codigoErp)
               .map((v) => [v.codigoErp as string, v.nome]),
           );
+          // E O LACO CONFERE DE NOVO — 23/10/2026. O recorte ja foi para o
+          // banco; isto e o cinto por cima do suspensorio, e custa um `Set`:
+          // o dia em que o repositorio esquecer o filtro, a linha nao sai
+          // mesmo assim. Dado que atravessa fronteira nao e nosso.
+          const permitidos = codigosDaEquipe && new Set(codigosDaEquipe);
           for (const v of panorama.porVendedora) {
+            if (permitidos && !permitidos.has(v.codigo)) continue;
             linhas.push(
               `${nomePorCodigo.get(v.codigo) ?? v.codigo}: ${v.quantos} ` +
                 `${v.quantos === 1 ? 'lead encaminhado' : 'leads encaminhados'}`,
@@ -2848,14 +2880,127 @@ export class FerramentasGestaoService {
                   // A CAPA É ESCOLHIDA POR PADRÃO, e escolha calada é escolha
                   // que ninguém revisa: a agente diz qual peça abriu e o que
                   // ficou escrito, e ela corrige numa frase se não era isso.
+                  // ESCOLHA CALADA É ESCOLHA QUE NINGUÉM REVISA — e a capa
+                  // tem duas origens desde 23/10: a imagem de capa que ela
+                  // mandou, ou uma das peças. A frase diz QUAL das duas, e o
+                  // convite muda com ela: quem já tem capa própria não precisa
+                  // ouvir que pode mandar uma.
                   (pdf.capa
-                    ? `A capa é a foto${pdf.capa.codigo ? ` da ${pdf.capa.codigo}` : ''}, ` +
-                      `com "${pdf.capa.texto}" escrito por cima. DIGA isso, e que dá para trocar a foto ou o texto. `
+                    ? pdf.capa.enviada
+                      ? `A capa é a IMAGEM DE CAPA do catálogo — a que ela mandou dizendo que era a capa —, ` +
+                        `com "${pdf.capa.texto}" escrito por cima. DIGA isso, e que dá para trocar o texto. `
+                      : `A capa é a foto${pdf.capa.codigo ? ` da ${pdf.capa.codigo}` : ''}, ` +
+                        `com "${pdf.capa.texto}" escrito por cima. DIGA isso, e que dá para trocar a foto, ` +
+                        `trocar o texto, ou mandar uma imagem dizendo "essa é a capa" — aí a capa deixa de ser peça. `
                     : '') +
                   (pdf.cortadas > 0
                     ? `Ficaram ${pdf.cortadas} de fora, que é o teto do arquivo — DIGA isso a ela. `
                     : '') +
                   'Diga em uma frase curta que mandou, e NÃO repita a lista de peças.',
+              };
+            },
+
+            // ============================================================
+            // O AJUSTE PELA CONVERSA — RF47, 23/10/2026.
+            //
+            // *"Ela pode pedir algum ajuste igual como ela pede no painel:
+            // muda isso, muda aquilo."*
+            //
+            // O NOME E A CAPA. Mudar o nome do catalogo muda o que vai
+            // escrito na capa do proximo PDF — e foi por isso que ele entrou
+            // aqui em vez de ficar so no painel: no video ela troca
+            // justamente o texto da frente.
+            //
+            // TIRAR NAO APAGA. A peca sai da edicao e o painel devolve; a
+            // imagem fica onde esta, que com o RF32 pode ser a foto do
+            // CADASTRO da peca — apagar aquilo estragaria os proximos
+            // catalogos, e foi o defeito que ele pegou em 22/10.
+            // ============================================================
+            gestaoAjustarCatalogo: async ({ catalogo, nome, tirar }) => {
+              const alvo = await this.acharCatalogo(catalogo);
+              if (!alvo) {
+                return {
+                  mensagem:
+                    'Não achei esse catálogo entre os que estão recebendo foto. ' +
+                    'Diga isso e pergunte o número ou o nome dele.',
+                };
+              }
+
+              const feitos: string[] = [];
+
+              const nomeNovo = String(nome ?? '').trim();
+              if (nomeNovo) {
+                await this.atualizarCatalogo.execute(alvo.id, {
+                  nome: nomeNovo.slice(0, 120),
+                });
+                feitos.push(
+                  `o catálogo ${alvo.numero} passou a se chamar "${nomeNovo}", ` +
+                    'e é esse nome que vai escrito na capa do próximo PDF',
+                );
+              }
+
+              const codigos = (tirar ?? [])
+                .map((c) => String(c).trim().toUpperCase())
+                .filter(Boolean);
+              if (codigos.length > 0) {
+                // O DETALHE VEM AGORA, e nao antes: se o nome mudou, e para
+                // ler as fotos do catalogo ja atualizado.
+                const detalhe = await this.catalogos.buscarPorId(alvo.id);
+                const fotos = (detalhe?.fotos ?? []).filter(
+                  (f) => f.status !== 'REPROVADA',
+                );
+                const tiradas: string[] = [];
+                const naoAchei: string[] = [];
+                for (const codigo of codigos) {
+                  // TODAS AS FOTOS DAQUELA PECA, e nao a primeira: com o
+                  // RF33 uma peca tem varias, e tirar uma deixaria a peca no
+                  // PDF pelas outras.
+                  const dela = fotos.filter(
+                    (f) => (f.codigoErp ?? '').toUpperCase() === codigo,
+                  );
+                  if (dela.length === 0) {
+                    naoAchei.push(codigo);
+                    continue;
+                  }
+                  // O MESMO QUE O BOTAO DO PAINEL FAZ: status REPROVADA.
+                  // Pelo repositorio, e nao pelo `CurarFotoUseCase`, porque a
+                  // guarda dele ("a foto e deste catalogo?") aqui ja esta
+                  // satisfeita por construcao — as fotos sairam do
+                  // `buscarPorId` DESTE catalogo. Injetar o use case custaria
+                  // um argumento no construtor, e catorze especificacoes
+                  // montam este servico por posicao.
+                  for (const f of dela) {
+                    await this.catalogos.atualizarFoto(f.id, {
+                      status: 'REPROVADA',
+                    });
+                  }
+                  tiradas.push(
+                    dela.length > 1 ? `${codigo} (${dela.length} fotos)` : codigo,
+                  );
+                }
+                if (tiradas.length > 0) {
+                  feitos.push(
+                    `tirei ${tiradas.join(', ')} do catálogo — sai do PDF, e dá ` +
+                      'para devolver pelo painel',
+                  );
+                }
+                if (naoAchei.length > 0) {
+                  feitos.push(
+                    `não achei ${naoAchei.join(', ')} nesse catálogo`,
+                  );
+                }
+              }
+
+              if (feitos.length === 0) {
+                return {
+                  mensagem:
+                    'Não entendi o que mudar nesse catálogo — nada foi ' +
+                    'alterado. Pergunte se é o nome ou alguma peça para tirar.',
+                };
+              }
+
+              return {
+                mensagem: `Feito: ${feitos.join('; ')}. Diga isso em uma frase curta.`,
               };
             },
 

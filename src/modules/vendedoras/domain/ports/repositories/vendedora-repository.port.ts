@@ -40,6 +40,14 @@ export interface IVendedoraRepository {
    */
   proximoCodigoInterno(): Promise<string>;
 
+  /**
+   * A EQUIPE EM QUE A VENDEDORA NOVA NASCE — `null` quando nao da para saber.
+   *
+   * So devolve id quando existe UMA equipe ativa. Com duas, escolher seria
+   * adivinhar; com nenhuma, nao ha onde pôr. A implementacao conta.
+   */
+  equipePadrao(): Promise<string | null>;
+
   listar(filtros: FiltroVendedora): Promise<Vendedora[]>;
   atualizar(vendedora: Vendedora): Promise<Vendedora>;
 

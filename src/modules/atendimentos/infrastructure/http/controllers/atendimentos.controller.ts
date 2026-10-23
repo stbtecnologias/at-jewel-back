@@ -1,12 +1,15 @@
 import {
   Controller,
   Get,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
   Post,
   Query,
+  Request,
   UseGuards,
 } from '@nestjs/common';
+import { EscopoVendasService } from '../../../../vendas/application/escopo-vendas.service';
 import { Permissions } from '../../../../auth/infrastructure/http/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../../../auth/infrastructure/http/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../../../auth/infrastructure/http/guards/permissions.guard';
@@ -36,6 +39,16 @@ export class AtendimentosController {
     private readonly auditoria: ConsultarAuditoriaUseCase,
     private readonly linha: ConsultarLinhaDoTempoUseCase,
     private readonly reabrirUC: ReabrirAtendimentoUseCase,
+    // ====================================================================
+    // O RECORTE DA EQUIPE — 23/10/2026.
+    //
+    // *"O perfil de gerente de vendas nao pode ver essas vendedoras e tudo
+    // que contem elas."* Atendimento e uma das coisas que contem: a regua do
+    // dia tem uma faixa por vendedora, com o nome dela em cima.
+    //
+    // O modulo ja importava o de vendas — sem provider novo e sem ciclo.
+    // ====================================================================
+    private readonly escopo: EscopoVendasService,
   ) {}
 
   /**
@@ -45,11 +58,15 @@ export class AtendimentosController {
    */
   @Get('resumo')
   @Permissions('atendimentos:read')
-  async resumo(@Query() f: FiltroAuditoriaDto) {
+  async resumo(
+    @Query() f: FiltroAuditoriaDto,
+    @Request() req: RequisicaoComUsuario,
+  ) {
     return this.auditoria.resumo({
       de: f.de ? new Date(f.de) : undefined,
       ate: f.ate ? new Date(f.ate) : undefined,
       etapa: f.etapa,
+      equipe: await this.recorte(req, f.vendedora_id),
     });
   }
 
@@ -62,13 +79,17 @@ export class AtendimentosController {
    */
   @Get('serie')
   @Permissions('atendimentos:read')
-  async serie(@Query() f: FiltroAuditoriaDto) {
+  async serie(
+    @Query() f: FiltroAuditoriaDto,
+    @Request() req: RequisicaoComUsuario,
+  ) {
     return this.auditoria.serie(
       {
         vendedoraId: f.vendedora_id,
         etapa: f.etapa,
         de: f.de ? new Date(f.de) : undefined,
         ate: f.ate ? new Date(f.ate) : undefined,
+        equipe: await this.recorte(req, f.vendedora_id),
       },
       f.granularidade ?? 'DIA',
     );
@@ -85,14 +106,24 @@ export class AtendimentosController {
    */
   @Get('linha-do-tempo')
   @Permissions('atendimentos:read')
-  async linhaDoTempo(@Query('dia') dia?: string) {
-    return this.linha.execute(/^\d{4}-\d{2}-\d{2}$/.test(dia ?? '') ? dia : undefined);
+  async linhaDoTempo(
+    @Request() req: RequisicaoComUsuario,
+    @Query('dia') dia?: string,
+  ) {
+    return this.linha.execute(
+      /^\d{4}-\d{2}-\d{2}$/.test(dia ?? '') ? dia : undefined,
+      await this.recorte(req),
+    );
   }
 
   @Get()
   @Permissions('atendimentos:read')
-  async listar(@Query() f: FiltroAuditoriaDto) {
+  async listar(
+    @Query() f: FiltroAuditoriaDto,
+    @Request() req: RequisicaoComUsuario,
+  ) {
     return this.auditoria.listar({
+      equipe: await this.recorte(req, f.vendedora_id),
       vendedoraId: f.vendedora_id,
       clienteNome: f.cliente,
       etapa: f.etapa,
@@ -106,8 +137,40 @@ export class AtendimentosController {
   /** Um episodio com a linha do tempo inteira. */
   @Get(':id')
   @Permissions('atendimentos:read')
-  async detalhe(@Param('id', ParseUUIDPipe) id: string) {
-    return this.auditoria.detalhe(id);
+  async detalhe(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Request() req: RequisicaoComUsuario,
+  ) {
+    return this.auditoria.detalhe(id, await this.recorte(req));
+  }
+
+  /**
+   * AS VENDEDORAS QUE QUEM PERGUNTA ALCANCA — `undefined` = todas.
+   *
+   * ======================================================================
+   * E `equipeDoUsuario`, e nao `recorteDeVendas`: aquele exige
+   * `vendas:read_all` ou vinculo com vendedora e lanca 403 para quem nao tem
+   * nenhum dos dois. Aqui a porta ja foi `atendimentos:read`, e a pergunta
+   * que resta e so de QUEM — a mesma separacao que o canal da Anastasia faz
+   * desde 28/09.
+   *
+   * FILTRAR POR QUEM NAO SE ALCANCA E "NAO ACHEI". Sem isto, escolher no
+   * filtro uma vendedora de fora devolveria uma tela vazia — que diz a mesma
+   * coisa de um jeito que parece defeito.
+   * ======================================================================
+   */
+  private async recorte(
+    req: RequisicaoComUsuario,
+    vendedoraPedida?: string,
+  ): Promise<string[] | undefined> {
+    const sub = req?.user?.sub;
+    if (!sub) return undefined;
+    const equipe = await this.escopo.equipeDoUsuario(sub);
+    if (equipe === null) return undefined;
+    if (vendedoraPedida && !equipe.includes(vendedoraPedida)) {
+      throw new NotFoundException('Vendedora não encontrada');
+    }
+    return equipe;
   }
   /**
    * Desfaz um fechamento — a rede embaixo do MEL-15.
@@ -122,4 +185,9 @@ export class AtendimentosController {
     await this.reabrirUC.execute(id);
     return { ok: true };
   }
+}
+
+/** O id do usuario do painel. Esta porta e so JWT, mas o tipo diz o que le. */
+interface RequisicaoComUsuario {
+  user?: { sub?: string };
 }

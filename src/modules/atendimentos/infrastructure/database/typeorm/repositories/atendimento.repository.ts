@@ -942,6 +942,13 @@ export function montarFiltro(f: Partial<FiltroAuditoria>): {
     params.push(f.vendedoraId);
     cond.push(`v.vendedora_id = $${params.length}`);
   }
+  // O RECORTE DA EQUIPE — 23/10/2026. Entra em TODA consulta de auditoria
+  // porque mora aqui: resumo, serie e listagem passam por este mesmo filtro,
+  // e e isso que impede a quarta esquecer o que as tres fizeram.
+  if (f.equipe) {
+    params.push(f.equipe);
+    cond.push(`v.vendedora_id = ANY($${params.length}::uuid[])`);
+  }
   if (f.etapa) {
     params.push(f.etapa);
     cond.push(`v.etapa = $${params.length}`);

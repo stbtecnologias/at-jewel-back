@@ -35,6 +35,8 @@ describe('O WhatsApp corporativo da vendedora', () => {
       buscarPorIdErp: jest.fn().mockResolvedValue(null),
       buscarPorCodigoErp: jest.fn().mockResolvedValue(null),
       proximoCodigoInterno: jest.fn().mockResolvedValue('VD-0001'),
+      // A equipe padrao, desde 23/10/2026: toda vendedora nasce numa.
+      equipePadrao: jest.fn().mockResolvedValue('eq-1'),
       buscarPorEmailHash: jest.fn().mockResolvedValue(null),
       buscarPorWhatsappHash: jest.fn().mockResolvedValue(null),
       listar: jest.fn().mockResolvedValue([]),

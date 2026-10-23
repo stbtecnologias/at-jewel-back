@@ -82,6 +82,20 @@ export interface FiltroAuditoria {
   /** Um atendimento so. E como o detalhe pega a etapa da MESMA view da lista. */
   id?: string;
   vendedoraId?: string;
+  /**
+   * A EQUIPE DE QUEM PERGUNTA — 23/10/2026.
+   *
+   * ========================================================================
+   * Nao e o mesmo que `vendedoraId`, e os dois convivem: aquele e o FILTRO
+   * que a pessoa escolheu na tela; este e o RECORTE que ela nao escolhe.
+   * Quando os dois vem, valem os dois — e e o que impede escolher no filtro
+   * uma vendedora de fora da equipe para ver os atendimentos dela.
+   *
+   * `undefined` = sem recorte, que e o caso de ADMIN e SUPERADMIN. Lista
+   * vazia e recorte legitimo que nao devolve nada, como no recorte de vendas.
+   * ========================================================================
+   */
+  equipe?: string[];
   /** Parte do nome do cliente — e como se procura "o Thiago falou com a Luana?". */
   clienteNome?: string;
   etapa?: EtapaAtendimento;

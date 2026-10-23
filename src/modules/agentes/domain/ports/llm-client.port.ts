@@ -743,6 +743,35 @@ export type GestaoCriarCatalogoHandler = (input: {
   usarUltimaLista?: boolean;
 }) => Promise<{ mensagem: string }>;
 
+/**
+ * O AJUSTE DO CATALOGO PELA CONVERSA — RF47, 23/10/2026.
+ *
+ * ==========================================================================
+ * *"Ela pode pedir algum ajuste igual como ela pede no painel: muda isso,
+ * muda aquilo."*
+ *
+ * SAO DOIS AJUSTES, E NAO UM FORMULARIO INTEIRO. O que o catalogo de fotos
+ * tem para mudar e o NOME — que e o texto da capa — e QUAIS PECAS ficam. Tema
+ * e formato nao mudam nada neste produto: ele empilha as fotos como elas sao.
+ *
+ * E NAO E O AJUSTE DO PAINEL. Aquele (`interpretar`/`aplicar`) refaz arte
+ * gerada pagina por pagina e exige o plano da montagem; o PDF do RF47 nao tem
+ * plano nem arte. Declarar aquele aqui ofereceria a ela uma ferramenta que
+ * recusaria todo catalogo deste tipo.
+ *
+ * TIRAR NAO APAGA: a peca sai da edicao (`REPROVADA`) e volta pelo painel. A
+ * imagem continua no lugar — e, com o RF32, a foto pode ser a do CADASTRO da
+ * peca, que serve os proximos catalogos.
+ * ==========================================================================
+ */
+export type GestaoAjustarCatalogoHandler = (input: {
+  catalogo: string;
+  /** O nome novo — e o que vai escrito na capa do proximo PDF. */
+  nome?: string;
+  /** Codigos de peca que saem da edicao. */
+  tirar?: string[];
+}) => Promise<{ mensagem: string }>;
+
 export type MeusLembretesHandler = () => Promise<{
   /** Uma linha por lembrete, ja numerada — o numero serve ao remarcar e ao cancelar. */
   linhas: string[];
@@ -1371,6 +1400,8 @@ export interface ChatParams {
   estrategiaDeVendas?: EstrategiaDeVendasHandler;
   // RF47 — o catalogo em PDF, uma foto por pagina.
   gestaoPdfDoCatalogo?: PdfDoCatalogoHandler;
+  // RF47 — mudar o nome do catalogo e tirar peca, pela conversa.
+  gestaoAjustarCatalogo?: GestaoAjustarCatalogoHandler;
   gestaoAgendar?: GestaoAgendarHandler;
   gestaoFeedbacks?: GestaoFeedbacksHandler;
   gestaoDiaDaVendedora?: GestaoDiaDaVendedoraHandler;

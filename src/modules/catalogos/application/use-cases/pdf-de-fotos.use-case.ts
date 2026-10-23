@@ -1,4 +1,10 @@
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import PDFDocument from 'pdfkit';
 import { ARMAZENAMENTO, CATALOGO_REPOSITORY } from '../../domain/ports/injection-tokens';
 import {
@@ -6,7 +12,11 @@ import {
   pastaDoCatalogo,
 } from '../../domain/ports/armazenamento.port';
 import type { IArmazenamento } from '../../domain/ports/armazenamento.port';
-import type { ICatalogoRepository } from '../../domain/ports/repositories/catalogo-repository.port';
+import type {
+  CatalogoDetalhe,
+  FotoItem,
+  ICatalogoRepository,
+} from '../../domain/ports/repositories/catalogo-repository.port';
 
 /** Teto de páginas. Um PDF de 60 fotos ninguém abre no celular. */
 const MAX_PAGINAS = 40;
@@ -24,7 +34,17 @@ export interface PdfDeFotos {
    * revisa: a agente conta qual peça abriu e o que ficou escrito, e aí ela
    * corrige numa frase se não era isso.
    */
-  capa: { codigo: string | null; texto: string } | null;
+  capa: {
+    codigo: string | null;
+    texto: string;
+    /**
+     * A capa veio de uma IMAGEM DE CAPA, e não de uma peça do catálogo —
+     * RF47, 23/10/2026. Quem chama precisa saber para DIZER qual é: "a capa
+     * é a imagem que você mandou" e "a capa é a foto da AN2630" são frases
+     * diferentes, e só uma delas convida a trocar a peça.
+     */
+    enviada: boolean;
+  } | null;
 }
 
 /**
@@ -66,8 +86,9 @@ export class PdfDeFotosUseCase {
 
   /**
    * @param capaDita qual foto abre o PDF — o CÓDIGO da peça ("AN26369") ou o
-   *   id da foto. **Ausente, é a primeira do catálogo**: a capa é padrão, e
-   *   não um extra que ela precise pedir.
+   *   id da foto. **Ausente, vale a imagem de capa do catálogo** (ver
+   *   `capaDeReferencia`) e, se não houver nenhuma, a primeira foto: a capa é
+   *   padrão, e não um extra que ela precise pedir.
    * @param textoDaCapa o que vai escrito sobre ela. Ausente, vale o NOME do
    *   catálogo — mas no vídeo ela troca o texto sem trocar a coleção
    *   (*"tirar o Under 25k e colocar News"*), e por isso ele é um parâmetro
@@ -81,7 +102,22 @@ export class PdfDeFotosUseCase {
     const catalogo = await this.repositorio.buscarPorId(catalogoId);
     if (!catalogo) throw new NotFoundException('Catálogo não encontrado');
 
-    const naOrdem = [...catalogo.fotos].sort((a, b) => a.posicao - b.posicao);
+    // ====================================================================
+    // A PEÇA TIRADA DA EDIÇÃO NÃO ENTRA NO PDF — 23/10/2026.
+    //
+    // "Tirar" grava `REPROVADA`: a linha fica, a imagem fica, e dá para
+    // devolver — é assim no painel desde 16/09, e agora também pela conversa.
+    // Só que este PDF lia `catalogo.fotos` INTEIRO: a peça que ela tirou
+    // continuava saindo no arquivo que vai para a cliente, e tirar de novo não
+    // resolveria, porque o status já era esse.
+    //
+    // OS OUTROS STATUS ENTRAM, e é de propósito: a foto que ainda espera
+    // código é `RECEBIDA`, e é página legítima — o preço está na imagem, não
+    // numa coluna nossa.
+    // ====================================================================
+    const naOrdem = [...catalogo.fotos]
+      .filter((f) => f.status !== 'REPROVADA')
+      .sort((a, b) => a.posicao - b.posicao);
     // ====================================================================
     // O CÓDIGO OU O ID — e o código é o que ela diz — 22/10/2026.
     //
@@ -113,9 +149,29 @@ export class PdfDeFotosUseCase {
     // iguais: a primeira tem a marca e o nome escritos por cima; a outra é a
     // peça limpa, com o preço dela. Tirar a peça do meio custaria a página
     // que a vende.
+    //
+    // E A CAPA QUE NÃO É PEÇA NÃO SE REPETE — RF47, 23/10/2026.
+    //
+    // Quando o catálogo tem uma IMAGEM DE CAPA escolhida — a que ela manda
+    // pela Helena dizendo *"essa é a capa do 0042"*, ou a que escolheu no
+    // painel —, é essa que abre o PDF, e aparece UMA VEZ SÓ: não é peça, não
+    // tem preço na imagem, e uma segunda página com ela limpa não venderia
+    // nada. Era o que faltava do RF47: até aqui toda capa era uma das peças.
+    //
+    // A PEÇA DITA GANHA DE TUDO. Se ela nomeia o código, a escolha é de
+    // agora, e escolha dita vence padrão guardado.
     // ====================================================================
-    const capa = escolhida ?? naOrdem[0];
-    const fila = capa ? [capa, ...naOrdem] : naOrdem;
+    const capaEnviada = escolhida ? null : capaDeReferencia(catalogo);
+    const capaPeca = escolhida ?? (capaEnviada ? null : naOrdem[0]);
+
+    const chaveDa = (f: FotoItem) => f.arquivoId ?? f.arquivoOriginalId;
+    const fila: string[] = [];
+    if (capaEnviada?.arquivoId) fila.push(capaEnviada.arquivoId);
+    else if (capaPeca && chaveDa(capaPeca)) fila.push(chaveDa(capaPeca)!);
+    for (const foto of naOrdem) {
+      const chave = chaveDa(foto);
+      if (chave) fila.push(chave);
+    }
 
     const cabem = fila.slice(0, MAX_PAGINAS);
     const cortadas = fila.length - cabem.length;
@@ -129,9 +185,7 @@ export class PdfDeFotosUseCase {
     // por página.
     const lidas = new Map<string, Buffer>();
     const imagens: Buffer[] = [];
-    for (const foto of cabem) {
-      const chave = foto.arquivoId ?? foto.arquivoOriginalId;
-      if (!chave) continue;
+    for (const chave of cabem) {
       let conteudo = lidas.get(chave);
       if (!conteudo) {
         const arquivo = await this.armazenamento.ler(chave);
@@ -139,7 +193,7 @@ export class PdfDeFotosUseCase {
         // foto some do PDF, o resto continua, e o log diz qual foi.
         if (!arquivo || arquivo.conteudo.length === 0) {
           this.logger.warn(
-            `Foto ${foto.id} do catálogo ${catalogo.numero} está na base e não no armazenamento.`,
+            `Arquivo ${chave} do catálogo ${catalogo.numero} está na base e não no armazenamento.`,
           );
           continue;
         }
@@ -156,10 +210,12 @@ export class PdfDeFotosUseCase {
     }
 
     // O TEXTO DA CAPA: o que ela pediu, ou o nome do catálogo.
-    const titulo = capa
-      ? (String(textoDaCapa ?? '').trim() || catalogo.nome).slice(0, 40)
-      : null;
-    const conteudo = await this.desenhar(imagens, titulo);
+    const titulo = (String(textoDaCapa ?? '').trim() || catalogo.nome).slice(
+      0,
+      40,
+    );
+    const desenhado = await this.desenhar(imagens, titulo);
+    const conteudo = desenhado.conteudo;
     const nome = `catalogo-${catalogo.numero}-${semAcento(catalogo.nome)}.pdf`;
 
     // ====================================================================
@@ -196,12 +252,18 @@ export class PdfDeFotosUseCase {
     return {
       conteudo,
       nome,
-      paginas: imagens.length,
+      paginas: desenhado.paginas,
       cortadas,
-      capa:
-        capa && titulo
-          ? { codigo: capa.codigoErp ?? null, texto: titulo }
-          : null,
+      // SÓ DIZ QUE TEM CAPA SE A CAPA SAIU. A primeira página pode ter sido
+      // pulada por formato que o PDF não abre — e aí a frase "a capa é a
+      // foto da AN2630" seria sobre uma página que não existe.
+      capa: desenhado.capaSaiu
+        ? {
+            codigo: capaEnviada ? null : (capaPeca?.codigoErp ?? null),
+            texto: titulo,
+            enviada: Boolean(capaEnviada),
+          }
+        : null,
     };
   }
 
@@ -211,16 +273,34 @@ export class PdfDeFotosUseCase {
    * `autoFirstPage: false` porque a primeira página também tem de nascer com
    * o tamanho da primeira imagem — com a padrão, o PDF abriria com uma folha
    * A4 em branco antes da capa.
+   *
+   * ========================================================================
+   * IMAGEM QUE O PDF NÃO ABRE PERDE A PÁGINA DELA, E SÓ ELA — 23/10/2026.
+   *
+   * O pdfkit embute JPEG e PNG, e mais nada. Uma imagem WebP — que o canal
+   * aceita, e que é o que chega quando alguém manda um sticker ou reencaminha
+   * de certos aparelhos — fazia o `openImage` lançar, e o `catch` de fora
+   * derrubava **o PDF inteiro**: dez fotos boas não viravam arquivo por causa
+   * de uma.
+   *
+   * Agora cada página é tentada por si. A que falha sai do documento com um
+   * aviso no log, as outras continuam, e `paginas` conta o que de fato
+   * ficou — quem chama precisa do número verdadeiro para dizer à vendedora.
+   * ========================================================================
    */
   private desenhar(
     imagens: Buffer[],
     tituloDaCapa: string | null,
-  ): Promise<Buffer> {
+  ): Promise<{ conteudo: Buffer; paginas: number; capaSaiu: boolean }> {
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({ autoFirstPage: false, margin: 0 });
       const pedacos: Buffer[] = [];
+      let paginas = 0;
+      let capaSaiu = false;
       doc.on('data', (p: Buffer) => pedacos.push(p));
-      doc.on('end', () => resolve(Buffer.concat(pedacos)));
+      doc.on('end', () =>
+        resolve({ conteudo: Buffer.concat(pedacos), paginas, capaSaiu }),
+      );
       doc.on('error', reject);
 
       try {
@@ -233,14 +313,39 @@ export class PdfDeFotosUseCase {
         };
 
         imagens.forEach((imagem, i) => {
-          // A dimensão real do arquivo; é dela que sai o tamanho da página.
-          const { width, height } = medir.openImage(imagem);
+          let tamanho: { width: number; height: number };
+          try {
+            // A dimensão real do arquivo; é dela que sai o tamanho da página.
+            tamanho = medir.openImage(imagem);
+          } catch (e) {
+            this.logger.warn(
+              `Página ${i + 1} ficou de fora do PDF: o formato não entra num PDF (${
+                e instanceof Error ? e.message : e
+              }).`,
+            );
+            return;
+          }
+          const { width, height } = tamanho;
           doc.addPage({ size: [width, height], margin: 0 });
           doc.image(imagem, 0, 0, { width, height });
+          paginas += 1;
           if (i === 0 && tituloDaCapa) {
             this.escreverNaCapa(doc, tituloDaCapa, width, height);
+            capaSaiu = true;
           }
         });
+
+        // DOCUMENTO SEM PÁGINA NENHUMA NÃO É PDF — é um arquivo que abre
+        // vazio no celular da cliente. Melhor a agente dizer que não deu.
+        if (paginas === 0) {
+          doc.end();
+          reject(
+            new BadRequestException(
+              'Nenhuma das fotos deste catálogo está num formato que entra em PDF — manda como JPEG ou PNG.',
+            ),
+          );
+          return;
+        }
         doc.end();
       } catch (e) {
         reject(e instanceof Error ? e : new Error(String(e)));
@@ -449,6 +554,37 @@ const ARQUIVO_MARCA = '@fontsource/jost/files/jost-latin-300-normal.woff';
  */
 function caminhoDaFonte(arquivo: string): string {
   return require.resolve(arquivo);
+}
+
+/**
+ * A IMAGEM DE CAPA ESCOLHIDA DO CATÁLOGO — e só a escolhida.
+ *
+ * ==========================================================================
+ * `capaReferenciaId` existe desde a migração 48, para o cartão do painel: a
+ * capa é uma das referências de imagem do catálogo, escolhida a dedo. O RF47
+ * passa a usá-la como PRIMEIRA PÁGINA do PDF, e é o que resolve a capa que
+ * não é peça — ela chega pela Helena, como referência daquele catálogo.
+ *
+ * O READ-MODEL TEM UM `capaArquivoId` JÁ RESOLVIDO, e ele não serve aqui: na
+ * falta de escolha, ele cai na PRIMEIRA referência de imagem que existir. No
+ * painel isso é um desenho razoável para um cartão; no PDF faria uma página
+ * de catálogo antigo, anexada como material de consulta, abrir a coleção nova
+ * sem ninguém ter pedido. Capa de PDF é escolha, nunca sobra.
+ *
+ * PDF NÃO VIRA CAPA. Referência aceita PDF (catálogo fechado de gráfica), e
+ * `doc.image` não embute documento — a página sairia vazia.
+ * ==========================================================================
+ */
+function capaDeReferencia(
+  catalogo: CatalogoDetalhe,
+): { arquivoId: string | null } | null {
+  if (!catalogo.capaReferenciaId) return null;
+  const r = catalogo.referencias.find(
+    (x) => x.id === catalogo.capaReferenciaId,
+  );
+  if (!r || r.tipo !== 'IMAGEM' || !r.arquivoId) return null;
+  if ((r.mime ?? '').includes('pdf')) return null;
+  return { arquivoId: r.arquivoId };
 }
 
 /** O nome vira nome de arquivo: sem acento, sem espaço, sem surpresa. */

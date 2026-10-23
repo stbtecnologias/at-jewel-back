@@ -10,6 +10,8 @@ function makeRepoMock(): jest.Mocked<IVendedoraRepository> {
     buscarPorId: jest.fn(),
     buscarPorCodigoErp: jest.fn(),
     proximoCodigoInterno: jest.fn().mockResolvedValue('VD-0001'),
+    // Uma equipe ativa, que e o caso da casa desde 23/10/2026.
+    equipePadrao: jest.fn().mockResolvedValue('eq-1'),
     buscarPorEmailHash: jest.fn(),
     buscarPorWhatsappHash: jest.fn(),
     listar: jest.fn(),
@@ -42,6 +44,37 @@ describe('CriarVendedoraUseCase', () => {
     expect(v.statusDisponibilidade).toBe('DISPONIVEL');
     expect(v.ativo).toBe(true);
     expect(v.especialidades).toEqual([]);
+  });
+
+  // =========================================================================
+  // ELA NASCE NA EQUIPE — 23/10/2026.
+  //
+  // O recorte da gerente de vendas e a equipe DELA. Vendedora sem equipe fica
+  // invisivel para a gerente, e vendedora nova chega sozinha pela API do ERP
+  // (21 das 23 nasceram assim em agosto/2026). Sem esta regra, a proxima
+  // sumiria do painel da gerente sem ninguem ser avisado — e numero que
+  // encolhe calado e pior que numero ausente.
+  // =========================================================================
+  it('nasce na equipe padrao — e e isso que a faz existir para a gerente', async () => {
+    repo.criar.mockImplementation((v) => Promise.resolve(v));
+
+    await useCase.execute({ nome: 'Maria' });
+
+    expect(repo.criar.mock.calls[0][0].equipeId).toBe('eq-1');
+  });
+
+  /*
+   * COM DUAS EQUIPES, ESCOLHER SERIA ADIVINHAR de qual time a pessoa e — e o
+   * caso que chega no dia em que SP entrar. Ai ela nasce sem equipe e quem
+   * cadastra decide, que e o comportamento de antes desta regra.
+   */
+  it('sem saber qual equipe, nasce sem equipe — e nao na primeira que achar', async () => {
+    repo.equipePadrao.mockResolvedValue(null);
+    repo.criar.mockImplementation((v) => Promise.resolve(v));
+
+    await useCase.execute({ nome: 'Maria' });
+
+    expect(repo.criar.mock.calls[0][0].equipeId).toBeNull();
   });
 
   it('calcula email_hash quando email informado', async () => {

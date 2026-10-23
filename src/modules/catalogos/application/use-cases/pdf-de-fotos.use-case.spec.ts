@@ -98,7 +98,11 @@ describe('o catálogo em PDF', () => {
     // 3 fotos + a capa. A primeira foto aparece duas vezes, e isso é o
     // pedido: a capa tem marca e nome por cima; a página da peça é limpa.
     expect(r.paginas).toBe(4);
-    expect(r.capa).toEqual({ codigo: 'AN26301', texto: 'Under 25k' });
+    expect(r.capa).toEqual({
+      codigo: 'AN26301',
+      texto: 'Under 25k',
+      enviada: false,
+    });
   });
 
   it('cada arquivo é lido UMA vez, mesmo repetindo na capa', async () => {
@@ -248,6 +252,32 @@ describe('o catálogo em PDF', () => {
     );
   });
 
+  // ==========================================================================
+  // A PEÇA TIRADA DA EDIÇÃO NÃO SAI NO PDF — 23/10/2026.
+  //
+  // "Tirar" grava REPROVADA, e o PDF lia `catalogo.fotos` inteiro: a peça que
+  // ela tirou continuava saindo no arquivo que vai para a cliente. Defeito que
+  // não quebra nada — o PDF saía, só saía errado.
+  // ==========================================================================
+  it('peça tirada da edição (REPROVADA) não entra no PDF', async () => {
+    const { uc, armazenamento } = montar({
+      fotos: [
+        { ...foto('f1', 1), status: 'APROVADA' },
+        { ...foto('f2', 2), status: 'REPROVADA' },
+        { ...foto('f3', 3), status: 'APROVADA' },
+      ],
+    });
+
+    const r = await uc.execute('cat-1');
+
+    // Capa (f1) + f1 + f3. A f2 saiu da edição e não vira página.
+    expect(r.paginas).toBe(3);
+    expect(armazenamento.ler.mock.calls.map((c) => c[0])).toEqual([
+      'catalogo/0042/originais/f1.jpg',
+      'catalogo/0042/originais/f3.jpg',
+    ]);
+  });
+
   it('catálogo sem foto nenhuma não vira PDF vazio', async () => {
     const { uc } = montar({ fotos: [] });
 
@@ -262,6 +292,154 @@ describe('o catálogo em PDF', () => {
     );
 
     await expect(uc.execute('cat-1')).rejects.toThrow(/não encontrado/i);
+  });
+
+  // ==========================================================================
+  // A CAPA QUE NÃO É PEÇA — RF47, 23/10/2026, o que faltava do requisito.
+  //
+  // Ela manda a imagem pela Helena dizendo "essa é a capa do 0042", e aquilo
+  // entra como REFERÊNCIA escolhida — não como peça. No PDF ela abre o
+  // arquivo e aparece UMA VEZ SÓ: não tem preço na imagem, e uma segunda
+  // página com ela limpa não venderia nada.
+  // ==========================================================================
+  const comCapaEnviada = () =>
+    montar({
+      capaReferenciaId: 'ref-capa',
+      referencias: [
+        {
+          id: 'ref-capa',
+          tipo: 'IMAGEM',
+          arquivoId: 'catalogo/0042/referencias/capa.jpg',
+          mime: 'image/jpeg',
+        },
+      ],
+    });
+
+  it('a imagem de capa abre o PDF, e NÃO se repete como página', async () => {
+    const { uc, armazenamento } = comCapaEnviada();
+
+    const r = await uc.execute('cat-1');
+
+    // A capa mais as três peças — e nenhuma peça a menos: a capa não ocupa
+    // o lugar de nenhuma delas.
+    expect(r.paginas).toBe(4);
+    expect(folhas(r.conteudo)).toBe(4);
+    expect(armazenamento.ler.mock.calls.map((c) => c[0])).toEqual([
+      'catalogo/0042/referencias/capa.jpg',
+      'catalogo/0042/originais/f1.jpg',
+      'catalogo/0042/originais/f2.jpg',
+      'catalogo/0042/originais/f3.jpg',
+    ]);
+  });
+
+  it('e diz que a capa é a enviada, sem código de peça', async () => {
+    const { uc } = comCapaEnviada();
+
+    const r = await uc.execute('cat-1');
+
+    expect(r.capa).toEqual({
+      codigo: null,
+      texto: 'Under 25k',
+      enviada: true,
+    });
+  });
+
+  /* ESCOLHA DITA AGORA VENCE PADRÃO GUARDADO. */
+  it('a peça que ela nomeia ganha da imagem de capa', async () => {
+    const { uc, armazenamento } = comCapaEnviada();
+
+    const r = await uc.execute('cat-1', 'AN26303');
+
+    expect(r.capa).toEqual({
+      codigo: 'AN26303',
+      texto: 'Under 25k',
+      enviada: false,
+    });
+    expect(armazenamento.ler.mock.calls[0][0]).toBe(
+      'catalogo/0042/originais/f3.jpg',
+    );
+  });
+
+  it('referência em PDF não vira capa — cai na primeira foto', async () => {
+    const { uc, armazenamento } = montar({
+      capaReferenciaId: 'ref-pdf',
+      referencias: [
+        {
+          id: 'ref-pdf',
+          tipo: 'IMAGEM',
+          arquivoId: 'catalogo/0042/referencias/antigo.pdf',
+          mime: 'application/pdf',
+        },
+      ],
+    });
+
+    const r = await uc.execute('cat-1');
+
+    expect(r.capa?.enviada).toBe(false);
+    expect(armazenamento.ler.mock.calls[0][0]).toBe(
+      'catalogo/0042/originais/f1.jpg',
+    );
+  });
+
+  /*
+   * REFERÊNCIA ANEXADA NÃO É CAPA — só a ESCOLHIDA é.
+   *
+   * O painel, na falta de escolha, desenha o cartão com a primeira imagem
+   * que achar. Aqui isso faria uma página de catálogo antigo, anexada como
+   * material de consulta, abrir a coleção nova sem ninguém ter pedido.
+   */
+  it('imagem anexada sem ser escolhida não abre o PDF', async () => {
+    const { uc, armazenamento } = montar({
+      capaReferenciaId: null,
+      referencias: [
+        {
+          id: 'ref-consulta',
+          tipo: 'IMAGEM',
+          arquivoId: 'catalogo/0042/referencias/consulta.jpg',
+          mime: 'image/jpeg',
+        },
+      ],
+    });
+
+    await uc.execute('cat-1');
+
+    expect(armazenamento.ler.mock.calls[0][0]).toBe(
+      'catalogo/0042/originais/f1.jpg',
+    );
+  });
+
+  // ==========================================================================
+  // FORMATO QUE NÃO ENTRA EM PDF PERDE A PÁGINA, E SÓ ELA — 23/10/2026.
+  //
+  // O pdfkit embute JPEG e PNG, e mais nada. Um WebP — que o canal aceita, e
+  // que é o que chega de sticker ou de certos aparelhos — derrubava o
+  // documento inteiro: dez fotos boas não viravam arquivo por causa de uma.
+  // ==========================================================================
+  it('foto em formato que o PDF não abre sai do arquivo, e o resto fica', async () => {
+    const { uc, armazenamento } = montar();
+    armazenamento.ler.mockImplementation((chave: string) => {
+      const webp = chave.includes('f2');
+      return Promise.resolve({
+        conteudo: webp ? Buffer.from('RIFF....WEBPVP8 ') : JPEG_2x3,
+        mime: webp ? 'image/webp' : 'image/jpeg',
+      });
+    });
+
+    const r = await uc.execute('cat-1');
+
+    // Capa + f1 + f3. A f2 ficou de fora, e as outras três saíram.
+    expect(r.paginas).toBe(3);
+    expect(folhas(r.conteudo)).toBe(3);
+  });
+
+  it('se NENHUMA entra em PDF, é erro — e não um arquivo vazio', async () => {
+    const { uc, armazenamento } = montar();
+    armazenamento.ler.mockResolvedValue({
+      conteudo: Buffer.from('RIFF....WEBPVP8 '),
+      mime: 'image/webp',
+    });
+
+    await expect(uc.execute('cat-1')).rejects.toThrow(/JPEG ou PNG/i);
   });
 
   // 40 páginas já é um arquivo que ninguém abre no celular; o corte é dito
