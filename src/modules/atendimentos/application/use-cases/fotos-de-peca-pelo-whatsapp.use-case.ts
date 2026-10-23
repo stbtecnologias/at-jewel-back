@@ -4,6 +4,7 @@ import type { IWhatsappGateway } from '../../../atendimento/domain/ports/whatsap
 import { PRODUTO_REPOSITORY } from '../../../erp/domain/ports/injection-tokens';
 import type { IProdutoRepository } from '../../../erp/domain/ports/repositories/produto-repository.port';
 import { FotosDaPecaUseCase } from '../../../produtos/application/use-cases/fotos-da-peca.use-case';
+import { UltimoRelatorioService } from '../../../relatorios/application/ultimo-relatorio.service';
 import { SessaoCatalogoService } from '../sessao-catalogo.service';
 import { FotosDeProdutoService } from '../fotos-de-produto.service';
 // O MESMO formatador que a agente ja usa nas listas: o valor da peca tem de
@@ -122,6 +123,18 @@ export class FotosDePecaPeloWhatsappUseCase {
     private readonly destino: IInterpretadorDeDestino,
     @Inject(CATALOGO_REPOSITORY)
     private readonly catalogos: ICatalogoRepository,
+    // ====================================================================
+    // A FICHA TAMBEM E "A ULTIMA RESPOSTA" — 23/10/2026.
+    //
+    // Este caminho e DETERMINISTICO: ele responde antes do modelo, sem passar
+    // por ferramenta nenhuma. Entao o `aoResponderConsulta`, que guarda toda
+    // consulta para o "manda em PDF", nunca era chamado aqui — e "gera o pdf"
+    // logo depois da ficha nao tinha o que mandar.
+    //
+    // Ele falhou TRES VEZES em producao no mesmo dia por causa disso, e as
+    // duas primeiras eu tratei como problema de frase.
+    // ====================================================================
+    private readonly ultimoRelatorio: UltimoRelatorioService,
   ) {}
 
   /** Vale olhar a imagem que chegou como foto de peça? Só a catraca. */
@@ -152,13 +165,22 @@ export class FotosDePecaPeloWhatsappUseCase {
    * foto".
    * ==========================================================================
    */
-  async quais(de: string, texto: string): Promise<RespostaFoto | null> {
+  /**
+   * @param chaveDaConversa onde guardar a ficha como "ultima resposta", para
+   *   o "manda em PDF" seguinte ter o que mandar. Quem sabe a chave e o canal,
+   *   nao este caminho — por isso ela vem de fora.
+   */
+  async quais(
+    de: string,
+    texto: string,
+    chaveDaConversa?: string | null,
+  ): Promise<RespostaFoto | null> {
     const t = texto.trim();
     const codigo = RE_QUAIS.map((r) => t.match(r)?.[1])
       .find((c) => !!c)
       ?.toUpperCase();
     if (!codigo) return null;
-    return this.asFotosDaPeca(de, codigo);
+    return this.asFotosDaPeca(de, codigo, chaveDaConversa);
   }
 
   /**
@@ -168,7 +190,11 @@ export class FotosDePecaPeloWhatsappUseCase {
    * que é o atalho do caso óbvio, e o da dedução, quando a frase não casou com
    * nenhum padrão. A resposta tem de ser a MESMA pelos dois.
    */
-  async asFotosDaPeca(de: string, codigo: string): Promise<RespostaFoto | null> {
+  async asFotosDaPeca(
+    de: string,
+    codigo: string,
+    chaveDaConversa?: string | null,
+  ): Promise<RespostaFoto | null> {
     const produto = await this.produtos.findByCodigoErp(codigo);
     if (!produto?.id) return null;
 
@@ -202,6 +228,11 @@ export class FotosDePecaPeloWhatsappUseCase {
       produto.valorVenda > 0
         ? `${rotulo} — ${moeda(produto.valorVenda)}`
         : rotulo;
+
+    // A FICHA VIRA "A ÚLTIMA RESPOSTA". Sem isto, "gera o pdf" logo depois
+    // não tem o que mandar — e a agente ou pergunta, ou diz que não tem nada.
+    // Ver o cabeçalho do construtor.
+    this.ultimoRelatorio.guardarTexto(chaveDaConversa, 'Peça', ficha);
 
     /** As fotos vão limpas — quem descreve é o texto, uma vez só. */
     const SEM_LEGENDA = '';

@@ -602,7 +602,8 @@ const MANDAR_RELATORIO_TOOL: Anthropic.Tool = {
     'Manda a ULTIMA resposta como arquivo na conversa — PDF para ver e repassar, planilha para trabalhar (ordenar, filtrar, somar). ' +
     'Use quando pedirem "manda em pdf", "GERA UM PDF", "gera o pdf", "faz um pdf disso", "me manda a planilha", "exporta isso", "manda esse relatorio". ' +
     'DEPOIS DE QUALQUER CONSULTA — pecas, clientes, vendas, agenda, metas — "gera um pdf" E AQUI, e nao no catalogo: ela esta falando do que voce acabou de mostrar. ' +
-    'NAO use para montar lista nova: consulte primeiro e so entao ofereca o arquivo. Se nao houver lista recente, a ferramenta avisa e voce diz que precisa consultar antes.',
+    'NAO use para montar lista nova: consulte primeiro e so entao ofereca o arquivo. ' +
+    'NA DUVIDA, CHAME ESTA FERRAMENTA em vez de perguntar: sem lista recente ela mesma avisa, e so entao voce pergunta do que era.',
   input_schema: {
     type: 'object',
     properties: {

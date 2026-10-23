@@ -52,6 +52,7 @@ describe('as fotos da peça pelo WhatsApp', () => {
     interpretarPedido: jest.Mock;
   };
   let sessao: SessaoCatalogoService;
+  let ultimoRelatorio: { guardarTexto: jest.Mock };
   let useCase: FotosDePecaPeloWhatsappUseCase;
 
   const mandarFoto = () =>
@@ -88,6 +89,8 @@ describe('as fotos da peça pelo WhatsApp', () => {
       interpretarPedido: jest.fn().mockResolvedValue(null),
     };
     sessao = new SessaoCatalogoService();
+    // A ficha vira "a ultima resposta" — 23/10/2026.
+    ultimoRelatorio = { guardarTexto: jest.fn() };
 
     useCase = new FotosDePecaPeloWhatsappUseCase(
       sessao,
@@ -97,6 +100,7 @@ describe('as fotos da peça pelo WhatsApp', () => {
       imagens as never,
       destino as never,
       { listarAbertos: jest.fn().mockResolvedValue([]) } as never,
+      ultimoRelatorio as never,
     );
   });
 
@@ -261,6 +265,49 @@ describe('as fotos da peça pelo WhatsApp', () => {
       await useCase.quais(DE, 'fotos do produto BR26396');
 
       expect(useCase.temPecaMirada(DE)).toBe(false);
+    });
+
+    /**
+     * ====================================================================
+     * A FICHA FICA GUARDADA — 23/10/2026, e isto nasceu de três falhas
+     * seguidas em produção no mesmo dia.
+     *
+     * Ele pediu as fotos de uma peça e disse "gera o pdf". A agente não
+     * mandou nada — e as duas primeiras vezes eu tratei como problema de
+     * FRASE: arrumei a descrição da ferramenta, depois o prompt.
+     *
+     * O problema era outro, e estava aqui: este caminho é DETERMINÍSTICO,
+     * responde antes do modelo, e por isso nunca passava pelo lugar que
+     * guarda a última consulta. Não havia o que mandar.
+     * ====================================================================
+     */
+    it('a ficha fica guardada, e é ela que o "manda em PDF" vai mandar', async () => {
+      fotos.listar.mockResolvedValue(TRES);
+      imagens.buscar.mockResolvedValue(baixadas(3));
+
+      await useCase.quais(DE, 'fotos do produto BR26396', 'gestao:ad-1');
+
+      expect(ultimoRelatorio.guardarTexto).toHaveBeenCalledWith(
+        'gestao:ad-1',
+        'Peça',
+        expect.stringContaining('BR26396'),
+      );
+    });
+
+    /* SEM CHAVE NÃO SE GUARDA NADA: quem sabe a chave é o canal, e um
+     * caminho sem ela não pode inventar uma. */
+    it('sem a chave da conversa, não guarda — e não quebra', async () => {
+      fotos.listar.mockResolvedValue(TRES);
+      imagens.buscar.mockResolvedValue(baixadas(3));
+
+      const r = await useCase.quais(DE, 'fotos do produto BR26396');
+
+      expect(r?.fotos).toHaveLength(3);
+      expect(ultimoRelatorio.guardarTexto).toHaveBeenCalledWith(
+        undefined,
+        'Peça',
+        expect.any(String),
+      );
     });
 
     it('as imagens vão em `fotos`, para saírem DEPOIS do texto', async () => {

@@ -15,6 +15,7 @@ import {
   ProcessarMensagemInternaUseCase,
   type AudioInterno,
 } from './processar-mensagem-interna.use-case';
+import { MemoriaConversaService } from '../memoria-conversa.service';
 import { ProcessarMensagemGestaoUseCase } from './processar-mensagem-gestao.use-case';
 import { LeitorDeArquivoService } from '../leitor-de-arquivo.service';
 import { AnalisarArquivoService } from '../analisar-arquivo.service';
@@ -423,7 +424,15 @@ export class RotearMensagemInternaUseCase {
         // VER VEM ANTES DE MIRAR, e a diferenca e a preposicao: "fotos DO
         // produto X" e pedido, "fotos PARA a peca X" e destino. Invertendo a
         // ordem, quem pede para ver abriria destino sem querer.
-        const vendo = await this.fotosDePeca.quais(msg.de, msg.texto ?? '');
+        // A CHAVE DA CONVERSA VAI JUNTO — 23/10/2026. É ela que faz a ficha
+        // virar "a última resposta", e o "gera o pdf" seguinte ter o que
+        // mandar. Quem responde aqui é o canal da GESTÃO (este caminho exige
+        // `produtos:foto`, que vendedora não tem), então a chave é a dele.
+        const vendo = await this.fotosDePeca.quais(
+          msg.de,
+          msg.texto ?? '',
+          MemoriaConversaService.chaveGestao(dona.id),
+        );
         if (vendo) return vendo;
 
         const mirada = await this.fotosDePeca.mirar(msg.de, msg.texto ?? '');
