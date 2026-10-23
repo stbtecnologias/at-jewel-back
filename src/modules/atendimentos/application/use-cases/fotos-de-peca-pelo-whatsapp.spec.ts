@@ -52,7 +52,7 @@ describe('as fotos da peça pelo WhatsApp', () => {
     interpretarPedido: jest.Mock;
   };
   let sessao: SessaoCatalogoService;
-  let ultimoRelatorio: { guardarTexto: jest.Mock };
+  let ultimoRelatorio: { guardarTexto: jest.Mock; guardar: jest.Mock };
   let useCase: FotosDePecaPeloWhatsappUseCase;
 
   const mandarFoto = () =>
@@ -90,7 +90,7 @@ describe('as fotos da peça pelo WhatsApp', () => {
     };
     sessao = new SessaoCatalogoService();
     // A ficha vira "a ultima resposta" — 23/10/2026.
-    ultimoRelatorio = { guardarTexto: jest.fn() };
+    ultimoRelatorio = { guardarTexto: jest.fn(), guardar: jest.fn() };
 
     useCase = new FotosDePecaPeloWhatsappUseCase(
       sessao,
@@ -287,10 +287,15 @@ describe('as fotos da peça pelo WhatsApp', () => {
 
       await useCase.quais(DE, 'fotos do produto BR26396', 'gestao:ad-1');
 
-      expect(ultimoRelatorio.guardarTexto).toHaveBeenCalledWith(
+      // COMO TABELA, e nao como texto: o `guardarTexto` so aceita linhas que
+      // comecam com "- ", e a ficha e uma linha sem marcador — caia fora em
+      // silencio, e foi por isso que o PDF nao saiu na terceira tentativa.
+      expect(ultimoRelatorio.guardar).toHaveBeenCalledWith(
         'gestao:ad-1',
-        'Peça',
-        expect.stringContaining('BR26396'),
+        expect.objectContaining({
+          titulo: 'Peça BR26396',
+          linhas: [expect.objectContaining({ referencia: 'BR26396' })],
+        }),
       );
     });
 
@@ -303,10 +308,9 @@ describe('as fotos da peça pelo WhatsApp', () => {
       const r = await useCase.quais(DE, 'fotos do produto BR26396');
 
       expect(r?.fotos).toHaveLength(3);
-      expect(ultimoRelatorio.guardarTexto).toHaveBeenCalledWith(
+      expect(ultimoRelatorio.guardar).toHaveBeenCalledWith(
         undefined,
-        'Peça',
-        expect.any(String),
+        expect.any(Object),
       );
     });
 

@@ -229,10 +229,44 @@ export class FotosDePecaPeloWhatsappUseCase {
         ? `${rotulo} — ${moeda(produto.valorVenda)}`
         : rotulo;
 
-    // A FICHA VIRA "A ÚLTIMA RESPOSTA". Sem isto, "gera o pdf" logo depois
-    // não tem o que mandar — e a agente ou pergunta, ou diz que não tem nada.
-    // Ver o cabeçalho do construtor.
-    this.ultimoRelatorio.guardarTexto(chaveDaConversa, 'Peça', ficha);
+    // ======================================================================
+    // A FICHA VIRA "A ÚLTIMA RESPOSTA" — e vai como TABELA, não como texto.
+    //
+    // A primeira tentativa usou `guardarTexto`, e ela não guardou nada: aquele
+    // caminho só aceita linhas que começam com "- ", porque foi feito para
+    // LISTA — a regra de 21/10, que existe para um parágrafo não virar um PDF
+    // de uma linha com cara de relatório. A ficha é uma linha e não tem o
+    // marcador, então caía fora em silêncio.
+    //
+    // Aqui não é parágrafo: é UM DADO, com as três colunas que a casa usa em
+    // toda lista de peça — referência, descrição e valor. Então entra pela
+    // porta da tabela, que é o que ela é.
+    // ======================================================================
+    this.ultimoRelatorio.guardar(chaveDaConversa, {
+      titulo: `Peça ${codigo}`,
+      colunas: [
+        { chave: 'referencia', titulo: 'Referência', peso: 1, mono: true },
+        { chave: 'descricao', titulo: 'Descrição', peso: 3 },
+        {
+          chave: 'valor',
+          titulo: 'Valor',
+          peso: 1,
+          alinhamento: 'direita',
+          mono: true,
+        },
+      ],
+      linhas: [
+        {
+          referencia: codigo,
+          descricao: nome ?? '—',
+          valor: produto.valorVenda > 0 ? moeda(produto.valorVenda) : '—',
+        },
+      ],
+      nota:
+        nossas.length > 0
+          ? `${nossas.length} foto${nossas.length === 1 ? '' : 's'} cadastrada${nossas.length === 1 ? '' : 's'} — as imagens vão na conversa, não no arquivo.`
+          : undefined,
+    });
 
     /** As fotos vão limpas — quem descreve é o texto, uma vez só. */
     const SEM_LEGENDA = '';
