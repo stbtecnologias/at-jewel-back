@@ -16,7 +16,9 @@ export class VendedoraRepository implements IVendedoraRepository {
   ) {}
 
   async criar(v: Vendedora): Promise<Vendedora> {
-    const row = this.repo.create(this.toOrm(v));
+    // A EQUIPE SÓ SE ESCREVE AQUI — ver `toOrm`. Na criação ela é a equipe
+    // padrão; depois disso, quem a muda é o cadastro, por SQL.
+    const row = this.repo.create({ ...this.toOrm(v), equipeId: v.equipeId });
     const saved = await this.repo.save(row);
     return this.toDomain(saved);
   }
@@ -147,6 +149,28 @@ export class VendedoraRepository implements IVendedoraRepository {
     await this.repo.delete(id);
   }
 
+  /**
+   * O QUE UM UPDATE PODE ESCREVER — e a `equipe_id` NÃO está aqui.
+   *
+   * ========================================================================
+   * ISTO NASCEU DE UM ESTRAGO EM PRODUÇÃO, EM 23/10/2026, E DELE MESMO.
+   *
+   * Mapeei a coluna `equipe_id` de manhã, para a vendedora nova nascer na
+   * equipe. O mapeamento valia para os DOIS caminhos — e `atualizar` monta a
+   * entidade a partir da atual mais o PATCH, sem carregar a equipe. Resultado:
+   * **todo update gravava `equipe_id = NULL`**.
+   *
+   * O deploy saiu às 14:10. Às 14:12 a sincronização do ERP tocou nas
+   * vendedoras e apagou a equipe de 19 das 23 — o recorte da gerente, que
+   * tinha sido cadastrado de manhã, durou duas horas. Ninguém acusou: a
+   * coluna ficou nula, a tela ficou menor, e o único motivo de termos
+   * descoberto foi um backup restaurado por outro motivo.
+   *
+   * ENTÃO A EQUIPE SAIU DAQUI. Quem a escreve é o `criar` (a equipe padrão) e
+   * o cadastro por SQL. Nenhum PATCH pode apagá-la de novo — nem o do ERP,
+   * nem o do painel, nem o próximo caminho que alguém escrever.
+   * ========================================================================
+   */
   private toOrm(v: Vendedora): Partial<VendedoraOrmEntity> {
     return {
       idErp: v.idErp,
@@ -163,7 +187,6 @@ export class VendedoraRepository implements IVendedoraRepository {
       whatsappExterno: v.whatsappExterno,
       whatsappExternoHash: v.whatsappExternoHash,
       adminUserId: v.adminUserId,
-      equipeId: v.equipeId,
     };
   }
 
