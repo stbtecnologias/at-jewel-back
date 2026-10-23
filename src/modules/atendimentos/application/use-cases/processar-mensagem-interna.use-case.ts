@@ -16,6 +16,7 @@ import { limparEHigienizar } from '../../../../shared/http/sanitize/sanitize-tex
 import {
   ELENA_INTERNA_SYSTEM,
   ELENA_LEMBRETE_EXTRA,
+  RELATORIO_EM_ARQUIVO_EXTRA,
 } from '../../../agentes/application/personas';
 import { LembretesService } from '../../../agentes/application/lembretes.service';
 import { LLM_CLIENT } from '../../../agentes/domain/ports/injection-tokens';
@@ -221,7 +222,12 @@ export class ProcessarMensagemInternaUseCase {
       // A FERRAMENTA DECIDE A FRASE, e nao o papel. Perguntar pelo handler
       // garante que as duas nunca se separem: se um dia o lembrete sair
       // daqui, a promessa sai junto, sozinha.
-      ('guardarLembrete' in deGestao ? `\n\n${ELENA_LEMBRETE_EXTRA}` : '');
+      ('guardarLembrete' in deGestao ? `\n\n${ELENA_LEMBRETE_EXTRA}` : '') +
+      // MANDAR EM ARQUIVO — a ferramenta existe aqui desde 21/10 e o prompt
+      // nao dizia uma palavra sobre ela. Em 23/10 isso cobrou o preco: "gera
+      // um pdf" depois de uma consulta caiu no CATALOGO, porque o unico
+      // lugar que falava de PDF era o paragrafo do catalogo.
+      `\n\n${RELATORIO_EM_ARQUIVO_EXTRA}`;
 
     let relatoRegistrado = false;
 

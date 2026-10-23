@@ -97,6 +97,32 @@ describe('as ferramentas declaradas ao modelo', () => {
       return arquivo.slice(i, fim);
     };
 
+    /*
+     * E O PROMPT TAMBEM — 23/10/2026, a segunda volta.
+     *
+     * A primeira correcao mexeu so nas DESCRICOES das ferramentas, e o defeito
+     * continuou em producao: o prompt da gestao dizia, com todas as letras,
+     * *'Pedem "gera o pdf" ... Use "gerar_pdf_do_catalogo"'*. Prompt ganha de
+     * descricao de ferramenta, e nenhuma persona falava do relatorio.
+     *
+     * Entao a fronteira tem de estar escrita NOS DOIS lugares.
+     */
+    it('a persona da gestao nao reivindica "gera o pdf" para o catalogo', () => {
+      const personas = fs.readFileSync(
+        path.join(__dirname, '../../application/personas.ts'),
+        'utf8',
+      );
+      const doCatalogo = personas.slice(
+        personas.indexOf('Sobre o PDF do catálogo:'),
+      );
+      const paragrafo = doCatalogo.slice(0, doCatalogo.indexOf('\n\n'));
+
+      expect(paragrafo).not.toContain('"gera o pdf"');
+      // E o paragrafo do relatorio existe, e e ele que fica com a frase.
+      expect(personas).toContain('mandar_relatorio');
+      expect(personas).toContain('"gera um pdf"');
+    });
+
     it('o relatorio reivindica "gera um pdf"', () => {
       expect(descricaoDe('mandar_relatorio').toLowerCase()).toContain(
         'gera um pdf',
