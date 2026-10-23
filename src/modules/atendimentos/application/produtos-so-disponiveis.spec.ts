@@ -77,16 +77,78 @@ describe('o padrão é só o disponível — canal da vendedora', () => {
   });
 });
 
+/**
+ * ==========================================================================
+ * O ARQUIVO LEVA A LISTA INTEIRA — 23/10/2026.
+ *
+ * *"So gerou os 10. No PDF e pra gerar tudo."*
+ *
+ * A conversa mostra dez porque mensagem de WhatsApp nao comporta mais — e o
+ * ARQUIVO existe justamente para carregar o que nao cabe ali. Mandar nele a
+ * mesma pagina de dez e repetir, no lugar sem limite, a limitacao do lugar
+ * que tem.
+ *
+ * O texto que o modelo escreve tem so os dez; por isso a tabela e guardada
+ * como TABELA (rico), que ganha do texto na mesma mensagem.
+ * ==========================================================================
+ */
+describe('o arquivo leva a lista inteira', () => {
+  function servicoComRelatorio() {
+    const listar = listarQueAnota();
+    const relatorio = { guardar: jest.fn(), guardarTexto: jest.fn() };
+    const deps = Array.from({ length: 31 }, (_, i) =>
+      naoParaTudo(`colaborador ${i}`),
+    );
+    deps[9] = listar.uso as never;
+    deps[10] = SEM_FOTOS;
+    deps[23] = relatorio as never;
+    const svc = new FerramentasGestaoService(
+      ...(deps as unknown as ConstructorParameters<
+        typeof FerramentasGestaoService
+      >),
+    );
+    return { svc, listar, relatorio };
+  }
+
+  it('a consulta do arquivo pede MUITO mais que a da conversa', async () => {
+    const { svc, listar } = servicoComRelatorio();
+
+    await svc.montar({ chaveDaConversa: 'gestao:ad-1' }).gestaoProdutos({
+      busca: 'anel',
+    });
+
+    const limites = listar.filtros.map((f: { limit?: number }) => f.limit);
+    expect(limites).toContain(10);
+    expect(limites.some((l) => (l ?? 0) >= 500)).toBe(true);
+  });
+
+  it('e a tabela guardada e a INTEIRA, nao a pagina', async () => {
+    const { svc, relatorio } = servicoComRelatorio();
+
+    await svc.montar({ chaveDaConversa: 'gestao:ad-1' }).gestaoProdutos({
+      busca: 'anel',
+    });
+
+    expect(relatorio.guardar).toHaveBeenCalledWith(
+      'gestao:ad-1',
+      expect.objectContaining({ titulo: 'Peças' }),
+    );
+  });
+});
+
 describe('o padrão é só o disponível — canal da gestão', () => {
   function servico() {
     const listar = listarQueAnota();
-    const deps = Array.from({ length: 22 }, (_, i) =>
+    const deps = Array.from({ length: 31 }, (_, i) =>
       naoParaTudo(`colaborador ${i}`),
     );
     // O `ListarProdutosUseCase` é o décimo do construtor; ver a classe,
     // e o serviço de fotos entrou logo depois dele em 07/10.
     deps[9] = listar.uso as never;
     deps[10] = SEM_FOTOS;
+    // O 24o e o UltimoRelatorioService — desde 23/10 a consulta de pecas
+    // guarda a lista INTEIRA para o arquivo, entao ele e usado aqui.
+    deps[23] = { guardar: jest.fn(), guardarTexto: jest.fn() } as never;
     const svc = new FerramentasGestaoService(
       ...(deps as unknown as ConstructorParameters<
         typeof FerramentasGestaoService

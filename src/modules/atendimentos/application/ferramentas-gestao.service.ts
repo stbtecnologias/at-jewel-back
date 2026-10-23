@@ -158,6 +158,24 @@ const MAXIMO_CLIENTES_HOMONIMOS = 5;
  */
 const TETO_DE_PRODUTOS = 10;
 
+/**
+ * O TETO DO ARQUIVO — e ele é outro, de propósito.
+ *
+ * ==========================================================================
+ * *"Só gerou os 10. No PDF é pra gerar tudo."* — 23/10/2026.
+ *
+ * A conversa mostra 10 porque mensagem de WhatsApp não comporta mais (RF36,
+ * 21/10: 261 joias dão 21.222 caracteres e seis mensagens). O ARQUIVO existe
+ * justamente para carregar o que não cabe ali — mandar nele a mesma página de
+ * dez é repetir a limitação da conversa no lugar que não tem essa limitação.
+ *
+ * QUINHENTAS É UM NÚMERO, E NÃO O INFINITO: uma tabela de 500 linhas sai em
+ * umas 12 páginas e abre no celular. Acima disso o corte é dito no próprio
+ * documento, pelo "Exibindo N de M" — teto silencioso mente por omissão.
+ * ==========================================================================
+ */
+const TETO_DO_ARQUIVO = 500;
+
 const MAXIMO_VENDAS_DETALHADAS = 10;
 
 const MAXIMO_FEEDBACKS = 10;
@@ -1240,7 +1258,7 @@ export class FerramentasGestaoService {
           };
         }
 
-        const [achados, total, comSaldo] = await Promise.all([
+        const [achados, total, comSaldo, paraOArquivo] = await Promise.all([
           this.listarProdutos.execute({
             ...filtro,
             limit: TETO_DE_PRODUTOS,
@@ -1248,7 +1266,55 @@ export class FerramentasGestaoService {
           }),
           this.listarProdutos.contar(filtro),
           this.listarProdutos.contar({ ...filtro, apenasDisponiveis: true }),
+          // O ARQUIVO LEVA A LISTA INTEIRA — ver `TETO_DO_ARQUIVO`. Uma
+          // consulta a mais, e ela é a que faz o "manda em PDF" valer a pena.
+          this.listarProdutos.execute({ ...filtro, limit: TETO_DO_ARQUIVO }),
         ]);
+
+        // ================================================================
+        // A TABELA DO ARQUIVO É A LISTA INTEIRA, e não a página.
+        //
+        // Ela é guardada como TABELA (`guardar`), e não como texto: o texto
+        // que o modelo escreve tem só os dez da conversa, e seria ele que
+        // viraria PDF. Rico ganha de texto na mesma mensagem — é a regra do
+        // `UltimoRelatorioService`, e é ela que faz isto funcionar.
+        // ================================================================
+        this.ultimoRelatorio.guardar(chaveDaConversa, {
+          titulo: 'Peças',
+          posicao: `Posição em ${agoraPorExtenso()}`,
+          colunas: [
+            { chave: 'peca', titulo: 'Peça', peso: 3 },
+            { chave: 'codigo', titulo: 'Código', peso: 1, mono: true },
+            {
+              chave: 'valor',
+              titulo: 'Valor',
+              peso: 1,
+              alinhamento: 'direita',
+              mono: true,
+            },
+            {
+              chave: 'estoque',
+              titulo: 'Estoque',
+              peso: 0.8,
+              alinhamento: 'direita',
+              mono: true,
+            },
+          ],
+          linhas: paraOArquivo.map((p) => ({
+            peca: p.descricaoEtiqueta ?? `${p.categoria} ${p.familia}`,
+            codigo: p.codigoErp ?? '—',
+            valor: moeda(p.valorVenda),
+            estoque: String(p.estoqueAtual ?? 0),
+          })),
+          exibindo:
+            total > paraOArquivo.length
+              ? { mostradas: paraOArquivo.length, total }
+              : undefined,
+          nota: incluirSemEstoque
+            ? 'Inclui peças sem saldo.'
+            : 'Só peças com saldo disponível.',
+          geradoPor: solicitante ?? undefined,
+        });
         const [noCatalogo, semRecorte] = await Promise.all([
           incluirSemEstoque
             ? Promise.resolve(total)
