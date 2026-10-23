@@ -2854,11 +2854,25 @@ export class FerramentasGestaoService {
             gestaoPdfDoCatalogo: async ({ catalogo, capa, textoCapa }) => {
               const alvo = await this.acharCatalogo(catalogo);
               if (!alvo) {
+                // ============================================================
+                // E SE NÃO ERA CATÁLOGO? — 23/10/2026, visto em produção.
+                //
+                // Ele pediu as fotos de uma peça e disse "gera um pdf". A
+                // agente entendeu CATÁLOGO e respondeu "de qual catálogo?" —
+                // a pergunta certa para a frase errada. O que ele queria era a
+                // última resposta em arquivo, que é outra ferramenta.
+                //
+                // A descrição das duas passou a marcar a fronteira; esta
+                // mensagem é a segunda rede, para quando o modelo chegar aqui
+                // assim mesmo.
+                // ============================================================
                 return {
                   arquivo: null,
                   mensagem:
                     'Não achei esse catálogo entre os que estão recebendo foto. ' +
-                    'Diga isso e pergunte o número ou o nome dele.',
+                    'Se ela não falou de catálogo nenhum — se pediu o PDF do que ' +
+                    'você acabou de mostrar —, use "mandar_relatorio" em vez ' +
+                    'desta. Se era catálogo mesmo, pergunte o número ou o nome.',
                 };
               }
 

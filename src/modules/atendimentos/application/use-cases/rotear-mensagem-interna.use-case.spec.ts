@@ -1637,7 +1637,22 @@ describe('RotearMensagemInternaUseCase', () => {
 
     /* O catalogo mora no numero da Elena. A foto que chega no da Anastasia
      * nao some calada: quem tem permissao ouve para onde levar. */
-    it('foto no numero da Anastasia desvia em vez de ir para o catalogo', async () => {
+    /**
+     * ====================================================================
+     * A FOTO ENTRA PELOS DOIS NÚMEROS — 23/10/2026.
+     *
+     * *"A gestão também pode fazer completo, capa e tudo."*
+     *
+     * Este teste já existiu ao contrário: até hoje a imagem que chegava na
+     * Anastasia era desviada para a Elena, porque o catálogo "morava" lá. Em
+     * 22/10 a gestão ganhou o catálogo em texto, e a foto virou a única coisa
+     * que ela ainda precisava fazer no outro lugar — criava o catálogo aqui e
+     * trocava de conversa para mandar a capa.
+     *
+     * QUEM DECIDE É A PERMISSÃO, e não o número.
+     * ====================================================================
+     */
+    it('foto no numero da Anastasia ENTRA no catalogo, e nao desvia', async () => {
       identificarAdmin.execute.mockResolvedValue({
         id: 'ad-9',
         nome: 'Yerlon Braga',
@@ -1651,8 +1666,10 @@ describe('RotearMensagemInternaUseCase', () => {
         imagem: { url: 'http://x/y.jpg', mimetype: 'image/jpeg' },
       });
 
-      expect(r.motivo).toBe('desvio_para_elena');
-      expect(canalCatalogo.foto).not.toHaveBeenCalled();
+      expect(r.motivo).not.toBe('desvio_para_elena');
+      expect(canalCatalogo.foto).toHaveBeenCalledWith(
+        expect.objectContaining({ legenda: '0002' }),
+      );
     });
 
     /**
@@ -1668,7 +1685,7 @@ describe('RotearMensagemInternaUseCase', () => {
      * e gera o PDF por aqui. O que continua no número da Helena é a FOTO.
      * ====================================================================
      */
-    it('o desvio da foto fala da FOTO, e não do catálogo inteiro', async () => {
+    it('a capa pedida pela Anastasia nao ouve mais "e no outro numero"', async () => {
       identificarAdmin.execute.mockResolvedValue({
         id: 'ad-9',
         nome: 'Lucas Barbosa',
@@ -1677,14 +1694,29 @@ describe('RotearMensagemInternaUseCase', () => {
 
       const r = await useCase.execute({
         de: '558586467241@c.us',
-        texto: 'cria uma capa assim',
+        texto: 'essa é a capa do 0002',
         agente: 'ANASTASIA',
         imagem: { url: 'http://x/y.jpg', mimetype: 'image/jpeg' },
       });
 
-      expect(r.resposta).toMatch(/foto/i);
-      // E NÃO diz que catálogo é no outro número: aqui ele cria e gera o PDF.
-      expect(r.resposta).not.toMatch(/catálogo eu atendo/i);
+      expect(r.motivo).not.toContain('desvio');
+      expect(canalCatalogo.foto).toHaveBeenCalled();
+    });
+
+    /* O DESVIO QUE SOBROU é o da vendedora no número da gestão — e ele fala
+     * de quem atende quem, não de foto nem de catálogo. */
+    it('o desvio da vendedora nao fala de foto nem de catalogo', async () => {
+      identificarVendedora.execute.mockResolvedValue(VENDEDORA);
+
+      const r = await useCase.execute({
+        de: '558586467241@c.us',
+        texto: 'quantos contatos eu tenho hoje?',
+        agente: 'ANASTASIA',
+      });
+
+      expect(r.motivo).toBe('desvio_para_elena');
+      expect(r.resposta).toMatch(/Helena/);
+      expect(r.resposta).not.toMatch(/foto/i);
     });
 
     /**

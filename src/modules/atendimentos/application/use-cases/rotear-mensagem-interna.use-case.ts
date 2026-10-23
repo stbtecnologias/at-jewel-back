@@ -325,12 +325,20 @@ export class RotearMensagemInternaUseCase {
         );
         return { resposta: null, motivo: 'ignorado_foto_sem_permissao' };
       }
-      // O CATALOGO MORA NO NUMERO DA ELENA. A foto que chega no da Anastasia
-      // nao e recusada em silencio: quem tem permissao ouve para onde levar.
-      // Com um numero so, nao ha para onde desviar — e ele atende tudo.
-      if (msg.agente === 'ANASTASIA') {
-        return this.desviar('ELENA', quem.nome ?? '');
-      }
+      // ====================================================================
+      // A FOTO ENTRA PELOS DOIS NUMEROS — 23/10/2026, decisao dele:
+      // *"a gestao tambem pode fazer completo, capa e tudo"*.
+      //
+      // Ate aqui a imagem que chegava na Anastasia era DESVIADA para a Elena,
+      // porque o catalogo "morava" naquele numero (decisao de 25/09). Em 22/10
+      // a gestao ganhou o catalogo inteiro em TEXTO — criar, por peca, gerar o
+      // PDF — e a foto virou a unica coisa que ela ainda tinha de fazer no
+      // outro lugar. Meio caminho e pior que caminho nenhum: ela criava o
+      // catalogo aqui e tinha de trocar de conversa para mandar a capa.
+      //
+      // A PERMISSAO CONTINUA SENDO A MESMA, `catalogo:write`, e e ela que
+      // decide — nao o numero. Quem nao a tem ja foi recusado acima.
+      // ====================================================================
       return this.canalCatalogo.foto({
         de: msg.de,
         nomeRemetente: quem.nome ?? '',
@@ -974,22 +982,25 @@ export class RotearMensagemInternaUseCase {
       : ' Me chama no outro número da loja.';
 
     // ======================================================================
-    // A FRASE DO DESVIO DEIXOU DE SER VERDADE EM 22/10, e o Lucas viu no
-    // primeiro teste: ele criou um catálogo pela Anastasia, gerou o PDF por
-    // ela, mandou uma foto de capa — e ouviu *"catálogo eu atendo como
-    // Helena, no outro número"*. Contradição em dois minutos de conversa.
+    // O DESVIO ENCOLHEU DUAS VEZES, E AS DUAS PORQUE O CANAL CRESCEU.
     //
-    // O que mudou foi o canal, e não o desvio: desde hoje a gestão CRIA
-    // catálogo, põe peça e gera o PDF por aqui. O que continua morando no
-    // número da Helena é a FOTO — é lá que o catálogo recebe imagem.
+    // Em 22/10 ele criou um catálogo pela Anastasia, gerou o PDF por ela,
+    // mandou a foto da capa — e ouviu *"catálogo eu atendo como Helena, no
+    // outro número"*. Contradição em dois minutos de conversa: a gestão tinha
+    // ganhado o catálogo em texto naquele mesmo dia.
     //
-    // Então a frase passou a dizer o que ESTE número faz, e desviar só o que
-    // de fato não dá. Desvio que nega o que a pessoa acabou de fazer gasta a
-    // confiança dela no resto.
+    // Em 23/10 caiu também a parte da FOTO — *"a gestão também pode fazer
+    // completo, capa e tudo"* —, e com ela some a última razão de desviar
+    // alguém da administração.
+    //
+    // ENTÃO SOBROU UM CASO SÓ: a VENDEDORA que escreve no número da gestão. O
+    // desvio dela não fala de catálogo nem de foto; fala de quem atende quem.
+    // Desvio que nega o que a pessoa acabou de fazer gasta a confiança dela no
+    // resto.
     // ======================================================================
     const texto =
       para === 'ELENA'
-        ? `${ola}Aqui eu faço o catálogo em texto: crio, ponho as peças e gero o PDF. Foto é no número da Helena — é por lá que a imagem entra no catálogo.${onde}`
+        ? `${ola}Este número é o da Anastasia, que fala com a administração. Quem atende você é a Helena, no outro número.${onde}`
         : `${ola}Este número é o da Helena, que atende as vendedoras e o catálogo. Os dados da equipe eu vejo como Anastasia, no outro número.${onde}`;
 
     return { resposta: texto, motivo: `desvio_para_${para.toLowerCase()}` };

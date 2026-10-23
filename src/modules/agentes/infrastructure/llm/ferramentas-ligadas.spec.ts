@@ -72,6 +72,48 @@ describe('as ferramentas declaradas ao modelo', () => {
 
   /**
    * ========================================================================
+   * "GERA UM PDF" NAO PODE CAIR NO CATALOGO — 23/10/2026, visto em producao.
+   *
+   * Ele pediu as fotos de uma peca e disse *"gera um pdf"*. A agente entendeu
+   * CATALOGO e respondeu *"de qual catalogo? me passa o numero ou o nome"* —
+   * a pergunta certa para a frase errada. O que ele queria era a ultima
+   * resposta em arquivo, que e o `mandar_relatorio`.
+   *
+   * A CULPA ERA DA DESCRICAO, e nao do modelo: a ferramenta do catalogo
+   * reivindicava literalmente a frase "gera o pdf", que era do relatorio
+   * desde 21/10. Duas ferramentas pedindo a mesma frase e uma moeda girando.
+   *
+   * ESTE TESTE NAO PROVA QUE O MODELO OBEDECE — isso so o WhatsApp diz. Ele
+   * prova que a fronteira CONTINUA ESCRITA: que o relatorio reivindica a
+   * frase e que o catalogo aponta para ele em vez de disputa-la.
+   * ========================================================================
+   */
+  describe('a fronteira entre os dois PDFs', () => {
+    /** A descricao de uma ferramenta, do `name:` ate o `input_schema`. */
+    const descricaoDe = (nome: string): string => {
+      const i = arquivo.indexOf(`name: '${nome}',`);
+      expect(i).toBeGreaterThan(0);
+      const fim = arquivo.indexOf('input_schema', i);
+      return arquivo.slice(i, fim);
+    };
+
+    it('o relatorio reivindica "gera um pdf"', () => {
+      expect(descricaoDe('mandar_relatorio').toLowerCase()).toContain(
+        'gera um pdf',
+      );
+    });
+
+    it('e o catalogo devolve a frase, dizendo qual e a outra', () => {
+      const catalogo = descricaoDe('gerar_pdf_do_catalogo');
+
+      expect(catalogo).toContain('mandar_relatorio');
+      // E diz o caso em que NAO e ele: a consulta que acabou de sair.
+      expect(catalogo.toLowerCase()).toContain('consulta');
+    });
+  });
+
+  /**
+   * ========================================================================
    * O NUMERO QUE A DESCRICAO PROMETE TEM DE SER O TETO DE VERDADE —
    * 08/10/2026.
    *

@@ -599,7 +599,10 @@ const GESTAO_POR_EMPRESA_TOOL: Anthropic.Tool = {
 const MANDAR_RELATORIO_TOOL: Anthropic.Tool = {
   name: 'mandar_relatorio',
   description:
-    'Manda a ULTIMA lista consultada como arquivo na conversa — PDF para ver e repassar, planilha para trabalhar (ordenar, filtrar, somar). Use quando pedirem "manda em pdf", "me manda a planilha", "exporta isso", "manda esse relatorio". NAO use para montar lista nova: consulte primeiro e so entao ofereca o arquivo. Se nao houver lista recente, a ferramenta avisa e voce diz que precisa consultar antes.',
+    'Manda a ULTIMA resposta como arquivo na conversa — PDF para ver e repassar, planilha para trabalhar (ordenar, filtrar, somar). ' +
+    'Use quando pedirem "manda em pdf", "GERA UM PDF", "gera o pdf", "faz um pdf disso", "me manda a planilha", "exporta isso", "manda esse relatorio". ' +
+    'DEPOIS DE QUALQUER CONSULTA — pecas, clientes, vendas, agenda, metas — "gera um pdf" E AQUI, e nao no catalogo: ela esta falando do que voce acabou de mostrar. ' +
+    'NAO use para montar lista nova: consulte primeiro e so entao ofereca o arquivo. Se nao houver lista recente, a ferramenta avisa e voce diz que precisa consultar antes.',
   input_schema: {
     type: 'object',
     properties: {
@@ -1275,8 +1278,9 @@ const GESTAO_ESTRATEGIA_TOOL: Anthropic.Tool = {
 const GESTAO_PDF_CATALOGO_TOOL: Anthropic.Tool = {
   name: 'gerar_pdf_do_catalogo',
   description:
-    'Monta o PDF de um catalogo, UMA FOTO POR PAGINA, e manda na conversa. ' +
-    'Use quando pedirem "gera o pdf", "monta o catalogo em pdf", "manda o catalogo para eu enviar as clientes". ' +
+    'Monta o PDF de um CATALOGO, UMA FOTO POR PAGINA, e manda na conversa. ' +
+    'Use quando a conversa for sobre um catalogo: "monta o catalogo em pdf", "manda o catalogo para eu enviar as clientes", "gera o pdf do 0042", ou logo depois de criar um catalogo ou por pecas nele. ' +
+    'SO ESTA QUANDO HOUVER CATALOGO. Se a ultima coisa foi uma CONSULTA — as fotos de uma peca, uma lista de clientes, as vendas —, "gera um pdf" NAO e esta ferramenta: e o "mandar_relatorio", que manda em arquivo o que voce acabou de mostrar. Nao pergunte "de qual catalogo?" quando ninguem falou de catalogo. ' +
     'As fotos ja estao no catalogo e ja trazem o preco na imagem — este PDF nao escreve nada por cima delas. ' +
     'A CAPA E PADRAO: a primeira foto do catalogo abre o PDF com a marca e o nome do catalogo escritos por cima, e a peca continua aparecendo na pagina dela. NAO pergunte nada disso. ' +
     'SE O CATALOGO JA TIVER UMA IMAGEM DE CAPA — aquela que ela mandou dizendo "essa e a capa" —, e essa que abre o PDF, e ela NAO se repete como pagina de peca. ' +
