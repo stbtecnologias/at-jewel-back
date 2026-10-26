@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Relatorio } from '../domain/relatorio';
+import type { RecorteDoPedido } from '../domain/recorte-do-pedido';
 
 /**
  * Duas horas, o mesmo TTL da memória de conversa do canal interno.
@@ -111,6 +112,7 @@ export class UltimoRelatorioService {
     chave: string | null | undefined,
     titulo: string,
     texto: string,
+    opcoes?: { coluna?: string; recorte?: RecorteDoPedido | null },
   ): void {
     if (!chave) return;
 
@@ -182,13 +184,35 @@ export class UltimoRelatorioService {
     if (this.porChave.size >= MAX && !this.porChave.has(chave)) {
       this.descartarMaisAntigo();
     }
+    // ====================================================================
+    // O RECORTE VAI NO TÍTULO — 26/10/2026.
+    //
+    // "Itens mais vendidos" vira "Itens mais vendidos — Camila · agosto de
+    // 2026". Sem isto, dois PDFs de meses diferentes saem com o mesmo nome e
+    // a mesma cara, e quem abre três dias depois não sabe qual é qual.
+    //
+    // E O CARIMBO MUDA DE PALAVRA quando o período já está no título:
+    // "Posição em" é a posição do DADO, e vale para estoque e para o dia de
+    // hoje, que envelhecem em horas. Num relatório de agosto lido em outubro
+    // essa frase mente — ali o que a hora diz é só quando foi lido.
+    //
+    // O período não se repete nas duas: a decisão de 21/10 é que o recorte
+    // mora no título, e não numa segunda linha que diga o mesmo.
+    // ====================================================================
+    const recorte = opcoes?.recorte;
+    const comRecorte = recorte?.titulo
+      ? `${titulo} — ${recorte.titulo}`
+      : titulo;
+
     this.porChave.set(chave, {
       relatorio: {
-        titulo,
-        posicao: `Posição em ${agora()}`,
+        titulo: comRecorte,
+        posicao: recorte?.periodo
+          ? `Lido em ${agora()}`
+          : `Posição em ${agora()}`,
         colunas: partido
           ? [
-              { chave: 'o', titulo, peso: 4 },
+              { chave: 'o', titulo: opcoes?.coluna ?? titulo, peso: 4 },
               {
                 chave: 'q',
                 titulo: 'Valor',
@@ -197,7 +221,7 @@ export class UltimoRelatorioService {
                 mono: true,
               },
             ]
-          : [{ chave: 'o', titulo }],
+          : [{ chave: 'o', titulo: opcoes?.coluna ?? titulo }],
         linhas: partido ?? dados.map((o) => ({ o })),
       },
       em: Date.now(),

@@ -180,4 +180,73 @@ describe('UltimoRelatorioService', () => {
     s.esquecer(chave);
     expect(s.pegar(chave)).toBeNull();
   });
+// ==========================================================================
+  // O RECORTE DA PERGUNTA NO TÍTULO — 26/10/2026.
+  //
+  // *"Sinta falta dos dados, pq são os itens mais vendidos da Camila em
+  // Agosto de 2026 e no documento não consta nada disso."*
+  // ==========================================================================
+  describe('o recorte no título e no carimbo', () => {
+    // Duas linhas marcadas, como toda ferramenta de lista escreve. A quebra
+    // vai por código, igual ao próprio serviço faz — e pelo mesmo motivo de
+    // sempre: heredoc come barra invertida.
+    const LISTA = [
+      '- BR26278 Brinco DTS — R$ 52.500',
+      '- AN26191 Anel DTS — R$ 30.000',
+    ].join(String.fromCharCode(10));
+
+    it('o título leva quem e quando, e a coluna diz o que é a linha', () => {
+      const s = new UltimoRelatorioService();
+
+      s.guardarTexto('c-1', 'Itens mais vendidos', LISTA, {
+        coluna: 'Peça',
+        recorte: { titulo: 'Camila · agosto de 2026', periodo: 'agosto de 2026' },
+      });
+
+      const r = s.pegar('c-1');
+      expect(r?.titulo).toBe('Itens mais vendidos — Camila · agosto de 2026');
+      expect(r?.colunas[0].titulo).toBe('Peça');
+    });
+
+    /* "Posição em" é a posição do DADO. Num relatório de agosto lido em
+     * outubro essa frase mente: ali a hora só diz quando foi lido. */
+    it('com período no título, o carimbo diz "Lido em"', () => {
+      const s = new UltimoRelatorioService();
+
+      s.guardarTexto('c-2', 'Itens mais vendidos', LISTA, {
+        recorte: { titulo: 'agosto de 2026', periodo: 'agosto de 2026' },
+      });
+
+      expect(s.pegar('c-2')?.posicao).toMatch(/^Lido em /);
+    });
+
+    it('sem recorte, nada muda — título, coluna e "Posição em" como antes', () => {
+      const s = new UltimoRelatorioService();
+
+      s.guardarTexto('c-3', 'Leads', LISTA);
+
+      const r = s.pegar('c-3');
+      expect(r?.titulo).toBe('Leads');
+      expect(r?.colunas[0].titulo).toBe('Leads');
+      expect(r?.posicao).toMatch(/^Posição em /);
+    });
+
+    /* O ARQUIVO LEVA O TÍTULO NO NOME: dois meses da mesma consulta não podem
+     * sair com o mesmo nome na pasta de downloads dela. */
+    it('dois recortes da mesma consulta dão títulos diferentes', () => {
+      const s = new UltimoRelatorioService();
+
+      s.guardarTexto('c-4', 'Itens mais vendidos', LISTA, {
+        recorte: { titulo: 'Camila · agosto de 2026', periodo: 'agosto de 2026' },
+      });
+      const agosto = s.pegar('c-4')?.titulo;
+
+      s.guardarTexto('c-4', 'Itens mais vendidos', LISTA, {
+        recorte: { titulo: 'Camila · setembro de 2026', periodo: 'setembro de 2026' },
+      });
+      const setembro = s.pegar('c-4')?.titulo;
+
+      expect(agosto).not.toBe(setembro);
+    });
+  });
 });

@@ -617,6 +617,50 @@ describe('o artefato que a ferramenta produz', () => {
     });
 
     // ======================================================================
+    // O PEDIDO VAI JUNTO COM O TEXTO — 26/10/2026.
+    //
+    // Sem ele o ouvinte sabe QUAL ferramenta respondeu e nao sabe O QUE foi
+    // perguntado, e o arquivo sai sem dizer de quem e nem de quando:
+    //
+    //   "quais pecas mais vendidas da Camila em agosto 2026" -> "gera o pdf"
+    //   -> um PDF chamado so "Itens mais vendidos".
+    // ======================================================================
+    it('o pedido do modelo vai junto, para o titulo levar o recorte', async () => {
+      const aoResponder = jest.fn();
+      const pedido = {
+        vendedora: 'camila',
+        de: '2026-08-01',
+        ate: '2026-08-31',
+      };
+      create
+        .mockResolvedValueOnce({
+          content: [
+            {
+              type: 'tool_use',
+              id: 'tu-itens',
+              name: 'itens_mais_vendidos',
+              input: pedido,
+            },
+          ],
+          usage: { output_tokens: 10 },
+          stop_reason: 'tool_use',
+        })
+        .mockResolvedValueOnce(responde('Seguem as pecas.'));
+
+      await cliente.chatComFerramentas({
+        ...base(),
+        gestaoItens: jest.fn().mockResolvedValue({
+          status: 'OK',
+          linhas: ['BR26278 Brinco DTS — R$ 52.500'],
+        }),
+        aoResponderConsulta: aoResponder,
+      } as unknown as ChatParams);
+
+      expect(aoResponder.mock.calls[0][0]).toBe('itens_mais_vendidos');
+      expect(aoResponder.mock.calls[0][2]).toEqual(pedido);
+    });
+
+    // ======================================================================
     // E O `mandar_relatorio` NAO GUARDA, de proposito.
     //
     // Ele nao e consulta: guardasse, a frase "o arquivo X esta pronto"

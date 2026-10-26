@@ -4150,7 +4150,13 @@ export class AnthropicClient implements ILlmClient {
 
   private async executarLeitura(
     toolUse: Anthropic.ToolUseBlock,
-    aoResponder: ((ferramenta: string, texto: string) => void) | undefined,
+    aoResponder:
+      | ((
+          ferramenta: string,
+          texto: string,
+          pedido?: Record<string, unknown>,
+        ) => void)
+      | undefined,
     corpo: () => Promise<string>,
   ): Promise<Anthropic.ToolResultBlockParam> {
     try {
@@ -4160,7 +4166,13 @@ export class AnthropicClient implements ILlmClient {
       //
       // Falha do ouvinte nao pode derrubar a resposta: ele e um extra.
       try {
-        aoResponder?.(toolUse.name, texto);
+        // O PEDIDO VAI JUNTO: e dele que sai "Camila · agosto de 2026" no
+        // titulo do arquivo. Ver `aoResponderConsulta` no port.
+        aoResponder?.(
+          toolUse.name,
+          texto,
+          toolUse.input as Record<string, unknown>,
+        );
       } catch (e) {
         this.logger.warn(
           `Nao guardei a tabela de ${toolUse.name}: ${e instanceof Error ? e.message : e}`,

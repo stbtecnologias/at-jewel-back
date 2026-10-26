@@ -20,7 +20,11 @@ import {
   type ArquivoDoAgente,
 } from '../../../relatorios/application/montar-arquivo.use-case';
 import { UltimoRelatorioService } from '../../../relatorios/application/ultimo-relatorio.service';
-import { tituloDaFerramenta } from '../../../relatorios/domain/titulo-da-ferramenta';
+import {
+  colunaDaFerramenta,
+  tituloDaFerramenta,
+} from '../../../relatorios/domain/titulo-da-ferramenta';
+import { recorteDoPedido } from '../../../relatorios/domain/recorte-do-pedido';
 import { PERMISSAO_CATALOGO } from './processar-foto-catalogo.use-case';
 import { modeloDeIa } from '../../../../shared/config/modelo-de-ia';
 import type { FotoDeProduto } from '../fotos-de-produto.service';
@@ -226,11 +230,18 @@ export class ProcessarMensagemGestaoUseCase {
           // O ouvinte roda no funil por onde TODA leitura passa, entao nao ha
           // uma linha por ferramenta para alguem esquecer na proxima. O texto
           // e o da FERRAMENTA, nao o do modelo.
-          aoResponderConsulta: (ferramenta, texto) =>
+          // O RECORTE E A COLUNA ENTRAM AQUI — 26/10/2026. O titulo ganha
+          // "Camila · agosto de 2026", e o cabecalho da coluna passa a dizer
+          // o que e cada LINHA em vez de repetir o titulo.
+          aoResponderConsulta: (ferramenta, texto, pedido) =>
             this.ultimoRelatorio.guardarTexto(
               chave,
               tituloDaFerramenta(ferramenta),
               texto,
+              {
+                coluna: colunaDaFerramenta(ferramenta),
+                recorte: recorteDoPedido(pedido),
+              },
             ),
           // MANDAR EM ARQUIVO — RF36 e RF37, 21/10/2026.
           //

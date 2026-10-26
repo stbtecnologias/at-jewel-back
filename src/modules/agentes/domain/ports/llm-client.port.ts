@@ -1327,7 +1327,22 @@ export interface ChatParams {
    * Recebe o nome da ferramenta e O TEXTO QUE ELA PRODUZIU — que e nosso, e
    * nao do modelo. Quem escuta decide o que fazer com isso.
    */
-  aoResponderConsulta?: (ferramenta: string, texto: string) => void;
+  /**
+   * O PEDIDO VAI JUNTO — 26/10/2026.
+   *
+   * Sem ele o ouvinte sabe QUAL ferramenta respondeu e nao sabe O QUE foi
+   * perguntado: o mesmo "Itens mais vendidos" servia para agosto da Camila e
+   * para hoje da loja, e o arquivo saia sem dizer de quem era.
+   *
+   * Vai cru, como o modelo mandou. Escrever "agosto de 2026" a partir de
+   * `de`/`ate` e trabalho de quem monta o papel, e mora no modulo de
+   * relatorios — este aqui nao conhece relatorio nenhum, e continua assim.
+   */
+  aoResponderConsulta?: (
+    ferramenta: string,
+    texto: string,
+    pedido?: Record<string, unknown>,
+  ) => void;
   // Idem para `consultar_produtos`.
   consultarProdutos?: ConsultarProdutosHandler;
   // Idem para `consultar_minha_carteira`.

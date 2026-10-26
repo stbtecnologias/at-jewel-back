@@ -1,6 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { TITULOS_POR_FERRAMENTA, tituloDaFerramenta } from './titulo-da-ferramenta';
+import {
+  COLUNA_POR_FERRAMENTA,
+  TITULOS_POR_FERRAMENTA,
+  colunaDaFerramenta,
+  tituloDaFerramenta,
+} from './titulo-da-ferramenta';
 
 /**
  * O NOME QUE O ARQUIVO LEVA — RF36 e RF37.
@@ -91,5 +96,39 @@ describe('o título que a ferramenta dá ao arquivo', () => {
 
   it('nenhum título é "Consulta" — isso é o que o desconhecido recebe', () => {
     expect(Object.values(TITULOS_POR_FERRAMENTA)).not.toContain('Consulta');
+  });
+// ==========================================================================
+  // O CABEÇALHO DA COLUNA DIZ O QUE É CADA LINHA — 26/10/2026.
+  //
+  // O PDF das peças da Camila saiu com "Itens mais vendidos" no título e
+  // "ITENS MAIS VENDIDOS" no cabeçalho da coluna: a mesma frase duas vezes, e
+  // nenhuma delas dizendo que cada linha é uma peça.
+  // ==========================================================================
+  it('toda ferramenta com título tem coluna — a lista não fica pela metade', () => {
+    const semColuna = Object.keys(TITULOS_POR_FERRAMENTA).filter(
+      (nome) => !COLUNA_POR_FERRAMENTA[nome],
+    );
+
+    expect(semColuna).toEqual([]);
+  });
+
+  it('nenhuma coluna repete o título da própria ferramenta', () => {
+    const repetidas = Object.keys(COLUNA_POR_FERRAMENTA).filter(
+      (nome) => COLUNA_POR_FERRAMENTA[nome] === TITULOS_POR_FERRAMENTA[nome],
+    );
+
+    expect(repetidas).toEqual([]);
+  });
+
+  it('a coluna é uma palavra no singular, e não uma frase', () => {
+    for (const [nome, coluna] of Object.entries(COLUNA_POR_FERRAMENTA)) {
+      expect(`${nome}: ${coluna.split(' ').length}`).toBe(`${nome}: 1`);
+      expect(coluna.endsWith('s')).toBe(false);
+    }
+  });
+
+  it('ferramenta desconhecida cai em "Item"', () => {
+    expect(colunaDaFerramenta('ferramenta_que_nao_existe')).toBe('Item');
+    expect(colunaDaFerramenta('itens_mais_vendidos')).toBe('Peça');
   });
 });

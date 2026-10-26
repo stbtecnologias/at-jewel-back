@@ -145,21 +145,47 @@ describe('ProcessarMensagemGestaoUseCase — o arquivo e a tabela', () => {
   // por empresa" um arquivo com as vendas da Camila dentro, e o título errado
   // não se corrigiu sozinho — ele AUTENTICOU o conteúdo errado.
   // ==========================================================================
-  it('a consulta que responde guarda a tabela com o título da ferramenta', async () => {
+  /**
+   * ========================================================================
+   * O TITULO LEVA O RECORTE DA PERGUNTA — 26/10/2026.
+   *
+   * Ate aqui o guardado recebia so o nome da ferramenta, e o PDF das pecas
+   * da Camila em agosto saia chamado "Itens mais vendidos" — sem a Camila e
+   * sem agosto. *"Sinta falta dos dados."*
+   *
+   * Este teste e o fio inteiro do canal: o pedido que o modelo mandou chega
+   * ao ouvinte, vira recorte por extenso e entra no titulo do arquivo.
+   * ========================================================================
+   */
+  it('a consulta guarda a tabela com titulo, coluna e o recorte da pergunta', async () => {
     await useCase.execute(MSG);
 
     const params = llm.chatComFerramentas.mock.calls[0][0] as {
-      aoResponderConsulta: (f: string, t: string) => void;
+      aoResponderConsulta: (
+        f: string,
+        t: string,
+        pedido?: Record<string, unknown>,
+      ) => void;
     };
     params.aoResponderConsulta(
       'itens_mais_vendidos',
-      '- BRINCO — R$ 207.269\n- COLAR — R$ 147.626',
+      ['- BRINCO — R$ 207.269', '- COLAR — R$ 147.626'].join(
+        String.fromCharCode(10),
+      ),
+      { vendedora: 'camila', de: '2026-08-01', ate: '2026-08-31' },
     );
 
     expect(ultimoRelatorio.guardarTexto).toHaveBeenCalledWith(
       memoria.carregar.mock.calls[0][0],
       'Itens mais vendidos',
       expect.stringContaining('BRINCO'),
+      {
+        coluna: 'Peça',
+        recorte: {
+          titulo: 'Camila · agosto de 2026',
+          periodo: 'agosto de 2026',
+        },
+      },
     );
   });
 
