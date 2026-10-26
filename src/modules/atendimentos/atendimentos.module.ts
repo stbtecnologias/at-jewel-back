@@ -6,6 +6,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WhatsappGatewayModule } from '../atendimento/whatsapp-gateway.module';
 import { ClientesModule } from '../clientes/clientes.module';
+import { EmpresasModule } from '../empresas/empresas.module';
 import { LeadsModule } from '../leads/leads.module';
 import { MetasModule } from '../metas/metas.module';
 import { ProdutosModule } from '../produtos/produtos.module';
@@ -95,6 +96,10 @@ import { AnalisarTomUseCase } from '../atendimento/application/analisar-tom.use-
     // O agendador precisa do nome do cliente, do WhatsApp da vendedora e do
     // gateway de envio. Nenhum destes importa atendimentos — sem ciclo.
     ClientesModule,
+    // AS VENDAS DE UMA EMPRESA DO GRUPO — 26/10/2026. So o repositorio, para
+    // resolver "SP" no CNPJ que emitiu a venda. EmpresasModule e folha (ORM e
+    // Auth), entao nao ha ciclo.
+    EmpresasModule,
     // Quem sabe se o telefone do outro lado e de gente da casa — RF29 e RF30.
     EquipeModule,
     // RF36 e RF37 — o molde do relatorio e o montador de arquivo.

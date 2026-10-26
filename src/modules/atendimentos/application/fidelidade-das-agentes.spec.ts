@@ -203,6 +203,8 @@ describe('os clientes por fidelidade', () => {
       { montar: jest.fn().mockResolvedValue('dossie') } as never,
       // RF47: o catalogo em PDF. Mudo nestes testes.
       { execute: jest.fn() } as never,
+        // O repositorio de empresas — 26/10/2026, as vendas por filial.
+        { listar: jest.fn().mockResolvedValue([]) } as never,
       );
     });
 

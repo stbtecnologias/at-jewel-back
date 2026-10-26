@@ -89,6 +89,12 @@ export class VendasMovimentacaoRepository
       params.push(filtro.vendedoraId);
       conds.push(`m.vendedora_id = $${params.length}`);
     }
+    // A EMPRESA DO GRUPO — 26/10/2026. A coluna ja existia e nenhuma
+    // consulta de venda a olhava: todo numero era a soma dos oito CNPJs.
+    if (filtro.empresaId) {
+      params.push(filtro.empresaId);
+      conds.push(`m.empresa_id = $${params.length}`);
+    }
     if (filtro.documento) {
       // O numero vem como a pessoa fala dele ("1157", "a 1.157"). So digito.
       params.push(filtro.documento.replace(/\D/g, ''));

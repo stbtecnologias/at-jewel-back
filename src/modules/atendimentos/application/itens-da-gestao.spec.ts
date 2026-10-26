@@ -132,6 +132,8 @@ describe('itens_mais_vendidos e o escopo de quem pergunta', () => {
       { montar: jest.fn().mockResolvedValue('dossie') } as never,
       // RF47: o catalogo em PDF. Mudo nestes testes.
       { execute: jest.fn() } as never,
+      // O repositorio de empresas — 26/10/2026, as vendas por filial.
+      { listar: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 
@@ -291,6 +293,8 @@ describe('consultar_produtos da gestao e a quantidade', () => {
       { montar: jest.fn().mockResolvedValue('dossie') } as never,
       // RF47: o catalogo em PDF. Mudo nestes testes.
       { execute: jest.fn() } as never,
+      // O repositorio de empresas — 26/10/2026, as vendas por filial.
+      { listar: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 
@@ -461,6 +465,8 @@ describe('o recorte de equipe nas ferramentas de gestao', () => {
       { montar: jest.fn().mockResolvedValue('dossie') } as never,
       // RF47: o catalogo em PDF. Mudo nestes testes.
       { execute: jest.fn() } as never,
+      // O repositorio de empresas — 26/10/2026, as vendas por filial.
+      { listar: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 
@@ -789,6 +795,8 @@ describe('o periodo livre nas ferramentas de venda', () => {
       { montar: jest.fn().mockResolvedValue('dossie') } as never,
       // RF47: o catalogo em PDF. Mudo nestes testes.
       { execute: jest.fn() } as never,
+      // O repositorio de empresas — 26/10/2026, as vendas por filial.
+      { listar: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 
@@ -957,6 +965,8 @@ describe('o ranking por tipo de peça', () => {
       { montar: jest.fn().mockResolvedValue('dossie') } as never,
       // RF47: o catalogo em PDF. Mudo nestes testes.
       { execute: jest.fn() } as never,
+      // O repositorio de empresas — 26/10/2026, as vendas por filial.
+      { listar: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 

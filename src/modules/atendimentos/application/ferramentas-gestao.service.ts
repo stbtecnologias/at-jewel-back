@@ -78,6 +78,7 @@ import type {
   IConversaWhatsappRepository,
 } from '../domain/ports/repositories/conversa-whatsapp-repository.port';
 import { CLIENTE_REPOSITORY } from '../../clientes/domain/ports/injection-tokens';
+import { EMPRESA_REPOSITORY } from '../../empresas/domain/ports/injection-tokens';
 import { LEAD_REPOSITORY } from '../../leads/domain/ports/injection-tokens';
 import {
   STATUS_LEAD_VENDEDORA,
@@ -85,6 +86,7 @@ import {
   type StatusLeadVendedora,
 } from '../../leads/domain/ports/repositories/lead-repository.port';
 import type { IClienteRepository } from '../../clientes/domain/ports/repositories/cliente-repository.port';
+import type { IEmpresaRepository } from '../../empresas/domain/ports/repositories/empresa-repository.port';
 import { VENDEDORA_REPOSITORY } from '../../vendedoras/domain/ports/injection-tokens';
 import type { IVendedoraRepository } from '../../vendedoras/domain/ports/repositories/vendedora-repository.port';
 import {
@@ -364,6 +366,8 @@ export interface FerramentasGestao {
   gestaoItensExigeVendedora?: boolean;
   gestaoEpocaExigeVendedora?: boolean;
   gestaoPorEmpresaDisponivel?: boolean;
+  /** A empresa como recorte das vendas uma a uma — 26/10/2026. */
+  gestaoVendasPorEmpresaDisponivel?: boolean;
 }
 
 /** O que o `montar` precisa saber sobre quem esta do outro lado. */
@@ -569,6 +573,12 @@ export class FerramentasGestaoService {
     private readonly estrategia: EstrategiaDeVendasService,
     // RF47 — o catalogo em PDF, uma foto por pagina.
     private readonly pdfDeFotos: PdfDeFotosUseCase,
+    // AS VENDAS DE UMA EMPRESA DO GRUPO — 26/10/2026. So para resolver o
+    // nome que a pessoa falou ("SP", "a MP") no CNPJ que emitiu a venda.
+    // NO FIM DA LISTA, pela mesma razao de sempre: parametro novo no meio
+    // quebra todo teste que constroi este servico a mao.
+    @Inject(EMPRESA_REPOSITORY)
+    private readonly empresas: IEmpresaRepository,
   ) {}
 
   /**
@@ -598,6 +608,7 @@ export class FerramentasGestaoService {
       gestaoItensExigeVendedora: !verLoja,
       gestaoEpocaExigeVendedora: !verLoja,
       gestaoPorEmpresaDisponivel: verLoja,
+      gestaoVendasPorEmpresaDisponivel: verLoja,
 
       /**
        * A AGENDA, DE UMA OU DA EQUIPE INTEIRA — 30/09/2026.
@@ -761,12 +772,30 @@ export class FerramentasGestaoService {
         cliente,
         vendedora,
         documento,
+        empresa,
         periodo,
         de,
         ate,
       }) => {
+        // ================================================================
+        // A EMPRESA SO E RECORTE PARA QUEM VE A LOJA — 26/10/2026.
+        //
+        // Segunda barreira do mesmo portao: sem `verLoja` o parametro nem e
+        // declarado ao modelo (ver `gestaoVendasPorEmpresaDisponivel`), e
+        // aqui ele e IGNORADO se vier assim mesmo. Schema e PEDIDO; isto e
+        // regra — mesmo desenho do `itens_mais_vendidos`.
+        //
+        // IGNORAR, E NAO RECUSAR COM EXPLICACAO: "voce nao pode ver essa
+        // filial" confirmaria o que a pergunta queria saber. Sem recorte, a
+        // ferramenta diz que falta recorte, que e a verdade dela.
+        // ================================================================
+        const empresaPedida = verLoja ? empresa?.trim() : undefined;
+
         const temRecorte = Boolean(
-          cliente?.trim() || vendedora?.trim() || documento?.trim(),
+          cliente?.trim() ||
+            vendedora?.trim() ||
+            documento?.trim() ||
+            empresaPedida,
         );
         if (!temRecorte) {
           return { status: 'EXIGE_RECORTE', linhas: [] };
@@ -830,11 +859,43 @@ export class FerramentasGestaoService {
           clienteId = achados[0].id ?? null;
         }
 
+        // ---- a empresa, se veio ---------------------------------------
+        //
+        // EM 02/10 A DECISAO FOI NAO RESOLVER NOME DE EMPRESA: o
+        // faturamento devolve a quebra inteira justamente para nao ter de
+        // entender "MP", "a de metais" e "MP Comercio" como a mesma coisa.
+        // Aqui nao ha essa saida — a lista uma a uma de seis empresas nao
+        // cabe numa resposta —, entao o nome se resolve, com a MESMA regra
+        // de ambiguidade do cliente e da vendedora: a lista, nunca um
+        // palpite.
+        let empresaId: string | null = null;
+        let empresaNome: string | null = null;
+        if (empresaPedida) {
+          const achadas = await this.empresas.listar({
+            busca: empresaPedida,
+            ativo: true,
+          });
+          if (achadas.length === 0) {
+            return { status: 'NAO_ENCONTRADA', sobre: 'empresa', linhas: [] };
+          }
+          if (achadas.length > 1) {
+            return {
+              status: 'AMBIGUA',
+              sobre: 'empresa',
+              linhas: [],
+              nomes: achadas.map((e) => e.nome),
+            };
+          }
+          empresaId = achadas[0].id ?? null;
+          empresaNome = achadas[0].nome;
+        }
+
         const datas = datasDeRecorte(de, ate);
         const r = await this.consultarVendas.detalhadas(
           {
             clienteId,
             vendedoraId,
+            empresaId,
             documento,
             recorte: datas ? undefined : periodo,
             de: datas?.de,
@@ -852,7 +913,7 @@ export class FerramentasGestaoService {
         // escreveu. E a escolha (b) de 24/09.
         // ================================================================
         this.ultimoRelatorio.guardar(chaveDaConversa, {
-          titulo: tituloDeVendas(cliente, vendedora, documento),
+          titulo: tituloDeVendas(cliente, vendedora, documento, empresaNome),
           posicao: `Posição em ${agoraPorExtenso()}`,
           paisagem: true,
           colunas: [
@@ -3953,11 +4014,18 @@ function tituloDeVendas(
   cliente?: string | null,
   vendedora?: string | null,
   documento?: string | null,
+  empresa?: string | null,
 ): string {
   if (documento?.trim()) return `Venda ${documento.trim()}`;
   if (cliente?.trim() && vendedora?.trim()) {
     return `Vendas de ${cliente.trim()} com ${vendedora.trim()}`;
   }
+  // A EMPRESA MANDA NO TITULO quando e ela o recorte: "Vendas de AT JEWEL
+  // LTDA - SP" diz de qual filial o papel fala, e era o que faltava.
+  if (empresa?.trim() && vendedora?.trim()) {
+    return `Vendas da ${vendedora.trim()} em ${empresa.trim()}`;
+  }
+  if (empresa?.trim()) return `Vendas de ${empresa.trim()}`;
   if (cliente?.trim()) return `Vendas de ${cliente.trim()}`;
   if (vendedora?.trim()) return `Vendas da ${vendedora.trim()}`;
   return 'Listagem de Vendas';

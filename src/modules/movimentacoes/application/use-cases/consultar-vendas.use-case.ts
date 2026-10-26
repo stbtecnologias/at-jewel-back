@@ -173,6 +173,7 @@ export class ConsultarVendasUseCase {
         janela,
         clienteId: filtro.clienteId,
         vendedoraId: filtro.vendedoraId,
+        empresaId: filtro.empresaId,
         documento: filtro.documento,
       },
       limitar(limite),

@@ -96,7 +96,7 @@ describe('o arquivo leva a lista inteira', () => {
   function servicoComRelatorio() {
     const listar = listarQueAnota();
     const relatorio = { guardar: jest.fn(), guardarTexto: jest.fn() };
-    const deps = Array.from({ length: 31 }, (_, i) =>
+    const deps = Array.from({ length: 32 }, (_, i) =>
       naoParaTudo(`colaborador ${i}`),
     );
     deps[9] = listar.uso as never;
@@ -106,6 +106,7 @@ describe('o arquivo leva a lista inteira', () => {
       ...(deps as unknown as ConstructorParameters<
         typeof FerramentasGestaoService
       >),
+
     );
     return { svc, listar, relatorio };
   }
@@ -139,7 +140,7 @@ describe('o arquivo leva a lista inteira', () => {
 describe('o padrão é só o disponível — canal da gestão', () => {
   function servico() {
     const listar = listarQueAnota();
-    const deps = Array.from({ length: 31 }, (_, i) =>
+    const deps = Array.from({ length: 32 }, (_, i) =>
       naoParaTudo(`colaborador ${i}`),
     );
     // O `ListarProdutosUseCase` é o décimo do construtor; ver a classe,
@@ -153,6 +154,7 @@ describe('o padrão é só o disponível — canal da gestão', () => {
       ...(deps as unknown as ConstructorParameters<
         typeof FerramentasGestaoService
       >),
+
     );
     return { svc, listar };
   }

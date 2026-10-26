@@ -245,6 +245,8 @@ export interface FiltroVendasDetalhadas {
   janela?: JanelaDeVendas;
   clienteId?: string | null;
   vendedoraId?: string | null;
+  /** A empresa do grupo que emitiu a venda — `movimentacoes.empresa_id`. */
+  empresaId?: string | null;
   /** O numero do documento, como a pessoa fala dele. */
   documento?: string | null;
 }

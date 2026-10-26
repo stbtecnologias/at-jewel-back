@@ -1,4 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
+import {
+  COBRANCA_DA_PROMESSA,
+  ehPromessaSemDado,
+} from '../../domain/promessa-sem-consulta';
 import { Injectable, Logger } from '@nestjs/common';
 import {
   CATEGORIAS,
@@ -752,6 +756,34 @@ const GESTAO_METAS_TOOL: Anthropic.Tool = {
       },
     },
     required: ['vendedora'],
+  },
+};
+
+/**
+ * A MESMA FERRAMENTA, COM A EMPRESA — 26/10/2026.
+ *
+ * Duas versoes do mesmo `name`, como no `itens_mais_vendidos`: quem ve a
+ * loja recebe a que aceita `empresa`; quem nao ve, a de sempre. A primeira
+ * barreira do escopo e esta, e a segunda esta no handler.
+ */
+const GESTAO_VENDAS_DETALHADAS_COM_EMPRESA_TOOL: Anthropic.Tool = {
+  ...GESTAO_VENDAS_DETALHADAS_TOOL,
+  description:
+    GESTAO_VENDAS_DETALHADAS_TOOL.description +
+    ' A EMPRESA DO GRUPO TAMBEM SERVE DE RECORTE, sozinha: "as vendas de SP", "o que a MP vendeu esse ano". Informe `empresa` com o nome como a pessoa falou.',
+  input_schema: {
+    ...GESTAO_VENDAS_DETALHADAS_TOOL.input_schema,
+    properties: {
+      ...(GESTAO_VENDAS_DETALHADAS_TOOL.input_schema.properties as Record<
+        string,
+        unknown
+      >),
+      empresa: {
+        type: 'string',
+        description:
+          'Nome da empresa ou filial do grupo como veio na conversa ("SP", "MP Comercio"). Serve de recorte sozinho.',
+      },
+    },
   },
 };
 
@@ -2093,6 +2125,9 @@ function motivoDoVazio(
   return 'outro';
 }
 
+/** A linha em branco entre dois blocos de texto do modelo. */
+const NL_DUPLO = String.fromCharCode(10) + String.fromCharCode(10);
+
 @Injectable()
 export class AnthropicClient implements ILlmClient {
   private readonly logger = new Logger(AnthropicClient.name);
@@ -2155,7 +2190,11 @@ export class AnthropicClient implements ILlmClient {
       );
     }
     if (params.gestaoVendasDetalhadas)
-      tools.push(GESTAO_VENDAS_DETALHADAS_TOOL);
+      tools.push(
+        params.gestaoVendasPorEmpresaDisponivel
+          ? GESTAO_VENDAS_DETALHADAS_COM_EMPRESA_TOOL
+          : GESTAO_VENDAS_DETALHADAS_TOOL,
+      );
     if (params.mandarRelatorio) tools.push(MANDAR_RELATORIO_TOOL);
     // SO PARA QUEM VE A LOJA. O faturamento do grupo nao tem versao estreita,
     // entao a ferramenta nao e oferecida em vez de ser oferecida e recusada.
@@ -2253,6 +2292,9 @@ export class AnthropicClient implements ILlmClient {
       carteirasAtribuidas: 0,
     };
 
+    // Cobrei a promessa nesta mensagem? Uma vez por turno — ver
+    // `ehPromessaSemDado`.
+    let jaCobrei = false;
     let grafico: GraficoDinamico | undefined;
     // As fotos das pecas, se a busca encontrou alguma. Mesmo desenho do
     // grafico: artefato que nao cabe no dialogo e viaja por fora.
@@ -2268,6 +2310,45 @@ export class AnthropicClient implements ILlmClient {
       );
       if (pedidos.length === 0) {
         let texto = this.extrairTexto(resp);
+
+        // ==================================================================
+        // PROMESSA NAO E RESPOSTA — 26/10/2026.
+        //
+        // "Vou olhar o faturamento por empresa deste ano." e o turno acabou
+        // ali, sem ferramenta nenhuma. Ver `ehPromessaSemDado`.
+        //
+        // `volta === 1` E PARTE DA REGRA: se ele ja consultou alguma coisa
+        // nesta mensagem, a frase dele e conclusao e nao promessa. E
+        // `jaCobrei` existe para isto acontecer UMA vez — cobrar em laco
+        // seria trocar uma resposta ruim por uma conversa travada.
+        // ==================================================================
+        if (
+          texto &&
+          !jaCobrei &&
+          volta === 1 &&
+          tools.length > 0 &&
+          ehPromessaSemDado(texto)
+        ) {
+          jaCobrei = true;
+          this.logger.warn(
+            'O turno terminou em promessa sem consultar — cobrando o dado.',
+          );
+          conversa.push(
+            { role: 'assistant', content: resp.content },
+            { role: 'user', content: [{ type: 'text', text: COBRANCA_DA_PROMESSA }] },
+          );
+          resp = await this.client.messages.create({
+            model: params.model,
+            max_tokens: Math.max(params.maxTokens, 1024),
+            system: params.system,
+            tools,
+            messages: conversa,
+          });
+          tokens += resp.usage.output_tokens;
+          // A VOLTA SEGUINTE TRATA O QUE VIER: se ele finalmente pedir a
+          // ferramenta, o laco despacha; se responder em texto, sai texto.
+          continue;
+        }
 
         // ==================================================================
         // UMA SEGUNDA CHANCE ANTES DE PEDIR QUE ELA REPITA — 21/10/2026.
@@ -3876,6 +3957,7 @@ export class AnthropicClient implements ILlmClient {
                 cliente?: string;
                 vendedora?: string;
                 documento?: string;
+                empresa?: string;
                 periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
                 de?: string;
                 ate?: string;
@@ -3888,6 +3970,9 @@ export class AnthropicClient implements ILlmClient {
                 documento: entrada.documento
                   ? String(entrada.documento)
                   : undefined,
+                empresa: entrada.empresa
+                  ? String(entrada.empresa)
+                  : undefined,
                 periodo: entrada.periodo,
                 de: entrada.de ? String(entrada.de) : undefined,
                 ate: entrada.ate ? String(entrada.ate) : undefined,
@@ -3896,15 +3981,29 @@ export class AnthropicClient implements ILlmClient {
               // Faltou DE QUEM ou DE QUAL VENDA. Nao e "nao encontrei": e uma
               // pergunta que ainda nao fechou.
               if (r.status === 'EXIGE_RECORTE') {
-                return 'Esta consulta e sempre sobre alguem ou sobre uma venda. Pergunte de qual cliente, de qual vendedora ou de qual documento ela quer, sem mencionar permissao nem limitacao de acesso.';
+                // A EMPRESA SO ENTRA NA FRASE PARA QUEM PODE USA-LA: para os
+                // outros ela nem existe como parametro, e oferecer um recorte
+                // que a pessoa nao tem criaria uma pergunta sem resposta.
+                return params.gestaoVendasPorEmpresaDisponivel
+                  ? 'Esta consulta e sempre sobre alguem, sobre uma venda ou sobre uma EMPRESA do grupo. Pergunte de qual cliente, vendedora, documento ou empresa ela quer, sem mencionar permissao nem limitacao de acesso.'
+                  : 'Esta consulta e sempre sobre alguem ou sobre uma venda. Pergunte de qual cliente, de qual vendedora ou de qual documento ela quer, sem mencionar permissao nem limitacao de acesso.';
               }
               if (r.status === 'NAO_ENCONTRADA') {
-                return r.sobre === 'cliente'
-                  ? 'Nao achei esse cliente. Diga isso e peca o nome de novo, ou o codigo dele.'
-                  : 'Nao achei essa vendedora na equipe. Diga isso e pergunte o nome de novo.';
+                if (r.sobre === 'cliente') {
+                  return 'Nao achei esse cliente. Diga isso e peca o nome de novo, ou o codigo dele.';
+                }
+                if (r.sobre === 'empresa') {
+                  return 'Nao achei essa empresa no grupo. Diga isso e ofereca o faturamento por empresa, que lista todas pelo nome.';
+                }
+                return 'Nao achei essa vendedora na equipe. Diga isso e pergunte o nome de novo.';
               }
               if (r.status === 'AMBIGUA') {
-                const quem = r.sobre === 'cliente' ? 'cliente' : 'vendedora';
+                const quem =
+                  r.sobre === 'cliente'
+                    ? 'cliente'
+                    : r.sobre === 'empresa'
+                      ? 'empresa'
+                      : 'vendedora';
                 return (
                   `Ha mais de um(a) ${quem} com esse nome — ${r.nomes?.length ?? 0} ao todo:\n` +
                   `${(r.nomes ?? []).map((n) => `- ${n}`).join('\n')}\n\n` +
@@ -4522,10 +4621,33 @@ export class AnthropicClient implements ILlmClient {
   }
 
   private extrairTexto(resp: Anthropic.Message): string {
-    const bloco = resp.content.find(
+    // ====================================================================
+    // TODOS OS BLOCOS, E NAO O PRIMEIRO — 26/10/2026.
+    //
+    // Era `.find()`, e isso mandava so o primeiro bloco de texto. O modelo
+    // responde em BLOCOS e escreve mais de um sempre que a resposta tem
+    // abertura e lista — que e o formato que o proprio prompt pede ("uma
+    // linha de abertura curta antes da lista").
+    //
+    // Em producao chegou "Faturamento por empresa em 2026:" e mais nada; a
+    // lista estava no bloco seguinte, descartada em silencio. Ele perguntou
+    // "cade?" e a mesma resposta veio inteira.
+    //
+    // MEIA RESPOSTA E PIOR QUE NENHUMA: ela parece resposta.
+    // ====================================================================
+    const blocos = resp.content.filter(
       (b): b is Anthropic.TextBlock => b.type === 'text',
     );
-    const texto = bloco?.text ?? '';
+    const texto = blocos
+      .map((b) => b.text.trim())
+      .filter((t) => t.length > 0)
+      .join(NL_DUPLO);
+
+    if (blocos.length > 1) {
+      this.logger.debug(
+        `A resposta veio em ${blocos.length} blocos de texto — todos enviados.`,
+      );
+    }
 
     // ====================================================================
     // RESPOSTA SEM TEXTO NAO PODE SAIR CALADA — 29/09/2026.

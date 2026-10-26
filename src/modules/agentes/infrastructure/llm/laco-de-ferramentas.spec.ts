@@ -47,6 +47,91 @@ describe('o laço de ferramentas', () => {
     stop_reason: 'end_turn',
   });
 
+  // ========================================================================
+  // A RESPOSTA EM DOIS BLOCOS, E A PROMESSA QUE NAO VIRA DADO — 26/10/2026.
+  //
+  // Em producao chegaram duas meias respostas, e as duas ele teve de cobrar
+  // com um "cade?":
+  //
+  //   "Vou olhar o faturamento por empresa deste ano."   (e parou)
+  //   "Faturamento por empresa em 2026:"                 (e parou)
+  // ========================================================================
+  describe('a meia resposta', () => {
+    const emDoisBlocos = (a: string, b: string) => ({
+      content: [
+        { type: 'text', text: a },
+        { type: 'text', text: b },
+      ],
+      usage: { output_tokens: 20 },
+      stop_reason: 'end_turn',
+    });
+
+    /* Era `.find()`: so o primeiro bloco saia, e a lista ficava para tras. */
+    it('os dois blocos de texto vao juntos, e nao so o primeiro', async () => {
+      create.mockResolvedValueOnce(
+        emDoisBlocos(
+          'Faturamento por empresa em 2026:',
+          '1. AT JEWEL LTDA — R$ 15.714.173',
+        ),
+      );
+
+      const r = await cliente.chatComFerramentas(base());
+
+      expect(r.texto).toContain('Faturamento por empresa em 2026:');
+      expect(r.texto).toContain('AT JEWEL LTDA');
+    });
+
+    /* A PROMESSA E COBRADA, e a segunda chamada ja pode pedir ferramenta. */
+    it('promessa sem consulta ganha mais uma rodada, e o dado sai', async () => {
+      create
+        .mockResolvedValueOnce(
+          responde('Vou olhar o faturamento por empresa deste ano.'),
+        )
+        .mockResolvedValueOnce({
+          content: [
+            {
+              type: 'tool_use',
+              id: 'tu-leads',
+              name: 'listar_leads',
+              input: {},
+            },
+          ],
+          usage: { output_tokens: 10 },
+          stop_reason: 'tool_use',
+        })
+        .mockResolvedValueOnce(responde('Tem um lead na fila: lead 1.'));
+
+      const r = await cliente.chatComFerramentas(base());
+
+      expect(create).toHaveBeenCalledTimes(3);
+      expect(r.texto).toContain('lead 1');
+    });
+
+    /* UMA VEZ SO: se ele insistir na promessa, a frase sai — cobrar em laco
+     * trocaria uma resposta ruim por uma conversa travada. */
+    it('a cobranca acontece uma vez so', async () => {
+      create
+        .mockResolvedValueOnce(responde('Vou buscar os leads.'))
+        .mockResolvedValueOnce(responde('Vou buscar os leads agora.'));
+
+      const r = await cliente.chatComFerramentas(base());
+
+      expect(create).toHaveBeenCalledTimes(2);
+      expect(r.texto).toBe('Vou buscar os leads agora.');
+    });
+
+    /* PERGUNTA NAO E PROMESSA: a agente pedindo o recorte esta certa, e
+     * cobrar dado aqui atropelaria a unica resposta correta. */
+    it('pergunta de esclarecimento nao e cobrada', async () => {
+      create.mockResolvedValueOnce(
+        responde('Voce quer o faturamento da filial ou as vendas uma a uma?'),
+      );
+
+      await cliente.chatComFerramentas(base());
+
+      expect(create).toHaveBeenCalledTimes(1);
+    });
+  });
   const base = (): ChatParams =>
     ({
       model: 'claude-sonnet-5',

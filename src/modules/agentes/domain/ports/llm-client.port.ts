@@ -867,13 +867,21 @@ export type GestaoVendasDetalhadasHandler = (input: {
   cliente?: string;
   vendedora?: string;
   documento?: string;
+  /**
+   * A EMPRESA DO GRUPO COMO RECORTE — 26/10/2026.
+   *
+   * *"Nao posso simplesmente buscar as vendas de uma empresa."* A coluna
+   * ja existia (e a mesma do faturamento por empresa); o caminho ate ela,
+   * nao. So chega preenchida para quem ve a loja.
+   */
+  empresa?: string;
   periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
   de?: string;
   ate?: string;
 }) => Promise<{
   status: 'OK' | 'AMBIGUA' | 'NAO_ENCONTRADA' | 'EXIGE_RECORTE';
   /** De quem e a ambiguidade. */
-  sobre?: 'cliente' | 'vendedora';
+  sobre?: 'cliente' | 'vendedora' | 'empresa';
   /** Um bloco por venda, com as pecas ja embaixo. */
   linhas: string[];
   /** Nomes para desambiguar. */
@@ -1359,6 +1367,14 @@ export interface ChatParams {
   gestaoPorEmpresa?: GestaoPorEmpresaHandler;
   /** So quem ve a loja recebe a ferramenta — o grupo nao tem versao estreita. */
   gestaoPorEmpresaDisponivel?: boolean;
+  /**
+   * A EMPRESA COMO RECORTE DAS VENDAS UMA A UMA — 26/10/2026.
+   *
+   * Mesma logica do `gestaoItensExigeVendedora`: decide QUAL versao do
+   * `vendas_detalhadas` e declarada ao modelo. Sem `verLoja` o parametro
+   * `empresa` nem aparece — e o handler recusa de novo, por dentro.
+   */
+  gestaoVendasPorEmpresaDisponivel?: boolean;
   /** Espelha o `gestaoItensExigeVendedora`: sem `verLoja`, o schema obriga. */
   gestaoEpocaExigeVendedora?: boolean;
   melhoresClientes?: MelhoresClientesHandler;
