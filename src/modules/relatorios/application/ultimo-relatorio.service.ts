@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Relatorio } from '../domain/relatorio';
 import type { RecorteDoPedido } from '../domain/recorte-do-pedido';
+import { somarRelatorios } from '../domain/somar-relatorios';
 
 /**
  * Duas horas, o mesmo TTL da memória de conversa do canal interno.
@@ -78,6 +79,35 @@ export class UltimoRelatorioService {
    */
   guardar(chave: string | null | undefined, relatorio: Relatorio): void {
     if (!chave) return;
+
+    // ====================================================================
+    // A SEGUNDA TABELA DA MESMA MENSAGEM SE SOMA À PRIMEIRA — 27/10/2026.
+    //
+    // `set` sozinho é a razão pela qual *"as vendas da Ylka em 2025 e
+    // 2026"* virou um PDF só com 2026: são duas chamadas, uma por ano — como
+    // a instrução de `de`/`ate` manda —, e a segunda apagava a primeira
+    // sem deixar sinal. Ver `somarRelatorios`.
+    //
+    // SÓ DENTRO DA MESMA MENSAGEM (`idade === 0`). Na seguinte a pessoa já
+    // perguntou outra coisa, e somar ali juntaria duas perguntas num papel.
+    // ====================================================================
+    const atual = this.porChave.get(chave);
+    if (atual?.rico && atual.idade === 0) {
+      const somado = somarRelatorios(atual.relatorio, relatorio);
+      if (somado) {
+        this.logger.debug(
+          `Duas tabelas na mesma mensagem — somadas em ${somado.linhas.length} linhas.`,
+        );
+        this.porChave.set(chave, {
+          relatorio: somado,
+          em: Date.now(),
+          idade: 0,
+          rico: true,
+        });
+        return;
+      }
+    }
+
     if (this.porChave.size >= MAX && !this.porChave.has(chave)) {
       this.descartarMaisAntigo();
     }

@@ -987,7 +987,11 @@ export class FerramentasGestaoService {
         // escreveu. E a escolha (b) de 24/09.
         // ================================================================
         this.ultimoRelatorio.guardar(chaveDaConversa, {
-          titulo: tituloDeVendas(cliente, vendedora, documento, empresaNome),
+          titulo: tituloDeVendas(cliente, vendedora, documento, empresaNome, {
+            periodo,
+            de,
+            ate,
+          }),
           posicao: `Posição em ${agoraPorExtenso()}`,
           paisagem: true,
           colunas: [
@@ -4517,6 +4521,32 @@ function linhaDaEpoca(c: {
  * precisa saber o que pediu.
  */
 function tituloDeVendas(
+  cliente?: string | null,
+  vendedora?: string | null,
+  documento?: string | null,
+  empresa?: string | null,
+  quando?: { periodo?: string; de?: string; ate?: string },
+): string {
+  // ====================================================================
+  // O RECORTE DE TEMPO TAMBEM VAI NO TITULO — 27/10/2026.
+  //
+  // Um PDF de 130 vendas de dois anos chamado so "Vendas da Ylka" nao diz
+  // de quando e. E a decisao de 21/10: *"o recorte, quando existir de
+  // verdade, vai no TITULO"* — e a ela faltava o tempo.
+  // ====================================================================
+  return tituloComRecorte(
+    tituloBaseDeVendas(cliente, vendedora, documento, empresa),
+    quando
+      ? recorteDoPedido({
+          periodo: quando.periodo,
+          de: quando.de,
+          ate: quando.ate,
+        })
+      : null,
+  );
+}
+
+function tituloBaseDeVendas(
   cliente?: string | null,
   vendedora?: string | null,
   documento?: string | null,

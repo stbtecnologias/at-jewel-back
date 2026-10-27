@@ -103,8 +103,11 @@ describe('a empresa como recorte das vendas uma a uma', () => {
       .montar({ verLoja: true, chaveDaConversa: 'gestao:ad-1' })
       .gestaoVendasDetalhadas({ empresa: 'SP', periodo: 'ANO' });
 
+    // E DE QUANDO — 27/10/2026. Um PDF de 130 vendas de dois anos chamado
+    // so "Vendas da Ylka" nao diz de que periodo e; o recorte de tempo passou
+    // a entrar no titulo junto com o de quem, como manda a decisao de 21/10.
     expect(relatorio.guardar.mock.calls[0][1].titulo).toBe(
-      'Vendas de AT JEWEL LTDA - SP',
+      'Vendas de AT JEWEL LTDA - SP — este ano',
     );
   });
 

@@ -162,7 +162,7 @@ const DATAS_LIVRES = {
   de: {
     type: 'string' as const,
     description:
-      'Inicio do periodo, AAAA-MM-DD. Use com `ate` quando o recorte pedido nao couber no `periodo`: "ultimos 6 meses", "de janeiro a marco", "agosto", "do dia 10 ate hoje". VOCE calcula as datas a partir da data de hoje, que esta no inicio desta conversa. SE A PERGUNTA CITAR MAIS DE UM PERIODO ("agosto e setembro", "2024 e 2025"), CHAME A FERRAMENTA UMA VEZ POR PERIODO e responda um de cada vez, em vez de abrir uma janela unica que vai de um ate o outro: a janela unica devolve a SOMA, e a soma apaga a comparacao que a pergunta pediu.',
+      'Inicio do periodo, AAAA-MM-DD. Use com `ate` quando o recorte pedido nao couber no `periodo`: "ultimos 6 meses", "de janeiro a marco", "agosto", "do dia 10 ate hoje". VOCE calcula as datas a partir da data de hoje, que esta no inicio desta conversa. SE A PERGUNTA CITAR MAIS DE UM PERIODO ("agosto e setembro", "2024 e 2025"), CHAME A FERRAMENTA UMA VEZ POR PERIODO e responda um de cada vez, em vez de abrir uma janela unica que vai de um ate o outro: a janela unica devolve a SOMA, e a soma apaga a comparacao que a pergunta pediu. AS DUAS CHAMADAS ENTRAM NO MESMO ARQUIVO: pedindo PDF ou planilha depois, o documento sai com os dois periodos juntos — nunca diga que so da para exportar um deles, nem mande ninguem ao painel por causa disso.',
   },
   ate: {
     type: 'string' as const,
@@ -625,7 +625,7 @@ const MANDAR_RELATORIO_TOOL: Anthropic.Tool = {
 const GESTAO_VENDAS_DETALHADAS_TOOL: Anthropic.Tool = {
   name: 'vendas_detalhadas',
   description:
-    'Lista as vendas UMA A UMA, com data, documento, cliente, vendedora, valor e AS PECAS de cada uma. Use para "quais as compras da cliente X", "quais vendas a Camila fez em setembro", "quais pecas tinha a venda 1157", "o que o cliente Y comprou". Informe pelo menos UM entre cliente, vendedora e documento — periodo sozinho nao serve. Devolve ate 10 vendas, da mais recente para a mais antiga, e diz quantas existem no total.',
+    'Lista as vendas UMA A UMA, com data, documento, cliente, vendedora, valor e AS PECAS de cada uma. Use para "quais as compras da cliente X", "quais vendas a Camila fez em setembro", "quais pecas tinha a venda 1157", "o que o cliente Y comprou". Informe pelo menos UM entre cliente, vendedora e documento — periodo sozinho nao serve. Devolve ate 10 vendas NA CONVERSA, da mais recente para a mais antiga, e diz quantas existem no total. O ARQUIVO LEVA TODAS: havendo mais de dez, ofereca mandar em PDF ou planilha em vez de dizer que nao consegue.',
   input_schema: {
     type: 'object',
     properties: {
@@ -2607,6 +2607,10 @@ export class AnthropicClient implements ILlmClient {
                     Number(e.a_partir_de) > 0 ? Number(e.a_partir_de) : 0,
                 }),
                 'cliente parado',
+                {
+                  paginavel: true,
+                  arquivoLevaTudo: !!params.mandarRelatorio,
+                },
               );
             },
           ),
@@ -2632,6 +2636,7 @@ export class AnthropicClient implements ILlmClient {
                   ate: e.ate ? String(e.ate) : undefined,
                 }),
                 'cliente',
+                { arquivoLevaTudo: !!params.mandarRelatorio },
               );
             },
           ),
@@ -2661,6 +2666,7 @@ export class AnthropicClient implements ILlmClient {
                   ate: e.ate ? String(e.ate) : undefined,
                 }),
                 'comprador',
+                { arquivoLevaTudo: !!params.mandarRelatorio },
               );
             },
           ),
@@ -3967,6 +3973,10 @@ export class AnthropicClient implements ILlmClient {
                   pagina.aPartirDe ?? 0,
                   pagina.clientes.length,
                   pagina.total,
+                  {
+                    paginavel: true,
+                    arquivoLevaTudo: !!params.mandarRelatorio,
+                  },
                 ) +
                 'Repasse os nomes e as datas exatamente como estao.'
               );
@@ -4087,6 +4097,16 @@ export class AnthropicClient implements ILlmClient {
               if (r.linhas.length === 0) {
                 return 'Nenhuma venda nesse recorte. Diga isso em uma frase, e ofereca outro periodo.';
               }
+              // ==============================================================
+              // A FAIXA NO LUGAR DO AVISO MUDO — 27/10/2026.
+              //
+              // "(as 10 mais recentes de 90)" dizia o tamanho e calava o
+              // resto: nao dizia que nao ha como pedir as outras 80, e nao
+              // dizia que o ARQUIVO leva as 90. A agente preencheu os dois
+              // buracos sozinha — *"nao consigo reunir a lista inteira de
+              // 2025 aqui... o caminho e o painel"* —, e as duas metades da
+              // frase estavam erradas.
+              // ==============================================================
               const quantas = r.total ?? r.linhas.length;
               const aviso =
                 quantas > r.linhas.length
@@ -4094,6 +4114,9 @@ export class AnthropicClient implements ILlmClient {
                   : '';
               return (
                 `Vendas${aviso}:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+                faixaDaLista(0, r.linhas.length, quantas, {
+                  arquivoLevaTudo: !!params.mandarRelatorio,
+                }) +
                 'Repasse datas, nomes, pecas e valores exatamente como estao. Nao some os valores por conta propria — se ela quiser o total, ha ferramenta de resumo.'
               );
             },
@@ -4296,9 +4319,27 @@ export class AnthropicClient implements ILlmClient {
       const formato = input.formato === 'PLANILHA' ? 'PLANILHA' : 'PDF';
       const a = await handler({ formato });
       if (!a) {
+        // ==============================================================
+        // "SAIU DO BUFFER" — 27/10/2026, e as duas metades estavam erradas.
+        //
+        // O texto antigo dizia "precisa consultar primeiro, e pergunte o
+        // que ela quer ver", e a agente escreveu: *"essa lista acabou
+        // saindo do buffer"* e depois *"para puxar as vendas preciso de um
+        // recorte: de qual cliente, vendedora, documento ou empresa?"* —
+        // numa conversa que falava da Ylka do comeco ao fim.
+        //
+        // BUFFER NAO EXISTE NO NOSSO CODIGO: e palavra de maquina, dita a
+        // quem pediu uma lista de vendas. E PERGUNTAR O RECORTE DE NOVO e
+        // devolver a pergunta que ela ja respondeu: o recorte esta na
+        // conversa, logo acima.
+        // ==============================================================
         return (
-          'Nao ha nenhuma lista recente para mandar. Diga que precisa consultar ' +
-          'primeiro, e pergunte o que ela quer ver.'
+          'A lista guardada ja venceu — outra pergunta passou no meio. ' +
+          'CONSULTE DE NOVO AGORA, com o MESMO recorte que ela pediu nesta ' +
+          'conversa (esta logo acima: a vendedora, o cliente, o periodo), e ' +
+          'so depois mande o arquivo. NAO pergunte qual era o recorte e NAO ' +
+          'fale de buffer, cache, memoria nem sistema: nada disso existe ' +
+          'para quem esta lendo.'
         );
       }
       guardar(a);
@@ -5048,7 +5089,9 @@ function textoDaFidelidade(
   return (
     `Clientes${deQuem} — o corte: ${r.cortes}.\n` +
     `${r.linhas.map((l: string) => `- ${l}`).join('\n')}\n\n` +
-    faixaDaLista(r.deslocamento, r.linhas.length, r.total) +
+    faixaDaLista(r.deslocamento, r.linhas.length, r.total, {
+      paginavel: true,
+    }) +
     semDona +
     'Repasse os nomes e numeros exatamente como estao. O valor JA ABATE ' +
     'devolucao, e a contagem de compras NAO abate — se perguntarem, e essa a ' +
@@ -5146,7 +5189,9 @@ function textoDasPecasPorValor(
     devolvidas +
     porVendedora +
     lista +
-    faixaDaLista(r.deslocamento, r.linhas.length, r.totalDeLinhas) +
+    faixaDaLista(r.deslocamento, r.linhas.length, r.totalDeLinhas, {
+      paginavel: true,
+    }) +
     'Repasse os numeros exatamente como estao, e DIGA O RECORTE na resposta ' +
     '— a faixa e o periodo. O valor da peca e o unitario, nao o do documento.'
   );
@@ -5171,6 +5216,7 @@ export function faixaDaLista(
   pulados: number,
   mostrados: number,
   total?: number,
+  opcoes: OpcoesDaFaixa = {},
 ): string {
   if (typeof total !== 'number' || total <= mostrados + pulados) {
     return pulados > 0
@@ -5179,6 +5225,39 @@ export function faixaDaLista(
   }
   const primeiro = pulados + 1;
   const ultimo = pulados + mostrados;
+
+  // ======================================================================
+  // QUEM NAO PAGINA NAO OFERECE PAGINA — 27/10/2026.
+  //
+  // Este texto serve OITO leituras de gestao e so UMA delas tem
+  // `a_partir_de` no schema. As outras recebiam "chame de novo com
+  // a_partir_de = 10", ofereciam a continuacao, e no "sim" nao tinham como
+  // cumprir: *"a ferramenta devolve so 10 por chamada... nao consigo
+  // reunir a lista inteira de 2025 aqui"* — em PRODUCAO, as 10:13 de
+  // 27/10/2026.
+  //
+  // E A SAIDA EXISTIA. O arquivo leva 500 linhas desde 20/10: as 90 vendas
+  // caberiam num PDF inteiro. Ela mandou a gestora ao PAINEL porque
+  // ninguem lhe disse que o arquivo ja tinha tudo.
+  //
+  // O PADRAO E O SEGURO — sem dizer nada, nao se oferece pagina. Leitura
+  // nova que esquecer o parametro erra para o lado de nao prometer.
+  // ======================================================================
+  if (!opcoes.paginavel) {
+    return (
+      `SAO ${total} NO TOTAL, e estes sao do ${primeiro}o ao ${ultimo}o. ` +
+      `LISTE AS ${mostrados} LINHAS ACIMA, TODAS, e DIGA a faixa e o total. ` +
+      'NAO HA COMO PEDIR AS SEGUINTES por aqui: nao ofereca continuacao, ' +
+      'nao peca para a pessoa esperar e NUNCA mande ela ao painel. ' +
+      (opcoes.arquivoLevaTudo
+        ? `O ARQUIVO LEVA AS ${total}: ofereca mandar em PDF ou planilha, ` +
+          'que e o caminho para a lista inteira.'
+        : 'Ofereca RECORTAR mais — periodo menor, categoria, um cliente — ' +
+          'para a lista caber.') +
+      '\n\n'
+    );
+  }
+
   return (
     `SAO ${total} NO TOTAL, e estes sao do ${primeiro}o ao ${ultimo}o. ` +
     // ====================================================================
@@ -5204,8 +5283,25 @@ export function faixaDaLista(
     'nunca mais. ' +
     `FALTAM ${total - ultimo}. DIGA a faixa e o total na resposta, e PERGUNTE ` +
     'se quer a continuacao — se disser que sim, chame a ferramenta de novo ' +
-    `com a_partir_de = ${ultimo}. Nunca deixe parecer que a lista acabou.\n\n`
+    `com a_partir_de = ${ultimo}. Nunca deixe parecer que a lista acabou. ` +
+    (opcoes.arquivoLevaTudo
+      ? `E O ARQUIVO JA LEVA AS ${total} DE UMA VEZ: querendo a lista ` +
+        'inteira, ofereca em PDF ou planilha em vez de paginar.'
+      : '') +
+    '\n\n'
   );
+}
+
+/**
+ * O que a leitura sabe de si, e o texto nao tem como adivinhar.
+ *
+ * `paginavel`: o schema dela tem `a_partir_de`, entao "os proximos" existe.
+ * `arquivoLevaTudo`: ela guardou a lista INTEIRA no `UltimoRelatorioService`,
+ * e nao a pagina que foi para a conversa — e ai o PDF e a resposta completa.
+ */
+interface OpcoesDaFaixa {
+  paginavel?: boolean;
+  arquivoLevaTudo?: boolean;
 }
 
 /**
@@ -5316,6 +5412,7 @@ export function textoDeProdutos(
     r.pulados ?? 0,
     r.produtos.length,
     r.total,
+    { paginavel: true },
   ).trim();
   if (faixaDaPagina) partes.push(faixaDaPagina);
 
@@ -5384,6 +5481,7 @@ export function textoDeProdutos(
 function textoDaLeituraDeGestao(
   r: GestaoLeituraResultado,
   substantivo: string,
+  opcoes: OpcoesDaFaixa = {},
 ): string {
   if (r.status === 'AMBIGUA') {
     return (
@@ -5412,7 +5510,7 @@ function textoDaLeituraDeGestao(
 
   return (
     `${r.vendedora}:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
-    faixaDaLista(pulados, r.linhas.length, total) +
+    faixaDaLista(pulados, r.linhas.length, total, opcoes) +
     'Repasse os nomes, horarios e numeros exatamente como estao.'
   );
 }

@@ -175,6 +175,67 @@ describe('UltimoRelatorioService', () => {
     expect(s.pegar(chave)).not.toBeNull();
   });
 
+  /**
+   * ======================================================================
+   * DUAS CHAMADAS NA MESMA MENSAGEM — produção, 27/10/2026, 10:12.
+   *
+   * "As vendas da Ylka em 2025 e 2026" viram DUAS consultas, uma por ano —
+   * é o que a instrução de `de`/`ate` manda, e ela está certa: numa janela
+   * só o ranking sairia da soma dos dois anos. O que estava errado era
+   * daqui para baixo: a segunda tabela apagava a primeira, e o PDF saiu
+   * *"só com as vendas de 2026"*.
+   * ======================================================================
+   */
+  describe('duas tabelas na mesma mensagem', () => {
+    const DE_2025: Relatorio = {
+      titulo: 'Vendas da Ylka · 2025',
+      colunas: [{ chave: 'a', titulo: 'A' }],
+      linhas: [{ a: '2025-1' }, { a: '2025-2' }],
+    };
+    const DE_2026: Relatorio = {
+      titulo: 'Vendas da Ylka · 2026',
+      colunas: [{ chave: 'a', titulo: 'A' }],
+      linhas: [{ a: '2026-1' }],
+    };
+
+    /* ESTE É O TESTE. */
+    it('somam, em vez de a segunda apagar a primeira', () => {
+      s.guardar(chave, DE_2025);
+      s.guardar(chave, DE_2026);
+
+      const r = s.pegar(chave);
+      expect(r?.linhas).toHaveLength(3);
+      expect(r?.titulo).toBe('Vendas da Ylka · 2025 e 2026');
+    });
+
+    it('na mensagem SEGUINTE a nova manda — são duas perguntas', () => {
+      s.guardar(chave, DE_2025);
+      s.envelhecer(chave);
+      s.guardar(chave, DE_2026);
+
+      const r = s.pegar(chave);
+      expect(r?.linhas).toHaveLength(1);
+      expect(r?.titulo).toBe('Vendas da Ylka · 2026');
+    });
+
+    it('tabela de OUTRA FORMA substitui, como sempre fez', () => {
+      // Colunas diferentes sao perguntas diferentes: juntar "vendas uma a
+      // uma" com "compras por ano" daria metade das celulas vazias.
+      s.guardar(chave, DE_2025);
+      s.guardar(chave, {
+        titulo: 'Compras por cliente',
+        colunas: [
+          { chave: 'cliente', titulo: 'Cliente' },
+          { chave: 'pecas', titulo: 'Peças' },
+        ],
+        linhas: [{ cliente: 'Maria A.', pecas: '7' }],
+      });
+
+      expect(s.pegar(chave)?.titulo).toBe('Compras por cliente');
+      expect(s.pegar(chave)?.linhas).toHaveLength(1);
+    });
+  });
+
   it('esquecer zera', () => {
     s.guardar(chave, TABELA);
     s.esquecer(chave);

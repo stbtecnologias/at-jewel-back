@@ -27,6 +27,24 @@ export type RecorteDeVendas = 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
 export const LIMITE_PADRAO = 10;
 /** Teto duro: lista maior que isto nao se le no WhatsApp. */
 export const LIMITE_MAXIMO = 30;
+/**
+ * O TETO DE QUEM ALIMENTA O ARQUIVO — 27/10/2026.
+ *
+ * ==========================================================================
+ * "LISTA MAIOR QUE ISTO NAO SE LE NO WHATSAPP" vale para a CONVERSA, e desde
+ * 20/10 a mesma consulta alimenta o PDF — que nao se le no WhatsApp.
+ *
+ * O `detalhadas` passou a pedir 500 naquele dia para o arquivo levar a lista
+ * inteira; o `limitar` cortava em 30 sem dizer nada. Entao o PDF das "43
+ * vendas de 2026" saiu com TRINTA, e o numero certo estava escrito na
+ * conversa logo acima dele. Medido em 27/10 pelo
+ * `scripts/conferir-duas-janelas.ts`.
+ *
+ * Quem corta para a conversa e quem responde (`MAXIMO_VENDAS_DETALHADAS`),
+ * e nao a consulta: so o arquivo precisa do resto.
+ * ==========================================================================
+ */
+export const LIMITE_DO_ARQUIVO = 500;
 
 export interface ResumoComRecorte extends ResumoDeVendas {
   /** O periodo efetivamente consultado, para quem responde poder dize-lo. */
@@ -176,7 +194,9 @@ export class ConsultarVendasUseCase {
         empresaId: filtro.empresaId,
         documento: filtro.documento,
       },
-      limitar(limite),
+      // O ARQUIVO LEVA TODAS — ver `LIMITE_DO_ARQUIVO`. Quem corta as dez
+      // da conversa e quem responde.
+      limitar(limite, LIMITE_DO_ARQUIVO),
     );
   }
 
@@ -290,9 +310,9 @@ export class ConsultarVendasUseCase {
  * O teto nao e paranoia: quem pede "me lista as 500 pecas" no WhatsApp recebe
  * uma mensagem que ninguem le e paga o token de todas elas.
  */
-function limitar(limite: number): number {
+function limitar(limite: number, teto = LIMITE_MAXIMO): number {
   if (!Number.isFinite(limite) || limite < 1) return LIMITE_PADRAO;
-  return Math.min(Math.trunc(limite), LIMITE_MAXIMO);
+  return Math.min(Math.trunc(limite), teto);
 }
 
 /**
