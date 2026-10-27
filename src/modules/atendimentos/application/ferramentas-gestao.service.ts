@@ -1000,10 +1000,14 @@ export class FerramentasGestaoService {
           posicao: `Posição em ${agoraPorExtenso()}`,
           paisagem: true,
           colunas: [
-            { chave: 'data', titulo: 'Data', peso: 0.8, mono: true },
+            // A DATA CABE INTEIRA EM 8pt — 27/10/2026. Com 0.8 ela sobrava
+            // 40pt uteis para "11/08/2026", que pede 48; o renderizador
+            // encolheria a fonte e a coluna ficaria menor que as outras. Os
+            // 0.2 saem das peças, que são o texto mais folgado da tabela.
+            { chave: 'data', titulo: 'Data', peso: 1, mono: true },
             { chave: 'documento', titulo: 'Doc', peso: 0.7, mono: true },
             { chave: 'cliente', titulo: 'Cliente', peso: 2.2 },
-            { chave: 'pecas', titulo: 'Peças', peso: 3.6 },
+            { chave: 'pecas', titulo: 'Peças', peso: 3.4 },
             { chave: 'vendedora', titulo: 'Vendedora', peso: 1.4 },
             { chave: 'status', titulo: 'Status', peso: 0.9 },
             {

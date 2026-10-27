@@ -300,13 +300,30 @@ export class RelatorioPdfService {
       // Então a coluna de número ENCOLHE a fonte até caber, como o valor do
       // cartão fazia antes de sair. Corpo menor continua dizendo a verdade.
       // ==================================================================
+      // ==================================================================
+      // E DATA TAMBEM E NUMERO — 27/10/2026.
+      //
+      // O PDF das vendas saiu com "11/08/2…" na coluna DATA. A regra de
+      // cima falava em "coluna de numero" e olhava so o alinhamento; a data
+      // vem a esquerda, caiu no `cortar`, e o ano virou reticencia.
+      //
+      // E uma data cortada e pior que um valor cortado: "11/08/2…" ainda
+      // parece data, e quem le completa com o ano que imagina. Toda coluna
+      // MONO — data, documento, codigo de peca, valor — encolhe primeiro.
+      //
+      // O "…" fica como ultimo recurso para o mono que nao e numero: no
+      // minimo de 5,5 ainda nao coube, e ai cortar e melhor que clipar sem
+      // aviso. A coluna de numero continua SEM reticencia nenhuma, que e a
+      // decisao de 21/10.
+      // ==================================================================
       let corpo = 8;
       let texto = bruto;
-      if (c.alinhamento === 'direita') {
+      if (c.alinhamento === 'direita' || c.mono) {
         while (corpo > 5.5 && doc.fontSize(corpo).widthOfString(texto) > util) {
           corpo -= 0.25;
         }
         doc.fontSize(corpo);
+        if (c.alinhamento !== 'direita') texto = this.cortar(doc, texto, util);
       } else {
         texto = this.cortar(doc, bruto, util);
       }

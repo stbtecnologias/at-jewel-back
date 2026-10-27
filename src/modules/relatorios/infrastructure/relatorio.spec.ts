@@ -1,6 +1,10 @@
 import { RelatorioPdfService } from './relatorio-pdf.service';
 import { RelatorioXlsxService, numeroDe } from './relatorio-xlsx.service';
-import type { Relatorio } from '../domain/relatorio';
+import PDFDocument from 'pdfkit';
+import type {
+  ColunaDoRelatorio,
+  Relatorio,
+} from '../domain/relatorio';
 
 /**
  * OS DOIS RENDERIZADORES — RF36 e RF37.
@@ -41,6 +45,52 @@ describe('o molde do relatório', () => {
   /** Quantas folhas o PDF tem — contadas no proprio arquivo. */
   const paginas = (b: Buffer): number =>
     (b.toString('latin1').match(/\/Type\s*\/Page[^s]/g) ?? []).length;
+
+  // ==========================================================================
+  // "11/08/2…" — o PDF das vendas, 27/10/2026.
+  //
+  // A coluna DATA tinha peso 0.8 e sobrava 39,8pt úteis; "11/08/2026" em
+  // Courier 8pt pede 48,0. O ano virou reticência — e data cortada é pior
+  // que valor cortado, porque "11/08/2…" ainda PARECE data, e quem lê
+  // completa o ano de cabeça.
+  //
+  // Duas coisas consertaram: a coluna passou a caber (peso 1, os 0,2 saindo
+  // das peças, que são o texto mais folgado da tabela), e toda coluna `mono`
+  // passou a ENCOLHER antes de cortar, como a de número já fazia desde 21/10.
+  // ==========================================================================
+  it('a data cabe inteira na tabela de vendas, em 8pt', () => {
+    const doc = new PDFDocument({ size: [841.89, 595.28], margin: 48 });
+    doc.font('Courier').fontSize(8);
+
+    // Os pesos REAIS da listagem de vendas — ver `ferramentas-gestao`.
+    const colunas: ColunaDoRelatorio[] = [
+      { chave: 'data', titulo: 'Data', peso: 1, mono: true },
+      { chave: 'documento', titulo: 'Doc', peso: 0.7, mono: true },
+      { chave: 'cliente', titulo: 'Cliente', peso: 2.2 },
+      { chave: 'pecas', titulo: 'Peças', peso: 3.4 },
+      { chave: 'vendedora', titulo: 'Vendedora', peso: 1.4 },
+      { chave: 'status', titulo: 'Status', peso: 0.9 },
+      {
+        chave: 'valor',
+        titulo: 'Total',
+        peso: 1.1,
+        alinhamento: 'direita',
+        mono: true,
+      },
+    ];
+
+    const servico = pdf as unknown as {
+      largura: number;
+      larguras: (c: ColunaDoRelatorio[]) => number[];
+    };
+    servico.largura = 841.89;
+    const larguras = servico.larguras(colunas);
+
+    // O "- 16" é o respiro de cada célula, o mesmo que o desenho usa.
+    expect(doc.widthOfString('11/08/2026')).toBeLessThanOrEqual(
+      larguras[0] - 16,
+    );
+  });
 
   it('gera um PDF de verdade', async () => {
     const bytes = await pdf.gerar(base());
