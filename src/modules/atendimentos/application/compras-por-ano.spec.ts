@@ -196,7 +196,7 @@ describe('compras por cliente, ano a ano', () => {
       });
 
     expect(relatorio.guardar.mock.calls[0][1].titulo).toBe(
-      'Compras por cliente — Ylka · 01/01/2025 a 31/12/2026',
+      'Compras por cliente — Ylka · 2025 a 2026',
     );
   });
 });

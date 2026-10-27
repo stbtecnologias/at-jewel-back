@@ -1398,11 +1398,22 @@ export class FerramentasGestaoService {
               pagina.clientes.reduce((n, c) => n + c.totalValor, 0),
             );
 
+            // O RECORTE DO TITULO E EM ANOS, e nao em datas: a tabela e
+            // por ano, e "01/01/2025 a 31/12/2026" diz a mesma coisa de um
+            // jeito que ninguem le. Vale tambem quando o periodo nao foi
+            // dito — ai o titulo conta qual janela ela recebeu.
+            const quem = recorteDoPedido({ vendedora }).titulo;
+            const quando =
+              anos.length > 1
+                ? `${anos[0]} a ${anos[anos.length - 1]}`
+                : String(anos[0] ?? '');
+            const recorte = {
+              titulo: quem ? `${quem} · ${quando}` : quando,
+              periodo: quando,
+            };
+
             this.ultimoRelatorio.guardar(chaveDaConversa, {
-              titulo: tituloComRecorte(
-                'Compras por cliente',
-                recorteDoPedido({ vendedora, de, ate }),
-              ),
+              titulo: tituloComRecorte('Compras por cliente', recorte),
               posicao: `Posição em ${agoraPorExtenso()}`,
               paisagem: anos.length > 1,
               colunas,
