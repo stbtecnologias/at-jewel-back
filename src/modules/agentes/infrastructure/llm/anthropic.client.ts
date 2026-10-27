@@ -625,7 +625,7 @@ const MANDAR_RELATORIO_TOOL: Anthropic.Tool = {
 const GESTAO_VENDAS_DETALHADAS_TOOL: Anthropic.Tool = {
   name: 'vendas_detalhadas',
   description:
-    'Lista as vendas UMA A UMA, com data, documento, cliente, vendedora, valor e AS PECAS de cada uma. Use para "quais as compras da cliente X", "quais vendas a Camila fez em setembro", "quais pecas tinha a venda 1157", "o que o cliente Y comprou". Informe pelo menos UM entre cliente, vendedora e documento — periodo sozinho nao serve. Devolve ate 10 vendas NA CONVERSA, da mais recente para a mais antiga, e diz quantas existem no total. O ARQUIVO LEVA TODAS: havendo mais de dez, ofereca mandar em PDF ou planilha em vez de dizer que nao consegue.',
+    'Lista as vendas UMA A UMA, com data, documento, cliente, vendedora, valor e AS PECAS de cada uma. Use para "quais as compras da cliente X", "quais vendas a Camila fez em setembro", "quais pecas tinha a venda 1157", "o que o cliente Y comprou". Informe pelo menos UM entre cliente, vendedora e documento — periodo sozinho nao serve. SO VENDA CONCLUIDA ENTRA: devolucao fica de fora, e e por isso que esta lista fecha com o numero do resumo. Devolve ate 10 vendas NA CONVERSA, da mais recente para a mais antiga, e diz quantas existem no total. O ARQUIVO LEVA TODAS: havendo mais de dez, ofereca mandar em PDF ou planilha em vez de dizer que nao consegue.',
   input_schema: {
     type: 'object',
     properties: {
@@ -648,6 +648,12 @@ const GESTAO_VENDAS_DETALHADAS_TOOL: Anthropic.Tool = {
         enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
         description:
           'Recorte de tempo. Omita para pegar o historico inteiro — "quais as compras da cliente X" e sobre a vida toda dela, nao sobre este mes.',
+      },
+      somente: {
+        type: 'string',
+        enum: ['DEVOLVIDAS', 'TODAS'],
+        description:
+          'OMITA SEMPRE, menos nestes dois casos: "quais as devolucoes", "o que foi devolvido", "teve devolucao?" sao DEVOLVIDAS; "vendas e devolucoes juntas", "tudo junto, com as devolvidas" sao TODAS. Pergunta sobre VENDA nao leva este parametro — devolucao nao e venda.',
       },
       ...DATAS_LIVRES,
     },
@@ -4045,6 +4051,7 @@ export class AnthropicClient implements ILlmClient {
                 periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
                 de?: string;
                 ate?: string;
+                somente?: string;
               };
               const r = await params.gestaoVendasDetalhadas!({
                 cliente: entrada.cliente ? String(entrada.cliente) : undefined,
@@ -4060,6 +4067,13 @@ export class AnthropicClient implements ILlmClient {
                 periodo: entrada.periodo,
                 de: entrada.de ? String(entrada.de) : undefined,
                 ate: entrada.ate ? String(entrada.ate) : undefined,
+                // VALIDADO, NUNCA CONVERTIDO: valor que o modelo invente cai
+                // no padrao, que e so venda concluida.
+                somente:
+                  entrada.somente === 'DEVOLVIDAS' ||
+                  entrada.somente === 'TODAS'
+                    ? entrada.somente
+                    : undefined,
               });
 
               // Faltou DE QUEM ou DE QUAL VENDA. Nao e "nao encontrei": e uma
@@ -4112,11 +4126,33 @@ export class AnthropicClient implements ILlmClient {
                 quantas > r.linhas.length
                   ? ` (as ${r.linhas.length} mais recentes de ${quantas})`
                   : '';
+              // ==============================================================
+              // O ROTULO DIZ O QUE ENTROU — 27/10/2026.
+              //
+              // "Vendas" com a devolucao dentro foi o que fez a agente dizer
+              // "43 vendas em 2026" duas mensagens depois de dizer "38
+              // vendas": o resumo contava saida, a lista contava movimentacao.
+              // Agora a lista traz so venda, e o texto nomeia isso — para que
+              // ela nao conclua que devolucao nao houve.
+              // ==============================================================
+              const rotulo =
+                r.somente === 'DEVOLVIDAS'
+                  ? 'Devolucoes'
+                  : r.somente === 'TODAS'
+                    ? 'Vendas e devolucoes'
+                    : 'Vendas';
+              const oQueEntrou =
+                r.somente === 'DEVOLVIDAS'
+                  ? 'Estas sao DEVOLUCOES, e nao vendas: nao as some ao faturamento. '
+                  : r.somente === 'TODAS'
+                    ? 'A lista tem VENDA E DEVOLUCAO juntas, e cada linha diz qual e. '
+                    : 'SO VENDA CONCLUIDA entrou nesta lista e neste numero — devolucao nao conta como venda, e e por isso que este total fecha com o do resumo. NAO diga que nao houve devolucao: voce nao perguntou por elas. Querendo, consulte de novo pedindo as devolvidas. ';
               return (
-                `Vendas${aviso}:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+                `${rotulo}${aviso}:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
                 faixaDaLista(0, r.linhas.length, quantas, {
                   arquivoLevaTudo: !!params.mandarRelatorio,
                 }) +
+                oQueEntrou +
                 'Repasse datas, nomes, pecas e valores exatamente como estao. Nao some os valores por conta propria — se ela quiser o total, ha ferramenta de resumo.'
               );
             },

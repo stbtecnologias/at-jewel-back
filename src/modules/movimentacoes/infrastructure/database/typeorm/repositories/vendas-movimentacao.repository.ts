@@ -77,6 +77,19 @@ export class VendasMovimentacaoRepository
     const params: unknown[] = [];
     const conds: string[] = ['m.ativo'];
 
+    // ====================================================================
+    // SO A VENDA, POR PADRAO — 27/10/2026.
+    //
+    // Era `['m.ativo']` sozinho, e por isso a devolucao entrava na lista E
+    // na contagem: "43 vendas em 2026" eram 38 saidas e 5 entradas, contra
+    // as "38 vendas" que o resumo tinha dito duas mensagens antes.
+    //
+    // As outras onze consultas desta classe sempre filtraram `m.saida`;
+    // esta era a unica fora da regra. Ver `FiltroVendasDetalhadas.status`.
+    // ====================================================================
+    if (filtro.status === 'DEVOLVIDAS') conds.push('m.entrada');
+    else if (filtro.status !== 'TODAS') conds.push('m.saida');
+
     if (filtro.janela) {
       params.push(filtro.janela.de, filtro.janela.ate);
       conds.push(`m.data_movimentacao BETWEEN $${params.length - 1} AND $${params.length}`);

@@ -249,7 +249,36 @@ export interface FiltroVendasDetalhadas {
   empresaId?: string | null;
   /** O numero do documento, como a pessoa fala dele. */
   documento?: string | null;
+  /**
+   * QUAIS DOCUMENTOS ENTRAM. O padrao e `CONCLUIDAS` — so venda.
+   *
+   * ======================================================================
+   * ESTA ERA A UNICA CONSULTA DA CASA QUE CONTAVA DEVOLUCAO COMO VENDA, e
+   * o estrago apareceu numa conversa so, em 27/10/2026:
+   *
+   *   "Em 2026 (ate hoje) — 38 vendas, R$ 2.230.827"   (o resumo)
+   *   "Sao 43 vendas em 2026; estas sao as 10 mais recentes"  (a lista)
+   *
+   * A mesma pergunta com duas respostas, e nenhuma das duas dizendo qual.
+   * 43 eram as MOVIMENTACOES ativas: 38 saidas e 5 entradas — e a prova
+   * estava na propria lista, no item marcado DEVOLVIDA.
+   *
+   * Decisao do Lucas: *"se ela pediu as vendas.. so o que foi concluido..
+   * devolucao so se ela perguntar"*. Entao o padrao exclui, e quem quer a
+   * devolucao pede por ela.
+   * ======================================================================
+   */
+  status?: StatusDeVendaConsultada;
 }
+
+/**
+ * O recorte por status, como a pergunta chega.
+ *
+ * `CONCLUIDAS` e o padrao e nao precisa ser dito. `DEVOLVIDAS` e a pergunta
+ * propria ("quais devolucoes da Ylka"). `TODAS` e para quem pede os dois
+ * juntos — e ai a lista diz, linha por linha, qual e qual.
+ */
+export type StatusDeVendaConsultada = 'CONCLUIDAS' | 'DEVOLVIDAS' | 'TODAS';
 
 /**
  * O FATURAMENTO DE UMA EMPRESA DO GRUPO — 02/10/2026.

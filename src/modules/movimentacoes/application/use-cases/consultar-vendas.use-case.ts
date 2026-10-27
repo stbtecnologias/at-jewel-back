@@ -193,6 +193,7 @@ export class ConsultarVendasUseCase {
         vendedoraId: filtro.vendedoraId,
         empresaId: filtro.empresaId,
         documento: filtro.documento,
+        status: filtro.status,
       },
       // O ARQUIVO LEVA TODAS — ver `LIMITE_DO_ARQUIVO`. Quem corta as dez
       // da conversa e quem responde.

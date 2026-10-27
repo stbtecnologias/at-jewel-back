@@ -964,8 +964,12 @@ export class ClienteRepository implements IClienteRepository {
       SELECT a.id                                        AS cliente_id,
              a.nome                                      AS nome,
              EXTRACT(YEAR FROM v.data_movimentacao)::int AS ano,
-             COALESCE(sum(i.quantidade) FILTER (WHERE v.saida), 0)
-               - COALESCE(sum(i.quantidade) FILTER (WHERE v.entrada), 0) AS pecas,
+             -- A CONTAGEM NAO DESCONTA, A RECEITA DESCONTA — a regra da casa,
+             -- em movimentacao-como-venda.ts. Nasceu em 25/09, e esta tabela
+             -- saiu dela: subtraia a peca devolvida da CONTAGEM e "comprou 7
+             -- pecas" vira 5, numero que nao bate com nenhum documento. O
+             -- valor segue liquido, porque e o que a tela de Vendas mostra.
+             COALESCE(sum(i.quantidade) FILTER (WHERE v.saida), 0) AS pecas,
              COALESCE(sum(i.quantidade * i.valor_unitario) FILTER (WHERE v.saida), 0)
                - COALESCE(sum(i.quantidade * i.valor_unitario) FILTER (WHERE v.entrada), 0) AS valor
         FROM alvo a

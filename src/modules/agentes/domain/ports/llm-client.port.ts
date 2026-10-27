@@ -900,6 +900,14 @@ export type GestaoVendasDetalhadasHandler = (input: {
   periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
   de?: string;
   ate?: string;
+  /**
+   * DEVOLUCAO SO SE PERGUNTAREM — 27/10/2026.
+   *
+   * Omitido, a lista traz so venda concluida. `DEVOLVIDAS` e a pergunta
+   * propria ("quais devolucoes da Ylka"); `TODAS` e quando pedirem os dois
+   * juntos. Ver `FiltroVendasDetalhadas.status`.
+   */
+  somente?: 'DEVOLVIDAS' | 'TODAS';
 }) => Promise<{
   status: 'OK' | 'AMBIGUA' | 'NAO_ENCONTRADA' | 'EXIGE_RECORTE';
   /** De quem e a ambiguidade. */
@@ -910,6 +918,8 @@ export type GestaoVendasDetalhadasHandler = (input: {
   nomes?: string[];
   /** Quantas vendas existem no recorte — o teto so e honesto com o total. */
   total?: number;
+  /** O que foi listado, para quem escreve o texto poder nomear. */
+  somente?: 'DEVOLVIDAS' | 'TODAS';
 }>;
 
 /**

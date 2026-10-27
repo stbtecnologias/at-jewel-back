@@ -38,10 +38,22 @@ function abreviar(nome: string): string {
 
 async function main() {
   const vendedora = process.argv[2] ?? 'Ylka';
-  const anos = (process.argv.slice(3).length > 0
-    ? process.argv.slice(3)
-    : ['2025', '2026']
-  ).map(Number);
+  const argumentos = process.argv.slice(3);
+
+  // "devolvidas" ou "todas" no fim troca o recorte por status — e e assim que
+  // se confere a regra de 27/10: por padrao, so venda concluida.
+  const pedido = argumentos[argumentos.length - 1]?.toLowerCase();
+  const somente =
+    pedido === 'devolvidas'
+      ? ('DEVOLVIDAS' as const)
+      : pedido === 'todas'
+        ? ('TODAS' as const)
+        : undefined;
+  if (somente) argumentos.pop();
+
+  const anos = (argumentos.length > 0 ? argumentos : ['2025', '2026']).map(
+    Number,
+  );
 
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: false,
@@ -63,8 +75,9 @@ async function main() {
       vendedora,
       de: `${ano}-01-01`,
       ate: `${ano}-12-31`,
+      somente,
     });
-    console.log(`\n=== CHAMADA DE ${ano} ===\n`);
+    console.log(`\n=== CHAMADA DE ${ano}${somente ? ` (${somente})` : ''} ===\n`);
     console.log(`status: ${r.status}`);
     if (r.status !== 'OK') {
       console.log(`nomes sugeridos: ${(r.nomes ?? []).join(', ') || '—'}`);

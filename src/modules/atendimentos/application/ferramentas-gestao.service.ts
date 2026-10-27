@@ -837,6 +837,7 @@ export class FerramentasGestaoService {
         periodo,
         de,
         ate,
+        somente,
       }) => {
         // ================================================================
         // A EMPRESA SO E RECORTE PARA QUEM VE A LOJA — 26/10/2026.
@@ -973,6 +974,9 @@ export class FerramentasGestaoService {
             recorte: datas ? undefined : periodo,
             de: datas?.de,
             ate: datas?.ate,
+            // DEVOLUCAO SO SE PERGUNTAREM — 27/10/2026. Ver
+            // `FiltroVendasDetalhadas.status`.
+            status: somente ?? 'CONCLUIDAS',
           },
           TETO_DO_ARQUIVO,
         );
@@ -991,6 +995,7 @@ export class FerramentasGestaoService {
             periodo,
             de,
             ate,
+            somente,
           }),
           posicao: `Posição em ${agoraPorExtenso()}`,
           paisagem: true,
@@ -1040,7 +1045,7 @@ export class FerramentasGestaoService {
             r.total > r.vendas.length
               ? { mostradas: r.vendas.length, total: r.total }
               : undefined,
-          nota: 'Receita desconta devoluções; a contagem de documentos, não.',
+          nota: notaDeVendas(somente),
           geradoPor: solicitante ?? undefined,
         });
 
@@ -1049,6 +1054,7 @@ export class FerramentasGestaoService {
           // O MODELO CONTINUA RECEBENDO DEZ: o que mudou e o arquivo.
           linhas: naConversa.map(linhaDaVenda),
           total: r.total,
+          somente,
         };
       },
 
@@ -1427,7 +1433,7 @@ export class FerramentasGestaoService {
                 total > pagina.clientes.length
                   ? { mostradas: pagina.clientes.length, total }
                   : undefined,
-              nota: 'Peças e valor descontam devoluções. Ordem alfabética.',
+              nota: 'Peças compradas, sem descontar devolução; o valor desconta. Ordem alfabética.',
               geradoPor: solicitante ?? undefined,
             });
 
@@ -4525,7 +4531,12 @@ function tituloDeVendas(
   vendedora?: string | null,
   documento?: string | null,
   empresa?: string | null,
-  quando?: { periodo?: string; de?: string; ate?: string },
+  quando?: {
+    periodo?: string;
+    de?: string;
+    ate?: string;
+    somente?: 'DEVOLVIDAS' | 'TODAS';
+  },
 ): string {
   // ====================================================================
   // O RECORTE DE TEMPO TAMBEM VAI NO TITULO — 27/10/2026.
@@ -4534,8 +4545,18 @@ function tituloDeVendas(
   // de quando e. E a decisao de 21/10: *"o recorte, quando existir de
   // verdade, vai no TITULO"* — e a ela faltava o tempo.
   // ====================================================================
+  // O PAPEL DIZ O QUE LEVA. "Vendas da Ylka" com cinco devolucoes dentro
+  // seria o mesmo defeito da conversa, agora impresso.
+  const base = tituloBaseDeVendas(cliente, vendedora, documento, empresa);
+  const comStatus =
+    quando?.somente === 'DEVOLVIDAS'
+      ? base.replace(/^Vendas/, 'Devoluções')
+      : quando?.somente === 'TODAS'
+        ? base.replace(/^Vendas/, 'Vendas e devoluções')
+        : base;
+
   return tituloComRecorte(
-    tituloBaseDeVendas(cliente, vendedora, documento, empresa),
+    comStatus,
     quando
       ? recorteDoPedido({
           periodo: quando.periodo,
@@ -4565,6 +4586,23 @@ function tituloBaseDeVendas(
   if (cliente?.trim()) return `Vendas de ${cliente.trim()}`;
   if (vendedora?.trim()) return `Vendas da ${vendedora.trim()}`;
   return 'Listagem de Vendas';
+}
+
+/**
+ * A LETRA MIUDA DIZ O QUE ENTROU, E O QUE NAO ENTROU — 27/10/2026.
+ *
+ * "Receita desconta devolucoes" era a nota de sempre, e ficou enganosa no
+ * momento em que a lista passou a trazer SO venda: nao ha devolucao nenhuma
+ * para descontar. A nota agora conta o que a tabela e.
+ */
+function notaDeVendas(somente?: 'DEVOLVIDAS' | 'TODAS'): string {
+  if (somente === 'DEVOLVIDAS') {
+    return 'Só devoluções. O valor é o do documento devolvido.';
+  }
+  if (somente === 'TODAS') {
+    return 'Vendas e devoluções juntas; a coluna Status diz qual é qual. O total desconta as devolvidas.';
+  }
+  return 'Só vendas concluídas — devolução não entra. Peça as devoluções para vê-las.';
 }
 
 /**
