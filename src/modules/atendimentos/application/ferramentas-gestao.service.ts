@@ -16,6 +16,7 @@ import { faixaDePreco } from '../../../shared/catalogo/faixa-de-preco';
 import { FotosDeProdutoService } from './fotos-de-produto.service';
 import { FotosDaPecaUseCase } from '../../produtos/application/use-cases/fotos-da-peca.use-case';
 import { UltimoRelatorioService } from '../../relatorios/application/ultimo-relatorio.service';
+import type { ColunaDoRelatorio } from '../../relatorios/domain/relatorio';
 import { EstrategiaDeVendasService } from './estrategia-de-vendas.service';
 import { moeda } from '../../../shared/formato/moeda';
 import { PRODUTO_REPOSITORY } from '../../erp/domain/ports/injection-tokens';
@@ -42,6 +43,7 @@ import type {
   GestaoAtribuirVendedoraHandler,
   GestaoFidelidadeHandler,
   GestaoPecasPorValorHandler,
+  GestaoClientesPorAnoHandler,
   GestaoMelhoresHandler,
   GestaoAgendarHandler,
   GestaoCarteiraDoClienteHandler,
@@ -327,6 +329,8 @@ export interface FerramentasGestao {
   gestaoPorEmpresa: GestaoPorEmpresaHandler;
   gestaoVendasDetalhadas: GestaoVendasDetalhadasHandler;
   gestaoMelhores: GestaoMelhoresHandler;
+  /** As compras de cada cliente, ano a ano — 27/10/2026. */
+  gestaoClientesPorAno: GestaoClientesPorAnoHandler;
   /** Os Ouro, Prata e Bronze — da loja, ou de uma vendedora. */
   gestaoFidelidade: GestaoFidelidadeHandler;
   /** As pecas vendidas numa faixa de valor — da loja ou de uma vendedora. */
@@ -1280,6 +1284,152 @@ export class FerramentasGestaoService {
             return naConversa.map(
               (c) => `${c.nome} — ${plural(c.quantidade)}, ${moeda(c.valorTotal)}`,
             );
+          },
+        );
+        return { ...r, total };
+      },
+
+      /**
+       * ================================================================
+       * AS COMPRAS DE CADA CLIENTE, ANO A ANO — 27/10/2026.
+       *
+       * O PEDIDO, NAS PALAVRAS DE QUEM PEDIU:
+       *
+       *   "Organizar por cliente, em ordem alfabetica, mostrando a
+       *    quantidade de pecas compradas em cada ano, o valor das compras
+       *    e o total dos dois anos."
+       *
+       * Nenhuma ferramenta respondia isso. "2025 e 2026" numa janela so
+       * devolvia a SOMA — e a soma apaga a comparacao que a pergunta pediu.
+       * Um ano de cada vez funcionava na conversa e nao no arquivo: a
+       * segunda tabela escrevia por cima da primeira, e o PDF saia com um
+       * ano so.
+       *
+       * UMA CHAMADA, UMA TABELA, UM PDF.
+       * ================================================================
+       *
+       * SEM PERIODO, OS DOIS ULTIMOS ANOS: e a pergunta que aparece — "o
+       * ano passado e este". Exigir datas seria pedir ISO a quem perguntou
+       * em portugues.
+       */
+      gestaoClientesPorAno: async ({ vendedora, de, ate }) => {
+        const datas = datasDeRecorte(de, ate) ?? janelaDosDoisAnos();
+        let total = 0;
+        let anos: number[] = [];
+        const r = await this.comVendedora(
+          equipe,
+          vendedora,
+          async (_id, codigoErp) => {
+            const pagina = await this.carteira.comprasPorAno(codigoErp, {
+              de: datas.de,
+              ate: datas.ate,
+              // O ARQUIVO LEVA TODO MUNDO; a conversa fica com os vinte.
+              limite: TETO_DO_ARQUIVO,
+            });
+            total = pagina.total;
+            anos = pagina.anos;
+
+            // DUAS COLUNAS POR ANO, montadas a partir da JANELA. Com dois
+            // anos sao seis colunas, e dai para cima a folha vai deitada.
+            const colunas: ColunaDoRelatorio[] = [
+              { chave: 'cliente', titulo: 'Cliente', peso: 2.6 },
+            ];
+            for (const ano of anos) {
+              colunas.push(
+                {
+                  chave: `pecas${ano}`,
+                  titulo: `Peças ${ano}`,
+                  peso: 0.9,
+                  alinhamento: 'direita',
+                  mono: true,
+                },
+                {
+                  chave: `valor${ano}`,
+                  titulo: `Valor ${ano}`,
+                  peso: 1.2,
+                  alinhamento: 'direita',
+                  mono: true,
+                },
+              );
+            }
+            colunas.push({
+              chave: 'total',
+              titulo: 'Total',
+              peso: 1.3,
+              alinhamento: 'direita',
+              mono: true,
+            });
+
+            const linhas = pagina.clientes.map((c) => {
+              const linha: Record<string, string> = {
+                cliente: c.nome,
+                total: moeda(c.totalValor),
+              };
+              for (const ano of anos) {
+                const doAno = c.porAno[ano];
+                linha[`pecas${ano}`] = doAno
+                  ? String(doAno.pecas)
+                  : '—';
+                linha[`valor${ano}`] = doAno
+                  ? moeda(doAno.valor)
+                  : '—';
+              }
+              return linha;
+            });
+
+            const rodape: Record<string, string> = {
+              cliente: 'Total',
+            };
+            for (const ano of anos) {
+              rodape[`pecas${ano}`] = String(
+                pagina.clientes.reduce(
+                  (n, c) => n + (c.porAno[ano]?.pecas ?? 0),
+                  0,
+                ),
+              );
+              rodape[`valor${ano}`] = moeda(
+                pagina.clientes.reduce(
+                  (n, c) => n + (c.porAno[ano]?.valor ?? 0),
+                  0,
+                ),
+              );
+            }
+            rodape.total = moeda(
+              pagina.clientes.reduce((n, c) => n + c.totalValor, 0),
+            );
+
+            this.ultimoRelatorio.guardar(chaveDaConversa, {
+              titulo: tituloComRecorte(
+                'Compras por cliente',
+                recorteDoPedido({ vendedora, de, ate }),
+              ),
+              posicao: `Posição em ${agoraPorExtenso()}`,
+              paisagem: anos.length > 1,
+              colunas,
+              linhas,
+              total: rodape,
+              exibindo:
+                total > pagina.clientes.length
+                  ? { mostradas: pagina.clientes.length, total }
+                  : undefined,
+              nota: 'Peças e valor descontam devoluções. Ordem alfabética.',
+              geradoPor: solicitante ?? undefined,
+            });
+
+            return pagina.clientes
+              .slice(0, CLIENTES_NA_CONVERSA)
+              .map((c) => {
+                const porAno = anos
+                  .map((ano) => {
+                    const doAno = c.porAno[ano];
+                    if (!doAno) return `${ano}: nada`;
+                    const unidade =
+                      doAno.pecas === 1 ? 'peça' : 'peças';
+                    return `${ano}: ${doAno.pecas} ${unidade}, ${moeda(doAno.valor)}`;
+                  })
+                  .join(' · ');
+                return `${c.nome} — ${porAno} · total ${moeda(c.totalValor)}`;
+              });
           },
         );
         return { ...r, total };
@@ -4374,6 +4524,21 @@ function tituloDeVendas(
   if (cliente?.trim()) return `Vendas de ${cliente.trim()}`;
   if (vendedora?.trim()) return `Vendas da ${vendedora.trim()}`;
   return 'Listagem de Vendas';
+}
+
+/**
+ * OS DOIS ULTIMOS ANOS — 27/10/2026.
+ *
+ * "As compras dos clientes da Ylka" sem dizer quando e sobre o ano
+ * passado e este: e a comparacao que a gestao faz. Do primeiro de
+ * janeiro do ano passado ate hoje.
+ */
+function janelaDosDoisAnos(agora: Date = new Date()): {
+  de: Date;
+  ate: Date;
+} {
+  const de = new Date(agora.getFullYear() - 1, 0, 1, 0, 0, 0, 0);
+  return { de, ate: agora };
 }
 
 /** A data e a hora de agora, para o carimbo de posição do relatório. */

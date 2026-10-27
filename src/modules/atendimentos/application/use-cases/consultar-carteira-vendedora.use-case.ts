@@ -301,6 +301,74 @@ export class ConsultarCarteiraVendedoraUseCase {
     });
     return { ...pagina, deslocamento };
   }
+  /**
+   * AS COMPRAS DE CADA CLIENTE, ANO A ANO — 27/10/2026.
+   *
+   * ======================================================================
+   * O PEDIDO, NAS PALAVRAS DE QUEM PEDIU:
+   *
+   *   "Organizar por cliente, em ordem alfabetica, mostrando a quantidade
+   *    de pecas compradas em cada ano, o valor das compras e o total dos
+   *    dois anos."
+   *
+   * Ate aqui a pergunta nao tinha resposta: a janela unica (2025 ate 2026)
+   * devolvia a SOMA dos dois anos, e perguntar um ano de cada vez fazia a
+   * segunda tabela escrever por cima da primeira — o PDF saia com um ano.
+   * ======================================================================
+   *
+   * OS ANOS SAEM DA JANELA, e nao do que foi comprado: um cliente que so
+   * comprou em 2026 aparece com 2025 zerado, e isso E a informacao. Se os
+   * anos viessem dos dados, a tabela mudaria de colunas conforme a linha.
+   */
+  async comprasPorAno(
+    vendedoraCodigoErp: string | null,
+    opcoes: { de: Date; ate: Date; limite?: number },
+  ): Promise<PaginaDeComprasPorAno> {
+    if (!vendedoraCodigoErp) return { clientes: [], anos: [], total: 0 };
+
+    const ate = fimDoDia(opcoes.ate) ?? opcoes.ate;
+    const anos: number[] = [];
+    for (
+      let ano = opcoes.de.getFullYear();
+      ano <= ate.getFullYear();
+      ano += 1
+    ) {
+      anos.push(ano);
+    }
+
+    const [linhas, total] = await Promise.all([
+      this.clientes.comprasPorAnoDaCarteira(vendedoraCodigoErp, {
+        de: opcoes.de,
+        ate,
+        limite: opcoes.limite ?? MAXIMO,
+      }),
+      this.clientes.contarClientesComCompraNaCarteira(vendedoraCodigoErp, {
+        de: opcoes.de,
+        ate,
+      }),
+    ]);
+
+    // O PIVO MORA AQUI, e nao no SQL: a tabela tem duas colunas por ano, e
+    // quantos anos sao so se sabe depois de ler a janela.
+    const porCliente = new Map<string, ClienteComprasPorAno>();
+    for (const l of linhas) {
+      let cliente = porCliente.get(l.clienteId);
+      if (!cliente) {
+        cliente = {
+          nome: l.nome,
+          porAno: {},
+          totalPecas: 0,
+          totalValor: 0,
+        };
+        porCliente.set(l.clienteId, cliente);
+      }
+      cliente.porAno[l.ano] = { pecas: l.pecas, valor: l.valor };
+      cliente.totalPecas += l.pecas;
+      cliente.totalValor += l.valor;
+    }
+
+    return { clientes: [...porCliente.values()], anos, total };
+  }
 }
 
 /** A data chega as 00:00; o fim da janela tem de cobrir o dia inteiro. */
@@ -316,4 +384,22 @@ function fimDoDia(data?: Date): Date | undefined {
     fim.setHours(23, 59, 59, 999);
   }
   return fim;
+
+}
+
+/** O que cada cliente comprou em cada ano — ver `comprasPorAno`. */
+export interface ClienteComprasPorAno {
+  nome: string;
+  /** `{ 2025: { pecas, valor } }` — ano sem compra simplesmente falta. */
+  porAno: Record<number, { pecas: number; valor: number }>;
+  totalPecas: number;
+  totalValor: number;
+}
+
+export interface PaginaDeComprasPorAno {
+  clientes: ClienteComprasPorAno[];
+  /** Os anos da JANELA, em ordem — as colunas da tabela. */
+  anos: number[];
+  /** Quantos clientes compraram na janela, mesmo acima do teto. */
+  total: number;
 }

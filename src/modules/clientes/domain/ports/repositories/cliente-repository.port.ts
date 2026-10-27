@@ -138,6 +138,17 @@ export interface FiltroDemografico {
   idadeMax?: number;
 }
 
+/** Uma linha por cliente e por ano — ver `comprasPorAnoDaCarteira`. */
+export interface CompraDeClientePorAno {
+  clienteId: string;
+  nome: string;
+  ano: number;
+  /** Pecas compradas no ano, ja abatidas as devolvidas. */
+  pecas: number;
+  /** Valor das compras do ano, ja abatidas as devolucoes. */
+  valor: number;
+}
+
 export interface IClienteRepository {
   // Distribuicao de clientes por faixa de fidelidade (nº de compras concluidas).
   distribuicaoTiers(filtro?: FiltroDemografico): Promise<TierCliente[]>;
@@ -275,6 +286,40 @@ export interface IClienteRepository {
   contarCompradoresDaCarteira(
     vendedoraCodigoErp: string,
     opcoes: { categoria?: string; desde?: Date; ate?: Date },
+  ): Promise<number>;
+
+  /**
+   * AS COMPRAS DE CADA CLIENTE, ANO A ANO — 27/10/2026.
+   *
+   * ====================================================================
+   * O PEDIDO, NAS PALAVRAS DE QUEM PEDIU:
+   *
+   *   "Organizar por cliente, em ordem alfabetica, mostrando a quantidade
+   *    de pecas compradas em cada ano, o valor das compras e o total dos
+   *    dois anos."
+   *
+   * Nenhuma consulta nossa quebrava por ano: ou somava a janela inteira
+   * (e a soma apaga a comparacao), ou exigia uma pergunta por ano — e ai
+   * a segunda tabela escrevia por cima da primeira, e o PDF saia com um
+   * ano so.
+   *
+   * UMA LINHA POR CLIENTE E POR ANO. Quem pivota e quem chama: o SQL
+   * agrupa, e o caso de uso monta a tabela com as colunas de cada ano.
+   * ====================================================================
+   *
+   * PECAS E VALOR DESCONTAM DEVOLUCAO: peca devolvida nao foi comprada.
+   * A ordem e ALFABETICA, como ela pediu — e nao do maior para o menor,
+   * porque aqui se procura um nome, nao um ranking.
+   */
+  comprasPorAnoDaCarteira(
+    vendedoraCodigoErp: string,
+    opcoes: { de: Date; ate: Date; limite: number },
+  ): Promise<CompraDeClientePorAno[]>;
+
+  /** Quantos clientes da carteira compraram na janela — para o "de N". */
+  contarClientesComCompraNaCarteira(
+    vendedoraCodigoErp: string,
+    opcoes: { de: Date; ate: Date },
   ): Promise<number>;
 
   /**

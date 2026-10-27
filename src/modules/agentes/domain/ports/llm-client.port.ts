@@ -839,6 +839,21 @@ export type GestaoEpocaHandler = (input: {
   total?: number;
 }>;
 
+/**
+ * AS COMPRAS DE CADA CLIENTE, ANO A ANO — 27/10/2026.
+ *
+ * "Organizar por cliente, em ordem alfabetica, mostrando a quantidade de
+ * pecas compradas em cada ano, o valor das compras e o total dos dois
+ * anos" — o pedido que nenhuma ferramenta respondia.
+ *
+ * SEM `de`/`ate`, os dois ultimos anos.
+ */
+export type GestaoClientesPorAnoHandler = (input: {
+  vendedora: string;
+  de?: string;
+  ate?: string;
+}) => Promise<GestaoLeituraResultado & { total?: number }>;
+
 export type GestaoMelhoresHandler = (input: {
   vendedora: string;
   categoria?: string;
@@ -1424,6 +1439,8 @@ export interface ChatParams {
   gestaoLeads?: GestaoLeadsHandler;
   gestaoCarteira?: GestaoCarteiraHandler;
   gestaoMelhores?: GestaoMelhoresHandler;
+  // Idem para `compras_por_ano`: o que cada cliente comprou em cada ano.
+  gestaoClientesPorAno?: GestaoClientesPorAnoHandler;
   // Idem para `clientes_por_fidelidade` da gestao: a loja, ou uma vendedora.
   gestaoFidelidade?: GestaoFidelidadeHandler;
   // Idem para `pecas_por_valor` da gestao: a loja, ou uma vendedora.

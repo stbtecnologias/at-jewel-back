@@ -1115,6 +1115,40 @@ const GESTAO_CARTEIRA_TOOL: Anthropic.Tool = {
   },
 };
 
+/**
+ * AS COMPRAS DE CADA CLIENTE, ANO A ANO — 27/10/2026.
+ *
+ * A DESCRICAO AVISA PARA NAO CHAMAR DUAS VEZES, e isso nao e zelo: a
+ * regra de 02/10 manda chamar uma vez por periodo quando a pergunta cita
+ * dois ("agosto e setembro"), porque a janela unica devolve a soma. Aqui
+ * a quebra ja vem dentro — e duas chamadas fariam a segunda tabela
+ * escrever por cima da primeira, deixando o PDF com um ano so.
+ */
+const GESTAO_CLIENTES_POR_ANO_TOOL: Anthropic.Tool = {
+  name: 'compras_por_ano',
+  description:
+    'Lista, por CLIENTE da carteira de uma vendedora, quantas pecas ele comprou em CADA ANO, o valor de cada ano e o total. Use para "as compras dos clientes da Ylka em 2025 e 2026", "quanto cada cliente dela comprou por ano", "a lista dos clientes dela com as pecas de cada ano". Vem em ordem ALFABETICA, e o arquivo leva a lista inteira. Sem periodo, traz o ano passado e este. NAO CHAME UMA VEZ POR ANO: a quebra por ano ja vem dentro, numa tabela so.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      vendedora: {
+        type: 'string',
+        description: 'Nome da vendedora, como falado.',
+      },
+      de: {
+        type: 'string',
+        description:
+          'Inicio do periodo, AAAA-MM-DD. "2025 e 2026" e de=2025-01-01 e ate=2026-12-31 — os dois anos de uma vez, e nao duas chamadas.',
+      },
+      ate: {
+        type: 'string',
+        description: 'Fim do periodo, AAAA-MM-DD. Sempre junto com `de`.',
+      },
+    },
+    required: ['vendedora'],
+  },
+};
+
 const GESTAO_MELHORES_TOOL: Anthropic.Tool = {
   name: 'melhores_da_vendedora',
   description:
@@ -2229,6 +2263,8 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoLeads) tools.push(GESTAO_LEADS_TOOL);
     if (params.gestaoCarteira) tools.push(GESTAO_CARTEIRA_TOOL);
     if (params.gestaoMelhores) tools.push(GESTAO_MELHORES_TOOL);
+    if (params.gestaoClientesPorAno)
+      tools.push(GESTAO_CLIENTES_POR_ANO_TOOL);
     if (params.gestaoFidelidade) tools.push(GESTAO_FIDELIDADE_TOOL);
     if (params.gestaoPecasPorValor) tools.push(GESTAO_PECAS_POR_VALOR_TOOL);
     if (params.gestaoAtribuirVendedora)
@@ -2571,6 +2607,31 @@ export class AnthropicClient implements ILlmClient {
                     Number(e.a_partir_de) > 0 ? Number(e.a_partir_de) : 0,
                 }),
                 'cliente parado',
+              );
+            },
+          ),
+        );
+      } else if (
+        toolUse.name === 'compras_por_ano' &&
+        params.gestaoClientesPorAno
+      ) {
+        toolResults.push(
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                vendedora?: string;
+                de?: string;
+                ate?: string;
+              };
+              return textoDaLeituraDeGestao(
+                await params.gestaoClientesPorAno!({
+                  vendedora: String(e.vendedora ?? '').slice(0, 80),
+                  de: e.de ? String(e.de) : undefined,
+                  ate: e.ate ? String(e.ate) : undefined,
+                }),
+                'cliente',
               );
             },
           ),

@@ -16,6 +16,7 @@ import { ClientePerfil } from '../../../../domain/entities/cliente-perfil.entity
 import {
   ClienteDaCarteira,
   ClienteDaEpoca,
+  CompraDeClientePorAno,
   EscopoDeCliente,
   EscopoDeEpoca,
   FiltroCliente,
@@ -921,5 +922,90 @@ export class ClienteRepository implements IClienteRepository {
       criadoEm: p.criadoEm,
       atualizadoEm: p.atualizadoEm,
     });
+  }
+
+  /**
+   * AS COMPRAS DE CADA CLIENTE, ANO A ANO — 27/10/2026.
+   *
+   * Ver o contrato no port: uma linha por cliente E por ano, em ordem
+   * alfabetica, com pecas e valor ja abatidas as devolucoes.
+   *
+   * O `LIMIT` ESCOLHE CLIENTES, e nao linhas — por isso a CTE: cortar no
+   * fim traria um cliente com 2025 e sem 2026, que e pior que nao traze-lo.
+   */
+  async comprasPorAnoDaCarteira(
+    vendedoraCodigoErp: string,
+    opcoes: { de: Date; ate: Date; limite: number },
+  ): Promise<CompraDeClientePorAno[]> {
+    const linhas = await this.repo.manager.query<
+      {
+        cliente_id: string;
+        nome: string;
+        ano: number;
+        pecas: string;
+        valor: string;
+      }[]
+    >(
+      `
+      WITH alvo AS (
+        SELECT c.id, c.nome
+          FROM clientes c
+         WHERE c.vendedora_codigo_erp = $1
+           AND c.ativo
+           AND EXISTS (
+                 SELECT 1
+                   FROM movimentacoes v
+                  WHERE v.cliente_id = c.id
+                    AND v.ativo
+                    AND v.data_movimentacao BETWEEN $2 AND $3)
+         ORDER BY c.nome
+         LIMIT $4
+      )
+      SELECT a.id                                        AS cliente_id,
+             a.nome                                      AS nome,
+             EXTRACT(YEAR FROM v.data_movimentacao)::int AS ano,
+             COALESCE(sum(i.quantidade) FILTER (WHERE v.saida), 0)
+               - COALESCE(sum(i.quantidade) FILTER (WHERE v.entrada), 0) AS pecas,
+             COALESCE(sum(i.quantidade * i.valor_unitario) FILTER (WHERE v.saida), 0)
+               - COALESCE(sum(i.quantidade * i.valor_unitario) FILTER (WHERE v.entrada), 0) AS valor
+        FROM alvo a
+        JOIN movimentacoes v ON v.cliente_id = a.id AND v.ativo
+        JOIN movimentacoes_itens i ON i.movimentacao_id = v.id AND i.ativo
+       WHERE v.data_movimentacao BETWEEN $2 AND $3
+       GROUP BY a.id, a.nome, ano
+       ORDER BY a.nome, ano
+      `,
+      [vendedoraCodigoErp, opcoes.de, opcoes.ate, opcoes.limite],
+    );
+
+    return linhas.map((l) => ({
+      clienteId: l.cliente_id,
+      nome: l.nome,
+      ano: Number(l.ano),
+      pecas: Number(l.pecas),
+      valor: Number(l.valor),
+    }));
+  }
+
+  async contarClientesComCompraNaCarteira(
+    vendedoraCodigoErp: string,
+    opcoes: { de: Date; ate: Date },
+  ): Promise<number> {
+    const linhas = await this.repo.manager.query<{ total: string }[]>(
+      `
+      SELECT count(*) AS total
+        FROM clientes c
+       WHERE c.vendedora_codigo_erp = $1
+         AND c.ativo
+         AND EXISTS (
+               SELECT 1
+                 FROM movimentacoes v
+                WHERE v.cliente_id = c.id
+                  AND v.ativo
+                  AND v.data_movimentacao BETWEEN $2 AND $3)
+      `,
+      [vendedoraCodigoErp, opcoes.de, opcoes.ate],
+    );
+    return Number(linhas[0]?.total ?? 0);
   }
 }
