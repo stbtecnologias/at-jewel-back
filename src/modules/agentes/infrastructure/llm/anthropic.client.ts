@@ -1134,7 +1134,16 @@ const GESTAO_MELHORES_TOOL: Anthropic.Tool = {
       ultimos_meses: {
         type: 'integer',
         description:
-          'Recorte de periodo, em meses. Omita para o historico inteiro.',
+          'Recorte de periodo, em meses, contado de hoje para tras. Para um ano ou um mes FECHADO use `de` e `ate`.',
+      },
+      de: {
+        type: 'string',
+        description:
+          'Inicio do periodo, AAAA-MM-DD. Com `ate`, faz o recorte fechado: "em 2025" e de=2025-01-01, ate=2025-12-31.',
+      },
+      ate: {
+        type: 'string',
+        description: 'Fim do periodo, AAAA-MM-DD. Sempre junto com `de`.',
       },
     },
     required: ['vendedora'],
@@ -2579,12 +2588,16 @@ export class AnthropicClient implements ILlmClient {
                 vendedora?: string;
                 categoria?: string;
                 ultimos_meses?: number;
+                de?: string;
+                ate?: string;
               };
               return textoDaLeituraDeGestao(
                 await params.gestaoMelhores!({
                   vendedora: String(e.vendedora ?? '').slice(0, 80),
                   categoria: e.categoria,
                   ultimosMeses: e.ultimos_meses,
+                  de: e.de ? String(e.de) : undefined,
+                  ate: e.ate ? String(e.ate) : undefined,
                 }),
                 'comprador',
               );

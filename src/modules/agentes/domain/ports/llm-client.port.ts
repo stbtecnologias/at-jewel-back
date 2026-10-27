@@ -843,6 +843,13 @@ export type GestaoMelhoresHandler = (input: {
   vendedora: string;
   categoria?: string;
   ultimosMeses?: number;
+  /**
+   * O PERIODO FECHADO — 27/10/2026. `ultimosMeses` conta de hoje para
+   * tras, e com ele nao se pergunta "2025": ano fechado precisa das duas
+   * pontas.
+   */
+  de?: string;
+  ate?: string;
 }) => Promise<GestaoLeituraResultado & { total?: number }>;
 
 /**

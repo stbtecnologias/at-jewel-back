@@ -123,12 +123,19 @@ export class ConsultarCarteiraVendedoraUseCase {
      * o pior que pode acontecer, e e inofensivo.
      */
     deslocamento = 0,
+    /** Quantos trazer. O arquivo pede mais que a conversa — 27/10/2026. */
+    limite?: number,
   ): Promise<PaginaDaCarteira> {
     if (!vendedoraCodigoErp) return { clientes: [], total: 0 };
 
     const pular = Math.max(0, Math.trunc(deslocamento));
     const [clientes, total] = await Promise.all([
-      this.clientes.inativosDaCarteira(vendedoraCodigoErp, desde, MAXIMO, pular),
+      this.clientes.inativosDaCarteira(
+        vendedoraCodigoErp,
+        desde,
+        limite ?? MAXIMO,
+        pular,
+      ),
       this.clientes.contarInativosDaCarteira(vendedoraCodigoErp, desde),
     ]);
     return { clientes, total, deslocamento: pular };
@@ -156,6 +163,7 @@ export class ConsultarCarteiraVendedoraUseCase {
   async porEpoca(
     vendedoraCodigoErp: string | null,
     recorte: { mes?: number; dataComemorativa?: NomeComemorativo },
+    limite?: number,
   ): Promise<PaginaDaEpoca> {
     if (!vendedoraCodigoErp) return { clientes: [], total: 0 };
 
@@ -164,7 +172,7 @@ export class ConsultarCarteiraVendedoraUseCase {
     return this.clientes.compradoresPorEpoca(
       { tipo: 'CARTEIRA', vendedoraCodigoErp },
       janelas,
-      MAXIMO,
+      limite ?? MAXIMO,
     );
   }
 
@@ -182,12 +190,19 @@ export class ConsultarCarteiraVendedoraUseCase {
    * chama e so a gestao, atras da guarda de `verLoja`.
    * ======================================================================
    */
-  async porEpocaDaLoja(recorte: {
-    mes?: number;
-    dataComemorativa?: NomeComemorativo;
-  }): Promise<PaginaDaEpoca> {
+  async porEpocaDaLoja(
+    recorte: {
+      mes?: number;
+      dataComemorativa?: NomeComemorativo;
+    },
+    limite?: number,
+  ): Promise<PaginaDaEpoca> {
     const janelas = janelasDoRecorte(recorte);
-    return this.clientes.compradoresPorEpoca({ tipo: 'LOJA' }, janelas, MAXIMO);
+    return this.clientes.compradoresPorEpoca(
+      { tipo: 'LOJA' },
+      janelas,
+      limite ?? MAXIMO,
+    );
   }
 
   /**
@@ -195,27 +210,53 @@ export class ConsultarCarteiraVendedoraUseCase {
    * ("quem comprou mais aneis"); sem ela, de COMPRAS ("quem mais compra de
    * mim"). Sao perguntas diferentes e a unidade muda junto.
    */
+  /**
+   * O PERIODO FECHADO — 27/10/2026.
+   *
+   * ======================================================================
+   * *"As compras dos clientes da Ylka em 2025 e 2026."*
+   *
+   * So havia `ultimosMeses`, que conta de hoje para tras — e com ele nao se
+   * pergunta "2025". Um ano fechado precisa das duas pontas, e e assim que
+   * a pergunta chega: "em 2025", "de janeiro a marco".
+   *
+   * `de`/`ate` GANHAM do `ultimosMeses` quando vem juntos: sao mais
+   * especificos, e misturar os dois daria uma janela que ninguem pediu.
+   * ======================================================================
+   */
   async maioresCompradores(
     vendedoraCodigoErp: string | null,
-    opcoes: { categoria?: string; ultimosMeses?: number },
+    opcoes: {
+      categoria?: string;
+      ultimosMeses?: number;
+      de?: Date;
+      ate?: Date;
+      /** Quantos clientes trazer. O arquivo pede mais que a conversa. */
+      limite?: number;
+    },
   ): Promise<PaginaDaCarteira> {
     if (!vendedoraCodigoErp) return { clientes: [], total: 0 };
 
-    let desde: Date | undefined;
-    if (opcoes.ultimosMeses && opcoes.ultimosMeses > 0) {
+    let desde: Date | undefined = opcoes.de;
+    if (!desde && opcoes.ultimosMeses && opcoes.ultimosMeses > 0) {
       desde = new Date();
       desde.setMonth(desde.getMonth() - opcoes.ultimosMeses);
     }
+    // ATE A MEIA-NOITE INCLUSIVE: a data chega as 00:00, e sem isto o
+    // ultimo dia da janela ficaria de fora inteiro.
+    const ate = fimDoDia(opcoes.de ? opcoes.ate : undefined);
 
     const [clientes, total] = await Promise.all([
       this.clientes.maioresCompradoresDaCarteira(vendedoraCodigoErp, {
         categoria: opcoes.categoria,
         desde,
-        limite: MAXIMO,
+        ate,
+        limite: opcoes.limite ?? MAXIMO,
       }),
       this.clientes.contarCompradoresDaCarteira(vendedoraCodigoErp, {
         categoria: opcoes.categoria,
         desde,
+        ate,
       }),
     ]);
     return { clientes, total };
@@ -242,6 +283,8 @@ export class ConsultarCarteiraVendedoraUseCase {
     nivel?: NivelDeFidelidade;
     mesesSemComprar?: number;
     deslocamento?: number;
+    /** O arquivo pede mais que a conversa — 27/10/2026. */
+    limite?: number;
   }): Promise<PaginaDeFidelidade & { deslocamento: number }> {
     let semCompraDesde: Date | undefined;
     if (opcoes.mesesSemComprar && opcoes.mesesSemComprar > 0) {
@@ -253,9 +296,24 @@ export class ConsultarCarteiraVendedoraUseCase {
     const pagina = await this.clientes.clientesPorFidelidade(opcoes.escopo, {
       nivel: opcoes.nivel,
       semCompraDesde,
-      limite: MAXIMO,
+      limite: opcoes.limite ?? MAXIMO,
       deslocamento,
     });
     return { ...pagina, deslocamento };
   }
+}
+
+/** A data chega as 00:00; o fim da janela tem de cobrir o dia inteiro. */
+function fimDoDia(data?: Date): Date | undefined {
+  if (!data) return undefined;
+  const fim = new Date(data);
+  if (
+    fim.getHours() === 0 &&
+    fim.getMinutes() === 0 &&
+    fim.getSeconds() === 0 &&
+    fim.getMilliseconds() === 0
+  ) {
+    fim.setHours(23, 59, 59, 999);
+  }
+  return fim;
 }

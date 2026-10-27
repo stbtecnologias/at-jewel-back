@@ -216,3 +216,17 @@ function cortar(texto: string, teto: number): string {
 function dois(n: number): string {
   return String(n).padStart(2, '0');
 }
+
+/**
+ * JUNTA O NOME DA CONSULTA COM O RECORTE — 27/10/2026.
+ *
+ * O caminho de texto faz isto dentro do `guardarTexto`; as consultas que
+ * montam a própria tabela não passam por lá, e ficavam com o título pelado:
+ * "Melhores clientes" servia para a Ylka em 2025 e para a loja inteira hoje.
+ */
+export function tituloComRecorte(
+  base: string,
+  recorte: RecorteDoPedido | null | undefined,
+): string {
+  return recorte?.titulo ? `${base} — ${recorte.titulo}` : base;
+}

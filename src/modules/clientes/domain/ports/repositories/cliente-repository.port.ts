@@ -262,13 +262,19 @@ export interface IClienteRepository {
    */
   maioresCompradoresDaCarteira(
     vendedoraCodigoErp: string,
-    opcoes: { categoria?: string; desde?: Date; limite: number },
+    opcoes: {
+      categoria?: string;
+      desde?: Date;
+      /** O fim da janela — 27/10/2026, para "2025" caber como ano fechado. */
+      ate?: Date;
+      limite: number;
+    },
   ): Promise<ClienteDaCarteira[]>;
 
   /** Quantos clientes da carteira compraram, no mesmo recorte. */
   contarCompradoresDaCarteira(
     vendedoraCodigoErp: string,
-    opcoes: { categoria?: string; desde?: Date },
+    opcoes: { categoria?: string; desde?: Date; ate?: Date },
   ): Promise<number>;
 
   /**

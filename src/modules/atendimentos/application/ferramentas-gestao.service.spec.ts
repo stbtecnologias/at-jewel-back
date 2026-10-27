@@ -683,6 +683,11 @@ describe('FerramentasGestaoService', () => {
       expect(carteira.maioresCompradores).toHaveBeenCalledWith('SEED-VD01', {
         categoria: 'Anel',
         ultimosMeses: 12,
+        de: undefined,
+        ate: undefined,
+        // O ARQUIVO LEVA TODO MUNDO — 27/10/2026. A conversa continua com
+        // vinte; quem pede 500 e o relatorio.
+        limite: 500,
       });
       expect(r.total).toBe(27);
       // Com categoria a unidade e PECA, nao compra — sao perguntas diferentes.
@@ -945,10 +950,15 @@ describe('FerramentasGestaoService', () => {
       const r = await servico.montar({ verLoja: true }).gestaoEpoca({ mes: 12 });
 
       expect(r.status).toBe('OK');
-      expect(carteira.porEpocaDaLoja).toHaveBeenCalledWith({
-        mes: 12,
-        dataComemorativa: undefined,
-      });
+      // O ARQUIVO LEVA A LISTA INTEIRA — 27/10/2026: a consulta pede o
+      // teto do arquivo, e a conversa fica com os vinte primeiros.
+      expect(carteira.porEpocaDaLoja).toHaveBeenCalledWith(
+        {
+          mes: 12,
+          dataComemorativa: undefined,
+        },
+        500,
+      );
       expect(carteira.porEpoca).not.toHaveBeenCalled();
     });
 
@@ -957,10 +967,14 @@ describe('FerramentasGestaoService', () => {
         .montar({ verLoja: true })
         .gestaoEpoca({ vendedora: 'Marina', dataComemorativa: 'Natal' });
 
-      expect(carteira.porEpoca).toHaveBeenCalledWith('SEED-VD01', {
-        mes: undefined,
-        dataComemorativa: 'Natal',
-      });
+      expect(carteira.porEpoca).toHaveBeenCalledWith(
+        'SEED-VD01',
+        {
+          mes: undefined,
+          dataComemorativa: 'Natal',
+        },
+        500,
+      );
       expect(carteira.porEpocaDaLoja).not.toHaveBeenCalled();
     });
 

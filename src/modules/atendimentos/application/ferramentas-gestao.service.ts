@@ -79,6 +79,10 @@ import type {
 } from '../domain/ports/repositories/conversa-whatsapp-repository.port';
 import { CLIENTE_REPOSITORY } from '../../clientes/domain/ports/injection-tokens';
 import { EMPRESA_REPOSITORY } from '../../empresas/domain/ports/injection-tokens';
+import {
+  recorteDoPedido,
+  tituloComRecorte,
+} from '../../relatorios/domain/recorte-do-pedido';
 import { LEAD_REPOSITORY } from '../../leads/domain/ports/injection-tokens';
 import {
   STATUS_LEAD_VENDEDORA,
@@ -177,6 +181,15 @@ const TETO_DE_PRODUTOS = 10;
  * ==========================================================================
  */
 const TETO_DO_ARQUIVO = 500;
+
+/**
+ * Quantos clientes cabem na CONVERSA — era o teto do caso de uso (20), e
+ * continua sendo. O que mudou em 27/10 e que o arquivo deixou de parar aqui.
+ */
+const MELHORES_NA_CONVERSA = 20;
+
+/** O mesmo teto, para as listas de cliente que a carteira responde. */
+const CLIENTES_NA_CONVERSA = 20;
 
 const MAXIMO_VENDAS_DETALHADAS = 10;
 
@@ -733,13 +746,57 @@ export class FerramentasGestaoService {
           vendedora,
           async (_id, codigoErp) => {
             // A data de corte vem pronta desde 01/10 — ver `dataDeCorte`.
-            const pagina = await this.carteira.semComprar(
-              codigoErp,
-              dataDeCorte({ meses }),
-              aPartirDe,
-            );
+            const desde = dataDeCorte({ meses });
+            // ========================================================
+            // O ARQUIVO LEVA A LISTA INTEIRA — 27/10/2026.
+            //
+            // Uma consulta a mais, em paralelo, como a de peças de
+            // 23/10: a da conversa respeita a página que ela pediu, e a
+            // do arquivo começa do princípio e vai até o teto.
+            // ========================================================
+            const [pagina, paraOArquivo] = await Promise.all([
+              this.carteira.semComprar(codigoErp, desde, aPartirDe),
+              this.carteira.semComprar(codigoErp, desde, 0, TETO_DO_ARQUIVO),
+            ]);
             total = pagina.total;
             pulados = pagina.deslocamento ?? 0;
+
+            this.ultimoRelatorio.guardar(chaveDaConversa, {
+              titulo: tituloComRecorte(
+                'Clientes sem comprar',
+                recorteDoPedido({ vendedora, meses }),
+              ),
+              posicao: `Posição em ${agoraPorExtenso()}`,
+              colunas: [
+                { chave: 'cliente', titulo: 'Cliente', peso: 3 },
+                {
+                  chave: 'ultima',
+                  titulo: 'Última compra',
+                  peso: 1.2,
+                  mono: true,
+                },
+                {
+                  chave: 'compras',
+                  titulo: 'Compras',
+                  peso: 1,
+                  alinhamento: 'direita',
+                  mono: true,
+                },
+              ],
+              linhas: paraOArquivo.clientes.map((c) => ({
+                cliente: c.nome,
+                ultima: c.ultimaCompra
+                  ? c.ultimaCompra.toLocaleDateString('pt-BR')
+                  : 'nunca comprou',
+                compras: String(c.quantidade),
+              })),
+              exibindo:
+                total > paraOArquivo.clientes.length
+                  ? { mostradas: paraOArquivo.clientes.length, total }
+                  : undefined,
+              geradoPor: solicitante ?? undefined,
+            });
+
             return pagina.clientes.map((c) =>
               c.ultimaCompra
                 ? `${c.nome} — última compra em ${c.ultimaCompra.toLocaleDateString('pt-BR')}, ${c.quantidade} ${c.quantidade === 1 ? 'compra' : 'compras'} no total`
@@ -891,6 +948,18 @@ export class FerramentasGestaoService {
         }
 
         const datas = datasDeRecorte(de, ate);
+        // ================================================================
+        // UMA CONSULTA SO, E ELA TRAZ O DO ARQUIVO — 27/10/2026.
+        //
+        // *"Nao ficou nenhuma lista guardada para exportar... o PDF
+        // anterior so trouxe 2026"* — e, pior, so DEZ de 43. A conversa
+        // mostra dez porque mensagem de WhatsApp nao comporta mais; o
+        // ARQUIVO existe justamente para levar o que nao cabe ali.
+        //
+        // Pedir as 500 e cortar as dez em memoria sai mais barato que duas
+        // consultas — o `total` vem do `count(*) OVER ()` e nao depende do
+        // limite, entao o "de 43 no total" continua verdadeiro.
+        // ================================================================
         const r = await this.consultarVendas.detalhadas(
           {
             clienteId,
@@ -901,8 +970,9 @@ export class FerramentasGestaoService {
             de: datas?.de,
             ate: datas?.ate,
           },
-          MAXIMO_VENDAS_DETALHADAS,
+          TETO_DO_ARQUIVO,
         );
+        const naConversa = r.vendas.slice(0, MAXIMO_VENDAS_DETALHADAS);
 
         // ================================================================
         // A TABELA FICA GUARDADA, e o texto segue como sempre — RF36/RF37.
@@ -968,7 +1038,8 @@ export class FerramentasGestaoService {
 
         return {
           status: 'OK' as const,
-          linhas: r.vendas.map(linhaDaVenda),
+          // O MODELO CONTINUA RECEBENDO DEZ: o que mudou e o arquivo.
+          linhas: naConversa.map(linhaDaVenda),
           total: r.total,
         };
       },
@@ -1002,43 +1073,212 @@ export class FerramentasGestaoService {
           dataComemorativa: dataComemorativa as NomeComemorativo | undefined,
         };
 
+        // O ARQUIVO LEVA A LISTA INTEIRA — 27/10/2026. Uma consulta so,
+        // com o teto do arquivo; a conversa fica com os vinte primeiros.
         if (vendedora?.trim()) {
           let total = 0;
           const r = await this.comVendedora(
             equipe,
             vendedora,
             async (_id, codigoErp) => {
-              const pagina = await this.carteira.porEpoca(codigoErp, recorte);
+              const pagina = await this.carteira.porEpoca(
+                codigoErp,
+                recorte,
+                TETO_DO_ARQUIVO,
+              );
               total = pagina.total;
-              return pagina.clientes.map(linhaDaEpoca);
+
+            this.ultimoRelatorio.guardar(chaveDaConversa, {
+              titulo: tituloComRecorte('Clientes por época', recorteDoPedido({ vendedora, mes, dataComemorativa })),
+              posicao: `Posição em ${agoraPorExtenso()}`,
+              colunas: [
+                { chave: 'cliente', titulo: 'Cliente', peso: 3 },
+                {
+                  chave: 'compras',
+                  titulo: 'Compras',
+                  peso: 1,
+                  alinhamento: 'direita',
+                  mono: true,
+                },
+                {
+                  chave: 'anos',
+                  titulo: 'Anos',
+                  peso: 0.8,
+                  alinhamento: 'direita',
+                  mono: true,
+                },
+                {
+                  chave: 'valor',
+                  titulo: 'Valor',
+                  peso: 1.2,
+                  alinhamento: 'direita',
+                  mono: true,
+                },
+                { chave: 'ultima', titulo: 'Última compra', peso: 1.2, mono: true },
+              ],
+              linhas: pagina.clientes.map((c) => ({
+                cliente: c.nome,
+                compras: String(c.quantidade),
+                anos: String(c.anos),
+                valor: moeda(c.valorTotal),
+                ultima: c.ultimaCompra
+                  ? c.ultimaCompra.toLocaleDateString('pt-BR')
+                  : '—',
+              })),
+              exibindo:
+                pagina.total > pagina.clientes.length
+                  ? { mostradas: pagina.clientes.length, total: pagina.total }
+                  : undefined,
+              geradoPor: solicitante ?? undefined,
+            });
+
+              return pagina.clientes
+                .slice(0, CLIENTES_NA_CONVERSA)
+                .map(linhaDaEpoca);
             },
           );
           return { ...r, total };
         }
 
-        const pagina = await this.carteira.porEpocaDaLoja(recorte);
+        const pagina = await this.carteira.porEpocaDaLoja(
+          recorte,
+          TETO_DO_ARQUIVO,
+        );
+          this.ultimoRelatorio.guardar(chaveDaConversa, {
+            titulo: tituloComRecorte('Clientes por época', recorteDoPedido({ mes, dataComemorativa })),
+            posicao: `Posição em ${agoraPorExtenso()}`,
+            colunas: [
+              { chave: 'cliente', titulo: 'Cliente', peso: 3 },
+              {
+                chave: 'compras',
+                titulo: 'Compras',
+                peso: 1,
+                alinhamento: 'direita',
+                mono: true,
+              },
+              {
+                chave: 'anos',
+                titulo: 'Anos',
+                peso: 0.8,
+                alinhamento: 'direita',
+                mono: true,
+              },
+              {
+                chave: 'valor',
+                titulo: 'Valor',
+                peso: 1.2,
+                alinhamento: 'direita',
+                mono: true,
+              },
+              { chave: 'ultima', titulo: 'Última compra', peso: 1.2, mono: true },
+            ],
+            linhas: pagina.clientes.map((c) => ({
+              cliente: c.nome,
+              compras: String(c.quantidade),
+              anos: String(c.anos),
+              valor: moeda(c.valorTotal),
+              ultima: c.ultimaCompra
+                ? c.ultimaCompra.toLocaleDateString('pt-BR')
+                : '—',
+            })),
+            exibindo:
+              pagina.total > pagina.clientes.length
+                ? { mostradas: pagina.clientes.length, total: pagina.total }
+                : undefined,
+            geradoPor: solicitante ?? undefined,
+          });
         return {
           status: 'OK' as const,
-          linhas: pagina.clientes.map(linhaDaEpoca),
+          linhas: pagina.clientes
+            .slice(0, CLIENTES_NA_CONVERSA)
+            .map(linhaDaEpoca),
           total: pagina.total,
         };
       },
 
-      gestaoMelhores: async ({ vendedora, categoria, ultimosMeses }) => {
+      /**
+       * ================================================================
+       * O ANO FECHADO E O ARQUIVO INTEIRO — 27/10/2026.
+       *
+       * *"As compras dos clientes da Ylka em 2025 e 2026, com a
+       * quantidade de pecas em cada ano."* Duas coisas faltavam:
+       *
+       *   1. so havia `ultimosMeses`, que conta de hoje para tras — e com
+       *      ele nao se pergunta "2025";
+       *   2. o arquivo levava os mesmos vinte da conversa.
+       * ================================================================
+       */
+      gestaoMelhores: async ({
+        vendedora,
+        categoria,
+        ultimosMeses,
+        de,
+        ate,
+      }) => {
         let total = 0;
+        const datas = datasDeRecorte(de, ate);
         const r = await this.comVendedora(
           equipe,
           vendedora,
           async (_id, codigoErp) => {
             const pagina = await this.carteira.maioresCompradores(codigoErp, {
               categoria,
-              ultimosMeses,
+              // AS DUAS PONTAS GANHAM: pedir "2025" e `ultimosMeses` ao
+              // mesmo tempo daria uma janela que ninguem pediu.
+              ultimosMeses: datas ? undefined : ultimosMeses,
+              de: datas?.de,
+              ate: datas?.ate,
+              // O ARQUIVO LEVA TODO MUNDO — ver `TETO_DO_ARQUIVO`.
+              limite: TETO_DO_ARQUIVO,
             });
             total = pagina.total;
             const unidade = categoria ? 'peça' : 'compra';
-            return pagina.clientes.map(
-              (c) =>
-                `${c.nome} — ${c.quantidade} ${c.quantidade === 1 ? unidade : unidade + 's'}, ${moeda(c.valorTotal)}`,
+            const plural = (q: number) =>
+              `${q} ${q === 1 ? unidade : unidade + 's'}`;
+            const naConversa = pagina.clientes.slice(0, MELHORES_NA_CONVERSA);
+
+            // A TABELA DO ARQUIVO E A LISTA INTEIRA, e nao a pagina.
+            this.ultimoRelatorio.guardar(chaveDaConversa, {
+              titulo: tituloComRecorte(
+                'Melhores clientes',
+                recorteDoPedido({ vendedora, categoria, de, ate, ultimosMeses }),
+              ),
+              posicao: `Posição em ${agoraPorExtenso()}`,
+              colunas: [
+                { chave: 'cliente', titulo: 'Cliente', peso: 3 },
+                {
+                  chave: 'quantidade',
+                  titulo: categoria ? 'Peças' : 'Compras',
+                  peso: 1,
+                  alinhamento: 'direita',
+                  mono: true,
+                },
+                {
+                  chave: 'valor',
+                  titulo: 'Valor',
+                  peso: 1.2,
+                  alinhamento: 'direita',
+                  mono: true,
+                },
+                { chave: 'ultima', titulo: 'Última compra', peso: 1.2, mono: true },
+              ],
+              linhas: pagina.clientes.map((c) => ({
+                cliente: c.nome,
+                quantidade: String(c.quantidade),
+                valor: moeda(c.valorTotal),
+                ultima: c.ultimaCompra
+                  ? c.ultimaCompra.toLocaleDateString('pt-BR')
+                  : '—',
+              })),
+              exibindo:
+                total > pagina.clientes.length
+                  ? { mostradas: pagina.clientes.length, total }
+                  : undefined,
+              geradoPor: solicitante ?? undefined,
+            });
+
+            return naConversa.map(
+              (c) => `${c.nome} — ${plural(c.quantidade)}, ${moeda(c.valorTotal)}`,
             );
           },
         );
@@ -1163,12 +1403,66 @@ export class FerramentasGestaoService {
 
         // SEM NOME: a loja. O escopo é escrito, e não derivado da ausência.
         if (!vendedora) {
-          const r = await this.carteira.porFidelidade({
-            escopo: { tipo: 'LOJA' },
-            nivel: pedido ?? undefined,
-            mesesSemComprar,
-            deslocamento: aPartirDe,
+          // O ARQUIVO LEVA A LISTA INTEIRA — 27/10/2026. A consulta da
+          // conversa respeita a pagina pedida; a do arquivo comeca do
+          // principio e vai ate o teto.
+          const [r, tudo] = await Promise.all([
+            this.carteira.porFidelidade({
+              escopo: { tipo: 'LOJA' },
+              nivel: pedido ?? undefined,
+              mesesSemComprar,
+              deslocamento: aPartirDe,
+            }),
+            this.carteira.porFidelidade({
+              escopo: { tipo: 'LOJA' },
+              nivel: pedido ?? undefined,
+              mesesSemComprar,
+              deslocamento: 0,
+              limite: TETO_DO_ARQUIVO,
+            }),
+          ]);
+
+          this.ultimoRelatorio.guardar(chaveDaConversa, {
+            titulo: tituloComRecorte('Clientes por fidelidade', recorteDoPedido({ nivel, mesesSemComprar })),
+            posicao: `Posição em ${agoraPorExtenso()}`,
+            colunas: [
+              { chave: 'cliente', titulo: 'Cliente', peso: 2.6 },
+              { chave: 'nivel', titulo: 'Nível', peso: 0.8 },
+              {
+                chave: 'compras',
+                titulo: 'Compras',
+                peso: 0.9,
+                alinhamento: 'direita',
+                mono: true,
+              },
+              {
+                chave: 'valor',
+                titulo: 'Valor',
+                peso: 1.2,
+                alinhamento: 'direita',
+                mono: true,
+              },
+              { chave: 'ultima', titulo: 'Última compra', peso: 1.1, mono: true },
+              { chave: 'vendedora', titulo: 'Vendedora', peso: 1.4 },
+            ],
+            linhas: tudo.clientes.map((c) => ({
+              cliente: c.nome,
+              nivel: c.nivel,
+              compras: String(c.compras),
+              valor: moeda(c.valorLiquido),
+              ultima: c.ultimaCompra
+                ? c.ultimaCompra.toLocaleDateString('pt-BR')
+                : '—',
+              vendedora: c.vendedoraNome ?? 'sem vendedora',
+            })),
+            paisagem: true,
+            exibindo:
+              tudo.total > tudo.clientes.length
+                ? { mostradas: tudo.clientes.length, total: tudo.total }
+                : undefined,
+            geradoPor: solicitante ?? undefined,
           });
+
           return {
             linhas: r.clientes.map(linhaDoClienteFiel),
             total: r.total,
@@ -1187,13 +1481,64 @@ export class FerramentasGestaoService {
             // Vendedora sem cadastro no ERP não tem carteira. Lista vazia, e
             // não a loja: ver `ConsultarCarteiraVendedoraUseCase`.
             if (!codigoErp) return [];
-            const p = await this.carteira.porFidelidade({
-              escopo: { tipo: 'CARTEIRA', vendedoraCodigoErp: codigoErp },
-              nivel: pedido ?? undefined,
-              mesesSemComprar,
-              deslocamento: aPartirDe,
-            });
+            const [p, tudo] = await Promise.all([
+              this.carteira.porFidelidade({
+                escopo: { tipo: 'CARTEIRA', vendedoraCodigoErp: codigoErp },
+                nivel: pedido ?? undefined,
+                mesesSemComprar,
+                deslocamento: aPartirDe,
+              }),
+              this.carteira.porFidelidade({
+                escopo: { tipo: 'CARTEIRA', vendedoraCodigoErp: codigoErp },
+                nivel: pedido ?? undefined,
+                mesesSemComprar,
+                deslocamento: 0,
+                limite: TETO_DO_ARQUIVO,
+              }),
+            ]);
             pagina = { total: p.total, deslocamento: p.deslocamento };
+
+            this.ultimoRelatorio.guardar(chaveDaConversa, {
+              titulo: tituloComRecorte('Clientes por fidelidade', recorteDoPedido({ vendedora, nivel, mesesSemComprar })),
+              posicao: `Posição em ${agoraPorExtenso()}`,
+              colunas: [
+                { chave: 'cliente', titulo: 'Cliente', peso: 2.6 },
+                { chave: 'nivel', titulo: 'Nível', peso: 0.8 },
+                {
+                  chave: 'compras',
+                  titulo: 'Compras',
+                  peso: 0.9,
+                  alinhamento: 'direita',
+                  mono: true,
+                },
+                {
+                  chave: 'valor',
+                  titulo: 'Valor',
+                  peso: 1.2,
+                  alinhamento: 'direita',
+                  mono: true,
+                },
+                { chave: 'ultima', titulo: 'Última compra', peso: 1.1, mono: true },
+                { chave: 'vendedora', titulo: 'Vendedora', peso: 1.4 },
+              ],
+              linhas: tudo.clientes.map((c) => ({
+                cliente: c.nome,
+                nivel: c.nivel,
+                compras: String(c.compras),
+                valor: moeda(c.valorLiquido),
+                ultima: c.ultimaCompra
+                  ? c.ultimaCompra.toLocaleDateString('pt-BR')
+                  : '—',
+                vendedora: c.vendedoraNome ?? 'sem vendedora',
+              })),
+              paisagem: true,
+              exibindo:
+                tudo.total > tudo.clientes.length
+                  ? { mostradas: tudo.clientes.length, total: tudo.total }
+                  : undefined,
+              geradoPor: solicitante ?? undefined,
+            });
+
             return p.clientes.map(linhaDoClienteFiel);
           },
         );

@@ -433,7 +433,7 @@ export class ClienteRepository implements IClienteRepository {
 
   async contarCompradoresDaCarteira(
     vendedoraCodigoErp: string,
-    opcoes: { categoria?: string; desde?: Date },
+    opcoes: { categoria?: string; desde?: Date; ate?: Date },
   ): Promise<number> {
     const params: unknown[] = [vendedoraCodigoErp];
     let joinItens = '';
@@ -453,6 +453,12 @@ export class ClienteRepository implements IClienteRepository {
       params.push(opcoes.desde);
       filtroData = 'AND v.data_movimentacao >= $' + params.length;
     }
+    // O FIM DA JANELA — 27/10/2026. Sem ele "2025" era impossivel: so havia
+    // "dos ultimos N meses para ca", e ano fechado precisa das duas pontas.
+    if (opcoes.ate) {
+      params.push(opcoes.ate);
+      filtroData += ' AND v.data_movimentacao <= $' + params.length;
+    }
 
     const rows = await this.repo.manager.query<{ total: string }[]>(
       `
@@ -471,7 +477,12 @@ export class ClienteRepository implements IClienteRepository {
 
   async maioresCompradoresDaCarteira(
     vendedoraCodigoErp: string,
-    opcoes: { categoria?: string; desde?: Date; limite: number },
+    opcoes: {
+      categoria?: string;
+      desde?: Date;
+      ate?: Date;
+      limite: number;
+    },
   ): Promise<ClienteDaCarteira[]> {
     // Com categoria a contagem e de ITENS (quantos aneis); sem categoria, de
     // COMPRAS. Sao perguntas diferentes: "quem comprou mais aneis" e "quem
@@ -497,6 +508,12 @@ export class ClienteRepository implements IClienteRepository {
     if (opcoes.desde) {
       params.push(opcoes.desde);
       filtroData = 'AND v.data_movimentacao >= $' + params.length;
+    }
+    // O FIM DA JANELA — 27/10/2026. Sem ele "2025" era impossivel: so havia
+    // "dos ultimos N meses para ca", e ano fechado precisa das duas pontas.
+    if (opcoes.ate) {
+      params.push(opcoes.ate);
+      filtroData += ' AND v.data_movimentacao <= $' + params.length;
     }
 
     params.push(opcoes.limite);
