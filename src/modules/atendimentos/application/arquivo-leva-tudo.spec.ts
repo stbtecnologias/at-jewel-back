@@ -1,4 +1,5 @@
 import { FerramentasGestaoService } from './ferramentas-gestao.service';
+import { TETO_DE_LISTA } from '../../../shared/limites/teto-de-lista';
 
 /**
  * O ARQUIVO LEVA A LISTA INTEIRA — 27/10/2026.
@@ -143,7 +144,7 @@ describe('as vendas uma a uma', () => {
       .montar({ verLoja: true })
       .gestaoVendasDetalhadas({ vendedora: 'ylka' });
 
-    expect(detalhadas.mock.calls[0][1]).toBe(500);
+    expect(detalhadas.mock.calls[0][1]).toBe(TETO_DE_LISTA);
   });
 
   it('acima do teto, o documento diz o corte', async () => {
@@ -245,7 +246,7 @@ describe('as outras tres listas da carteira', () => {
     // Duas consultas: a da pagina e a do arquivo, do principio ate o teto.
     expect(semComprar).toHaveBeenCalledTimes(2);
     expect(semComprar.mock.calls[1][2]).toBe(0);
-    expect(semComprar.mock.calls[1][3]).toBe(500);
+    expect(semComprar.mock.calls[1][3]).toBe(TETO_DE_LISTA);
     expect(relatorio.guardar.mock.calls[0][1].linhas).toHaveLength(37);
   });
 
@@ -256,7 +257,7 @@ describe('as outras tres listas da carteira', () => {
       .montar({ verLoja: true, chaveDaConversa: 'gestao:ad-1' })
       .gestaoEpoca({ vendedora: 'ylka', mes: 12 });
 
-    expect(porEpoca.mock.calls[0][2]).toBe(500);
+    expect(porEpoca.mock.calls[0][2]).toBe(TETO_DE_LISTA);
     expect(r.linhas).toHaveLength(20);
     expect(relatorio.guardar.mock.calls[0][1].linhas).toHaveLength(45);
   });
@@ -269,7 +270,7 @@ describe('as outras tres listas da carteira', () => {
       .gestaoFidelidade({});
 
     expect(porFidelidade).toHaveBeenCalledTimes(2);
-    expect(porFidelidade.mock.calls[1][0].limite).toBe(500);
+    expect(porFidelidade.mock.calls[1][0].limite).toBe(TETO_DE_LISTA);
     expect(relatorio.guardar.mock.calls[0][1].linhas).toHaveLength(31);
   });
 });

@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { TETO_DE_LISTA } from '../../../../shared/limites/teto-de-lista';
 import type { ChatParams } from '../../../agentes/domain/ports/llm-client.port';
 import { FerramentasVendedoraService } from '../ferramentas-vendedora.service';
 import { ProcessarMensagemInternaUseCase } from './processar-mensagem-interna.use-case';
@@ -251,9 +252,24 @@ describe('ProcessarMensagemInternaUseCase', () => {
         expect.any(Date),
         undefined,
       );
+      // ====================================================================
+      // E A SEGUNDA CHAMADA, DO ARQUIVO, TEM DE SER DA MESMA CARTEIRA.
+      //
+      // Em 28/10/2026 estas leituras passaram a consultar duas vezes — a da
+      // conversa e a do arquivo, que vai do princípio até o teto. Duas
+      // chamadas são duas chances de escapar do escopo, então a prova é
+      // sobre TODAS elas: nenhuma pode levar um código que não seja o da
+      // vendedora identificada pelo telefone.
+      // ====================================================================
+      expect(carteira.semComprar).toHaveBeenCalledTimes(2);
+      for (const chamada of carteira.semComprar.mock.calls) {
+        expect(chamada[0]).toBe('SEED-VD01');
+      }
+      expect(carteira.semComprar).toHaveBeenCalledWith('SEED-VD01', expect.any(Date), 0, TETO_DE_LISTA);
       expect(carteira.maioresCompradores).toHaveBeenCalledWith('SEED-VD01', {
         categoria: 'Anel',
         ultimosMeses: undefined,
+        limite: TETO_DE_LISTA,
       });
     });
 

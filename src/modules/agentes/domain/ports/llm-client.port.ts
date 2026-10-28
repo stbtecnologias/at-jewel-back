@@ -908,6 +908,19 @@ export type GestaoVendasDetalhadasHandler = (input: {
    * juntos. Ver `FiltroVendasDetalhadas.status`.
    */
   somente?: 'DEVOLVIDAS' | 'TODAS';
+  /**
+   * QUANTAS ELA PEDIU — 28/10/2026, e e o avesso do padrao.
+   *
+   * ======================================================================
+   * *"Por padrao toda lista deve listar tudo. Se ela pedir 'traga os
+   * ultimos 10', ai voce limita a quantidade."* — Lucas, 27/10/2026.
+   *
+   * Omitido, a lista sai INTEIRA — na conversa e no arquivo. Com numero, o
+   * corte entra na CONSULTA, e nao na frase: assim o "manda em PDF"
+   * seguinte leva as dez que ela pediu, e nao as 223 que existem.
+   * ======================================================================
+   */
+  quantas?: number;
 }) => Promise<{
   status: 'OK' | 'AMBIGUA' | 'NAO_ENCONTRADA' | 'EXIGE_RECORTE';
   /** De quem e a ambiguidade. */
@@ -920,6 +933,28 @@ export type GestaoVendasDetalhadasHandler = (input: {
   total?: number;
   /** O que foi listado, para quem escreve o texto poder nomear. */
   somente?: 'DEVOLVIDAS' | 'TODAS';
+  /**
+   * A SOMA DAS LINHAS QUE SAIRAM, ja em reais escritos — 28/10/2026.
+   *
+   * ======================================================================
+   * *"Me traga as vendas da Camila em 2025"* levou o modelo ao RESUMO, que
+   * respondeu "100 vendas, R$ 4.356.774,70, ticket R$ 43.567,75" e nenhuma
+   * linha. Foi preciso dizer "me lista" para ver as vendas. — teste do
+   * Lucas, 28/10/2026.
+   *
+   * O texto desta ferramenta PROIBIA o modelo de somar ("se ela quiser o
+   * total, ha ferramenta de resumo") — e estava certo em proibir: ele
+   * somaria errado. O erro era nao DAR a soma, que nos ja calculamos para o
+   * rodape da tabela. Sem ela, "as vendas" tinha de escolher entre o numero
+   * e a lista.
+   *
+   * Com `quantas` pedido, e a soma DAS QUE SAIRAM, e nao a do recorte: so
+   * essas foram consultadas.
+   * ======================================================================
+   */
+  soma?: string;
+  /** Quantas ela pediu, quando pediu — para o texto nao prometer o resto. */
+  quantasPedidas?: number;
 }>;
 
 /**
@@ -1027,7 +1062,20 @@ export type GestaoItensHandler = (
  * SEM TELEFONE, igual ao aviso: o ADM nao liga para ninguem, e o numero
  * solto numa lista so serviria para ser repassado adiante sem controle.
  */
-export type GestaoLeadsHandler = () => Promise<{ linhas: string[] }>;
+/**
+ * A FILA DE LEADS — e ela sai INTEIRA desde 28/10/2026.
+ *
+ * Eram 15 de 531, e os 516 restantes nao tinham caminho nenhum: esta
+ * leitura nao guardava tabela, entao nem o PDF alcancava. Agora a consulta
+ * pede o teto da casa e a lista inteira sai sozinha. Ver `quantas`.
+ */
+export type GestaoLeadsHandler = (p?: { quantas?: number }) => Promise<{
+  linhas: string[];
+  /** Quantos esperam na fila, mesmo acima do que a conversa mostrou. */
+  total?: number;
+  /** Quantas ela pediu, quando pediu. */
+  quantasPedidas?: number;
+}>;
 
 /**
  * "Quais sao as minhas vendedoras?" — a pergunta que o aviso de lead provoca.
@@ -1517,11 +1565,60 @@ export type PdfDoCatalogoHandler = (input: {
   textoCapa?: string;
 }) => Promise<{ arquivo: ArquivoDoAgenteLlm | null; mensagem: string }>;
 
+/**
+ * O TERCEIRO DESTINO: A PROPRIA CONVERSA — 28/10/2026.
+ *
+ * ========================================================================
+ * *"Se nao tiver [quantidade] deve vir tudo de uma vez no WhatsApp."*
+ * — Lucas, 27/10/2026.
+ *
+ * `LISTA` manda a lista inteira em MENSAGENS, escritas pelo nosso codigo e
+ * nao pelo modelo. O motivo esta medido em `MontarMensagensUseCase`: as
+ * 1.412 vendas desde 2023 reescritas por ele custariam 73 mil tokens de
+ * saida, vinte minutos e US$ 1,83 — e ele PERDE LINHAS ao recopiar.
+ *
+ * As tres saidas leem da MESMA tabela guardada. O modelo escolhe por onde
+ * a lista sai, e nunca o que vai dentro dela.
+ * ========================================================================
+ */
 export type MandarRelatorioHandler = (p: {
-  formato: 'PDF' | 'PLANILHA';
-}) => Promise<ArquivoDoAgenteLlm | null>;
+  formato: 'PDF' | 'PLANILHA' | 'LISTA';
+}) => Promise<RelatorioEntregue | null>;
+
+/**
+ * O que o canal tem de entregar: um arquivo, ou a lista em mensagens.
+ *
+ * NUNCA OS DOIS: quem pediu "manda a lista" nao quer tambem um anexo, e
+ * quem pediu o PDF nao quer mil linhas na tela antes dele.
+ */
+/**
+ * A LISTA INTEIRA, EM MENSAGENS PRONTAS — 28/10/2026.
+ *
+ * Viaja por FORA do dialogo, como o grafico, as fotos e o arquivo: o
+ * modelo nao escreve nenhuma destas linhas e nao as ve voltar. Ele escreve
+ * a frase que as apresenta, e o envio e nosso.
+ */
+export interface ListaEmMensagensLlm {
+  /** Prontas para o envio, na ordem. */
+  mensagens: string[];
+  /** Quantas linhas foram escritas. */
+  linhas: number;
+  /** Quantas existem. Igual a `linhas` quando a lista saiu inteira. */
+  total: number;
+}
+
+export type RelatorioEntregue =
+  | { tipo: 'ARQUIVO'; arquivo: ArquivoDoAgenteLlm }
+  | ({ tipo: 'LISTA' } & ListaEmMensagensLlm);
 
 export interface ChatComFerramentasResultado extends ChatResultado {
+  /**
+   * A LISTA INTEIRA EM MENSAGENS, quando ela pediu por aqui — 28/10/2026.
+   *
+   * Mutuamente exclusiva com `arquivo` por construcao: ver
+   * `RelatorioEntregue`. Quem pediu a lista nao recebe tambem um anexo.
+   */
+  lista?: ListaEmMensagensLlm;
   grafico?: GraficoDinamico;
   /**
    * As fotos das pecas que a busca encontrou, JA BAIXADAS — 07/10/2026.
@@ -1619,6 +1716,14 @@ export type MinhasPecasPorValorHandler = (input: {
   de?: string;
   ate?: string;
   aPartirDe?: number;
+  /**
+   * QUANTAS ela pediu. Omitido, a lista inteira — 28/10/2026.
+   *
+   * Medido: uma faixa ampla em 2026 tem 582 pecas, e a conversa mostrava
+   * dez. Com numero, o corte entra na CONSULTA, para o PDF seguinte levar o
+   * que ela pediu.
+   */
+  quantas?: number;
 }) => Promise<PecasPorValorLlmResultado>;
 
 /** Da GESTAO: a loja, ou uma vendedora quando ela disser o nome. */
@@ -1629,6 +1734,14 @@ export type GestaoPecasPorValorHandler = (input: {
   ate?: string;
   vendedora?: string;
   aPartirDe?: number;
+  /**
+   * QUANTAS ela pediu. Omitido, a lista inteira — 28/10/2026.
+   *
+   * Medido: uma faixa ampla em 2026 tem 582 pecas, e a conversa mostrava
+   * dez. Com numero, o corte entra na CONSULTA, para o PDF seguinte levar o
+   * que ela pediu.
+   */
+  quantas?: number;
 }) => Promise<
   PecasPorValorLlmResultado & {
     status?: string;

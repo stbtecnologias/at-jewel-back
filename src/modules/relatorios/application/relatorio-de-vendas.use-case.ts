@@ -6,9 +6,14 @@ import {
   formaPagamentoDe,
 } from '../../../shared/database/sql/movimentacao-como-venda';
 import type { Relatorio } from '../domain/relatorio';
-import { agora, moeda } from './relatorio-de-produtos.use-case';
+import { TETO_DE_LISTA } from '../../../shared/limites/teto-de-lista';
+import { agora } from './relatorio-de-produtos.use-case';
+import { moeda } from '../../../shared/formato/moeda';
 
-const TETO_DE_LINHAS = 2000;
+// DOIS MIL ERA O TETO PROPRIO DESTE RELATORIO, e virou o da casa em
+// 28/10/2026: o painel nao tem por que caber menos que o WhatsApp. Ver
+// `shared/limites/teto-de-lista`.
+const TETO_DE_LINHAS = TETO_DE_LISTA;
 
 interface LinhaSql {
   data: Date;
@@ -104,16 +109,24 @@ export class RelatorioDeVendasUseCase {
       // SETE COLUNAS NÃO CABEM EM PÉ — ver o comentário no renderizador.
       paisagem: true,
       colunas: [
-        { chave: 'data', titulo: 'Data', peso: 0.8, mono: true },
+        // A DATA CORTAVA O ANO AQUI TAMBÉM — 28/10/2026.
+        //
+        // O conserto de 27/10 ("11/08/2…") foi feito na tabela da agente e
+        // NÃO chegou a este relatório do painel, que tinha o mesmo peso 0.8:
+        // 33,3pt úteis para uma data que pede 48. Agora 1.05.
+        { chave: 'data', titulo: 'Data', peso: 1.05, mono: true },
         { chave: 'cliente', titulo: 'Cliente', peso: 2.2 },
-        { chave: 'pecas', titulo: 'Peças', peso: 4.2 },
+        { chave: 'pecas', titulo: 'Peças', peso: 3.5 },
         { chave: 'vendedora', titulo: 'Vendedora', peso: 1.5 },
         { chave: 'pagamento', titulo: 'Pagamento', peso: 1.3 },
         { chave: 'status', titulo: 'Status', peso: 1 },
         {
+          // E o valor, pelo centavo: 51,8pt para um número que pede 76,8.
+          // Os 0,7 que a data e o valor ganharam saem das peças (4.2 -> 3.5),
+          // que seguem sendo a coluna mais larga da tabela.
           chave: 'valor',
           titulo: 'Total',
-          peso: 1.1,
+          peso: 1.55,
           alinhamento: 'direita',
           mono: true,
         },

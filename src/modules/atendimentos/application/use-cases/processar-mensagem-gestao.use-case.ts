@@ -19,6 +19,9 @@ import {
   MontarArquivoUseCase,
   type ArquivoDoAgente,
 } from '../../../relatorios/application/montar-arquivo.use-case';
+import { EntregarRelatorioUseCase } from 
+  '../../../relatorios/application/entregar-relatorio.use-case';
+import type { ListaEntregue } from '../../../relatorios/application/entregar-relatorio.use-case';
 import { UltimoRelatorioService } from '../../../relatorios/application/ultimo-relatorio.service';
 import {
   colunaDaFerramenta,
@@ -93,6 +96,15 @@ export interface RespostaGestao {
   fotos?: FotoDeProduto[];
   /** Ver `RespostaDoCanal.arquivo` — o PDF ou a planilha que ela pediu. */
   arquivo?: ArquivoDoAgente;
+  /**
+   * A LISTA INTEIRA EM MENSAGENS — 28/10/2026.
+   *
+   * Vem DEPOIS do texto, como as fotos e o arquivo, e e mutuamente
+   * exclusiva com `arquivo`: quem pediu a lista nao recebe tambem um anexo.
+   * Acima do teto de mensagens o proprio `EntregarRelatorioUseCase` troca
+   * para arquivo, e ai e o `arquivo` que vem preenchido.
+   */
+  lista?: ListaEntregue;
 }
 
 /**
@@ -136,7 +148,7 @@ export class ProcessarMensagemGestaoUseCase {
     private readonly config: ConfigService,
     // RF36 e RF37 — quem transforma a ultima resposta em PDF ou planilha.
     // NO FIM DA LISTA, como sempre.
-    private readonly montarArquivo: MontarArquivoUseCase,
+    private readonly entregarRelatorio: EntregarRelatorioUseCase,
     private readonly ultimoRelatorio: UltimoRelatorioService,
   ) {}
 
@@ -199,7 +211,7 @@ export class ProcessarMensagemGestaoUseCase {
       '(me chamaram pelo nome no grupo, sem escrever mais nada)';
 
     try {
-      const { texto, fotos, arquivo, semTexto } =
+      const { texto, fotos, arquivo, lista, semTexto } =
         await this.llm.chatComFerramentas({
           model: modeloDeIa(
             this.config,
@@ -247,8 +259,9 @@ export class ProcessarMensagemGestaoUseCase {
           //
           // O handler nao recebe dados: pega o que a ferramenta anterior
           // guardou sob esta MESMA chave de conversa. Ver a concepcao de 24/09.
+          // TRES DESTINOS DESDE 28/10: a conversa, o PDF e a planilha.
           mandarRelatorio: async ({ formato }) =>
-            this.montarArquivo.execute(chave, formato, {
+            this.entregarRelatorio.execute(chave, formato, {
               geradoPor: msg.nome ?? null,
             }),
           // O `verLoja` decide se as ferramentas podem falar da LOJA ou so de
@@ -356,7 +369,7 @@ export class ProcessarMensagemGestaoUseCase {
           // o "e em planilha?" de daqui a pouco precisa saber que já saiu
           // um arquivo.
           this.memoria.registrar(chave, pergunta, frase);
-          return { resposta: frase, motivo: 'conversa', fotos, arquivo };
+          return { resposta: frase, motivo: 'conversa', fotos, arquivo, lista };
         }
 
         return {
@@ -370,7 +383,47 @@ export class ProcessarMensagemGestaoUseCase {
       this.memoria.registrar(chave, pergunta, texto);
       // As fotos vao JUNTO da resposta, e nao no lugar dela: quem envia e o
       // webhook, depois do texto. Ver `RespostaDoCanal.fotos`.
-      return { resposta: texto, motivo: 'conversa', fotos, arquivo };
+      // ====================================================================
+      // E O QUE A CONVERSA NÃO MOSTROU SAI SOZINHO — 28/10/2026.
+      //
+      // *"Por padrão toda lista ou consulta deve listar tudo... se não tiver
+      // [quantidade] deve vir tudo de uma vez no WhatsApp."*
+      //
+      // Até aqui a lista inteira dependia de o modelo oferecer e a pessoa
+      // responder — dois turnos para entregar o que estava pronto no
+      // primeiro. Agora é o padrão, e não passa por ele.
+      //
+      // SÓ QUANDO NADA FOI ENTREGUE: se ela pediu o PDF, ou se o modelo
+      // chamou o LISTA sozinho, mandar de novo duplicaria.
+      //
+      // E DENTRO DE UM `try` — a lição das fotos, de 07/10: isto é um EXTRA
+      // depois da resposta pronta. Falhar aqui não pode transformar uma
+      // resposta boa em "tive um problema do meu lado" — que foi exatamente o
+      // que aconteceu na primeira versão disto, pego no `npm test`.
+      // ====================================================================
+      let arquivoFinal = arquivo;
+      let listaFinal = lista;
+      if (!arquivoFinal && !listaFinal) {
+        try {
+          const faltou = await this.entregarRelatorio.oQueFaltou(chave, {
+            geradoPor: msg.nome ?? null,
+          });
+          if (faltou?.tipo === 'ARQUIVO') arquivoFinal = faltou.arquivo;
+          else if (faltou) listaFinal = faltou;
+        } catch (err) {
+          this.logger.warn(
+            `A lista inteira nao foi montada: ${String(err)}. A resposta sai sem ela.`,
+          );
+        }
+      }
+
+      return {
+        resposta: texto,
+        motivo: 'conversa',
+        fotos,
+        arquivo: arquivoFinal,
+        lista: listaFinal,
+      };
     } catch (err) {
       this.logger.error(
         `Falha do agente de gestao: ${err instanceof Error ? err.message : err}`,

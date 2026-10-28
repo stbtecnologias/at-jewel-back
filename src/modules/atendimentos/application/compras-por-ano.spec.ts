@@ -1,4 +1,5 @@
 import { FerramentasGestaoService } from './ferramentas-gestao.service';
+import { TETO_DE_LISTA } from '../../../shared/limites/teto-de-lista';
 
 /**
  * A TABELA QUE RESPONDE O PEDIDO INTEIRO — 27/10/2026.
@@ -152,8 +153,9 @@ describe('compras por cliente, ano a ano', () => {
     // O NBSP do `R$` vira espaço comum para o teste poder ser lido: o
     // formatador da casa separa o símbolo com espaço inquebrável.
     const semNbsp = r.linhas[0].replace(/\u00a0/g, String.fromCharCode(32));
+    // COM CENTAVO desde 28/10/2026 — decisão do Lucas, ver `formato/moeda.ts`.
     expect(semNbsp).toBe(
-      'Ana Prado — 2025: 3 peças, R$ 12.000 · 2026: 1 peça, R$ 5.000 · total R$ 17.000',
+      'Ana Prado — 2025: 3 peças, R$ 12.000,00 · 2026: 1 peça, R$ 5.000,00 · total R$ 17.000,00',
     );
   });
 
@@ -166,7 +168,7 @@ describe('compras por cliente, ano a ano', () => {
     const janela = comprasPorAno.mock.calls[0][1];
     const anoPassado = new Date().getFullYear() - 1;
     expect(janela.de).toEqual(new Date(anoPassado, 0, 1, 0, 0, 0, 0));
-    expect(janela.limite).toBe(500);
+    expect(janela.limite).toBe(TETO_DE_LISTA);
   });
 
   it('a conversa fica com vinte, e o arquivo leva os 64', async () => {

@@ -1,4 +1,5 @@
 import { FerramentasGestaoService, moeda } from './ferramentas-gestao.service';
+import { TETO_DE_LISTA } from '../../../shared/limites/teto-de-lista';
 
 /**
  * A Conexa nestes testes nunca tem a foto — e o caso comum: das 320 joias
@@ -176,7 +177,14 @@ describe('itens_mais_vendidos e o escopo de quem pergunta', () => {
       expect(r.linhas[0]).toContain('Anel solitario');
       // O terceiro argumento e o recorte: o id da vendedora resolvida, nunca
       // `null` — que aqui significaria a loja.
-      expect(consultarVendas.itens).toHaveBeenCalledWith('MES', 10, 'vd-1');
+      expect(consultarVendas.itens).toHaveBeenCalledWith(
+        'MES',
+        // O TETO DA CASA desde 28/10: sem `limite` no pedido, o ranking
+        // inteiro vem, e a conversa fica com dez. Eram 71 familias e dez
+        // linhas.
+        TETO_DE_LISTA,
+        'vd-1',
+      );
     });
   });
 
@@ -187,7 +195,11 @@ describe('itens_mais_vendidos e o escopo de quem pergunta', () => {
         .gestaoItens({ periodo: 'MES' });
 
       expect(r.status).toBe('OK');
-      expect(consultarVendas.itens).toHaveBeenCalledWith('MES', 10, null);
+      expect(consultarVendas.itens).toHaveBeenCalledWith(
+        'MES',
+        TETO_DE_LISTA,
+        null,
+      );
     });
 
     it('avisa o cliente do LLM que a tool NAO precisa exigir vendedora', () => {
@@ -664,7 +676,10 @@ describe('o recorte de equipe nas ferramentas de gestao', () => {
         familias: [{ familia: 'RIVEIRA', quantidade: 1 }],
       });
 
-      expect(linha).toMatch(/^Marina: 1 venda, 1 peça \(1 riveira\), R\$.222\.530$/);
+      // O ",00" entrou em 28/10/2026, com o centavo. Ver `formato/moeda.ts`.
+      expect(linha).toMatch(
+        /^Marina: 1 venda, 1 peça \(1 riveira\), R\$.222\.530,00$/,
+      );
       expect(linha).not.toContain('devolvida');
     });
   });

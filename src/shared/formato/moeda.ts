@@ -16,14 +16,36 @@
  * de 3.000 linhas. Aqui ela não puxa nada, então ninguém faz ciclo com ela.
  * ==========================================================================
  *
- * SEM CENTAVOS, de propósito: a conversa fala "R$ 26.300", e não
- * "R$ 26.300,00". O centavo aparece onde o documento exige — no PDF do
- * relatório e na planilha, que formatam por conta própria.
+ * COM CENTAVOS — 28/10/2026, e isto REVERTE a decisão de 22/10.
+ *
+ * Até ontem esta função cortava o centavo de propósito: *"a conversa fala
+ * R$ 26.300, e não R$ 26.300,00"*. O Lucas desfez:
+ *
+ *   *"Se a função moeda() está arredondando, tem que ajustar antes de mostrar
+ *    na tela do Whats ou PDF para o cliente."*
+ *
+ * O valor que chega a quem lê é o que ela confere contra a nota e contra o
+ * ERP. Das 1.412 vendas ativas desde 2023, 53 têm centavo — e a soma delas
+ * fecha em R$ 68.003.012,58, enquanto a soma dos arredondados dá
+ * R$ 68.003.016,00.
+ *
+ * NAO VOLTAR A CORTAR. O parágrafo do ciclo de import, acima, segue valendo;
+ * a regra do centavo é esta.
+ *
+ * E ISTO ALINHA, não diverge: o painel já mostra centavo (`src/lib/moeda.ts`
+ * no front, com `minimumFractionDigits: 2`). Quem estava fora do padrão era a
+ * conversa da Anastasia. Decisão de 25/09: *"front e o whats devem estar
+ * alinhados, sem informações divergentes"*.
+ *
+ * SEMPRE DUAS CASAS, inclusive em valor redondo: "R$ 26.300,00". Esconder o
+ * ",00" faria a mesma lista alternar entre dois desenhos conforme o número, e
+ * quem lê uma coluna de valores repara na coluna, não no número.
  */
 export function moeda(v: number): string {
   return v.toLocaleString('pt-BR', {
     style: 'currency',
     currency: 'BRL',
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   });
 }

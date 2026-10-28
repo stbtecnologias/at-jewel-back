@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { moeda } from '../../../../shared/formato/moeda';
 import { WHATSAPP_GATEWAY } from '../../../atendimento/domain/ports/injection-tokens';
 import type { IWhatsappGateway } from '../../../atendimento/domain/ports/whatsapp-gateway.port';
 import { TratarFotoUseCase } from '../../../catalogos/application/use-cases/tratar-foto.use-case';
@@ -2812,12 +2813,16 @@ export class ProcessarFotoCatalogoUseCase {
     return `De qual catálogo é?\n${lista}\n\nResponde com o número ou o nome.${ouAPeca}`;
   }
 
+  /**
+   * O preço da peça, e o traço quando ela não tem preço.
+   *
+   * A FORMATAÇÃO SAIU DAQUI em 28/10/2026 — era o quarto jeito de escrever
+   * dinheiro na casa. O que este método ainda decide é só o `null`: peça sem
+   * preço vira traço, e não "R$ 0,00", que afirmaria preço zero.
+   */
   private emReais(valor: number | null): string {
     if (valor === null) return '—';
-    return valor.toLocaleString('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
-    });
+    return moeda(valor);
   }
 
   /**

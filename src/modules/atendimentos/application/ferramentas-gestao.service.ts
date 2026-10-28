@@ -13,12 +13,16 @@ import {
   nivelEmPalavras,
 } from '../../../shared/clientes/fidelidade';
 import { faixaDePreco } from '../../../shared/catalogo/faixa-de-preco';
+import { tabelaDasPecasNaFaixa } from './pecas-por-valor';
 import { FotosDeProdutoService } from './fotos-de-produto.service';
 import { FotosDaPecaUseCase } from '../../produtos/application/use-cases/fotos-da-peca.use-case';
 import { UltimoRelatorioService } from '../../relatorios/application/ultimo-relatorio.service';
 import type { ColunaDoRelatorio } from '../../relatorios/domain/relatorio';
 import { EstrategiaDeVendasService } from './estrategia-de-vendas.service';
 import { moeda } from '../../../shared/formato/moeda';
+import { casaComNome, preferirExato } from '../../../shared/texto/nome-exato';
+import { APELIDOS_DE_EMPRESA } from '../../../shared/empresas/apelidos-de-empresa';
+import { TETO_DE_LISTA } from '../../../shared/limites/teto-de-lista';
 import { PRODUTO_REPOSITORY } from '../../erp/domain/ports/injection-tokens';
 import type { IProdutoRepository } from '../../erp/domain/ports/repositories/produto-repository.port';
 import { CATALOGO_REPOSITORY } from '../../catalogos/domain/ports/injection-tokens';
@@ -177,12 +181,19 @@ const TETO_DE_PRODUTOS = 10;
  * justamente para carregar o que não cabe ali — mandar nele a mesma página de
  * dez é repetir a limitação da conversa no lugar que não tem essa limitação.
  *
- * QUINHENTAS É UM NÚMERO, E NÃO O INFINITO: uma tabela de 500 linhas sai em
- * umas 12 páginas e abre no celular. Acima disso o corte é dito no próprio
- * documento, pelo "Exibindo N de M" — teto silencioso mente por omissão.
+ * QUINHENTAS NÃO BASTAVA — 28/10/2026.
+ *
+ * O 500 era um número, e não o infinito; o problema é que ele MORDIA. As
+ * vendas da AT JEWEL LTDA desde 2023 são 1.110, e o PDF saía com 500.
+ * Decisão do Lucas: *"tem que subir para caber até a maior lista que ela
+ * pedir"*. O teto agora é o da casa, medido contra a maior lista de cada
+ * consulta — ver `shared/limites/teto-de-lista`.
+ *
+ * Acima dele o corte continua dito no documento, pelo "Exibindo N de M":
+ * teto silencioso mente por omissão.
  * ==========================================================================
  */
-const TETO_DO_ARQUIVO = 500;
+const TETO_DO_ARQUIVO = TETO_DE_LISTA;
 
 /**
  * Quantos clientes cabem na CONVERSA — era o teto do caso de uso (20), e
@@ -194,6 +205,9 @@ const MELHORES_NA_CONVERSA = 20;
 const CLIENTES_NA_CONVERSA = 20;
 
 const MAXIMO_VENDAS_DETALHADAS = 10;
+
+/** Quantos itens do ranking o MODELO recebe. A tabela leva o ranking todo. */
+const ITENS_NA_CONVERSA = 10;
 
 const MAXIMO_FEEDBACKS = 10;
 /** Leads por resposta. Acima disso a mensagem deixa de ser lida. */
@@ -838,6 +852,7 @@ export class FerramentasGestaoService {
         de,
         ate,
         somente,
+        quantas,
       }) => {
         // ================================================================
         // A EMPRESA SO E RECORTE PARA QUEM VE A LOJA — 26/10/2026.
@@ -933,23 +948,52 @@ export class FerramentasGestaoService {
         let empresaId: string | null = null;
         let empresaNome: string | null = null;
         if (empresaPedida) {
-          const achadas = await this.empresas.listar({
-            busca: empresaPedida,
-            ativo: true,
-          });
-          if (achadas.length === 0) {
+          // ================================================================
+          // O NOME EXATO GANHA — 28/10/2026.
+          //
+          // A busca e por PEDACO (ILIKE %termo%), e "AT JEWEL LTDA" e comeco
+          // de "AT JEWEL LTDA - SP". Resultado: a maior empresa da casa, com
+          // 1.110 vendas desde 2023, era INALCANCAVEL por qualquer frase —
+          // por mais exato que alguem escrevesse, voltava a mesma lista. A
+          // gestora so conseguia a filial de SP, que tem duas vendas.
+          //
+          // A regra ja existia no `resolver-vendedora-por-nome`, e agora mora
+          // em `shared/texto/nome-exato` para os dois usarem a mesma.
+          // Pedaco que casa duas SEGUE ambiguo: isso e pergunta de verdade.
+          // ================================================================
+          // E O FILTRO SAIU DO SQL — 28/10/2026, pelo TRACO.
+          //
+          // Era `listar({ busca })`, que vira `ILIKE '%termo%'` cru. O modelo
+          // escreve "AT JEWEL LTDA — SP" com travessao, o banco guarda hifen,
+          // e a consulta voltava VAZIA: *"nao encontrei uma empresa com esse
+          // nome"*, com a empresa existindo. Medido na conversa de verdade.
+          //
+          // Sao OITO empresas. Trazer as oito e casar em memoria custa menos
+          // que qualquer truque de SQL e passa pela MESMA normalizacao do
+          // acento, da caixa e do traco — a do `nome-exato`. ILIKE nao
+          // normaliza nada, e cada coisa que ele nao normaliza e um beco.
+          // ================================================================
+          const ativas = await this.empresas.listar({ ativo: true });
+          const candidatas = preferirExato(
+            ativas.filter((e) =>
+              casaComNome(e.nome, empresaPedida, APELIDOS_DE_EMPRESA),
+            ),
+            empresaPedida,
+            (e) => e.nome,
+          );
+          if (candidatas.length === 0) {
             return { status: 'NAO_ENCONTRADA', sobre: 'empresa', linhas: [] };
           }
-          if (achadas.length > 1) {
+          if (candidatas.length > 1) {
             return {
               status: 'AMBIGUA',
               sobre: 'empresa',
               linhas: [],
-              nomes: achadas.map((e) => e.nome),
+              nomes: candidatas.map((e) => e.nome),
             };
           }
-          empresaId = achadas[0].id ?? null;
-          empresaNome = achadas[0].nome;
+          empresaId = candidatas[0].id ?? null;
+          empresaNome = candidatas[0].nome;
         }
 
         const datas = datasDeRecorte(de, ate);
@@ -978,9 +1022,21 @@ export class FerramentasGestaoService {
             // `FiltroVendasDetalhadas.status`.
             status: somente ?? 'CONCLUIDAS',
           },
-          TETO_DO_ARQUIVO,
+          // QUANTAS ELA PEDIU MANDA NA CONSULTA — 28/10/2026.
+          //
+          // Omitido, o teto da casa: a lista sai inteira. Com numero, o
+          // corte e aqui, e nao na frase — so assim o PDF seguinte leva as
+          // dez que ela pediu, e nao as 223 que existem. *"O PDF que ela
+          // consultou."*
+          quantas ?? TETO_DO_ARQUIVO,
         );
-        const naConversa = r.vendas.slice(0, MAXIMO_VENDAS_DETALHADAS);
+        // E A CONVERSA MOSTRA O MESMO: pedindo cinco, nao ha o que a
+        // conversa esconda, e a entrega automatica nao tem o que
+        // acrescentar (ver `quantasNaoForamMostradas`).
+        const naConversa = r.vendas.slice(
+          0,
+          quantas ?? MAXIMO_VENDAS_DETALHADAS,
+        );
 
         // ================================================================
         // A TABELA FICA GUARDADA, e o texto segue como sempre — RF36/RF37.
@@ -990,6 +1046,15 @@ export class FerramentasGestaoService {
         // "manda em PDF", o arquivo sai DAQUI, e nao do que o modelo
         // escreveu. E a escolha (b) de 24/09.
         // ================================================================
+        // A SOMA DO QUE SAIU, uma vez: ela vai no rodape da tabela E na
+        // frase do modelo. Duas contas separadas poderiam divergir.
+        const somaDasVendas = moeda(
+          r.vendas.reduce(
+            (n, v) => n + (v.status === 'devolvida' ? -v.valor : v.valor),
+            0,
+          ),
+        );
+
         this.ultimoRelatorio.guardar(chaveDaConversa, {
           titulo: tituloDeVendas(cliente, vendedora, documento, empresaNome, {
             periodo,
@@ -1007,13 +1072,25 @@ export class FerramentasGestaoService {
             { chave: 'data', titulo: 'Data', peso: 1, mono: true },
             { chave: 'documento', titulo: 'Doc', peso: 0.7, mono: true },
             { chave: 'cliente', titulo: 'Cliente', peso: 2.2 },
-            { chave: 'pecas', titulo: 'Peças', peso: 3.4 },
+            { chave: 'pecas', titulo: 'Peças', peso: 3.15 },
             { chave: 'vendedora', titulo: 'Vendedora', peso: 1.4 },
             { chave: 'status', titulo: 'Status', peso: 0.9 },
             {
+              // E O CENTAVO PEDIU MAIS TRÊS CARACTERES — 28/10/2026.
+              //
+              // Medido com o pdfkit, em paisagem: com 1.1 a coluna tinha
+              // 60,7pt úteis, e "R$ 11.967.058,00" pede 76,8. O renderizador
+              // não corta número — ele ENCOLHE a fonte (regra de 21/10) —,
+              // então o rodapé sairia a 6,3pt ao lado de vizinhos de 8pt. E a
+              // linha que mais encolhe é justamente a do TOTAL, que é a que
+              // alguém confere.
+              //
+              // Com 1.35 sobram 78,1pt e o maior valor cabe em 8pt cheios. Os
+              // 0,25 saem das peças, que seguem com 203pt — de longe a coluna
+              // mais folgada, e texto livre, que encurta sem mentir.
               chave: 'valor',
               titulo: 'Total',
-              peso: 1.1,
+              peso: 1.35,
               alinhamento: 'direita',
               mono: true,
             },
@@ -1036,15 +1113,7 @@ export class FerramentasGestaoService {
             status: v.status === 'devolvida' ? 'Devolvida' : 'Concluída',
             valor: moeda(v.valor),
           })),
-          total: {
-            data: 'Total',
-            valor: moeda(
-              r.vendas.reduce(
-                (n, v) => n + (v.status === 'devolvida' ? -v.valor : v.valor),
-                0,
-              ),
-            ),
-          },
+          total: { data: 'Total', valor: somaDasVendas },
           exibindo:
             r.total > r.vendas.length
               ? { mostradas: r.vendas.length, total: r.total }
@@ -1059,6 +1128,11 @@ export class FerramentasGestaoService {
           linhas: naConversa.map(linhaDaVenda),
           total: r.total,
           somente,
+          // A SOMA VAI JUNTO — 28/10/2026. Nos a calculamos para o rodape;
+          // nao da-la ao modelo era o que obrigava "as vendas" a escolher
+          // entre o numero e a lista. Ver `soma` no port.
+          soma: somaDasVendas,
+          quantasPedidas: quantas,
         };
       },
 
@@ -1110,7 +1184,7 @@ export class FerramentasGestaoService {
               titulo: tituloComRecorte('Clientes por época', recorteDoPedido({ vendedora, mes, dataComemorativa })),
               posicao: `Posição em ${agoraPorExtenso()}`,
               colunas: [
-                { chave: 'cliente', titulo: 'Cliente', peso: 3 },
+                { chave: 'cliente', titulo: 'Cliente', peso: 2.85 },
                 {
                   chave: 'compras',
                   titulo: 'Compras',
@@ -1128,7 +1202,7 @@ export class FerramentasGestaoService {
                 {
                   chave: 'valor',
                   titulo: 'Valor',
-                  peso: 1.2,
+                  peso: 1.35,
                   alinhamento: 'direita',
                   mono: true,
                 },
@@ -1166,7 +1240,7 @@ export class FerramentasGestaoService {
             titulo: tituloComRecorte('Clientes por época', recorteDoPedido({ mes, dataComemorativa })),
             posicao: `Posição em ${agoraPorExtenso()}`,
             colunas: [
-              { chave: 'cliente', titulo: 'Cliente', peso: 3 },
+              { chave: 'cliente', titulo: 'Cliente', peso: 2.85 },
               {
                 chave: 'compras',
                 titulo: 'Compras',
@@ -1184,7 +1258,7 @@ export class FerramentasGestaoService {
               {
                 chave: 'valor',
                 titulo: 'Valor',
-                peso: 1.2,
+                peso: 1.35,
                 alinhamento: 'direita',
                 mono: true,
               },
@@ -1510,6 +1584,7 @@ export class FerramentasGestaoService {
         ate,
         vendedora,
         aPartirDe,
+        quantas,
       }) => {
         const janela = janelaDaFaixa(de, ate);
         const faixa = { minimo: valorMinimo, maximo: valorMaximo };
@@ -1517,8 +1592,27 @@ export class FerramentasGestaoService {
 
         // SEM NOME: a loja. O escopo e escrito, nunca derivado de ausencia.
         if (!vendedora) {
-          const r = await this.consultarVendas.pecasPorFaixa({ janela, faixa });
+          // ============================================================
+          // SEM TETO, E COM TABELA — 28/10/2026.
+          //
+          // *"Nao quero teto em nenhuma consulta."* Esta era a UNICA
+          // lista sem tabela rica nos dois canais: o PDF saia do texto da
+          // conversa, e a conversa mostrava dez de 582.
+          // ============================================================
+          const r = await this.consultarVendas.pecasPorFaixa({
+            janela,
+            faixa,
+            limite: quantas ?? TETO_DE_LISTA,
+          });
           if (!r) return FAIXA_INVALIDA;
+          this.ultimoRelatorio.guardar(
+            chaveDaConversa,
+            tabelaDasPecasNaFaixa(r.linhas, recorte, {
+              posicao: `Posição em ${agoraPorExtenso()}`,
+              geradoPor: solicitante,
+              total: r.totalDeLinhas,
+            }),
+          );
           return { ...pecasParaOModelo(r, recorte), status: 'OK' };
         }
 
@@ -1529,7 +1623,18 @@ export class FerramentasGestaoService {
             faixa,
             deslocamento: aPartirDe,
             vendedoraId: id,
+            limite: quantas ?? TETO_DE_LISTA,
           });
+          if (pagina) {
+            this.ultimoRelatorio.guardar(
+              chaveDaConversa,
+              tabelaDasPecasNaFaixa(pagina.linhas, recorte, {
+                posicao: `Posição em ${agoraPorExtenso()}`,
+                geradoPor: solicitante,
+                total: pagina.totalDeLinhas,
+              }),
+            );
+          }
           return [];
         });
 
@@ -1864,12 +1969,15 @@ export class FerramentasGestaoService {
           titulo: 'Peças',
           posicao: `Posição em ${agoraPorExtenso()}`,
           colunas: [
-            { chave: 'peca', titulo: 'Peça', peso: 3 },
+            { chave: 'peca', titulo: 'Peça', peso: 2.9 },
             { chave: 'codigo', titulo: 'Código', peso: 1, mono: true },
             {
+              // O CENTAVO PEDIU MAIS LARGURA — 28/10/2026. Com 1 sobravam
+              // 70,1pt e o maior valor que a casa escreve pede 76,8. Os 0,1
+              // saem da descrição da peça, que é texto e encurta sem mentir.
               chave: 'valor',
               titulo: 'Valor',
-              peso: 1,
+              peso: 1.1,
               alinhamento: 'direita',
               mono: true,
             },
@@ -2059,30 +2167,79 @@ export class FerramentasGestaoService {
         }
 
         const datas = datasDeRecorte(de, ate);
+        // ================================================================
+        // O RANKING INTEIRO, E NAO DEZ — 28/10/2026.
+        //
+        // *"Nao quero teto em nenhuma consulta."* Sao 71 familias de peca
+        // na base, e a consulta trazia dez. O `limite` que o modelo manda
+        // continua valendo — e o "me da os 5 mais vendidos" —; sem ele, vem
+        // tudo.
+        // ================================================================
+        const quantas = limite ?? TETO_DE_LISTA;
         const linhas = datas
           ? await this.consultarVendas.itensEntre(
               datas.de,
               datas.ate,
-              limite ?? LIMITE_PADRAO,
+              quantas,
               vendedoraId,
             )
           : (
               await this.consultarVendas.itens(
                 periodo ?? 'HOJE',
-                limite ?? LIMITE_PADRAO,
+                quantas,
                 vendedoraId,
               )
             ).linhas;
 
+        const nomeDoItem = (i: (typeof linhas)[number]) =>
+          i.descricao?.trim() || i.familia || 'Sem descrição';
+
+        this.ultimoRelatorio.guardar(chaveDaConversa, {
+          titulo: tituloComRecorte(
+            'Itens mais vendidos',
+            recorteDoPedido({ vendedora, periodo, de, ate }),
+          ),
+          posicao: `Posição em ${agoraPorExtenso()}`,
+          colunas: [
+            { chave: 'codigo', titulo: 'Código', peso: 1, mono: true },
+            { chave: 'item', titulo: 'Item', peso: 3.4 },
+            {
+              chave: 'quantidade',
+              titulo: 'Qtd',
+              peso: 0.6,
+              alinhamento: 'direita',
+              mono: true,
+            },
+            {
+              chave: 'valor',
+              titulo: 'Valor',
+              peso: 1.5,
+              alinhamento: 'direita',
+              mono: true,
+            },
+          ],
+          linhas: linhas.map((i) => ({
+            codigo: i.codigoErp ?? '—',
+            item: nomeDoItem(i),
+            quantidade: String(i.quantidade),
+            valor: moeda(i.valor),
+          })),
+          nota: 'Valor somado das peças vendidas, sem descontar devolução.',
+          geradoPor: solicitante ?? undefined,
+        });
+
         return {
           status: 'OK',
-          linhas: linhas.map((i) => {
-            const nome = i.descricao?.trim() || i.familia || 'Sem descrição';
+          // A CONVERSA FICA COM DEZ: a tabela leva o ranking inteiro, e o
+          // modelo nao precisa receber 71 linhas para escrever uma frase.
+          linhas: linhas.slice(0, ITENS_NA_CONVERSA).map((i) => {
+            const nome = nomeDoItem(i);
             // A QUANTIDADE SO APARECE QUANDO E MAIS DE UMA. Numa joalheria a
             // peca e quase sempre unica, e "1 un" em toda linha e ruido.
             const qtd = i.quantidade > 1 ? ` · ${i.quantidade} un` : '';
             return `${i.codigoErp ?? '—'} ${nome} — ${moeda(i.valor)}${qtd}`;
           }),
+          total: linhas.length,
         };
       },
 
@@ -2355,15 +2512,56 @@ export class FerramentasGestaoService {
       //
       // A IDADE E O PONTO, e nao os nomes: e ela que separa "chegou agora" de
       // "esta parado desde terca".
-      gestaoLeads: async () => {
-        const fila = await this.leads.listarAguardandoGestao(MAXIMO_LEADS);
+      /**
+       * ================================================================
+       * A FILA INTEIRA, E NAO QUINZE — 28/10/2026.
+       *
+       * *"Nao quero teto em nenhuma consulta. Ela quer ver o quadro
+       * completo."* — Lucas.
+       *
+       * Eram 15 de 531 leads, e os 516 restantes nao tinham caminho
+       * nenhum: esta leitura nao guardava tabela, entao nem o PDF
+       * alcancava. A consulta passa a pedir o teto da casa e a tabela
+       * guarda tudo; a lista inteira sai sozinha depois da resposta.
+       *
+       * SEM TELEFONE NA TABELA, como a linha da conversa ja fazia: lead
+       * tem `whatsapp`, e um PDF com 531 telefones sai do nosso controle
+       * no segundo em que chega no WhatsApp de alguem.
+       * ================================================================
+       */
+      gestaoLeads: async ({ quantas } = {}) => {
+        const fila = await this.leads.listarAguardandoGestao(
+          quantas ?? TETO_DE_LISTA,
+        );
+        const espera = (l: (typeof fila)[number]) =>
+          esperaLegivel(l.direcionadoGestaoEm ?? l.criadoEm);
+
+        this.ultimoRelatorio.guardar(chaveDaConversa, {
+          titulo: 'Leads esperando encaminhamento',
+          posicao: `Posição em ${agoraPorExtenso()}`,
+          colunas: [
+            { chave: 'lead', titulo: 'Lead', peso: 2.4 },
+            { chave: 'procura', titulo: 'Procura', peso: 3 },
+            { chave: 'espera', titulo: 'Esperando', peso: 1.4, mono: true },
+          ],
+          linhas: fila.map((l) => ({
+            lead: l.nome?.trim() || 'sem nome informado',
+            procura: l.produtosDesejados ?? '—',
+            espera: espera(l),
+          })),
+          nota: 'Fila de triagem — sem telefone. Encaminhe pela conversa.',
+          geradoPor: solicitante ?? undefined,
+        });
+
         return {
-          linhas: fila.map((l) => {
+          linhas: fila.slice(0, quantas ?? MAXIMO_LEADS).map((l) => {
             const partes = [l.nome?.trim() || 'sem nome informado'];
             if (l.produtosDesejados) partes.push(l.produtosDesejados);
-            partes.push(esperaLegivel(l.direcionadoGestaoEm ?? l.criadoEm));
+            partes.push(espera(l));
             return partes.join(' — ');
           }),
+          total: fila.length,
+          quantasPedidas: quantas,
         };
       },
 

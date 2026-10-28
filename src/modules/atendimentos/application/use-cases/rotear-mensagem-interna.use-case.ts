@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { ListaEntregue } from '../../../relatorios/application/entregar-relatorio.use-case';
 import type { FotoDeProduto } from '../fotos-de-produto.service';
 import type { ArquivoDoAgente } from '../../../relatorios/application/montar-arquivo.use-case';
 import { BuscarAdminPorTelefoneUseCase } from '../../../auth/application/use-cases/buscar-admin-por-telefone.use-case';
@@ -165,6 +166,15 @@ export interface RespostaDoCanal {
    * texto. A frase diz que mandou; o arquivo chega em seguida.
    */
   arquivo?: ArquivoDoAgente;
+  /**
+   * A LISTA INTEIRA EM MENSAGENS — 28/10/2026.
+   *
+   * Vem DEPOIS do texto, como as fotos e o arquivo, e e mutuamente
+   * exclusiva com `arquivo`: quem pediu a lista nao recebe tambem um anexo.
+   * Acima do teto de mensagens o `EntregarRelatorioUseCase` troca para
+   * arquivo sozinho, e ai e o `arquivo` que vem preenchido.
+   */
+  lista?: ListaEntregue;
 }
 
 /**

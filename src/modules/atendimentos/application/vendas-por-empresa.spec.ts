@@ -89,7 +89,11 @@ describe('a empresa como recorte das vendas uma a uma', () => {
       .gestaoVendasDetalhadas({ empresa: 'SP', periodo: 'ANO' });
 
     expect(r.status).toBe('OK');
-    expect(listar).toHaveBeenCalledWith({ busca: 'SP', ativo: true });
+    // O FILTRO SAIU DO SQL EM 28/10/2026, pelo TRACO: o modelo escreve
+    // "AT JEWEL LTDA — SP" com travessao, o banco guarda hifen, e o
+    // ILIKE voltava vazio. Sao oito empresas — vem todas, e o casamento
+    // acontece em memoria, com a mesma normalizacao do acento e da caixa.
+    expect(listar).toHaveBeenCalledWith({ ativo: true });
     expect(detalhadas.mock.calls[0][0]).toMatchObject({ empresaId: 'emp-1' });
   });
 
@@ -125,6 +129,44 @@ describe('a empresa como recorte das vendas uma a uma', () => {
     expect(r.sobre).toBe('empresa');
     expect(r.nomes).toEqual(['AT JEWEL LTDA', 'AT JEWEL LTDA - SP']);
     expect(detalhadas).not.toHaveBeenCalled();
+  });
+
+  /**
+   * ========================================================================
+   * MAS O NOME INTEIRO NÃO É PALPITE — 28/10/2026.
+   *
+   * A busca é por pedaço, e "AT JEWEL LTDA" é começo de "AT JEWEL LTDA -
+   * SP": as duas voltavam da consulta e a resposta era sempre a mesma
+   * pergunta. Resultado medido no banco em 27/10: a MATRIZ, com **1.110
+   * vendas desde 2023**, era inalcançável por qualquer frase. A gestora só
+   * conseguia a filial de SP, que tem duas.
+   *
+   * Por mais exato que ela escrevesse, voltava a lista — um beco. E a regra
+   * já existia para vendedora desde sempre; só não tinha chegado aqui.
+   * ========================================================================
+   */
+  it('o nome INTEIRO resolve, apesar de a filial conter o nome da matriz', async () => {
+    const { servico, detalhadas } = montar({ empresas: [MATRIZ, SP] });
+
+    const r = await servico
+      .montar({ verLoja: true })
+      .gestaoVendasDetalhadas({ empresa: 'AT JEWEL LTDA' });
+
+    expect(r.status).toBe('OK');
+    expect(detalhadas.mock.calls[0][0]).toMatchObject({
+      empresaId: 'emp-2',
+    });
+  });
+
+  it('e a filial segue alcançável pelo nome dela', async () => {
+    const { servico, detalhadas } = montar({ empresas: [MATRIZ, SP] });
+
+    const r = await servico
+      .montar({ verLoja: true })
+      .gestaoVendasDetalhadas({ empresa: 'AT JEWEL LTDA - SP' });
+
+    expect(r.status).toBe('OK');
+    expect(detalhadas.mock.calls[0][0]).toMatchObject({ empresaId: 'emp-1' });
   });
 
   it('empresa que não existe responde "não achei", e não lista nada', async () => {

@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { moeda } from '../../../../shared/formato/moeda';
 import {
   COBRANCA_DA_PROMESSA,
   ehPromessaSemDado,
@@ -18,6 +19,8 @@ import { ConfigService } from '@nestjs/config';
 import type {
   ArquivoDoAgenteLlm,
   ChatComFerramentasResultado,
+  ListaEmMensagensLlm,
+  RelatorioEntregue,
   ChatParams,
   GestaoLeituraResultado,
   ChatResultado,
@@ -603,7 +606,8 @@ const GESTAO_POR_EMPRESA_TOOL: Anthropic.Tool = {
 const MANDAR_RELATORIO_TOOL: Anthropic.Tool = {
   name: 'mandar_relatorio',
   description:
-    'Manda a ULTIMA resposta como arquivo na conversa — PDF para ver e repassar, planilha para trabalhar (ordenar, filtrar, somar). ' +
+    'Manda a ULTIMA resposta por onde ela pedir: a LISTA INTEIRA aqui na conversa, PDF para ver e repassar, ou planilha para trabalhar (ordenar, filtrar, somar). ' +
+    'Use LISTA quando pedirem "manda a lista toda", "lista todos", "quero todos", "manda tudo" — a lista sai COMPLETA, escrita pelo sistema, e voce nao precisa repeti-la. ' +
     'Use quando pedirem "manda em pdf", "GERA UM PDF", "gera o pdf", "faz um pdf disso", "me manda a planilha", "exporta isso", "manda esse relatorio". ' +
     'DEPOIS DE QUALQUER CONSULTA — pecas, clientes, vendas, agenda, metas — "gera um pdf" E AQUI, e nao no catalogo: ela esta falando do que voce acabou de mostrar. ' +
     'NAO use para montar lista nova: consulte primeiro e so entao ofereca o arquivo. ' +
@@ -613,9 +617,9 @@ const MANDAR_RELATORIO_TOOL: Anthropic.Tool = {
     properties: {
       formato: {
         type: 'string',
-        enum: ['PDF', 'PLANILHA'],
+        enum: ['LISTA', 'PDF', 'PLANILHA'],
         description:
-          'PDF para ler e repassar; PLANILHA (xlsx) para trabalhar os numeros.',
+          'LISTA manda a lista INTEIRA aqui na conversa, em mensagem — use quando pedirem "manda tudo", "a lista inteira", "lista todos", "quero todos". PDF para ler e repassar. PLANILHA (xlsx) para trabalhar os numeros. Se a lista for grande demais para mensagem, o sistema manda o PDF por conta propria e te avisa — nao escolha PDF por medo do tamanho.',
       },
     },
     required: ['formato'],
@@ -625,7 +629,12 @@ const MANDAR_RELATORIO_TOOL: Anthropic.Tool = {
 const GESTAO_VENDAS_DETALHADAS_TOOL: Anthropic.Tool = {
   name: 'vendas_detalhadas',
   description:
-    'Lista as vendas UMA A UMA, com data, documento, cliente, vendedora, valor e AS PECAS de cada uma. Use para "quais as compras da cliente X", "quais vendas a Camila fez em setembro", "quais pecas tinha a venda 1157", "o que o cliente Y comprou". Informe pelo menos UM entre cliente, vendedora e documento — periodo sozinho nao serve. SO VENDA CONCLUIDA ENTRA: devolucao fica de fora, e e por isso que esta lista fecha com o numero do resumo. Devolve ate 10 vendas NA CONVERSA, da mais recente para a mais antiga, e diz quantas existem no total. O ARQUIVO LEVA TODAS: havendo mais de dez, ofereca mandar em PDF ou planilha em vez de dizer que nao consegue.',
+    'Lista as vendas UMA A UMA, com data, documento, cliente, vendedora, valor e AS PECAS de cada uma — e ja diz quantas sao e quanto somam. ' +
+    'E ESTA A FERRAMENTA DE "AS VENDAS": "me traga as vendas da Camila em 2025", "as vendas da Ylka", "me lista as vendas", "quais as compras da cliente X", "quais vendas a Camila fez em setembro", "quais pecas tinha a venda 1157", "o que o cliente Y comprou". ' +
+    'PEDIR "AS VENDAS" E PEDIR A LISTA, e nao o total: quem quer so o numero pergunta QUANTO ou QUANTAS ("quanto a Camila vendeu em 2025"), e ai e o vendas_de_vendedora. Na duvida entre os dois, venha para ca — a lista ja vem com o total dentro, e o resumo nao vem com a lista. ' +
+    'Informe pelo menos UM entre cliente, vendedora e documento — periodo sozinho nao serve. ' +
+    'SO VENDA CONCLUIDA ENTRA: devolucao fica de fora, e e por isso que a CONTAGEM desta lista fecha com a do resumo. O VALOR nao fecha — o resumo desconta devolucao e esta soma nao —, e a resposta tem de dizer qual e qual quando os dois aparecerem. ' +
+    'A LISTA COMPLETA SAI SOZINHA na conversa, escrita pelo sistema, logo depois da sua resposta — voce nao precisa repeti-la nem oferecer. Ela so nao sai se a pessoa pedir uma quantidade (`quantas`).',
   input_schema: {
     type: 'object',
     properties: {
@@ -648,6 +657,11 @@ const GESTAO_VENDAS_DETALHADAS_TOOL: Anthropic.Tool = {
         enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
         description:
           'Recorte de tempo. Omita para pegar o historico inteiro — "quais as compras da cliente X" e sobre a vida toda dela, nao sobre este mes.',
+      },
+      quantas: {
+        type: 'integer',
+        description:
+          'QUANTAS ela pediu. OMITA quando ela nao disser numero — sem isto a lista sai INTEIRA, que e o padrao. Mande o numero so quando ele estiver no pedido: "traga as ultimas 10", "me da as 5 maiores", "so as tres primeiras". Nao invente numero para a lista ficar curta: lista longa sai completa de proposito.',
       },
       somente: {
         type: 'string',
@@ -729,7 +743,10 @@ const GESTAO_AGENDA_TOOL: Anthropic.Tool = {
 const GESTAO_VENDAS_TOOL: Anthropic.Tool = {
   name: 'vendas_de_vendedora',
   description:
-    'Consulta quantas vendas UMA vendedora fez e quanto faturou num periodo. Use para "quanto a Marina vendeu essa semana", "como foi o mes da Beatriz". CHAME MESMO SEM SABER O PERIODO: e tambem esta ferramenta que confirma se a vendedora existe. Para comparar a equipe inteira, use panorama_da_equipe.',
+    'Consulta QUANTAS vendas uma vendedora fez e QUANTO faturou num periodo — tres numeros, nenhuma linha. ' +
+    'Use para "quanto a Marina vendeu essa semana", "como foi o mes da Beatriz", "qual o faturamento dela". ' +
+    'NAO E A FERRAMENTA DE "AS VENDAS": "me traga as vendas da Camila", "as vendas da Ylka em 2025" e "me lista as vendas" pedem a LISTA, e a lista e o vendas_detalhadas — que ja traz o total junto. Responder com o resumo a quem pediu as vendas obriga a pessoa a pedir de novo. ' +
+    'CHAME MESMO SEM SABER O PERIODO: e tambem esta ferramenta que confirma se a vendedora existe. Para comparar a equipe inteira, use panorama_da_equipe.',
   input_schema: {
     type: 'object',
     properties: {
@@ -1536,6 +1553,11 @@ const MINHAS_PECAS_POR_VALOR_TOOL: Anthropic.Tool = {
   input_schema: {
     type: 'object',
     properties: { ...CAMPOS_DE_FAIXA_DE_VALOR },
+      quantas: {
+        type: 'integer',
+        description:
+          'QUANTAS ela pediu. OMITA quando ela nao disser numero — sem isto a lista inteira sai, que e o padrao. Mande o numero so no pedido explicito: "me mostra as 5 maiores".',
+      },
   },
 };
 
@@ -1563,6 +1585,11 @@ const GESTAO_PECAS_POR_VALOR_TOOL: Anthropic.Tool = {
   input_schema: {
     type: 'object',
     properties: {
+      quantas: {
+        type: 'integer',
+        description:
+          'QUANTAS ela pediu. OMITA quando ela nao disser numero — sem isto a lista inteira sai, que e o padrao. Mande o numero so no pedido explicito: "me mostra as 5 maiores".',
+      },
       ...CAMPOS_DE_FAIXA_DE_VALOR,
       vendedora: {
         type: 'string',
@@ -2352,6 +2379,8 @@ export class AnthropicClient implements ILlmClient {
     let fotos: FotoDeProdutoLlm[] | undefined;
     // O arquivo pedido, pelo mesmo caminho das fotos.
     let arquivo: ArquivoDoAgenteLlm | undefined;
+    // E A LISTA INTEIRA EM MENSAGENS, pelo mesmo caminho — 28/10/2026.
+    let lista: ListaEmMensagensLlm | undefined;
     const conversa: Anthropic.MessageParam[] = [...apiMessages];
     let resp = first;
 
@@ -2448,6 +2477,7 @@ export class AnthropicClient implements ILlmClient {
           grafico,
           fotos,
           arquivo,
+          lista,
           ...(texto ? {} : { semTexto: motivoDoVazio(resp.stop_reason) }),
         };
       }
@@ -2462,6 +2492,7 @@ export class AnthropicClient implements ILlmClient {
       // O ULTIMO PEDIDO VENCE tambem aqui: se ela pediu PDF e depois planilha,
       // vai a planilha — e nao os dois.
       arquivo = rodada.arquivo ?? arquivo;
+      lista = rodada.lista ?? lista;
 
       // ====================================================================
       // O TETO NAO DESCARTA PEDIDO EM SILENCIO — foi esse o defeito.
@@ -2525,6 +2556,7 @@ export class AnthropicClient implements ILlmClient {
   ): Promise<{
     toolResults: Anthropic.ToolResultBlockParam[];
     arquivo?: ArquivoDoAgenteLlm;
+    lista?: ListaEmMensagensLlm;
     grafico?: GraficoDinamico;
     fotos?: FotoDeProdutoLlm[];
   }> {
@@ -2535,6 +2567,7 @@ export class AnthropicClient implements ILlmClient {
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
     // O ARQUIVO viaja por fora do dialogo, como o grafico e as fotos.
     let arquivo: ArquivoDoAgenteLlm | undefined;
+    let lista: ListaEmMensagensLlm | undefined;
 
     for (const toolUse of toolUses) {
       if (toolUse.name === 'gerar_grafico') {
@@ -2910,6 +2943,7 @@ export class AnthropicClient implements ILlmClient {
                 ate?: string;
                 vendedora?: string;
                 a_partir_de?: number;
+                quantas?: number;
               };
               const r = await params.gestaoPecasPorValor!({
                 valorMinimo: e.valor_minimo,
@@ -2917,6 +2951,7 @@ export class AnthropicClient implements ILlmClient {
                 de: e.de,
                 ate: e.ate,
                 aPartirDe: e.a_partir_de,
+                quantas: inteiroPositivo(e.quantas),
                 vendedora: e.vendedora
                   ? String(e.vendedora).slice(0, 80)
                   : undefined,
@@ -2943,6 +2978,7 @@ export class AnthropicClient implements ILlmClient {
                 de?: string;
                 ate?: string;
                 a_partir_de?: number;
+                quantas?: number;
               };
               return textoDasPecasPorValor(
                 await params.minhasPecasPorValor!({
@@ -2951,6 +2987,7 @@ export class AnthropicClient implements ILlmClient {
                   de: e.de,
                   ate: e.ate,
                   aPartirDe: e.a_partir_de,
+                  quantas: inteiroPositivo(e.quantas),
                 }),
                 { daLoja: false },
               );
@@ -3624,13 +3661,19 @@ export class AnthropicClient implements ILlmClient {
             toolUse,
             params.aoResponderConsulta,
             async () => {
-              const r = await params.gestaoLeads!();
+              const entrada = toolUse.input as { quantas?: number };
+              const r = await params.gestaoLeads!({
+                quantas: inteiroPositivo(entrada.quantas),
+              });
               if (r.linhas.length === 0) {
                 return 'Nenhum lead esperando encaminhamento. Diga isso.';
               }
               return (
                 `${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
-                'Repasse a lista assim e pergunte se ela quer encaminhar algum agora.'
+                faixaDaLista(0, r.linhas.length, r.total, {
+                  arquivoLevaTudo: !!params.mandarRelatorio,
+                }) +
+                'Pergunte se ela quer encaminhar algum agora.'
               );
             },
           ),
@@ -4029,8 +4072,10 @@ export class AnthropicClient implements ILlmClient {
           await this.executarMandarRelatorio(
             toolUse,
             params.mandarRelatorio,
-            (a) => {
-              arquivo = a;
+            (entregue) => {
+              // UM OU O OUTRO, nunca os dois — ver `RelatorioEntregue`.
+              if (entregue.tipo === 'ARQUIVO') arquivo = entregue.arquivo;
+              else lista = entregue;
             },
           ),
         );
@@ -4052,6 +4097,7 @@ export class AnthropicClient implements ILlmClient {
                 de?: string;
                 ate?: string;
                 somente?: string;
+                quantas?: number;
               };
               const r = await params.gestaoVendasDetalhadas!({
                 cliente: entrada.cliente ? String(entrada.cliente) : undefined,
@@ -4074,6 +4120,16 @@ export class AnthropicClient implements ILlmClient {
                   entrada.somente === 'TODAS'
                     ? entrada.somente
                     : undefined,
+                // QUANTAS ELA PEDIU — 28/10/2026, e o avesso do padrao.
+                //
+                // Sem numero a lista sai INTEIRA; com numero, ela corta a
+                // CONSULTA, e nao so a frase — assim o PDF seguinte leva as
+                // dez que ela pediu, e nao as 223 que existem. *"O PDF que
+                // ela consultou"*, nas palavras do Lucas.
+                //
+                // Inteiro e positivo, ou nada: numero inventado pelo modelo
+                // nao vira teto silencioso.
+                quantas: inteiroPositivo(entrada.quantas),
               });
 
               // Faltou DE QUEM ou DE QUAL VENDA. Nao e "nao encontrei": e uma
@@ -4146,14 +4202,52 @@ export class AnthropicClient implements ILlmClient {
                   ? 'Estas sao DEVOLUCOES, e nao vendas: nao as some ao faturamento. '
                   : r.somente === 'TODAS'
                     ? 'A lista tem VENDA E DEVOLUCAO juntas, e cada linha diz qual e. '
-                    : 'SO VENDA CONCLUIDA entrou nesta lista e neste numero — devolucao nao conta como venda, e e por isso que este total fecha com o do resumo. NAO diga que nao houve devolucao: voce nao perguntou por elas. Querendo, consulte de novo pedindo as devolvidas. ';
+                    : 'SO VENDA CONCLUIDA entrou nesta lista — devolucao nao conta como venda, e e por isso que a CONTAGEM fecha com a do resumo. O VALOR nao fecha, e nao e erro: o resumo desconta as devolucoes e esta soma nao. NAO diga que nao houve devolucao: voce nao perguntou por elas. Querendo, consulte de novo pedindo as devolvidas. ';
+              // ==============================================================
+              // A SOMA VEM DA FERRAMENTA, E NAO DA CABECA DELE — 28/10/2026.
+              //
+              // *"Me traga as vendas da Camila em 2025"* levou o modelo ao
+              // RESUMO: "100 vendas, R$ 4.356.774,70, ticket R$ 43.567,75" e
+              // zero linhas. Foi preciso dizer "me lista" para ver as vendas.
+              //
+              // O texto antigo terminava em *"nao some os valores por conta
+              // propria — se ela quiser o total, ha ferramenta de resumo"*, e a
+              // proibicao estava certa: somar cem valores de cabeca da errado.
+              // Faltava DAR a soma, que nos ja calculamos para o rodape da
+              // tabela. Sem ela, "as vendas" tinha de escolher entre o numero e
+              // a lista — e escolheu o numero.
+              // ==============================================================
+              // ============================================================
+              // A SOMA E DAS VENDAS LISTADAS, E NAO O FATURAMENTO — 28/10.
+              //
+              // Medido na Camila em 2025: as 100 saidas somam
+              // R$ 4.563.088,70; as 7 devolucoes somam R$ 206.314,00; e o
+              // RESUMO responde R$ 4.356.774,70, que e o liquido.
+              //
+              // Dois numeros de dinheiro verdadeiros para perguntas
+              // diferentes — e exatamente a armadilha do "38 e 43" de 27/10,
+              // agora com valor. Entao a soma sai COM NOME, e com a conta da
+              // diferenca dita na frente.
+              // ============================================================
+              const comSoma = r.soma
+                ? r.quantasPedidas
+                  ? `Estas ${r.linhas.length} somam ${r.soma} (so as listadas); ` +
+                    `no recorte inteiro sao ${quantas} vendas. `
+                  : `Sao ${quantas} vendas e somam ${r.soma}. DIGA os dois ` +
+                    `numeros. ESSA SOMA E DE VENDA CONCLUIDA, e NAO e o ` +
+                    `faturamento: o resumo (vendas_de_vendedora) responde um ` +
+                    `valor MENOR porque desconta as devolucoes. Se os dois ` +
+                    `aparecerem na conversa, diga qual e qual em vez de ` +
+                    `corrigir um pelo outro — os dois estao certos. `
+                : '';
               return (
                 `${rotulo}${aviso}:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+                comSoma +
                 faixaDaLista(0, r.linhas.length, quantas, {
                   arquivoLevaTudo: !!params.mandarRelatorio,
                 }) +
                 oQueEntrou +
-                'Repasse datas, nomes, pecas e valores exatamente como estao. Nao some os valores por conta propria — se ela quiser o total, ha ferramenta de resumo.'
+                'Repasse datas, nomes, pecas e valores exatamente como estao. NAO SOME NADA voce mesmo: a soma acima ja veio calculada, e refazer cem contas de cabeca da outro numero.'
               );
             },
           ),
@@ -4322,7 +4416,7 @@ export class AnthropicClient implements ILlmClient {
         : r,
     );
 
-    return { toolResults: resultadosSeguros, grafico, fotos, arquivo };
+    return { toolResults: resultadosSeguros, grafico, fotos, arquivo, lista };
   }
 
   /**
@@ -4342,7 +4436,7 @@ export class AnthropicClient implements ILlmClient {
   private async executarMandarRelatorio(
     toolUse: Anthropic.ToolUseBlock,
     handler: NonNullable<ChatParams['mandarRelatorio']>,
-    guardar: (a: ArquivoDoAgenteLlm) => void,
+    guardar: (entregue: RelatorioEntregue) => void,
   ): Promise<Anthropic.ToolResultBlockParam> {
     // NAO AVISA O OUVINTE: esta ferramenta nao e consulta. Avisando, a frase
     // de confirmacao viraria a "ultima tabela", e o PDF seguinte sairia com
@@ -4352,7 +4446,14 @@ export class AnthropicClient implements ILlmClient {
       // VALIDADO, NUNCA CONVERTIDO: formato que o modelo invente nao vira
       // renderizador. Fora de PDF/PLANILHA, cai em PDF, que e o pedido mais
       // comum e o que se abre em qualquer lugar.
-      const formato = input.formato === 'PLANILHA' ? 'PLANILHA' : 'PDF';
+      // VALIDADO, NUNCA CONVERTIDO: formato que o modelo invente nao vira
+      // renderizador. LISTA manda na conversa; fora dos tres, cai em PDF.
+      const formato =
+        input.formato === 'PLANILHA'
+          ? 'PLANILHA'
+          : input.formato === 'LISTA'
+            ? 'LISTA'
+            : 'PDF';
       const a = await handler({ formato });
       if (!a) {
         // ==============================================================
@@ -4390,10 +4491,32 @@ export class AnthropicClient implements ILlmClient {
       // entao a frase dele e parte do envio, e nao um comentario sobre algo
       // que ja saiu.
       // ================================================================
+      // ================================================================
+      // A LISTA NAO SE REPETE, E ISSO PRECISA SER DITO ASSIM — 28/10/2026.
+      //
+      // O risco desta ferramenta nova e o modelo escrever a frase E a
+      // lista: ela sairia duas vezes, a nossa certa e a dele incompleta. O
+      // texto diz quantas linhas JA VAO, para ele nao achar que precisa
+      // completar nada.
+      // ================================================================
+      if (a.tipo === 'LISTA') {
+        const quantas =
+          a.linhas === a.total
+            ? `as ${a.total}`
+            : `${a.linhas} de ${a.total}`;
+        return (
+          `A lista COMPLETA com ${quantas} linhas ja esta escrita e sai em ` +
+          `${a.mensagens.length} mensagem(ns) logo depois da sua resposta. ` +
+          'RESPONDA AGORA, em UMA frase curta, dizendo que a lista vem ' +
+          'logo abaixo. NAO REPITA NENHUMA LINHA DELA: ela ja esta pronta, ' +
+          'e repetir faria a mesma lista sair duas vezes.'
+        );
+      }
       return (
-        `O arquivo ${a.nome} esta pronto e sai logo depois da sua resposta. ` +
-        'RESPONDA AGORA, em uma frase curta, dizendo que mandou o arquivo — ' +
-        'sem repetir a lista. Sem a sua frase o anexo chega sem explicacao.'
+        `O arquivo ${a.arquivo.nome} esta pronto e sai logo depois da sua ` +
+        'resposta. RESPONDA AGORA, em uma frase curta, dizendo que mandou o ' +
+        'arquivo — sem repetir a lista. Sem a sua frase o anexo chega sem ' +
+        'explicacao.'
       );
     });
   }
@@ -5221,7 +5344,9 @@ function textoDasPecasPorValor(
       : '';
 
   return (
-    `${r.pecas} peca(s)${deQuem} ${r.recorte}, somando ${r.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}.\n\n` +
+    // O ultimo dos sete formatadores de dinheiro da casa — era um
+    // `toLocaleString` solto aqui. Um formatador so, em 28/10/2026.
+    `${r.pecas} peca(s)${deQuem} ${r.recorte}, somando ${moeda(r.valor)}.\n\n` +
     devolvidas +
     porVendedora +
     lista +
@@ -5263,6 +5388,44 @@ export function faixaDaLista(
   const ultimo = pulados + mostrados;
 
   // ======================================================================
+  // A LISTA INTEIRA JA VAI SAIR — ENTAO NAO SE PEDE QUE ELE LISTE.
+  //
+  // 28/10/2026, e e a inversao que o Lucas pediu: *"por padrao toda lista ou
+  // consulta deve listar tudo... se nao tiver [quantidade] deve vir tudo de
+  // uma vez no WhatsApp"*.
+  //
+  // Quando o canal pode entregar (`arquivoLevaTudo`), o `oQueFaltou` manda a
+  // lista COMPLETA logo depois da resposta dele — escrita pelo nosso codigo,
+  // da tabela que a consulta guardou. Entao TODO o assunto antigo deste
+  // texto deixa de existir:
+  //
+  //   "LISTE AS 20 ACIMA"  -> listar seria mandar a lista DUAS vezes;
+  //   "FALTAM 16"          -> nao falta nada, elas estao saindo;
+  //   "a_partir_de = 20"   -> paginar deixou de ser necessario;
+  //   "ofereca o PDF"      -> a conversa ja leva tudo; o arquivo e opcao.
+  //
+  // E O RISCO NOVO E A LISTA DUPLICADA, e nao a lista faltando: por isso a
+  // proibicao de listar vem primeiro, antes de qualquer outra coisa.
+  //
+  // Os CINCO pontos que passam `arquivoLevaTudo` foram conferidos um por um
+  // em 28/10: todos guardam tabela rica, entao a entrega acontece sempre que
+  // este ramo e alcancado. Ponto novo que esqueca a opcao erra para o lado
+  // seguro — cai nos ramos de baixo, e o modelo lista como antes.
+  // ======================================================================
+  if (opcoes.arquivoLevaTudo) {
+    return (
+      `SAO ${total} NO TOTAL, e a LISTA COMPLETA com as ${total} sai logo ` +
+      `depois da sua resposta, escrita pelo sistema. ` +
+      `NAO LISTE NENHUMA LINHA e NAO repita as de cima: a lista sairia duas ` +
+      `vezes. NAO diga que faltam, nao ofereca continuacao e NUNCA mande ela ` +
+      `ao painel. ` +
+      `RESPONDA EM UMA FRASE: diga o que a lista e e que sao ${total}. Se ela ` +
+      `preferir arquivo, ofereca PDF ou planilha.` +
+      `\n\n`
+    );
+  }
+
+  // ======================================================================
   // QUEM NAO PAGINA NAO OFERECE PAGINA — 27/10/2026.
   //
   // Este texto serve OITO leituras de gestao e so UMA delas tem
@@ -5285,9 +5448,20 @@ export function faixaDaLista(
       `LISTE AS ${mostrados} LINHAS ACIMA, TODAS, e DIGA a faixa e o total. ` +
       'NAO HA COMO PEDIR AS SEGUINTES por aqui: nao ofereca continuacao, ' +
       'nao peca para a pessoa esperar e NUNCA mande ela ao painel. ' +
+      // ================================================================
+      // A LISTA INTEIRA CABE AQUI DESDE 28/10/2026, e o texto tinha de
+      // dizer isso.
+      //
+      // Ate ontem a unica saida era o arquivo, e era isso que estava
+      // escrito. Com o `mandar_relatorio` aceitando LISTA, a lista inteira
+      // sai NA CONVERSA — escrita por nos, nao por ele. Deixar o texto
+      // antigo faria a agente seguir dizendo que nao ha como, de novo com
+      // uma saida existindo e ninguem lhe contando: foi exatamente o
+      // defeito de 27/10, quando ela mandou a gestora ao painel.
+      // ================================================================
       (opcoes.arquivoLevaTudo
-        ? `O ARQUIVO LEVA AS ${total}: ofereca mandar em PDF ou planilha, ` +
-          'que e o caminho para a lista inteira.'
+        ? `A LISTA INTEIRA PODE SAIR AQUI: as ${total} cabem na conversa ` +
+          'pelo mandar_relatorio com formato LISTA, e tambem em PDF ou planilha. Ofereca os dois, e NUNCA diga que nao da.'
         : 'Ofereca RECORTAR mais — periodo menor, categoria, um cliente — ' +
           'para a lista caber.') +
       '\n\n'
@@ -5321,8 +5495,9 @@ export function faixaDaLista(
     'se quer a continuacao — se disser que sim, chame a ferramenta de novo ' +
     `com a_partir_de = ${ultimo}. Nunca deixe parecer que a lista acabou. ` +
     (opcoes.arquivoLevaTudo
-      ? `E O ARQUIVO JA LEVA AS ${total} DE UMA VEZ: querendo a lista ` +
-        'inteira, ofereca em PDF ou planilha em vez de paginar.'
+      ? `E AS ${total} SAEM DE UMA VEZ, sem paginar: pelo ` +
+        'mandar_relatorio com formato LISTA elas vem aqui na conversa, e ' +
+        'em PDF ou planilha se ela preferir arquivo.'
       : '') +
     '\n\n'
   );
@@ -5660,4 +5835,24 @@ function textoDeLinhas(
   }
 
   return `${linhas.join('\n')}\n\n${orientacao}`;
+}
+
+/**
+ * O numero que o modelo mandou, se for numero de verdade.
+ *
+ * ==========================================================================
+ * SO INTEIRO POSITIVO PASSA. Zero, negativo, fracao ou texto viram
+ * `undefined` — e `undefined` aqui significa "ela nao pediu quantidade", que
+ * desde 28/10/2026 quer dizer A LISTA INTEIRA.
+ *
+ * Converter o lixo em algum numero seria pior que ignora-lo: um `quantas: 0`
+ * aceito cortaria a lista em nada, e a resposta sairia vazia com cara de
+ * "nao ha nenhuma".
+ * ==========================================================================
+ */
+function inteiroPositivo(valor: unknown): number | undefined {
+  const n = Number(valor);
+  if (!Number.isFinite(n)) return undefined;
+  const inteiro = Math.trunc(n);
+  return inteiro > 0 ? inteiro : undefined;
 }

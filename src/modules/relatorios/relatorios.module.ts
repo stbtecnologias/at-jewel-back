@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MontarArquivoUseCase } from './application/montar-arquivo.use-case';
+import { MontarMensagensUseCase } from './application/montar-mensagens.use-case';
+import { EntregarRelatorioUseCase } from './application/entregar-relatorio.use-case';
 import { RelatorioDeProdutosUseCase } from './application/relatorio-de-produtos.use-case';
 import { UltimoRelatorioService } from './application/ultimo-relatorio.service';
 import { RelatorioDeVendasUseCase } from './application/relatorio-de-vendas.use-case';
@@ -31,6 +33,8 @@ import { RelatorioXlsxService } from './infrastructure/relatorio-xlsx.service';
   providers: [
     UltimoRelatorioService,
     MontarArquivoUseCase,
+    MontarMensagensUseCase,
+    EntregarRelatorioUseCase,
     RelatorioDeProdutosUseCase,
     RelatorioDeVendasUseCase,
     RelatorioPdfService,
@@ -39,6 +43,8 @@ import { RelatorioXlsxService } from './infrastructure/relatorio-xlsx.service';
   exports: [
     UltimoRelatorioService,
     MontarArquivoUseCase,
+    MontarMensagensUseCase,
+    EntregarRelatorioUseCase,
     RelatorioDeProdutosUseCase,
     RelatorioDeVendasUseCase,
     RelatorioPdfService,

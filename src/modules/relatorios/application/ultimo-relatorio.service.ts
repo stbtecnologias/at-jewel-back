@@ -34,6 +34,27 @@ interface Guardado {
    * tabela deixou de ser "o que acabou de sair".
    */
   idade: number;
+  /**
+   * QUANTAS LINHAS A CONVERSA MOSTROU desta tabela — 28/10/2026.
+   *
+   * ====================================================================
+   * É o que permite responder "falta alguma?" sem adivinhar.
+   *
+   * A tabela tem a lista inteira desde 27/10 (o arquivo leva tudo), e o
+   * texto da conversa tem a página — 10, 20, 15, conforme a ferramenta. A
+   * diferença entre os dois é exatamente o que a pessoa NÃO viu, e é ela
+   * que decide se a lista inteira precisa sair.
+   *
+   * Vem do TEXTO DA FERRAMENTA, contado no funil: são as linhas marcadas
+   * com "- ", o mesmo recorte que o `guardarTexto` usa. Não se pergunta a
+   * cada ferramenta quantas ela mostrou — seria uma linha para a ferramenta
+   * número 31 esquecer.
+   *
+   * `undefined` = ninguém contou ainda. Diferente de zero, que é "a
+   * conversa não mostrou nenhuma".
+   * ====================================================================
+   */
+  linhasNaConversa?: number;
 }
 
 /**
@@ -149,7 +170,21 @@ export class UltimoRelatorioService {
     // NÃO ATROPELA O RICO DA MESMA MENSAGEM: a consulta de vendas guarda a
     // tabela com sete colunas antes de o texto dela chegar aqui.
     const atual = this.porChave.get(chave);
-    if (atual && atual.rico && atual.idade === 0) return;
+    if (atual && atual.rico && atual.idade === 0) {
+      // ==================================================================
+      // MAS APROVEITA A CONTAGEM — 28/10/2026.
+      //
+      // O texto é a única coisa que sabe quantas linhas a CONVERSA mostrou;
+      // a tabela rica tem a lista inteira. A diferença entre as duas é o que
+      // a pessoa não viu — e é ela que decide se a lista inteira sai sozinha
+      // depois da resposta. Ver `quantasNaoForamMostradas`.
+      //
+      // Antes daqui só havia um `return`, e essa informação se perdia no
+      // único ponto do código onde ela existia.
+      // ==================================================================
+      atual.linhasNaConversa = contarLinhasDeLista(texto);
+      return;
+    }
 
     // O MARCADOR DE LISTA SAI: "• Fulana — R$ 1.000" vira "Fulana — R$ 1.000".
     // O ponto existe para a frase no WhatsApp; numa tabela ele e sujeira na
@@ -167,11 +202,7 @@ export class UltimoRelatorioService {
     // um paragrafo como se fosse lista produziria um PDF de uma linha so,
     // com cara de relatorio. Melhor a agente dizer que precisa consultar.
     // ====================================================================
-    const dados = texto
-      .split(String.fromCharCode(10))
-      .filter((x) => /^\s*-\s+/.test(x))
-      .map((x) => x.replace(/^\s*-\s+/, '').trim())
-      .filter((x) => x.length > 0);
+    const dados = linhasDeLista(texto);
     if (dados.length === 0) {
       // ==================================================================
       // CONSULTA QUE RESPONDEU EM PROSA INVALIDA A TABELA ANTERIOR.
@@ -288,6 +319,29 @@ export class UltimoRelatorioService {
   }
 
   /** O que dá para mandar em arquivo agora, ou `null` se não há nada vivo. */
+  /**
+   * QUANTAS LINHAS DESTA TABELA A CONVERSA NÃO MOSTROU — 28/10/2026.
+   *
+   * ======================================================================
+   * *"Por padrão toda lista ou consulta deve listar tudo."* — Lucas.
+   *
+   * A tabela tem a lista inteira; o texto da conversa tem a página. Esta
+   * conta é a diferença, e é ela que decide se a lista inteira sai sozinha
+   * depois da resposta — sem a pessoa pedir, e sem o modelo escolher.
+   *
+   * ZERO QUANDO NÃO HÁ O QUE ACRESCENTAR: a conversa mostrou tudo, ou
+   * ninguém contou (tabela pobre, vinda do funil de texto, que é a própria
+   * conversa). Mandar a lista nesses dois casos a repetiria.
+   * ======================================================================
+   */
+  quantasNaoForamMostradas(chave: string | null | undefined): number {
+    const r = this.pegar(chave);
+    if (!r) return 0;
+    const g = chave ? this.porChave.get(chave) : undefined;
+    if (!g?.rico || g.linhasNaConversa === undefined) return 0;
+    return Math.max(0, r.linhas.length - g.linhasNaConversa);
+  }
+
   pegar(chave: string | null | undefined): Relatorio | null {
     if (!chave) return null;
     const g = this.porChave.get(chave);
@@ -354,4 +408,33 @@ function agora(): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+/**
+ * As linhas de LISTA de um texto de ferramenta — as marcadas com "- ".
+ *
+ * ==========================================================================
+ * O recorte não é chute: conferido em 21/10/2026, as ~20 ferramentas que
+ * devolvem lista montam o texto do MESMO jeito,
+ * `linhas.map((l) => `- ${l}`)`. O que está fora desse prefixo é recado para
+ * o MODELO — e foi o que vazou no primeiro PDF de itens mais vendidos:
+ * *"Repasse os numeros exatamente como estao"* saiu impresso num documento
+ * feito para gente.
+ *
+ * Saiu para função própria em 28/10, porque passou a ter DOIS usos: montar a
+ * tabela pobre, e contar quantas linhas a conversa mostrou de uma tabela que
+ * já é rica.
+ * ==========================================================================
+ */
+function linhasDeLista(texto: string): string[] {
+  return texto
+    .split(String.fromCharCode(10))
+    .filter((x) => /^\s*-\s+/.test(x))
+    .map((x) => x.replace(/^\s*-\s+/, '').trim())
+    .filter((x) => x.length > 0);
+}
+
+/** Quantas linhas de lista o texto da ferramenta trouxe. */
+function contarLinhasDeLista(texto: string): number {
+  return linhasDeLista(texto).length;
 }

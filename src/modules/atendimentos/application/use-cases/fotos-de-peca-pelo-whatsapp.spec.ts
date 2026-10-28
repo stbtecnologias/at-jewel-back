@@ -364,7 +364,11 @@ describe('as fotos da peça pelo WhatsApp', () => {
       // quebra linha. Comparar com espaço comum falha por um caractere
       // invisível — já perdi tempo com isso aqui.
       const primeira = r?.resposta?.split('\n')[0].replace(/ /g, ' ');
-      expect(primeira).toBe('BR26396 — BRINCO DTS 0.25 CTS OB 18K — R$ 18.500');
+      // COM CENTAVO desde 28/10/2026 — e aqui ele importa mais que em qualquer
+      // outro lugar: é o preço que a vendedora vai FALAR para o cliente.
+      expect(primeira).toBe(
+        'BR26396 — BRINCO DTS 0.25 CTS OB 18K — R$ 18.500,00',
+      );
       expect(r?.resposta).not.toContain('capa');
     });
 

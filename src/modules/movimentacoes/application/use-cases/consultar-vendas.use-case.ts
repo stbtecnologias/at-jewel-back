@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { TETO_DE_LISTA } from '../../../../shared/limites/teto-de-lista';
 import {
   VENDAS_MOVIMENTACAO_REPOSITORY,
   type ItemMaisVendido,
@@ -25,7 +26,13 @@ export type RecorteDeVendas = 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
 
 /** Quantos itens o ranking devolve quando ninguem pede outro numero. */
 export const LIMITE_PADRAO = 10;
-/** Teto duro: lista maior que isto nao se le no WhatsApp. */
+/**
+ * Teto de quem PEDE um teto baixo de proposito — o panorama da equipe passa
+ * este valor para nao cortar ninguem de uma equipe de dez.
+ *
+ * JA NAO E O PADRAO do `limitar`: ver a nota dele. Como padrao, era corte
+ * silencioso.
+ */
 export const LIMITE_MAXIMO = 30;
 /**
  * O TETO DE QUEM ALIMENTA O ARQUIVO — 27/10/2026.
@@ -44,7 +51,9 @@ export const LIMITE_MAXIMO = 30;
  * e nao a consulta: so o arquivo precisa do resto.
  * ==========================================================================
  */
-export const LIMITE_DO_ARQUIVO = 500;
+// SUBIU EM 28/10/2026, junto dos outros tres tetos da casa: 500 cortava as
+// 1.110 vendas da AT JEWEL LTDA. Ver `shared/limites/teto-de-lista`.
+export const LIMITE_DO_ARQUIVO = TETO_DE_LISTA;
 
 export interface ResumoComRecorte extends ResumoDeVendas {
   /** O periodo efetivamente consultado, para quem responde poder dize-lo. */
@@ -137,7 +146,13 @@ export class ConsultarVendasUseCase {
     const r = await this.vendas.pecasPorFaixaDeValor(
       opcoes.janela,
       opcoes.faixa,
-      limitar(opcoes.limite ?? LIMITE_PADRAO),
+      // O TETO DO ARQUIVO VALE AQUI TAMBEM — 28/10/2026.
+      //
+      // Era `limitar(limite ?? 10)`, e o `limitar` corta em 30: pedir o teto
+      // da casa devolvia TRINTA pecas, calado. E o mesmo defeito que o
+      // `detalhadas` tinha em 27/10, no outro metodo. Medido: uma faixa ampla
+      // em 2026 tem 582 pecas, e a conversa mostrava dez.
+      limitar(opcoes.limite ?? LIMITE_PADRAO, LIMITE_DO_ARQUIVO),
       deslocamento,
       opcoes.vendedoraId,
     );
@@ -308,10 +323,25 @@ export class ConsultarVendasUseCase {
 /**
  * Teto e piso do limite.
  *
- * O teto nao e paranoia: quem pede "me lista as 500 pecas" no WhatsApp recebe
- * uma mensagem que ninguem le e paga o token de todas elas.
+ * O TETO PADRAO SUBIU EM 28/10/2026, e a razao do antigo caiu.
+ *
+ * ==========================================================================
+ * Dizia: *"quem pede 'me lista as 500 pecas' no WhatsApp recebe uma mensagem
+ * que ninguem le e paga o token de todas elas"*. Isso era verdade enquanto a
+ * lista na conversa fosse o que a pessoa lia — e deixou de ser: desde 28/10 a
+ * lista inteira sai escrita pelo NOSSO codigo, e o modelo recebe uma dezena
+ * de linhas e uma frase para escrever.
+ *
+ * Entao o teto de 30 virou o que ele sempre foi na pratica: um corte
+ * silencioso. Era ele que fazia o PDF das "43 vendas" sair com trinta em
+ * 27/10, e o das 582 pecas sair com dez em 28/10 — duas vezes o mesmo
+ * defeito, em dois metodos diferentes.
+ *
+ * O teto agora e o da casa. Quem quiser cortar para a CONVERSA corta onde
+ * se escreve a conversa, e declarando.
+ * ==========================================================================
  */
-function limitar(limite: number, teto = LIMITE_MAXIMO): number {
+function limitar(limite: number, teto = LIMITE_DO_ARQUIVO): number {
   if (!Number.isFinite(limite) || limite < 1) return LIMITE_PADRAO;
   return Math.min(Math.trunc(limite), teto);
 }

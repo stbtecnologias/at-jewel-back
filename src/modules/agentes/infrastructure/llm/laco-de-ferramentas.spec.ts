@@ -760,11 +760,17 @@ describe('o artefato que a ferramenta produz', () => {
 
       await cliente.chatComFerramentas({
         ...base(),
+        // O HANDLER DEVOLVE O DESTINO, e nao o arquivo cru — 28/10/2026:
+        // desde que a lista pode sair pela conversa, quem chama precisa
+        // saber qual das duas coisas voltou. Ver `RelatorioEntregue`.
         mandarRelatorio: jest.fn().mockResolvedValue({
-          conteudo: Buffer.from('%PDF-1.3'),
-          mime: 'application/pdf',
-          nome: 'vendas-21-10-2026.pdf',
-          legenda: 'Vendas — 10 linhas',
+          tipo: 'ARQUIVO',
+          arquivo: {
+            conteudo: Buffer.from('%PDF-1.3'),
+            mime: 'application/pdf',
+            nome: 'vendas-21-10-2026.pdf',
+            legenda: 'Vendas — 10 linhas',
+          },
         }),
         aoResponderConsulta: aoResponder,
       } as unknown as ChatParams);
@@ -779,11 +785,17 @@ describe('o artefato que a ferramenta produz', () => {
 
       const r = await cliente.chatComFerramentas({
         ...base(),
+        // O HANDLER DEVOLVE O DESTINO, e nao o arquivo cru — 28/10/2026:
+        // desde que a lista pode sair pela conversa, quem chama precisa
+        // saber qual das duas coisas voltou. Ver `RelatorioEntregue`.
         mandarRelatorio: jest.fn().mockResolvedValue({
-          conteudo: Buffer.from('%PDF-1.3'),
-          mime: 'application/pdf',
-          nome: 'vendas-21-10-2026.pdf',
-          legenda: 'Vendas — 10 linhas',
+          tipo: 'ARQUIVO',
+          arquivo: {
+            conteudo: Buffer.from('%PDF-1.3'),
+            mime: 'application/pdf',
+            nome: 'vendas-21-10-2026.pdf',
+            legenda: 'Vendas — 10 linhas',
+          },
         }),
       } as unknown as ChatParams);
 
@@ -792,6 +804,43 @@ describe('o artefato que a ferramenta produz', () => {
       // token duas vezes, na ida e no historico.
       expect(JSON.stringify(create.mock.calls[1][0].messages)).not.toContain(
         '%PDF',
+      );
+    });
+
+    /**
+     * ======================================================================
+     * A LISTA INTEIRA VIAJA POR FORA TAMBEM — 28/10/2026.
+     *
+     * *"Se nao tiver [quantidade] deve vir tudo de uma vez no WhatsApp."*
+     *
+     * As linhas NAO voltam para o dialogo, pelo mesmo motivo dos bytes do
+     * PDF: seriam pagas em token duas vezes, na ida e no historico — e as
+     * 1.412 vendas desde 2023 dao 73 mil tokens. O modelo recebe a CONTA
+     * ("as 1.110 linhas ja estao escritas") e escreve uma frase.
+     * ======================================================================
+     */
+    it('e a lista inteira tambem, sem as linhas voltarem ao dialogo', async () => {
+      create
+        .mockResolvedValueOnce(pede('mandar_relatorio'))
+        .mockResolvedValueOnce(responde('Segue a lista.'));
+
+      const r = await cliente.chatComFerramentas({
+        ...base(),
+        mandarRelatorio: jest.fn().mockResolvedValue({
+          tipo: 'LISTA',
+          mensagens: ['Vendas da Ylka', '1. 11/08/2026 | doc 1157'],
+          linhas: 1110,
+          total: 1110,
+        }),
+      } as unknown as ChatParams);
+
+      expect(r.lista?.mensagens).toHaveLength(2);
+      expect(r.lista?.linhas).toBe(1110);
+      // UM OU O OUTRO: quem pediu a lista nao recebe tambem um anexo.
+      expect(r.arquivo).toBeUndefined();
+      // E as linhas nao entram no historico que volta ao modelo.
+      expect(JSON.stringify(create.mock.calls[1][0].messages)).not.toContain(
+        'doc 1157',
       );
     });
   });

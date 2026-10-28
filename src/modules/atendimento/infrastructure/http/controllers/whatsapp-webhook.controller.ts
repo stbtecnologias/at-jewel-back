@@ -197,6 +197,35 @@ export class WhatsappWebhookController {
       await this.whatsapp.enviarTexto(de, resultado.resposta, agente);
 
       // ======================================================================
+      // E A LISTA INTEIRA, QUANDO ELA PEDIU POR AQUI — 28/10/2026.
+      //
+      // *"Se nao tiver [quantidade] deve vir tudo de uma vez no WhatsApp."*
+      //
+      // ESTAS LINHAS NAO PASSARAM PELO MODELO: vem da tabela que a consulta
+      // guardou, formatadas pelo `MontarMensagensUseCase`. Ele escreveu a
+      // frase que acabou de sair; a lista e nossa.
+      //
+      // DEPOIS DO TEXTO, e nao antes: o texto apresenta a lista. E cada
+      // mensagem no seu `try`, como as fotos — se a terceira falhar, as duas
+      // primeiras ja chegaram, e quem le tem o comeco da lista em vez de
+      // nada. A ORDEM importa: `for` sequencial, nunca `Promise.all`, porque
+      // o WhatsApp entrega na ordem em que recebe e lista fora de ordem e
+      // pior que lista partida.
+      // ======================================================================
+      if (resultado.lista) {
+        for (const [i, mensagem] of resultado.lista.mensagens.entries()) {
+          try {
+            await this.whatsapp.enviarTexto(de, mensagem, agente);
+          } catch (err) {
+            this.logger.warn(
+              `Parte ${i + 1}/${resultado.lista.mensagens.length} da lista ` +
+                `(${resultado.lista.linhas} linhas) nao foi enviada: ${String(err)}`,
+            );
+          }
+        }
+      }
+
+      // ======================================================================
       // E ENTAO AS FOTOS, UMA MENSAGEM POR PECA — 07/10/2026.
       //
       // Vem DEPOIS do texto de proposito: o texto e a resposta, a foto e o

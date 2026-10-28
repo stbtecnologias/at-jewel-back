@@ -67,13 +67,13 @@ describe('o molde do relatório', () => {
       { chave: 'data', titulo: 'Data', peso: 1, mono: true },
       { chave: 'documento', titulo: 'Doc', peso: 0.7, mono: true },
       { chave: 'cliente', titulo: 'Cliente', peso: 2.2 },
-      { chave: 'pecas', titulo: 'Peças', peso: 3.4 },
+      { chave: 'pecas', titulo: 'Peças', peso: 3.15 },
       { chave: 'vendedora', titulo: 'Vendedora', peso: 1.4 },
       { chave: 'status', titulo: 'Status', peso: 0.9 },
       {
         chave: 'valor',
         titulo: 'Total',
-        peso: 1.1,
+        peso: 1.35,
         alinhamento: 'direita',
         mono: true,
       },
@@ -89,6 +89,72 @@ describe('o molde do relatório', () => {
     // O "- 16" é o respiro de cada célula, o mesmo que o desenho usa.
     expect(doc.widthOfString('11/08/2026')).toBeLessThanOrEqual(
       larguras[0] - 16,
+    );
+
+    // ========================================================================
+    // E O VALOR CABE COM O CENTAVO — 28/10/2026.
+    //
+    // O ",00" entrou em todo valor da casa, e são três caracteres a mais numa
+    // coluna que já estava no limite: com peso 1.1 ela tinha 60,7pt úteis e
+    // "R$ 11.967.058,00" pede 76,8. Coluna de número não ganha reticência —
+    // ela ENCOLHE a fonte —, então o rodapé sairia a 6,3pt ao lado de
+    // vizinhos de 8pt, e o rodapé é a linha que alguém confere.
+    //
+    // O valor do teste é a soma real das vendas da Ylka desde 2023, que é o
+    // maior rodapé que esta tabela produz hoje.
+    // ========================================================================
+    expect(doc.widthOfString('R$ 11.967.058,00')).toBeLessThanOrEqual(
+      larguras[6] - 16,
+    );
+  });
+
+  // ==========================================================================
+  // O MESMO, NO RELATÓRIO DE VENDAS DO PAINEL — 28/10/2026.
+  //
+  // O conserto da data de 27/10 foi feito na tabela da AGENTE, e este
+  // relatório ficou com o peso 0.8 de antes: 33,3pt úteis para "11/08/2026",
+  // que pede 48 — a mesma data cortada, noutro PDF, e ninguém tinha olhado.
+  //
+  // SÓ ESTAS DUAS TABELAS TÊM TESTE, das nove da casa, porque são as duas em
+  // que o defeito já aconteceu de verdade. As outras sete foram medidas em
+  // 28/10 (script de conferência) e passam com folga; repetir os nove jogos de
+  // peso aqui dentro criaria uma segunda cópia que envelhece sozinha.
+  // ==========================================================================
+  it('a data e o valor cabem no relatório de vendas do painel', () => {
+    const doc = new PDFDocument({ size: [841.89, 595.28], margin: 48 });
+    doc.font('Courier').fontSize(8);
+
+    // Os pesos REAIS — ver `relatorio-de-vendas.use-case`.
+    const colunas: ColunaDoRelatorio[] = [
+      { chave: 'data', titulo: 'Data', peso: 1.05, mono: true },
+      { chave: 'cliente', titulo: 'Cliente', peso: 2.2 },
+      { chave: 'pecas', titulo: 'Peças', peso: 3.5 },
+      { chave: 'vendedora', titulo: 'Vendedora', peso: 1.5 },
+      { chave: 'pagamento', titulo: 'Pagamento', peso: 1.3 },
+      { chave: 'status', titulo: 'Status', peso: 1 },
+      {
+        chave: 'valor',
+        titulo: 'Total',
+        peso: 1.55,
+        alinhamento: 'direita',
+        mono: true,
+      },
+    ];
+
+    const servico = pdf as unknown as {
+      largura: number;
+      larguras: (c: ColunaDoRelatorio[]) => number[];
+    };
+    servico.largura = 841.89;
+    const larguras = servico.larguras(colunas);
+
+    expect(doc.widthOfString('11/08/2026')).toBeLessThanOrEqual(
+      larguras[0] - 16,
+    );
+    // O rodapé deste relatório soma a LOJA inteira: R$ 68.003.012,58 desde
+    // 2023, medido em 28/10. É o maior número que a casa escreve.
+    expect(doc.widthOfString('R$ 68.003.012,58')).toBeLessThanOrEqual(
+      larguras[6] - 16,
     );
   });
 

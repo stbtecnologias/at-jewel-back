@@ -1,4 +1,10 @@
 import { datasDeRecorte } from '../../../shared/tempo/recorte-de-datas';
+import { moeda } from '../../../shared/formato/moeda';
+import { TETO_DE_LISTA } from '../../../shared/limites/teto-de-lista';
+import {
+  recorteDoPedido,
+  tituloComRecorte,
+} from '../../relatorios/domain/recorte-do-pedido';
 import { UltimoRelatorioService } from '../../relatorios/application/ultimo-relatorio.service';
 import { EstrategiaDeVendasService } from './estrategia-de-vendas.service';
 import {
@@ -33,6 +39,7 @@ import {
   janelaDaFaixa,
   pecasParaOModelo,
   recorteEmPalavras,
+  tabelaDasPecasNaFaixa,
 } from './pecas-por-valor';
 import { dataDeCorte } from '../../../shared/tempo/recorte-de-datas';
 import type { NomeComemorativo } from '../../../shared/tempo/datas-comemorativas';
@@ -55,16 +62,6 @@ import { linhasDoFunil, rotuloEtapa } from './etapas-em-palavras';
 import { formatarQuando } from './ferramentas-gestao.service';
 
 /**
- * Dinheiro COM CENTAVOS — e a diferenca para o `moeda` da gestao, que arredonda
- * para inteiro.
- *
- * Nao e detalhe de estilo. A gestao le agregado ("R$ 34 mil na semana"), onde o
- * centavo e ruido. A vendedora le PRECO DE PECA, e ali o centavo e o numero que
- * ela vai falar para o cliente. Reusar o formatador da gestao aqui transformou
- * "R$ 7.490,37" em "R$ 7.490" — pego pelo teste do catalogo em 21/08, na
- * refatoracao que juntou as ferramentas num servico.
- */
-/**
  * Quantos clientes da carteira vem COM NOME — 08/10/2026.
  *
  * Quinze cobre a carteira aberta de uma vendedora com folga (o que esta em
@@ -73,6 +70,26 @@ import { formatarQuando } from './ferramentas-gestao.service';
  * quantos ficaram de fora.
  */
 const TETO_CARTEIRA_NOMEADA = 15;
+
+/**
+ * QUANTOS CLIENTES CABEM NA CONVERSA DELA — 28/10/2026.
+ *
+ * ==========================================================================
+ * ESTE CORTE NASCEU AGORA, E NASCEU PARA NAO MUDAR NADA.
+ *
+ * Duas destas leituras — "por epoca" e "melhores" — nunca cortaram: elas
+ * devolviam o que a consulta trouxesse, e a consulta trazia vinte por causa
+ * do padrao do caso de uso. Ao pedir o teto do arquivo para a TABELA, a
+ * mesma lista passaria inteira para a conversa tambem — 156 clientes na
+ * maior carteira, uns 5.300 tokens de resultado de ferramenta contra um teto
+ * de 1.500 na resposta. O modelo receberia tudo e nao teria como listar.
+ *
+ * Vinte e o numero que ela ja recebia; o corte agora e DECLARADO em vez de
+ * ser efeito do limite da consulta. Quando o teto da conversa for invertido
+ * — a lista inteira por padrao —, e aqui que se mexe.
+ * ==========================================================================
+ */
+const CLIENTES_NA_CONVERSA = 20;
 
 /**
  * Uma linha por cliente em atendimento: quem, em que pe, e desde quando.
@@ -116,13 +133,22 @@ function agoraPorExtenso(): string {
   });
 }
 
-function moeda(v: number): string {
-  return v.toLocaleString('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-    minimumFractionDigits: 2,
-  });
-}
+/**
+ * O `moeda` DAQUI ERA PRIVADO, e saiu em 28/10/2026.
+ *
+ * ==========================================================================
+ * Ele existia por um motivo documentado, e bom: *"a gestão lê agregado, onde
+ * o centavo é ruído; a vendedora lê PREÇO DE PEÇA, e ali o centavo é o número
+ * que ela vai falar para o cliente"*. Reusar o da gestão aqui tinha
+ * transformado **"R$ 7.490,37" em "R$ 7.490"** — pego pelo teste do catálogo
+ * em 21/08/2026.
+ *
+ * O motivo não some: ele VENCEU. Em 27/10 o Lucas estendeu o centavo a todo
+ * valor que chega a quem lê, então a razão da vendedora passou a valer para a
+ * gestão também — e os dois canais voltam a ter um formatador só. O defeito
+ * de 21/08 não pode mais acontecer de lado nenhum.
+ * ==========================================================================
+ */
 
 /** Handlers do canal da vendedora, prontos para o `chatComFerramentas`. */
 export interface FerramentasVendedora {
@@ -570,13 +596,17 @@ export class FerramentasVendedoraService {
           posicao: `Posição em ${agoraPorExtenso()}`,
           colunas: [
             { chave: 'codigo', titulo: 'Código', peso: 1.1, mono: true },
-            { chave: 'descricao', titulo: 'Descrição', peso: 3.6 },
+            { chave: 'descricao', titulo: 'Descrição', peso: 3.25 },
             { chave: 'categoria', titulo: 'Categoria', peso: 1.2 },
             { chave: 'saldo', titulo: 'Saldo', peso: 1 },
             {
+              // O CENTAVO PEDIU MAIS LARGURA — 28/10/2026. Com 1.2 sobravam
+              // 58pt e o maior valor pede 76,8: o preço sairia a 6pt ao lado
+              // de vizinhos de 8. E aqui ele é o número que ela fala para o
+              // cliente. Os 0,35 saem da descrição.
               chave: 'valor',
               titulo: 'Valor',
-              peso: 1.2,
+              peso: 1.55,
               alinhamento: 'direita',
               mono: true,
             },
@@ -621,19 +651,65 @@ export class FerramentasVendedoraService {
         };
       },
 
-      clientesSemComprar: async ({ meses, dias, desde, aPartirDe }) => {
+      clientesSemComprar: async ({
+        meses,
+        dias,
+        desde: desdeTexto,
+        aPartirDe,
+      }) => {
         // A FRASE VIRA DATA AQUI, e nao no SQL — 01/10/2026. "Ha 45 dias",
         // "desde julho" e "ha 6 meses" sao a mesma pergunta com tres roupas.
         //
         // O `aPartirDe` chegou em 05/10 pelo canal da GESTAO, e vale aqui pelo
         // mesmo motivo: a carteira de uma vendedora tambem passa de vinte, e
         // ela tambem precisa alcancar o resto da propria lista.
-        const { clientes, total, deslocamento } =
-          await this.carteira.semComprar(
-            codigoErp,
-            dataDeCorte({ meses, dias, desde }),
-            aPartirDe,
-          );
+        // ================================================================
+        // O ARQUIVO LEVA A LISTA INTEIRA — 28/10/2026.
+        //
+        // A gestão ganhou isto em 27/10 e ESTE CANAL NÃO. Medido na maior
+        // carteira da casa: a Helena recebia 20 de 127, a Anastasia 127 de
+        // 127 — a mesma consulta, dois tetos. Decisão do Lucas: *"isso de
+        // todas as consultas, tanto Helena como Anastasia"*.
+        //
+        // Duas consultas em paralelo, como as da gestão: a da conversa
+        // respeita a página pedida, a do arquivo começa do princípio.
+        // ================================================================
+        const desde = dataDeCorte({ meses, dias, desde: desdeTexto });
+        const [pagina, paraOArquivo] = await Promise.all([
+          this.carteira.semComprar(codigoErp, desde, aPartirDe),
+          this.carteira.semComprar(codigoErp, desde, 0, TETO_DE_LISTA),
+        ]);
+        const { clientes, total, deslocamento } = pagina;
+
+        this.ultimoRelatorio.guardar(ctx.chaveDaConversa, {
+          titulo: tituloComRecorte(
+            'Clientes sem comprar',
+            recorteDoPedido({ meses }),
+          ),
+          posicao: `Posição em ${agoraPorExtenso()}`,
+          colunas: [
+            { chave: 'cliente', titulo: 'Cliente', peso: 3 },
+            { chave: 'ultima', titulo: 'Última compra', peso: 1.2, mono: true },
+            {
+              chave: 'compras',
+              titulo: 'Compras',
+              peso: 1,
+              alinhamento: 'direita',
+              mono: true,
+            },
+          ],
+          linhas: paraOArquivo.clientes.map((c) => ({
+            cliente: c.nome,
+            ultima: c.ultimaCompra
+              ? c.ultimaCompra.toLocaleDateString('pt-BR')
+              : 'nunca comprou',
+            compras: String(c.quantidade),
+          })),
+          exibindo:
+            total > paraOArquivo.clientes.length
+              ? { mostradas: paraOArquivo.clientes.length, total }
+              : undefined,
+        });
         return {
           clientes: clientes.map((c) => ({
             linha: c.ultimaCompra
@@ -654,12 +730,65 @@ export class FerramentasVendedoraService {
        * a mesma coisa.
        */
       clientesPorEpoca: async ({ mes, dataComemorativa }) => {
-        const { clientes, total } = await this.carteira.porEpoca(codigoErp, {
-          mes,
-          dataComemorativa: dataComemorativa as NomeComemorativo | undefined,
+        // O ARQUIVO LEVA A LISTA INTEIRA — 28/10/2026, igual à gestão.
+        // Aqui basta UMA consulta: esta leitura não pagina, então a página
+        // da conversa é um corte em memória sobre a mesma lista.
+        const { clientes, total } = await this.carteira.porEpoca(
+          codigoErp,
+          {
+            mes,
+            dataComemorativa: dataComemorativa as NomeComemorativo | undefined,
+          },
+          TETO_DE_LISTA,
+        );
+
+        this.ultimoRelatorio.guardar(ctx.chaveDaConversa, {
+          titulo: tituloComRecorte(
+            'Clientes por época',
+            recorteDoPedido({ mes, dataComemorativa }),
+          ),
+          posicao: `Posição em ${agoraPorExtenso()}`,
+          colunas: [
+            { chave: 'cliente', titulo: 'Cliente', peso: 2.85 },
+            {
+              chave: 'compras',
+              titulo: 'Compras',
+              peso: 1,
+              alinhamento: 'direita',
+              mono: true,
+            },
+            {
+              chave: 'anos',
+              titulo: 'Anos',
+              peso: 0.8,
+              alinhamento: 'direita',
+              mono: true,
+            },
+            {
+              chave: 'valor',
+              titulo: 'Valor',
+              peso: 1.35,
+              alinhamento: 'direita',
+              mono: true,
+            },
+            { chave: 'ultima', titulo: 'Última compra', peso: 1.2, mono: true },
+          ],
+          linhas: clientes.map((c) => ({
+            cliente: c.nome,
+            compras: String(c.quantidade),
+            anos: String(c.anos),
+            valor: moeda(c.valorTotal),
+            ultima: c.ultimaCompra
+              ? c.ultimaCompra.toLocaleDateString('pt-BR')
+              : '—',
+          })),
+          exibindo:
+            total > clientes.length
+              ? { mostradas: clientes.length, total }
+              : undefined,
         });
         return {
-          clientes: clientes.map((c) => ({
+          clientes: clientes.slice(0, CLIENTES_NA_CONVERSA).map((c) => ({
             linha:
               `${c.nome} — ${c.quantidade} ${c.quantidade === 1 ? 'compra' : 'compras'}` +
               `${c.anos > 1 ? ` em ${c.anos} anos diferentes` : ' (num ano só)'}` +
@@ -671,16 +800,56 @@ export class FerramentasVendedoraService {
       },
 
       melhoresClientes: async ({ categoria, ultimosMeses }) => {
+        // O ARQUIVO LEVA A LISTA INTEIRA — 28/10/2026, igual à gestão.
         const { clientes, total } = await this.carteira.maioresCompradores(
           codigoErp,
           {
             categoria,
             ultimosMeses,
+            limite: TETO_DE_LISTA,
           },
         );
         const unidade = categoria ? 'peça' : 'compra';
+
+        this.ultimoRelatorio.guardar(ctx.chaveDaConversa, {
+          titulo: tituloComRecorte(
+            'Melhores clientes',
+            recorteDoPedido({ categoria, ultimosMeses }),
+          ),
+          posicao: `Posição em ${agoraPorExtenso()}`,
+          colunas: [
+            { chave: 'cliente', titulo: 'Cliente', peso: 3 },
+            {
+              chave: 'quantidade',
+              titulo: categoria ? 'Peças' : 'Compras',
+              peso: 1,
+              alinhamento: 'direita',
+              mono: true,
+            },
+            {
+              chave: 'valor',
+              titulo: 'Valor',
+              peso: 1.2,
+              alinhamento: 'direita',
+              mono: true,
+            },
+            { chave: 'ultima', titulo: 'Última compra', peso: 1.2, mono: true },
+          ],
+          linhas: clientes.map((c) => ({
+            cliente: c.nome,
+            quantidade: String(c.quantidade),
+            valor: moeda(c.valorTotal),
+            ultima: c.ultimaCompra
+              ? c.ultimaCompra.toLocaleDateString('pt-BR')
+              : '—',
+          })),
+          exibindo:
+            total > clientes.length
+              ? { mostradas: clientes.length, total }
+              : undefined,
+        });
         return {
-          clientes: clientes.map((c) => ({
+          clientes: clientes.slice(0, CLIENTES_NA_CONVERSA).map((c) => ({
             linha: `${c.nome} — ${c.quantidade} ${c.quantidade === 1 ? unidade : unidade + 's'}, ${moeda(c.valorTotal)}`,
           })),
           total,
@@ -723,12 +892,69 @@ export class FerramentasVendedoraService {
             cortes: nivelEmPalavras(pedido ?? 'Ouro'),
           };
         }
-        const r = await this.carteira.porFidelidade({
-          escopo: { tipo: 'CARTEIRA', vendedoraCodigoErp: codigoErp },
-          nivel: pedido ?? undefined,
-          mesesSemComprar,
-          deslocamento: aPartirDe,
+        // O ARQUIVO LEVA A LISTA INTEIRA — 28/10/2026, igual à gestão: duas
+        // consultas em paralelo, porque esta leitura PAGINA.
+        const [r, tudo] = await Promise.all([
+          this.carteira.porFidelidade({
+            escopo: { tipo: 'CARTEIRA', vendedoraCodigoErp: codigoErp },
+            nivel: pedido ?? undefined,
+            mesesSemComprar,
+            deslocamento: aPartirDe,
+          }),
+          this.carteira.porFidelidade({
+            escopo: { tipo: 'CARTEIRA', vendedoraCodigoErp: codigoErp },
+            nivel: pedido ?? undefined,
+            mesesSemComprar,
+            deslocamento: 0,
+            limite: TETO_DE_LISTA,
+          }),
+        ]);
+
+        // SEM A COLUNA DA VENDEDORA, ao contrário da tabela da gestão: numa
+        // carteira própria todo mundo é dela, e a coluna repetiria o mesmo
+        // nome em todas as linhas. São cinco colunas, então a folha fica em
+        // RETRATO — e o valor pede 1.3 para caber com o centavo (medido:
+        // 80,9pt úteis contra 76,8 de "R$ 68.003.012,58").
+        this.ultimoRelatorio.guardar(ctx.chaveDaConversa, {
+          titulo: tituloComRecorte(
+            'Clientes por fidelidade',
+            recorteDoPedido({ nivel, mesesSemComprar }),
+          ),
+          posicao: `Posição em ${agoraPorExtenso()}`,
+          colunas: [
+            { chave: 'cliente', titulo: 'Cliente', peso: 2.6 },
+            { chave: 'nivel', titulo: 'Nível', peso: 0.8 },
+            {
+              chave: 'compras',
+              titulo: 'Compras',
+              peso: 0.9,
+              alinhamento: 'direita',
+              mono: true,
+            },
+            {
+              chave: 'valor',
+              titulo: 'Valor',
+              peso: 1.3,
+              alinhamento: 'direita',
+              mono: true,
+            },
+            { chave: 'ultima', titulo: 'Última compra', peso: 1.1, mono: true },
+          ],
+          linhas: tudo.clientes.map((c) => ({
+            cliente: c.nome,
+            nivel: c.nivel,
+            compras: String(c.compras),
+            valor: moeda(c.valorLiquido),
+            ultima: c.ultimaCompra
+              ? c.ultimaCompra.toLocaleDateString('pt-BR')
+              : '—',
+          })),
+          exibindo:
+            tudo.total > tudo.clientes.length
+              ? { mostradas: tudo.clientes.length, total: tudo.total }
+              : undefined,
         });
+
         return {
           linhas: r.clientes.map(linhaDoClienteFiel),
           total: r.total,
@@ -759,19 +985,31 @@ export class FerramentasVendedoraService {
         de,
         ate,
         aPartirDe,
+        quantas,
       }) => {
         const janela = janelaDaFaixa(de, ate);
         const faixa = { minimo: valorMinimo, maximo: valorMaximo };
         if (!vendedoraId) return FAIXA_INVALIDA;
 
+        // SEM TETO, E COM TABELA — 28/10/2026, igual a gestao. Esta era a
+        // unica lista sem tabela rica nos dois canais.
         const r = await this.vendas.pecasPorFaixa({
           janela,
           faixa,
           deslocamento: aPartirDe,
           vendedoraId,
+          limite: quantas ?? TETO_DE_LISTA,
         });
         if (!r) return FAIXA_INVALIDA;
-        return pecasParaOModelo(r, recorteEmPalavras(faixa, janela));
+        const recorte = recorteEmPalavras(faixa, janela);
+        this.ultimoRelatorio.guardar(
+          ctx.chaveDaConversa,
+          tabelaDasPecasNaFaixa(r.linhas, recorte, {
+            posicao: `Posição em ${agoraPorExtenso()}`,
+            total: r.totalDeLinhas,
+          }),
+        );
+        return pecasParaOModelo(r, recorte);
       },
 
       agendarContato: async ({ cliente, quandoIso }) => {

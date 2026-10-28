@@ -19,6 +19,8 @@
  * ==========================================================================
  */
 
+import { moeda } from '../formato/moeda';
+
 export interface Faixa {
   de?: number;
   ate?: number;
@@ -58,8 +60,8 @@ export function faixaDePreco(de?: unknown, ate?: unknown): Faixa {
 
 /** Como a faixa aparece na frase da agente. */
 export function faixaEmPalavras(faixa: Faixa): string {
-  const real = (n: number) =>
-    n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  // O `real` local saiu em 28/10/2026 — era o quinto nome para a mesma coisa.
+  const real = moeda;
   if (faixa.de !== undefined && faixa.ate !== undefined) {
     return `de ${real(faixa.de)} a ${real(faixa.ate)}`;
   }

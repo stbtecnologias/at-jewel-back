@@ -2,9 +2,14 @@ import { Inject, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { Relatorio } from '../domain/relatorio';
+import { TETO_DE_LISTA } from '../../../shared/limites/teto-de-lista';
+import { moeda } from '../../../shared/formato/moeda';
 
 /** O teto de linhas de um relatório. Ver o comentário no `execute`. */
-const TETO_DE_LINHAS = 2000;
+// DOIS MIL ERA O TETO PROPRIO DESTE RELATORIO, e virou o da casa em
+// 28/10/2026: o painel nao tem por que caber menos que o WhatsApp. Ver
+// `shared/limites/teto-de-lista`.
+const TETO_DE_LINHAS = TETO_DE_LISTA;
 
 interface LinhaSql {
   codigo_erp: string | null;
@@ -96,7 +101,7 @@ export class RelatorioDeProdutosUseCase {
       posicao: `Posição em ${agora()}`,
       colunas: [
         { chave: 'codigo', titulo: 'Código', peso: 1.1, mono: true },
-        { chave: 'descricao', titulo: 'Descrição', peso: 3.4 },
+        { chave: 'descricao', titulo: 'Descrição', peso: 3.0 },
         { chave: 'categoria', titulo: 'Categoria', peso: 1.1 },
         { chave: 'empresa', titulo: 'Empresa', peso: 1.3 },
         {
@@ -107,9 +112,12 @@ export class RelatorioDeProdutosUseCase {
           mono: true,
         },
         {
+          // O CENTAVO PEDIU MAIS LARGURA — 28/10/2026. Com 1.2 sobravam
+          // 53,7pt em retrato e o maior valor pede 76,8: a coluna sairia a
+          // 5,6pt. Os 0,4 saem da descrição, que é texto livre.
           chave: 'valor',
           titulo: 'Valor',
-          peso: 1.2,
+          peso: 1.6,
           alinhamento: 'direita',
           mono: true,
         },
@@ -137,13 +145,11 @@ export class RelatorioDeProdutosUseCase {
   }
 }
 
-export function moeda(v: number): string {
-  return v.toLocaleString('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-    minimumFractionDigits: 2,
-  });
-}
+// O QUARTO `moeda` DA CASA MORAVA AQUI, exportado, e o
+// `relatorio-de-vendas.use-case` importava dele. Era ESTE o formatador a que o
+// comentário antigo do `shared/formato/moeda.ts` se referia quando dizia que
+// "o centavo aparece onde o documento exige" — então o PDF já mostrava centavo
+// e a conversa não. Um formatador só, em 28/10/2026.
 
 export function agora(): string {
   return new Date().toLocaleString('pt-BR', {

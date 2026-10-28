@@ -141,33 +141,53 @@ describe('faixaDaLista — quem não pagina não oferece página', () => {
     expect(t).toContain('NUNCA mande ela ao painel');
   });
 
-  it('com arquivo, o caminho da lista inteira é o PDF — e vem com o número', () => {
+  /**
+   * ========================================================================
+   * A LISTA INTEIRA PASSOU A SAIR SOZINHA — 28/10/2026.
+   *
+   * Em 27/10 este texto mandava LISTAR as 10 e dizer que faltavam 80. Em
+   * 28/10 à tarde passou a oferecer a lista inteira. Agora ela SAI — e por
+   * isso o texto não pede mais que ele liste: listar mandaria a mesma lista
+   * duas vezes, a nossa completa e a dele parcial.
+   *
+   * O risco mudou de lado, e o teste mudou com ele: não é mais "ele mostra
+   * menos do que diz", é "ele repete o que já está saindo".
+   * ========================================================================
+   */
+  it('com saída, PROÍBE listar — a lista completa já vai sair', () => {
     const t = faixaDaLista(0, 10, 90, { arquivoLevaTudo: true });
 
-    expect(t).toContain('O ARQUIVO LEVA AS 90');
+    expect(t).toContain('SAO 90 NO TOTAL');
+    expect(t).toContain('LISTA COMPLETA com as 90');
+    expect(t).toContain('NAO LISTE NENHUMA LINHA');
+    expect(t).toContain('RESPONDA EM UMA FRASE');
+    // O assunto antigo sai inteiro: não falta nada, e não há página a pedir.
+    expect(t).not.toContain('a_partir_de');
+    expect(t).not.toContain('FALTAM');
+    // E a proibição de 27/10 continua valendo.
+    expect(t).toContain('NUNCA mande ela ao painel');
+  });
+
+  it('e o arquivo passa a ser OPÇÃO, não o caminho', () => {
+    // Até 28/10 o arquivo era o único jeito de ter a lista inteira. Agora a
+    // conversa já leva tudo, então o PDF é preferência de quem lê.
+    const t = faixaDaLista(0, 10, 90, { arquivoLevaTudo: true });
+
+    expect(t).toContain('Se ela preferir arquivo');
     expect(t).toContain('PDF ou planilha');
   });
 
-  it('sem arquivo, oferece RECORTAR — e não um arquivo que ela não manda', () => {
-    // A persona é clara: prometer arquivo a quem não tem a ferramenta é
-    // prometer o que não sai. Então o recado muda, e não só encurta.
-    const t = faixaDaLista(0, 10, 90);
-
-    expect(t).toContain('Ofereca RECORTAR mais');
-    expect(t).not.toContain('PDF');
-  });
-
-  it('quem pagina E tem arquivo diz os dois, nessa ordem', () => {
+  it('quem pagina E tem saída também não lista, nem pagina', () => {
+    // A paginação deixou de ser o assunto: com a lista inteira saindo, pedir
+    // `a_partir_de` seria pedir de novo o que já foi.
     const t = faixaDaLista(0, 20, 48, {
       paginavel: true,
       arquivoLevaTudo: true,
     });
 
-    expect(t).toContain('a_partir_de = 20');
-    expect(t).toContain('O ARQUIVO JA LEVA AS 48 DE UMA VEZ');
-    expect(t.indexOf('a_partir_de')).toBeLessThan(
-      t.indexOf('O ARQUIVO JA LEVA'),
-    );
+    expect(t).toContain('LISTA COMPLETA com as 48');
+    expect(t).toContain('NAO LISTE NENHUMA LINHA');
+    expect(t).not.toContain('a_partir_de');
   });
 
   it('lista que coube não anuncia arquivo nenhum', () => {

@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { ListaEntregue } from '../../../relatorios/application/entregar-relatorio.use-case';
 import { PERMISSAO_CATALOGO } from './processar-foto-catalogo.use-case';
 import {
   respostaQuandoNaoVeioTexto,
@@ -9,6 +10,7 @@ import {
   MontarArquivoUseCase,
   type ArquivoDoAgente,
 } from '../../../relatorios/application/montar-arquivo.use-case';
+import { EntregarRelatorioUseCase } from '../../../relatorios/application/entregar-relatorio.use-case';
 import { UltimoRelatorioService } from '../../../relatorios/application/ultimo-relatorio.service';
 import {
   colunaDaFerramenta,
@@ -93,6 +95,15 @@ export interface RespostaInterna {
   fotos?: FotoDeProduto[];
   /** Ver `RespostaDoCanal.arquivo` — o PDF ou a planilha que ela pediu. */
   arquivo?: ArquivoDoAgente;
+  /**
+   * A LISTA INTEIRA EM MENSAGENS — 28/10/2026.
+   *
+   * Vem DEPOIS do texto, como as fotos e o arquivo, e e mutuamente
+   * exclusiva com `arquivo`: quem pediu a lista nao recebe tambem um anexo.
+   * Acima do teto de mensagens o `EntregarRelatorioUseCase` troca para
+   * arquivo sozinho, e ai e o `arquivo` que vem preenchido.
+   */
+  lista?: ListaEntregue;
 }
 
 /**
@@ -158,7 +169,7 @@ export class ProcessarMensagemInternaUseCase {
     // este caso de uso a mao.
     private readonly sessao: SessaoCatalogoService,
     // RF36 e RF37 — quem transforma a ultima resposta em PDF ou planilha.
-    private readonly montarArquivo: MontarArquivoUseCase,
+    private readonly entregarRelatorio: EntregarRelatorioUseCase,
     private readonly ultimoRelatorio: UltimoRelatorioService,
   ) {}
 
@@ -254,7 +265,7 @@ export class ProcessarMensagemInternaUseCase {
     await this.registrarConsultaRestrita(vendedoraId, pergunta);
 
     try {
-      const { texto, fotos, arquivo, semTexto } =
+      const { texto, fotos, arquivo, lista, semTexto } =
         await this.llm.chatComFerramentas({
           model: modeloDeIa(
             this.config,
@@ -319,10 +330,11 @@ export class ProcessarMensagemInternaUseCase {
             ),
           // MANDAR EM ARQUIVO — RF36 e RF37, e vale aqui pelo mesmo motivo que
           // vale na gestao: "tanto a gestao com a Anastasia como a Helena".
+          // TRES DESTINOS DESDE 28/10: a conversa, o PDF e a planilha.
           mandarRelatorio: async ({ formato }) =>
             // O NOME DELA VAI NO RODAPE, como o da gestao vai. Faltava, e o
             // efeito e um documento que circula sem dizer de quem saiu.
-            this.montarArquivo.execute(chave, formato, {
+            this.entregarRelatorio.execute(chave, formato, {
               geradoPor: vendedora.nome,
             }),
           ...this.ferramentas.montar({
@@ -372,6 +384,7 @@ export class ProcessarMensagemInternaUseCase {
             motivo: relatoRegistrado ? 'relato_registrado' : 'conversa',
             fotos,
             arquivo,
+            lista,
           };
         }
 
@@ -385,13 +398,49 @@ export class ProcessarMensagemInternaUseCase {
       // resposta se apoiar num erro.
       this.memoria.registrar(chave, pergunta, texto);
 
+      // ====================================================================
+      // E O QUE A CONVERSA NÃO MOSTROU SAI SOZINHO — 28/10/2026.
+      //
+      // *"Por padrão toda lista ou consulta deve listar tudo... se não tiver
+      // [quantidade] deve vir tudo de uma vez no WhatsApp."*
+      //
+      // Até aqui a lista inteira dependia de o modelo oferecer e a pessoa
+      // responder — dois turnos para entregar o que estava pronto no
+      // primeiro. Agora é o padrão, e não passa por ele.
+      //
+      // SÓ QUANDO NADA FOI ENTREGUE: se ela pediu o PDF, ou se o modelo
+      // chamou o LISTA sozinho, mandar de novo duplicaria.
+      //
+      // E DENTRO DE UM `try` — a lição das fotos, de 07/10: isto é um EXTRA
+      // depois da resposta pronta. Falhar aqui não pode transformar uma
+      // resposta boa em "tive um problema do meu lado" — que foi exatamente o
+      // que aconteceu na primeira versão disto, pego no `npm test`.
+      // ====================================================================
+      let arquivoFinal = arquivo;
+      let listaFinal = lista;
+      if (!arquivoFinal && !listaFinal) {
+        try {
+          const faltou = await this.entregarRelatorio.oQueFaltou(chave, {
+            geradoPor: vendedora.nome,
+          });
+          if (faltou?.tipo === 'ARQUIVO') arquivoFinal = faltou.arquivo;
+          else if (faltou) listaFinal = faltou;
+        } catch (err) {
+          this.logger.warn(
+            `A lista inteira nao foi montada: ${String(err)}. A resposta sai sem ela.`,
+          );
+        }
+      }
+
       return {
         resposta: texto,
         motivo: relatoRegistrado ? 'relato_registrado' : 'conversa',
         // Ver `RespostaDoCanal.fotos`: vao junto, depois do texto.
         fotos,
         // E o arquivo, por ultimo — ver `RespostaDoCanal.arquivo`.
-        arquivo,
+        arquivo: arquivoFinal,
+        // E a lista inteira — por padrao desde 28/10/2026.
+        lista: listaFinal,
       };
     } catch (err) {
       this.logger.error(
@@ -604,13 +653,10 @@ export class ProcessarMensagemInternaUseCase {
   }
 }
 
-function moeda(v: number): string {
-  return v.toLocaleString('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-    minimumFractionDigits: 2,
-  });
-}
+// O terceiro `moeda` da casa morava aqui, privado, e saiu em 28/10/2026 — na
+// varredura dos dez formatadores. Este não precisou nem de substituto: era
+// CÓDIGO MORTO, a única ocorrência de `moeda(` no arquivo era a própria
+// definição. Um formatador só, em `shared/formato/moeda.ts`.
 
 /** "hoje às 15:00", "amanhã às 10:00", "sexta-feira às 09:30", "28/08 às 14:00". */
 function formatarQuando(d: Date): string {

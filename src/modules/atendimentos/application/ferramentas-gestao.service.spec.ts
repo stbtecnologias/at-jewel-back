@@ -1,4 +1,5 @@
 import { FerramentasGestaoService } from './ferramentas-gestao.service';
+import { TETO_DE_LISTA } from '../../../shared/limites/teto-de-lista';
 
 /**
  * A Conexa nestes testes nunca tem a foto — e o caso comum: das 320 joias
@@ -686,8 +687,8 @@ describe('FerramentasGestaoService', () => {
         de: undefined,
         ate: undefined,
         // O ARQUIVO LEVA TODO MUNDO — 27/10/2026. A conversa continua com
-        // vinte; quem pede 500 e o relatorio.
-        limite: 500,
+        // vinte; quem pede o teto da casa e o relatorio.
+        limite: TETO_DE_LISTA,
       });
       expect(r.total).toBe(27);
       // Com categoria a unidade e PECA, nao compra — sao perguntas diferentes.
@@ -957,7 +958,7 @@ describe('FerramentasGestaoService', () => {
           mes: 12,
           dataComemorativa: undefined,
         },
-        500,
+        TETO_DE_LISTA,
       );
       expect(carteira.porEpoca).not.toHaveBeenCalled();
     });
@@ -973,7 +974,7 @@ describe('FerramentasGestaoService', () => {
           mes: undefined,
           dataComemorativa: 'Natal',
         },
-        500,
+        TETO_DE_LISTA,
       );
       expect(carteira.porEpocaDaLoja).not.toHaveBeenCalled();
     });
@@ -1094,14 +1095,18 @@ describe('FerramentasGestaoService', () => {
       // "1x", e nao "1.0000x" — a quantidade e numeric(x,4) no banco.
       expect(r.linhas[0]).toContain('1x PIERCING TP 1.39 CTS');
       expect(r.linhas[0]).toContain('2x ANEL ESM 3.25 CTS');
-      // SEM CENTAVOS, como todo valor deste canal (`moeda` arredonda para o
-      // real). E o ponto de milhar e brasileiro porque a formatacao acontece no
+      // COM CENTAVOS desde 28/10/2026, e esta assercao era o AVESSO: ela
+      // provava o arredondamento, exigindo '69.935' e PROIBINDO '69.934,67'. O
+      // Lucas desfez a decisao de 22/10 — o valor que chega a quem le e o
+      // exato. Ver `shared/formato/moeda.ts`.
+      //
+      // E o ponto de milhar e brasileiro porque a formatacao acontece no
       // TypeScript — no SQL, o `to_char` usaria a localidade do banco e sairia
       // 'R$ 69,934.67'.
       // SEM O "R$ " NA ASSERCAO: o `toLocaleString` separa o simbolo do numero
       // com ESPACO NAO SEPARAVEL (U+00A0), e a string parece igual no terminal.
-      expect(r.linhas[0]).toContain('69.935');
-      expect(r.linhas[0]).not.toContain('69,934');
+      expect(r.linhas[0]).toContain('69.934,67');
+      expect(r.linhas[0]).not.toContain('69.935');
       expect(r.linhas[0]).toContain('00376');
     });
 
@@ -1158,9 +1163,10 @@ describe('FerramentasGestaoService', () => {
       const [linha] = (await servico.montar({ verLoja: true }).gestaoPorEmpresa({})).linhas;
 
       // 61.711.799,82 / 1087 = 56.772,58 — o ticket sai da divisao, e nao do
-      // banco, como no resumo.
+      // banco, como no resumo. E com o centavo (28/10/2026) a assercao passa a
+      // ser o resultado da conta, e nao o arredondamento dele.
       expect(linha).toContain('1087 vendas');
-      expect(linha).toContain('56.773');
+      expect(linha).toContain('56.772,58');
       expect(linha).toContain('92 devoluções');
     });
 

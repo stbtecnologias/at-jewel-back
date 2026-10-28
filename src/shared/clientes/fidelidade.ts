@@ -26,6 +26,8 @@
  * baixos. São perguntas diferentes, e a loja escolheu esta.
  */
 
+import { moeda } from '../formato/moeda';
+
 /** Os níveis, do mais alto para o mais baixo. A ordem é a da resposta. */
 export const NIVEIS_DE_FIDELIDADE = [
   'Ouro',
@@ -140,11 +142,7 @@ export function linhaDoClienteFiel(c: {
   ultimaCompra: Date | null;
   vendedoraNome: string | null;
 }): string {
-  const valor = c.valorLiquido.toLocaleString('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-    minimumFractionDigits: 2,
-  });
+  const valor = moeda(c.valorLiquido);
   const quando = c.ultimaCompra
     ? `, última em ${c.ultimaCompra.toLocaleDateString('pt-BR')}`
     : '';

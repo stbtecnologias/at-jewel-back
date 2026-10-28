@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { VENDEDORA_REPOSITORY } from '../../../vendedoras/domain/ports/injection-tokens';
 import type { IVendedoraRepository } from '../../../vendedoras/domain/ports/repositories/vendedora-repository.port';
+import {
+  normalizarNome,
+  preferirExato,
+} from '../../../../shared/texto/nome-exato';
 
 export type ResolucaoVendedora =
   | { status: 'ACHOU'; id: string; nome: string; codigoErp: string | null }
@@ -43,22 +47,25 @@ export class ResolverVendedoraPorNomeUseCase {
   ) {}
 
   async execute(nome: string): Promise<ResolucaoVendedora> {
-    const busca = normalizar(nome);
+    const busca = normalizarNome(nome);
     const ativas = await this.repo.listar({ ativo: true });
 
     if (!busca) {
       return { status: 'NAO_ENCONTRADA', sugestoes: nomesDe(ativas) };
     }
 
-    // Exato primeiro: com "Marina Albuquerque" e "Marina Souza" na equipe,
-    // quem escreveu o nome inteiro nao deve receber pergunta de volta.
-    const exatas = ativas.filter((v) => normalizar(v.nome) === busca);
-    if (exatas.length === 1) return achou(exatas[0]);
-    if (exatas.length > 1) return { status: 'AMBIGUA', nomes: nomesDe(exatas) };
-
-    const parciais = ativas.filter((v) => normalizar(v.nome).includes(busca));
-    if (parciais.length === 1) return achou(parciais[0]);
-    if (parciais.length > 1) return { status: 'AMBIGUA', nomes: nomesDe(parciais) };
+    // EXATO PRIMEIRO, e a regra saiu daqui em 28/10/2026: ela vale igual
+    // para empresa, onde a falta dela deixava a maior da casa inalcancavel.
+    // Mora em `shared/texto/nome-exato`, e as duas buscas usam a mesma.
+    const candidatas = preferirExato(
+      ativas.filter((v) => normalizarNome(v.nome).includes(busca)),
+      nome,
+      (v) => v.nome,
+    );
+    if (candidatas.length === 1) return achou(candidatas[0]);
+    if (candidatas.length > 1) {
+      return { status: 'AMBIGUA', nomes: nomesDe(candidatas) };
+    }
 
     // Nao achou: devolve a equipe para o agente poder dizer quem existe, em vez
     // de um "nao encontrei" seco que obriga a adivinhar o nome certo.
@@ -85,13 +92,6 @@ function nomesDe(vs: { nome: string }[]): string[] {
   return vs.slice(0, MAXIMO_SUGESTOES).map((v) => v.nome);
 }
 
-/** Sem acento, sem caixa, sem espaco sobrando — "MARÍNA " casa com "marina". */
-function normalizar(valor: string): string {
-  return valor
-    .normalize('NFD')
-    // Faixa dos sinais diacriticos combinantes, escapada de proposito: escrever
-    // os acentos literalmente aqui torna a linha ilegivel e fragil a copia.
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim();
-}
+// O `normalizar` local saiu em 28/10/2026, junto da regra do exato: os dois
+// moram em `shared/texto/nome-exato`, porque a busca de empresa precisava da
+// MESMA regra — e te-la escrita duas vezes e o jeito de uma delas ficar atras.

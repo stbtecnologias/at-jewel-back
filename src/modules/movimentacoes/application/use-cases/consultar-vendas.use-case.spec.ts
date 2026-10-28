@@ -1,6 +1,7 @@
 import {
   ConsultarVendasUseCase,
   LIMITE_MAXIMO,
+  LIMITE_DO_ARQUIVO,
   LIMITE_PADRAO,
 } from './consultar-vendas.use-case';
 import type {
@@ -196,11 +197,33 @@ describe('ConsultarVendasUseCase', () => {
       expect(repo.itensMaisVendidos.mock.calls[0][1]).toBe(5);
     });
 
-    /* Lista de 500 no WhatsApp ninguem le, e paga-se o token de todas. */
-    it('pedido absurdo cai no teto', async () => {
+    /**
+     * ======================================================================
+     * O TETO SUBIU, E 500 PASSOU A SER UM PEDIDO NORMAL — 28/10/2026.
+     *
+     * O comentario antigo deste teste era *"lista de 500 no WhatsApp ninguem
+     * le, e paga-se o token de todas"*, e estava certo enquanto a lista na
+     * conversa fosse o que a pessoa lia. Desde 28/10 ela nao e: a lista
+     * inteira sai escrita pelo nosso codigo, e o modelo recebe uma dezena de
+     * linhas.
+     *
+     * O 30 como PADRAO era corte silencioso — foi ele que fez o PDF das "43
+     * vendas" sair com trinta em 27/10 e o das 582 pecas sair com dez em
+     * 28/10. O que o teste protege agora e o contrario: 500 CHEGA ao banco.
+     * ======================================================================
+     */
+    it('pedido de 500 chega inteiro ao banco', async () => {
       await useCase.itens('MES', 500, null, AGORA);
 
-      expect(repo.itensMaisVendidos.mock.calls[0][1]).toBe(LIMITE_MAXIMO);
+      expect(repo.itensMaisVendidos.mock.calls[0][1]).toBe(500);
+    });
+
+    it('e o teto da casa ainda existe, para o pedido sem tamanho', async () => {
+      // Consulta sem teto nenhum e o caminho para uma query acidental
+      // trazer a base inteira para a memoria.
+      await useCase.itens('MES', 999_999, null, AGORA);
+
+      expect(repo.itensMaisVendidos.mock.calls[0][1]).toBe(LIMITE_DO_ARQUIVO);
     });
 
     it.each([0, -3, NaN])('limite invalido (%s) volta ao padrao', async (n) => {
