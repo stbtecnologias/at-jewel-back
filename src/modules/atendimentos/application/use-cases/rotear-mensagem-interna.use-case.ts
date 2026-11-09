@@ -56,6 +56,7 @@ import {
   PERMISSAO_FOTO_DE_PECA,
   FotosDePecaPeloWhatsappUseCase,
 } from './fotos-de-peca-pelo-whatsapp.use-case';
+import { PromptDeImagemUseCase } from './prompt-de-imagem.use-case';
 
 export interface MensagemDoCanal {
   /**
@@ -246,6 +247,11 @@ export class RotearMensagemInternaUseCase {
     // NO FIM DA LISTA de proposito: parametro novo no meio quebra todo teste
     // que constroi este use case a mao, e foram quatro da ultima vez.
     private readonly fotosDePeca: FotosDePecaPeloWhatsappUseCase,
+    // 29/10 — o quinto caminho do canal do catalogo: a foto que vira PROMPT
+    // em ingles para o Marketing, e nunca foto de catalogo.
+    //
+    // NO FIM DA LISTA pela mesma regra escrita acima.
+    private readonly promptDeImagem: PromptDeImagemUseCase,
   ) {}
 
   async execute(msg: MensagemDoCanal): Promise<RespostaDoCanal> {
@@ -336,6 +342,34 @@ export class RotearMensagemInternaUseCase {
         );
         return { resposta: null, motivo: 'ignorado_foto_sem_permissao' };
       }
+
+      // ====================================================================
+      // A FOTO QUE VIRA PROMPT, E NAO FOTO DE CATALOGO — 29/10/2026.
+      //
+      // VEM ANTES DO CATALOGO, e quem poe este bloco aqui e a pergunta do
+      // Lucas: *"se ele comecar enviando a imagem, nao ja cai em catalogo?"*.
+      //
+      // Caia — e calada. Logo abaixo, `canalCatalogo.foto()` consulta o
+      // catalogo LEMBRADO da sessao; havendo um, a foto nao passa nem pela
+      // pergunta "de qual catalogo e?": vira linha de peca na hora.
+      //
+      // A imagem nao ajuda a decidir — o packshot cru com massinha e o MESMO
+      // nos dois casos. So o que ele DISSE separa, e sao estas duas portas: a
+      // legenda desta foto, ou a mira que ele armou antes dela.
+      //
+      // A PERMISSAO E A MESMA, `catalogo:write` — quem chegou aqui ja passou.
+      // ====================================================================
+      if (
+        this.promptDeImagem.falaDePromptDeImagem(msg.texto ?? '') ||
+        this.promptDeImagem.temMira(msg.de)
+      ) {
+        return this.promptDeImagem.daFoto({
+          de: msg.de,
+          legenda: msg.texto ?? '',
+          imagem: msg.imagem,
+        });
+      }
+
       // ====================================================================
       // A FOTO ENTRA PELOS DOIS NUMEROS — 23/10/2026, decisao dele:
       // *"a gestao tambem pode fazer completo, capa e tudo"*.
@@ -422,6 +456,74 @@ export class RotearMensagemInternaUseCase {
     const catalogoNoMeio =
       esperandoCatalogo || esperandoCodigo || esperandoConsulta || fotoComFalha;
 
+    // ======================================================================
+    // O PROMPT DE IMAGEM, ANTES DE TUDO QUE LE TEXTO — 29/10/2026.
+    //
+    // TERCEIRA VEZ QUE A ORDEM ME PEGA NESTE ARQUIVO, e o teste dele foi:
+    //
+    //   "Preciso de um prompt para o Nano Banana 2 fazer o tratamento da
+    //    imagem DO PRODUTO AN26406 no padrao de catalogo..."
+    //
+    // A frase diz "prompt" e "Nano Banana". Mas tambem diz "produto AN26406",
+    // e `pareceComando`, logo abaixo, procura exatamente isso: mirou a peca,
+    // respondeu *"ela ainda nao tem foto nossa, manda as fotos"*, e a foto
+    // seguinte entrou como FOTO DA PECA.
+    //
+    // ======================================================================
+    // A IRONIA, E E ELA QUE JUSTIFICA A POSICAO: a referencia que ele poe
+    // para MELHORAR o prompt era justamente o que roubava o prompt. Quanto
+    // mais informacao ele dava, pior ficava.
+    // ======================================================================
+    //
+    // O teste e de regex e nao custa consulta; o lookup so acontece depois
+    // dele, e so para quem escreveu a palavra.
+    //
+    // SO O TEXTO DIGITADO PASSA AQUI. `msg.texto` vem vazio quando e audio, e
+    // transcrever neste ponto cobraria por toda mensagem do canal — inclusive
+    // a de vendedora, que nem deveria chegar ao catalogo. O pedido DITADO
+    // continua sendo pego mais abaixo, ja resolvido: e por isso que este
+    // mesmo teste aparece em tres lugares deste arquivo, e nao por descuido.
+    // ======================================================================
+    if (this.promptDeImagem.falaDePromptDeImagem(msg.texto ?? '')) {
+      const quemPede = await this.identificarAdmin.execute(
+        telefone,
+        PERMISSAO_CATALOGO,
+      );
+      if (quemPede) {
+        return this.promptDeImagem.doTexto(msg.de, msg.texto ?? '');
+      }
+    }
+
+    // ======================================================================
+    // A RESPOSTA DA PERGUNTA DO CODIGO — 09/11/2026, e aqui pelo mesmo motivo
+    // do bloco acima.
+    //
+    // O que ele digita e um CODIGO DE PECA — "AN26406" — ou um "não tem". As
+    // duas coisas ja tem dono neste arquivo: codigo solto vira consulta de
+    // peca ou `anexarPenduradas`, e e o que aconteceria com a resposta dele.
+    //
+    // A guarda que torna esta posicao segura e estreita: `responderSobreOCodigo`
+    // devolve `null` quando NAO ha foto de prompt esperando, e ai a mensagem
+    // segue o caminho de sempre, intacta. So quem tem uma pergunta no ar e
+    // desviado.
+    // ======================================================================
+    // O PRIMEIRO TESTE E DE MEMORIA, e nao de banco: `temFotoDePromptEsperando`
+    // le um Map. Sem ele, toda mensagem de texto do canal pagaria um lookup de
+    // admin — a conta que o bloco acima evita de proposito.
+    if (this.promptDeImagem.temFotoDePromptEsperando(msg.de)) {
+      const quemResponde = await this.identificarAdmin.execute(
+        telefone,
+        PERMISSAO_CATALOGO,
+      );
+      if (quemResponde) {
+        const r = await this.promptDeImagem.responderSobreOCodigo(
+          msg.de,
+          msg.texto ?? '',
+        );
+        if (r) return r;
+      }
+    }
+
     const comandoDeFoto = FotosDePecaPeloWhatsappUseCase.pareceComando(msg.texto);
     const falaDeFotoDePeca =
       FotosDePecaPeloWhatsappUseCase.pareceSobreFotoDePeca(msg.texto);
@@ -478,6 +580,45 @@ export class RotearMensagemInternaUseCase {
         textoResolvido = await this.resolverTexto(msg);
         if (textoResolvido) {
           const nome = quem.nome ?? '';
+
+          // ================================================================
+          // O PROMPT DE IMAGEM VENCE A PERGUNTA PENDURADA — 29/10/2026.
+          //
+          // ACHADO NO TESTE DELE, e e exatamente o caso que ele previu ao
+          // aprovar o plano. A sequencia foi:
+          //
+          //   1. foto SEM legenda  -> catalogo, como projetado, e a pergunta
+          //      "de qual catalogo e?" fica no ar;
+          //   2. so entao ele escreve "Preciso de um prompt para o Nano
+          //      Banana 2 fazer o tratamento da imagem...";
+          //   3. o texto NEM CHEGOU ao quinto caminho: este bloco o entregou
+          //      a `resposta()`, que o leu como resposta da pergunta e anotou
+          //      **o codigo 2** — de "Nano Banana 2".
+          //
+          // Por o teste no ramo do `doCatalogo` foi erro meu: uma pergunta
+          // pendurada captura o texto 300 linhas antes dele.
+          //
+          // UMA PERGUNTA PENDURADA NAO PODE CAPTURAR TEXTO DE OUTRO ASSUNTO.
+          // E o teste cabe aqui pela regra deste bloco: e regex em memoria,
+          // nao faz consulta, e a foto que estava pendurada e justamente a
+          // que o prompt vai usar — ver `resgatarUltimaFoto`.
+          // ================================================================
+          if (this.promptDeImagem.falaDePromptDeImagem(textoResolvido)) {
+            return this.promptDeImagem.doTexto(msg.de, textoResolvido);
+          }
+
+          // E A RESPOSTA DO CODIGO, DITADA — 09/11/2026. O teste de cima, la
+          // em cima, so ve `msg.texto`, que vem vazio no audio. Aqui o audio
+          // ja virou texto, e "não tem código" dito em voz alta precisa valer
+          // tanto quanto digitado. `null` quando nao e disto que se trata.
+          {
+            const r = await this.promptDeImagem.responderSobreOCodigo(
+              msg.de,
+              textoResolvido,
+            );
+            if (r) return r;
+          }
+
           if (esperandoCatalogo) {
             // "É DA PEÇA" — RF33, 20/10/2026. A pergunta de destino passou a
             // oferecer a peça de que se falava; esta é a resposta dela, e tem
@@ -823,6 +964,38 @@ export class RotearMensagemInternaUseCase {
     // fazer. Foto vem antes: "vou mandar a foto da peça" fala de peca, mas e
     // envio.
     if (doCatalogo) {
+      // ====================================================================
+      // O PROMPT DE IMAGEM VEM ANTES DOS QUATRO — 29/10/2026.
+      //
+      // Nao por importancia: porque ele usa AS MESMAS PALAVRAS deles. "Me
+      // manda o prompt dessa foto" tem `foto` e `manda`, que e exatamente o
+      // que `falaDeMandarFoto` procura; "trata essa peça em inglês" tem
+      // `peça`, que leva para `falaDeConsultar`. Em qualquer outra ordem o
+      // pedido dele e entregue ao caminho errado.
+      //
+      // E VIR PRIMEIRO NAO LHE DA VANTAGEM INDEVIDA, porque o matcher dele e
+      // o mais ESTREITO dos cinco: exige a palavra `prompt`, ou dois sinais
+      // juntos. Ver `falaDePromptDeImagem`.
+      // ====================================================================
+      if (this.promptDeImagem.falaDePromptDeImagem(texto)) {
+        return this.promptDeImagem.doTexto(msg.de, texto);
+      }
+      // E A RESPOSTA DO CODIGO, quando nao havia pergunta de catalogo no ar
+      // para o bloco de cima pegar. ANTES do desarme: "AN26406" nao fala de
+      // catalogo, mas chegar aqui sem ser ouvido o mandaria para a consulta
+      // de peca — e a foto dele ficaria esperando ate vencer.
+      {
+        const r = await this.promptDeImagem.responderSobreOCodigo(
+          msg.de,
+          texto,
+        );
+        if (r) return r;
+      }
+      // MUDOU DE ASSUNTO, DESARMA A MIRA. Sem isto, o "vou mandar para o
+      // prompt" dito ha vinte minutos mandaria para o prompt a foto que ele
+      // esta pondo no catalogo agora — e a janela da mira e de trinta.
+      this.promptDeImagem.desarmarSeMudouDeAssunto(msg.de, texto);
+
       // A PERGUNTA PELO QUE ESTA PENDURADO VEM PRIMEIRO. "tem foto em aberto
       // no catalogo?" fala de foto e de catalogo — sem esta ordem viraria
       // envio, e a pergunta nunca seria respondida.

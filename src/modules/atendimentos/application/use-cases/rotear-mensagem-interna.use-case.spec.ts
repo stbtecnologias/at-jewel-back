@@ -21,6 +21,24 @@ const SEM_FOTO_DE_PECA = {
   pedido: jest.fn().mockResolvedValue(null),
   foto: jest.fn().mockResolvedValue(null),
 } as never;
+/**
+ * O caminho do PROMPT DE IMAGEM, mudo — 29/10/2026.
+ *
+ * Os dois em `false` sao o valor certo para todo teste que nao e sobre ele:
+ * sem pedido de prompt e sem mira armada, a imagem segue o caminho de
+ * sempre, que e o catalogo.
+ */
+const SEM_PROMPT_DE_IMAGEM = {
+  falaDePromptDeImagem: () => false,
+  temMira: () => false,
+  // Ninguem com foto esperando a pergunta do codigo — 09/11/2026. `false`
+  // aqui e o que faz a mensagem seguir reta, sem nem pagar o lookup de admin.
+  temFotoDePromptEsperando: () => false,
+  responderSobreOCodigo: jest.fn().mockResolvedValue(null),
+  desarmarSeMudouDeAssunto: jest.fn(),
+  doTexto: jest.fn().mockResolvedValue(null),
+  daFoto: jest.fn().mockResolvedValue(null),
+} as never;
 
 /**
  * A conferencia da foto NAO participa destes testes: null quer dizer "nao
@@ -194,6 +212,7 @@ describe('RotearMensagemInternaUseCase', () => {
       leitor as never,
       analise as never,
       SEM_FOTO_DE_PECA,
+      SEM_PROMPT_DE_IMAGEM,
     );
   });
 
@@ -1753,6 +1772,7 @@ describe('RotearMensagemInternaUseCase', () => {
         { ler: jest.fn() } as never,
         { analisar: jest.fn() } as never,
         daPeca as never,
+        SEM_PROMPT_DE_IMAGEM,
       );
 
       const r = await semPermissao.execute({
@@ -1805,6 +1825,7 @@ describe('RotearMensagemInternaUseCase', () => {
         { ler: jest.fn() } as never,
         { analisar: jest.fn() } as never,
         daPeca as never,
+        SEM_PROMPT_DE_IMAGEM,
       );
 
       const r = await comDeducao.execute({
@@ -1848,6 +1869,7 @@ describe('RotearMensagemInternaUseCase', () => {
         { ler: jest.fn() } as never,
         { analisar: jest.fn() } as never,
         daPeca as never,
+        SEM_PROMPT_DE_IMAGEM,
       );
 
       await comAtalho.execute({
@@ -1895,6 +1917,7 @@ describe('RotearMensagemInternaUseCase', () => {
         { ler: jest.fn() } as never,
         { analisar: jest.fn() } as never,
         daPeca as never,
+        SEM_PROMPT_DE_IMAGEM,
       );
 
       const r = await comPeca.execute({
@@ -2031,6 +2054,7 @@ describe('RotearMensagemInternaUseCase — a conversa do Yerlon, de ponta a pont
       { ler: jest.fn() } as never,
       { analisar: jest.fn() } as never,
       SEM_FOTO_DE_PECA,
+      SEM_PROMPT_DE_IMAGEM,
     );
     const falar = (texto: string, extra: object = {}) =>
       roteador.execute({ de: DE, texto, em: Date.now(), ...extra });
@@ -2182,6 +2206,7 @@ describe('RotearMensagemInternaUseCase — a consulta do Lucas, de ponta a ponta
       { ler: jest.fn() } as never,
       { analisar: jest.fn() } as never,
       SEM_FOTO_DE_PECA,
+      SEM_PROMPT_DE_IMAGEM,
     );
     const falar = (texto: string) =>
       roteador.execute({ de: DE, texto, em: Date.now() });

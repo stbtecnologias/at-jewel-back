@@ -9,12 +9,29 @@ import { gruposDaBusca, SINONIMOS } from './sinonimos';
  */
 describe('gruposDaBusca — a palavra dela e a sigla do catálogo', () => {
   /* ESTE É O TESTE. O resto é contorno. */
-  it('"diamante" leva as duas grafias do catálogo', () => {
+  it('"diamante" leva TODAS as grafias do catálogo, e eram cinco', () => {
+    // ======================================================================
+    // `DIAM`, `BRI` e `BRILH` ENTRARAM EM 29/10/2026. O teste dizia "as duas
+    // grafias", e a base dizia outra coisa.
+    //
+    // Achado ao montar a ficha da peça para o prompt de imagem:
+    //
+    //   DIAM    174 peças — e 123 delas SEM DTS nem DMT
+    //   BRI     165 peças
+    //
+    // "BRINCO GOTA 194 DIAM 6.37 CTS" não aparecia para quem buscava
+    // diamante. É o mesmo defeito que este arquivo inteiro existe para
+    // corrigir, em grafias que ninguém tinha olhado.
+    //
+    // `BRI` é LAPIDAÇÃO (brilhante), e não pedra — decisão do Lucas de que
+    // entra mesmo assim: na etiqueta da casa ela sempre denota diamante, e
+    // quem escreve "diamante" quer essas peças.
+    // ======================================================================
     const grupos = gruposDaBusca('brinco de diamante');
 
     expect(grupos).toEqual([
       { termos: ['brinco'], siglas: [] },
-      { termos: ['diamante'], siglas: ['DTS', 'DMT'] },
+      { termos: ['diamante'], siglas: ['DTS', 'DMT', 'DIAM', 'BRI', 'BRILH'] },
     ]);
   });
 

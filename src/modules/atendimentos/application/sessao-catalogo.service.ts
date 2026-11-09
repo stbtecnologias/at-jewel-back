@@ -89,7 +89,40 @@ export interface FotoPendente {
    * a resposta com o numero faria a capa entrar como peca sem codigo.
    */
   comoCapa?: boolean;
+  /**
+   * ESTA FOTO E DO MARKETING, E ESPERA O CODIGO DA PECA — 09/11/2026.
+   *
+   * ==========================================================================
+   * A MESMA FILA SERVE A TRES CAMINHOS, E ELES NAO PODEM SE MISTURAR.
+   *
+   * Ate aqui tudo que estava pendurado esperava a mesma coisa: "de qual
+   * catalogo e?". Agora a foto do prompt tambem espera — mas espera OUTRA
+   * pergunta, e quem responde usa outra palavra.
+   *
+   * Sem esta marca, um "2" respondendo o catalogo arrastaria a foto do
+   * Marketing para dentro do catalogo, calado — e ele descobriria dias depois,
+   * pela peca estranha no PDF. Por isso o catalogo e a foto de peca passaram a
+   * recolher so o que e DELES.
+   *
+   * O RESGATE CONTINUA PEGANDO AS DUAS, de proposito: a foto que ja estava
+   * esperando catalogo e exatamente a que ele quer transformar em prompt
+   * quando diz "faz o prompt dessa" depois de manda-la.
+   * ==========================================================================
+   */
+  paraPrompt?: boolean;
   em: number;
+}
+
+/**
+ * De quem e a foto pendurada — ver `paraPrompt`.
+ *
+ * `undefined` quer dizer A FILA INTEIRA, e e o que o RESGATE usa.
+ */
+export type DonoDaFila = 'catalogo' | 'prompt';
+
+function deQuem(foto: FotoPendente, quais?: DonoDaFila): boolean {
+  if (!quais) return true;
+  return quais === 'prompt' ? foto.paraPrompt === true : !foto.paraPrompt;
 }
 
 /**
@@ -147,6 +180,33 @@ export interface FotoGuardada {
   fotoId: string;
   /** `#0004 Holiday` ou `BR26252`, para a resposta dizer qual foto e. */
   rotulo: string;
+  em: number;
+}
+
+/**
+ * A MIRA DE PROMPT — 29/10/2026, para o Marketing.
+ *
+ * ==========================================================================
+ * EXISTE PORQUE A FOTO CRUA NAO SE DISTINGUE DA FOTO DE CATALOGO.
+ *
+ * O Marketing manda a MESMA imagem nos dois casos: o packshot cru, com a
+ * massinha de apoio. Quando e para o catalogo, entra no catalogo; quando e
+ * para virar prompt, nao pode entrar. Olhar a foto nao separa as duas — so o
+ * que ele DISSE separa.
+ *
+ * E o que ele diz pode nao vir junto: o WhatsApp nao deixa mandar audio com
+ * legenda, entao o pedido ditado chega numa mensagem e a foto noutra.
+ *
+ * E EXATAMENTE O PROBLEMA DA `PecaMirada`, de 20/10 — "o destino tem de viver
+ * FORA da foto" —, e por isso tem a forma dela. A pergunta do Lucas em 29/10
+ * foi "se ele comecar enviando a imagem, nao ja cai em catalogo?". Cairia, e
+ * em silencio: com um catalogo lembrado na sessao, a foto crua nem pergunta.
+ * Com a mira armada, nao cai.
+ * ==========================================================================
+ */
+export interface MiraDePrompt {
+  /** O que ele pediu ao armar — "tira a massinha", "fundo cinza". */
+  pedido: string;
   em: number;
 }
 
@@ -248,6 +308,10 @@ export class SessaoCatalogoService {
   private readonly miradas = new Map<string, PecaMirada>();
   /** A peca de que se FALOU — o contexto da pergunta, e nao o destino. */
   private readonly faladas = new Map<string, PecaMirada>();
+  /** Quem esta pedindo PROMPT, e nao mandando foto para o catalogo. */
+  private readonly mirasDePrompt = new Map<string, MiraDePrompt>();
+  /** Quem ja disse "pode ir sem o codigo" — ver `aceitarSemCodigo`. */
+  private readonly semCodigoDePrompt = new Map<string, number>();
 
   /** Catalogo lembrado da ultima vez, se ainda dentro da janela. */
   catalogoAtual(
@@ -287,8 +351,15 @@ export class SessaoCatalogoService {
     return true;
   }
 
-  temPendentes(chave: string): boolean {
-    return (this.viva(chave)?.pendentes.length ?? 0) > 0;
+  /**
+   * Ha foto esperando? `quais` separa os dois donos da fila — ver `paraPrompt`.
+   *
+   * SEM FILTRO CONTINUA SENDO TUDO, de proposito: quem pergunta sem dizer de
+   * quem quer esta perguntando pela fila, e nao por um caminho.
+   */
+  temPendentes(chave: string, quais?: DonoDaFila): boolean {
+    const fila = this.viva(chave)?.pendentes ?? [];
+    return fila.some((f) => deQuem(f, quais));
   }
 
   /**
@@ -570,6 +641,67 @@ export class SessaoCatalogoService {
     this.miradas.delete(chave);
   }
 
+  // ---------------------------------------------------------------------------
+  // A mira de prompt — ver `MiraDePrompt`
+  // ---------------------------------------------------------------------------
+
+  /** Daqui para a frente, foto que chegar vira prompt. */
+  mirarPrompt(chave: string, pedido: string): void {
+    this.mirasDePrompt.set(chave, { pedido, em: Date.now() });
+  }
+
+  /** Esta pessoa esta pedindo prompt, se ainda dentro da janela. */
+  promptMirado(chave: string): MiraDePrompt | null {
+    const m = this.mirasDePrompt.get(chave);
+    if (!m) return null;
+    if (Date.now() - m.em > JANELA_MS) {
+      this.mirasDePrompt.delete(chave);
+      return null;
+    }
+    // A JANELA CONTA DA ULTIMA FOTO, pela mesma razao da `pecaMirada`: quem
+    // manda seis pecas para tratar leva mais que trinta minutos.
+    m.em = Date.now();
+    return m;
+  }
+
+  esquecerMiraDePrompt(chave: string): void {
+    this.mirasDePrompt.delete(chave);
+    // A VALVULA MORRE COM A MIRA. Dizer "pode ir sem codigo" foi resposta a
+    // uma pergunta DESTE assunto; levada para o proximo, ela calaria a
+    // pergunta numa conversa que ainda nem comecou.
+    this.semCodigoDePrompt.delete(chave);
+  }
+
+  /**
+   * "PODE IR SEM CODIGO" — a valvula de escape da pergunta, 09/11/2026.
+   *
+   * ==========================================================================
+   * EXISTE PARA A RAJADA, e sem ela a pergunta seria um pedagio.
+   *
+   * A pergunta do codigo e boa uma vez. Repetida a cada foto de uma rajada de
+   * dez, vira obstaculo — e o Marketing nem sempre TEM o codigo: a peca pode
+   * estar sendo fotografada antes de existir no cadastro.
+   *
+   * Entao ele responde uma vez, e vale pela janela inteira. Nao e preferencia
+   * guardada: morre em trinta minutos, como tudo nesta sessao, e morre junto
+   * com a mira quando ele muda de assunto.
+   * ==========================================================================
+   */
+  aceitarSemCodigo(chave: string): void {
+    this.semCodigoDePrompt.set(chave, Date.now());
+  }
+
+  /** Ele ja disse, nesta janela, que pode escrever sem o codigo? */
+  aceitouSemCodigo(chave: string): boolean {
+    const em = this.semCodigoDePrompt.get(chave);
+    if (em === undefined) return false;
+    if (Date.now() - em > JANELA_MS) {
+      this.semCodigoDePrompt.delete(chave);
+      return false;
+    }
+    return true;
+  }
+
   /** Guarda o codigo que chegou antes da foto. Substitui o anterior. */
   adiantarCodigo(chave: string, codigo: CodigoAdiantado): void {
     const s = this.viva(chave) ?? this.nova();
@@ -699,12 +831,18 @@ export class SessaoCatalogoService {
     return n;
   }
 
-  /** Retira e devolve tudo que estava esperando. */
-  recolherPendentes(chave: string): FotoPendente[] {
+  /**
+   * Retira e devolve o que estava esperando — SO O QUE E DE QUEM PEDIU.
+   *
+   * O QUE NAO FOI PEDIDO FICA NA FILA, e isso e o ponto: o catalogo recolhendo
+   * tudo levaria junto a foto que o Marketing pendurou esperando o codigo da
+   * peca. Ver `paraPrompt`.
+   */
+  recolherPendentes(chave: string, quais?: DonoDaFila): FotoPendente[] {
     const s = this.viva(chave);
     if (!s) return [];
-    const fila = s.pendentes;
-    s.pendentes = [];
+    const fila = s.pendentes.filter((f) => deQuem(f, quais));
+    s.pendentes = s.pendentes.filter((f) => !deQuem(f, quais));
     s.atualizadoEm = Date.now();
     this.sessoes.set(chave, s);
     return fila;

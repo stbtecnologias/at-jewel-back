@@ -32,6 +32,8 @@ import { ProcessarMensagemInternaUseCase } from './application/use-cases/process
 import { EncaminharLeadUseCase } from './application/use-cases/encaminhar-lead.use-case';
 import { ProcessarFotoCatalogoUseCase } from './application/use-cases/processar-foto-catalogo.use-case';
 import { FotosDePecaPeloWhatsappUseCase } from './application/use-cases/fotos-de-peca-pelo-whatsapp.use-case';
+import { PromptDeImagemUseCase } from './application/use-cases/prompt-de-imagem.use-case';
+import { PromptDeImagemService } from './application/prompt-de-imagem.service';
 import { ResolverVendedoraPorNomeUseCase } from './application/use-cases/resolver-vendedora-por-nome.use-case';
 import { RotearMensagemInternaUseCase } from './application/use-cases/rotear-mensagem-interna.use-case';
 import { ConsultarAuditoriaUseCase } from './application/use-cases/consultar-auditoria.use-case';
@@ -184,6 +186,11 @@ import { AnalisarTomUseCase } from '../atendimento/application/analisar-tom.use-
     // sessao com o canal do catalogo porque e a mesma conversa; o que muda e
     // o destino da imagem.
     FotosDePecaPeloWhatsappUseCase,
+    // 29/10 — a foto que vira PROMPT em ingles para o Marketing. Tambem divide
+    // a sessao do catalogo, e pelo mesmo motivo: e a mesma conversa, e o que
+    // muda e o destino da imagem.
+    PromptDeImagemService,
+    PromptDeImagemUseCase,
     ResolverVendedoraPorNomeUseCase,
     ProcessarMensagemGestaoUseCase,
     // A recepcao: o menu do perfil e a memoria do numero digitado depois dele.

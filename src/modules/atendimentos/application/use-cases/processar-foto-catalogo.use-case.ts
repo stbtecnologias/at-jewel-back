@@ -1031,7 +1031,10 @@ export class ProcessarFotoCatalogoUseCase {
     const catalogo = analise.catalogo;
     this.sessao.lembrarCatalogo(de, catalogo);
 
-    const fila = this.sessao.recolherPendentes(de);
+    // SO AS FOTOS DO CATALOGO — 09/11/2026. A foto que o Marketing pendurou
+    // esperando o codigo da peca fica onde esta: um "2" dito aqui responde a
+    // pergunta DESTE caminho, e nao a dele. Ver `paraPrompt`.
+    const fila = this.sessao.recolherPendentes(de, 'catalogo');
     if (fila.length === 0) {
       return {
         resposta: `Certo — as próximas fotos vão para o #${catalogo.numero} ${catalogo.nome}.`,
@@ -1462,8 +1465,9 @@ export class ProcessarFotoCatalogoUseCase {
     };
   }
 
+  /** Foto esperando O CATALOGO. A do prompt espera outra pergunta. */
   temFotoEsperando(de: string): boolean {
-    return this.sessao.temPendentes(de);
+    return this.sessao.temPendentes(de, 'catalogo');
   }
 
   /**
@@ -2810,7 +2814,24 @@ export class ProcessarFotoCatalogoUseCase {
     const ouAPeca = peca
       ? `\n\nOu é para a peça ${peca.codigoErp}, de que estávamos falando?`
       : '\n\nOu é para uma peça? Me diz o código dela.';
-    return `De qual catálogo é?\n${lista}\n\nResponde com o número ou o nome.${ouAPeca}`;
+    // ======================================================================
+    // A TERCEIRA PORTA: O PROMPT — 29/10/2026, pedido dele.
+    //
+    // *"Nesse texto fica confuso, ou sem entender que ele pode gerar
+    //   prompt."*
+    //
+    // E OFERECIDA A TODO MUNDO, e nao so a quem e MARKETING, pela MESMA
+    // razao escrita no bloco acima: a versao condicional da peca estava
+    // "certa" e era inutil, porque quem nao a via nao sabia que existia. E o
+    // caminho do prompt e mesmo de todos — quem decide e `catalogo:write`,
+    // nao o papel.
+    //
+    // E SEM PALAVRA MAGICA, pela regra de 20/10: a frase diz o que ele pode
+    // querer, nao o comando que ele tem de digitar.
+    // ======================================================================
+    const ouOPrompt =
+      '\nOu é para gerar o prompt de tratamento da imagem? Me diz que eu escrevo.';
+    return `De qual catálogo é?\n${lista}\n\nResponde com o número ou o nome.${ouAPeca}${ouOPrompt}`;
   }
 
   /**
@@ -2870,15 +2891,38 @@ export class ProcessarFotoCatalogoUseCase {
         await Promise.all(
           fotos.map((f) => this.armazenamento.remover(f.arquivoId)),
         );
+        // ================================================================
+        // O AVISO DIZ O QUE A FOTO ESPERAVA — 09/11/2026.
+        //
+        // A fila passou a ter dois donos, e "ficou meia hora sem catálogo"
+        // dito ao Marketing seria uma frase sobre um assunto que ele nunca
+        // tocou — ele esperava a pergunta do CODIGO. Quando as duas vencem
+        // juntas, cada grupo leva o seu aviso.
+        // ================================================================
+        const doPrompt = fotos.filter((f) => f.paraPrompt);
+        const doCatalogo = fotos.filter((f) => !f.paraPrompt);
+
         // Numero da Elena, como todo o resto do catalogo.
-        await this.whatsapp.enviarTexto(
-          chat,
-          fotos.length === 1
-            ? 'A foto que você mandou ficou meia hora sem catálogo, e eu descartei — ninguém me disse de qual era. ' +
-                'Se ainda quiser, manda de novo com o número na legenda, assim: 0003.'
-            : `As ${fotos.length} fotos que você mandou ficaram meia hora sem catálogo, e eu descartei — ninguém me disse de qual eram. ` +
-                'Se ainda quiser, manda de novo com o número na legenda, assim: 0003.',
-        );
+        if (doCatalogo.length > 0) {
+          await this.whatsapp.enviarTexto(
+            chat,
+            doCatalogo.length === 1
+              ? 'A foto que você mandou ficou meia hora sem catálogo, e eu descartei — ninguém me disse de qual era. ' +
+                  'Se ainda quiser, manda de novo com o número na legenda, assim: 0003.'
+              : `As ${doCatalogo.length} fotos que você mandou ficaram meia hora sem catálogo, e eu descartei — ninguém me disse de qual eram. ` +
+                  'Se ainda quiser, manda de novo com o número na legenda, assim: 0003.',
+          );
+        }
+        if (doPrompt.length > 0) {
+          await this.whatsapp.enviarTexto(
+            chat,
+            doPrompt.length === 1
+              ? 'A foto do prompt ficou meia hora esperando o código da peça, e eu descartei. ' +
+                  'Manda de novo — com o código, ou dizendo que não tem, que eu escrevo pela foto.'
+              : `As ${doPrompt.length} fotos do prompt ficaram meia hora esperando o código da peça, e eu descartei. ` +
+                  'Manda de novo — com o código, ou dizendo que não tem, que eu escrevo pela foto.',
+          );
+        }
       } catch (err) {
         this.logger.error(
           `Falha ao descartar/avisar fotos vencidas: ${String(err)}`,
@@ -2909,6 +2953,35 @@ export class ProcessarFotoCatalogoUseCase {
     }, falta + 1000);
     this.varredura.unref?.();
   }
+}
+
+/**
+ * A REFERENCIA DA PECA NUM TEXTO — exportada para o quinto caminho, 29/10.
+ *
+ * `RE_CODIGO` e a mesma expressao que o canal ja usa para achar `BR26396` na
+ * legenda. UMA SO, pelo motivo de sempre: duas divergem no dia em que alguem
+ * aceitar um formato novo de um lado.
+ */
+export function codigoDaPecaNoTexto(texto: string): string | null {
+  const m = texto.match(RE_CODIGO);
+  return m ? m[1].toUpperCase() : null;
+}
+
+/** O texto SEM a referencia — ver `codigoDaPecaNoTexto`. */
+export function semCodigoDaPeca(texto: string): string {
+  return texto.replace(RE_CODIGO, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * O normalizador DO CANAL, exportado para o quinto caminho — 29/10/2026.
+ *
+ * UM SO, e nao uma copia dentro do `PromptDeImagemUseCase`: os cinco matchers
+ * do canal tem de enxergar o texto do mesmo jeito, ou um deles passa a casar
+ * com o que os outros quatro nao casam — e a divergencia aparece na primeira
+ * correcao que alguem fizer num lado so.
+ */
+export function normalizarTextoDoCanal(texto: string): string {
+  return normalizar(texto);
 }
 
 /** Minusculas, sem acento e sem pontuacao — para casar nome digitado no celular. */

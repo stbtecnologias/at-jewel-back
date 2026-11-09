@@ -13,6 +13,23 @@ const SEM_FOTO_DE_PECA = {
   mirar: jest.fn().mockResolvedValue(null),
   foto: jest.fn().mockResolvedValue(null),
 } as never;
+/**
+ * O caminho do PROMPT DE IMAGEM, mudo — 29/10/2026.
+ *
+ * Os dois em `false` sao o valor certo para todo teste que nao e sobre ele:
+ * sem pedido de prompt e sem mira armada, a imagem segue o caminho de
+ * sempre, que e o catalogo.
+ */
+const SEM_PROMPT_DE_IMAGEM = {
+  falaDePromptDeImagem: () => false,
+  temMira: () => false,
+  // Ninguem com foto esperando a pergunta do codigo — 09/11/2026.
+  temFotoDePromptEsperando: () => false,
+  responderSobreOCodigo: jest.fn().mockResolvedValue(null),
+  desarmarSeMudouDeAssunto: jest.fn(),
+  doTexto: jest.fn().mockResolvedValue(null),
+  daFoto: jest.fn().mockResolvedValue(null),
+} as never;
 
 /**
  * ==========================================================================
@@ -98,6 +115,7 @@ describe('o gerente de vendas na Helena', () => {
       naoParaTudo(),
       naoParaTudo(),
       SEM_FOTO_DE_PECA,
+      SEM_PROMPT_DE_IMAGEM,
     );
   });
 

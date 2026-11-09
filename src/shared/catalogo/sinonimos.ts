@@ -59,7 +59,22 @@ export const SINONIMOS: Readonly<Record<string, readonly string[]>> = {
   // --- pedra -------------------------------------------------------------
   // Provadas pelo cruzamento com a etiqueta das mesmas peças.
   esmeralda: ['ESM'],
-  diamante: ['DTS', 'DMT'],
+  // DIAM ENTROU EM 29/10/2026, achado ao montar a ficha da peça para o prompt
+  // de imagem: a etiqueta escreve `DIAM` em **174 peças**, e em **123 delas
+  // sem DTS nem DMT**. Essas 123 eram invisíveis para quem buscava
+  // "diamante" — "BRINCO GOTA 194 DIAM 6.37 CTS" não aparecia.
+  // ==========================================================================
+  // E `BRI`/`BRILH` ENTRARAM NO MESMO DIA, por decisão dele.
+  //
+  // "Brilhante" é LAPIDAÇÃO, não pedra — eu apontei isso e ele mandou entrar.
+  // E a base lhe dá razão: na etiqueta da casa `BRI` aparece em **165 peças**
+  // e sempre denota diamante ("BRINCO FIO BRI/BAGS" é brilhante/baguete, as
+  // duas lapidações do diamante). Quem escreve "diamante" quer essas peças.
+  //
+  // O risco de juntar dois conceitos existe, mas é o oposto do defeito que
+  // este arquivo combate: devolver zero quando a peça está lá.
+  // ==========================================================================
+  diamante: ['DTS', 'DMT', 'DIAM', 'BRI', 'BRILH'],
   fancy: ['FY'],
   rubi: ['RBI'],
   rubelita: ['RUB', 'RBL', 'RUBL'],
@@ -81,6 +96,8 @@ export const SINONIMOS: Readonly<Record<string, readonly string[]>> = {
   apatita: ['APT'],
 
   // --- família ------------------------------------------------------------
+  // (As chaves de PEDRA acima são as que `PEDRAS`, no fim do arquivo, lista.
+  //  Quem acrescentar pedra nova precisa acrescentar nos dois lugares.)
   // RIVEIRA é como a coluna `familia` grava; RIV, como a etiqueta abrevia.
   riviera: ['RIV', 'RIVEIRA'],
 
@@ -265,3 +282,92 @@ export function gruposDaBusca(busca: string | undefined): GrupoDeBusca[] {
 
   return grupos;
 }
+
+/**
+ * A MESMA TABELA, LIDA AO CONTRARIO: sigla -> palavra — 29/10/2026.
+ *
+ * ==========================================================================
+ * POR QUE AQUI, E NAO NUM SEGUNDO MAPA.
+ *
+ * O `SINONIMOS` responde "o que a etiqueta escreve quando a pessoa diz
+ * esmeralda?". O prompt de imagem para o Marketing precisa da pergunta
+ * virada: a etiqueta diz `ESM`, e o prompt em ingles precisa da palavra.
+ *
+ * E O MESMO CONHECIMENTO. Um segundo mapa diverge na primeira sigla nova que
+ * alguem acrescentar de um lado so — e a tabela de cima nasceu dizendo que
+ * "vai crescer: a equipe vai mandar as siglas dela". Invertida em tempo de
+ * carga, ela cresce junto, de graca.
+ *
+ * COLISAO: uma sigla que aparece em mais de uma palavra fica com a PRIMEIRA,
+ * e isso e intencional. `RUB` e rubelita (e nao rubi, que e `RBI`) — a
+ * armadilha que o comentario la de cima descreve. A ordem do objeto e a
+ * decisao, e ela ja foi tomada uma vez.
+ * ==========================================================================
+ */
+const PALAVRA_DA_SIGLA: Readonly<Record<string, string>> = Object.freeze(
+  Object.entries(SINONIMOS).reduce<Record<string, string>>(
+    (mapa, [palavra, siglas]) => {
+      for (const sigla of siglas) {
+        if (!(sigla in mapa)) mapa[sigla] = palavra;
+      }
+      return mapa;
+    },
+    {},
+  ),
+);
+
+/**
+ * `ESM` -> `esmeralda`, `OB` -> `ouro branco`. `null` quando nao conhecemos.
+ *
+ * `null` E RESPOSTA, e nao falha: a etiqueta tem siglas que ninguem mapeou
+ * ainda, e devolver a propria sigla faria o prompt em ingles carregar "OB"
+ * como se fosse palavra.
+ */
+export function palavraDaSigla(sigla: string): string | null {
+  return PALAVRA_DA_SIGLA[sigla.trim().toUpperCase()] ?? null;
+}
+
+/**
+ * QUAIS CHAVES DO `SINONIMOS` SAO PEDRA — 29/10/2026.
+ *
+ * ==========================================================================
+ * NASCEU DE UM DEFEITO QUE O TESTE PEGOU.
+ *
+ * A ficha da peca para o prompt de imagem varria a etiqueta procurando
+ * siglas conhecidas, e devolveu:
+ *
+ *     Pedras: quilate, safira
+ *
+ * `quilate` nao e pedra: e a unidade `CTS`, que entrou no mapa em 08/10 por
+ * um motivo legitimo da BUSCA. A varredura so excluia metal, entao a unidade
+ * passou — e `quilate` viajaria para o prompt em ingles como se fosse o nome
+ * de uma pedra. Nomear errado e exatamente o que faz a IA de imagem TROCAR a
+ * pedra.
+ *
+ * A secao `--- pedra ---` do mapa acima ja dizia quais sao, mas so para quem
+ * LE. Isto e a mesma informacao, para quem EXECUTA.
+ * ==========================================================================
+ */
+export const PEDRAS: ReadonlySet<string> = new Set([
+  'esmeralda',
+  'diamante',
+  'fancy',
+  'rubi',
+  'rubelita',
+  'safira',
+  'turquesa',
+  'tanzanita',
+  'topazio',
+  'perola',
+  'madreperola',
+  'coral',
+  'opala',
+  'kunzita',
+  'turmalina',
+  'ametista',
+  'citrino',
+  'agua marinha',
+  'morganita',
+  'agata',
+  'apatita',
+]);

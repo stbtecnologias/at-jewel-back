@@ -531,7 +531,10 @@ export class FotosDePecaPeloWhatsappUseCase {
     texto: string,
     nomeRemetente: string,
   ): Promise<RespostaFoto | null> {
-    if (!this.sessao.temPendentes(de)) return null;
+    // A FOTO DO PROMPT NAO ENTRA AQUI — 09/11/2026. Ela espera o codigo da
+    // peca para virar TEXTO, e um "é da BR26396" dito depois a anexaria na
+    // peca, calado. Ver `paraPrompt`.
+    if (!this.sessao.temPendentes(de, 'catalogo')) return null;
 
     const t = texto.trim();
     // A PECA PODE VIR DA CONVERSA OU DA PROPRIA RESPOSTA — 20/10/2026.
@@ -557,7 +560,7 @@ export class FotosDePecaPeloWhatsappUseCase {
       RE_E_DA_PECA.test(t) || t.toUpperCase() === peca.codigoErp.toUpperCase();
     if (!obvio && !(await this.ehDaPecaPeloModelo(t, peca))) return null;
 
-    const penduradas = this.sessao.recolherPendentes(de);
+    const penduradas = this.sessao.recolherPendentes(de, 'catalogo');
     if (penduradas.length === 0) return null;
 
     const entraram: string[] = [];
