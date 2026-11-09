@@ -27,5 +27,21 @@ export class AdminUser {
      * ser reconhecido no WhatsApp interno — hoje ninguem le, so grava.
      */
     public readonly telefone: string | null = null,
+    /**
+     * A CONTA ESTA LIGADA? — migracao 77, 09/11/2026.
+     *
+     * ======================================================================
+     * O PADRAO E `true`, E ISSO E DELIBERADO.
+     *
+     * Toda construcao de `AdminUser` que existia antes desta coluna continua
+     * valendo — e, mais importante, um teste ou um caminho que esqueca de
+     * informar o campo cria alguem ATIVO, e nao alguem trancado para fora.
+     *
+     * O risco do padrao oposto e pior que o deste: `false` por omissao
+     * derrubaria o login de quem nunca foi desativado, e o sintoma seria
+     * "credenciais invalidas" — a mensagem que nao explica nada, de proposito.
+     * ======================================================================
+     */
+    public readonly ativo: boolean = true,
   ) {}
 }

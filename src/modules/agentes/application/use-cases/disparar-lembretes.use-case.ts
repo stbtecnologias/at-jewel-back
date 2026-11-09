@@ -105,6 +105,27 @@ export class DispararLembretesUseCase {
     }
 
     const dono = await this.admins.findById(lembrete.donoId);
+
+    // ======================================================================
+    // O DESLIGADO NAO RECEBE MAIS — migracao 77, 09/11/2026.
+    //
+    // PERDIDO, e nao ADIADO: adiar e para o que pode mudar sozinho (um
+    // telefone que entra no cadastro). Uma conta desativada nao volta por
+    // conta propria, e o lembrete ficaria sendo reavaliado a cada rodada ate
+    // o teto de atraso o matar — barulho no log por horas, com o mesmo fim.
+    //
+    // E O LEMBRETE CONTINUA EXISTINDO, fechado como perdido. E o oposto do
+    // DELETE, que o apagava: aqui da para ver que existiu, de quem era e que
+    // nao foi entregue. Era exatamente isso que o Lucas nao queria perder.
+    // ======================================================================
+    if (dono && !dono.ativo) {
+      await this.lembretes.fechar(lembrete.id, 'PERDIDO');
+      this.logger.warn(
+        `Lembrete ${lembrete.id} perdido: o dono esta desativado.`,
+      );
+      return 'PERDIDO';
+    }
+
     if (!dono?.telefone) {
       // ADIADO e nao PERDIDO: o cadastro pode ganhar o telefone a qualquer
       // momento, e ate la o teto de atraso e quem encerra.

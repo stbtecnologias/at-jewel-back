@@ -71,7 +71,12 @@ export class AdminUserRepository implements IAdminUserRepository {
 
   async atualizarDados(
     id: string,
-    dados: { nome?: string | null; telefone?: string | null; telefoneHash?: string | null },
+    dados: {
+      nome?: string | null;
+      telefone?: string | null;
+      telefoneHash?: string | null;
+      ativo?: boolean;
+    },
   ): Promise<AdminUser> {
     // `update` com objeto parcial so escreve as chaves presentes — e por isso
     // que "ausente = nao mexe" funciona sem SQL condicional.
@@ -100,6 +105,7 @@ export class AdminUserRepository implements IAdminUserRepository {
       row.role,
       row.nome,
       row.telefone,
+      row.ativo,
     );
   }
 }

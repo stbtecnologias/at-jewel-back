@@ -99,6 +99,11 @@ export class AlertasScheduler {
     const destinos: string[] = [];
 
     for (const admin of todos) {
+      // O DESLIGADO SAI DA LISTA — migracao 77, 09/11/2026. Alerta e mensagem
+      // nao pedida, que chega sozinha: continuar mandando para quem saiu da
+      // casa e o pior tipo de vazamento, porque ninguem repara que esta
+      // acontecendo. Vem antes do telefone porque e a razao mais forte.
+      if (!admin.ativo) continue;
       if (!admin.telefone) continue;
       if (await this.permissoes.possui(admin.role, PERMISSAO_GESTAO)) {
         destinos.push(admin.telefone);

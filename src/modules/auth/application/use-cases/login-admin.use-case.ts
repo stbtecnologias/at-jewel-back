@@ -33,6 +33,19 @@ export class LoginAdminUseCase {
     const passwordMatch = await bcrypt.compare(password, admin.passwordHash);
     if (!passwordMatch) throw new UnauthorizedException('Credenciais inválidas');
 
+    // ======================================================================
+    // A CONTA DESLIGADA NAO ENTRA — migracao 77, 09/11/2026.
+    //
+    // DEPOIS DA SENHA, E NAO ANTES, de proposito. Recusar antes de conferir a
+    // senha faria o tempo de resposta diferenciar "conta desativada" de
+    // "senha errada" para quem esta chutando — e e a mesma razao de a frase
+    // ser a de sempre, "Credenciais invalidas": quem tenta entrar na conta de
+    // alguem nao fica sabendo que ela existe e esta so desligada.
+    //
+    // Quem foi desligado por engano descobre pelo painel, com quem administra.
+    // ======================================================================
+    if (!admin.ativo) throw new UnauthorizedException('Credenciais inválidas');
+
     // expiresIn vem do default do JwtModule (env JWT_ACCESS_TTL).
     const accessToken = this.jwtService.sign({
       sub: admin.id,

@@ -86,10 +86,26 @@ export class BuscarAdminPorTelefoneUseCase {
       const achado = await this.repo.buscarPorTelefoneHash(hashField(variante));
       if (!achado) continue;
 
+      // ==================================================================
+      // A CONTA DESLIGADA NAO E RECONHECIDA — migracao 77, 09/11/2026.
+      //
+      // UMA LINHA QUE FECHA AS TRES AGENTES. Este use case e o funil unico do
+      // canal interno: Elena, Helena e Anastasia entram todas por aqui. E a
+      // regra de 29/09 — "a guarda fica no funil, e nao em cada tradutor".
+      //
+      // E ELA PRECISA EXISTIR porque o reconhecimento das agentes e POR
+      // TELEFONE, e nao passa pelo login: fechar so a porta do painel
+      // deixaria quem foi desligado conversando com a Anastasia
+      // normalmente — faturamento, carteira e desempenho da equipe pelo
+      // WhatsApp, sem nunca mais digitar uma senha.
+      // ==================================================================
+      if (!achado.ativo) return null;
+
       const podeGerir = await this.permissoes.possui(achado.role, permissaoExigida);
       // Reconhecido, mas sem permissao: devolve null, e nao um erro. Quem chama
       // trata como "nao reconhecido" e fica em silencio — mesma resposta de um
-      // numero desconhecido, para nao confirmar que o cadastro existe.
+      // numero desconhecido, para nao confirmar que o cadastro existe. O
+      // desligado entra nesse mesmo silencio, pela linha acima.
       return podeGerir ? achado : null;
     }
     return null;

@@ -36,6 +36,13 @@ export class LoginGoogleUseCase {
       throw new UnauthorizedException('Conta não autorizada para este painel');
     }
 
+    // A CONTA DESLIGADA NAO ENTRA — migracao 77. A MESMA frase de quem nunca
+    // teve conta: sao duas portas para a mesma sala, e fechar so uma seria
+    // pior que nao fechar nenhuma, porque pareceria fechada.
+    if (!admin.ativo) {
+      throw new UnauthorizedException('Conta não autorizada para este painel');
+    }
+
     // expiresIn vem do default do JwtModule (env JWT_ACCESS_TTL).
     const accessToken = this.jwtService.sign({
       sub: admin.id,

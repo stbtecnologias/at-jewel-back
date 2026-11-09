@@ -17,7 +17,14 @@ import { DispararLembretesUseCase } from './disparar-lembretes.use-case';
  */
 
 const AGORA = new Date('2026-09-30T15:00:00-03:00');
-const DONO = { id: 'adm-1', nome: 'Lucas', telefone: '5585999990000' };
+// `ativo` desde a migracao 77, 09/11/2026: lembrete de dono DESLIGADO vira
+// PERDIDO em vez de ser entregue. Aqui o dono trabalha na casa.
+const DONO = {
+  id: 'adm-1',
+  nome: 'Lucas',
+  telefone: '5585999990000',
+  ativo: true,
+};
 
 const umLembrete = (over: Partial<{ id: string; quando: Date; texto: string }> = {}) => ({
   id: over.id ?? 'lem-1',
@@ -108,6 +115,30 @@ describe('DispararLembretesUseCase', () => {
     expect(lembretes.fechar).toHaveBeenCalledWith('lem-1', 'PERDIDO');
   });
 
+  /**
+   * ==========================================================================
+   * O DONO DESLIGADO — migracao 77, 09/11/2026.
+   *
+   * PERDIDO, e nao ADIADO: adiar e para o que pode mudar sozinho, como um
+   * telefone que entra no cadastro. Conta desativada nao volta por conta
+   * propria, e o lembrete ficaria sendo reavaliado a cada rodada ate o teto de
+   * atraso o matar — horas de barulho no log, com o mesmo fim.
+   *
+   * E ELE CONTINUA EXISTINDO, fechado. E o oposto do DELETE, que o apagava:
+   * aqui da para ver que existiu, de quem era e que nao foi entregue.
+   * ==========================================================================
+   */
+  it('dono DESATIVADO: nao envia, e fecha como PERDIDO', async () => {
+    admins.findById.mockResolvedValue({ ...DONO, ativo: false });
+    lembretes.vencidos.mockResolvedValue([umLembrete()]);
+
+    const r = await useCase.execute(AGORA);
+
+    expect(r).toEqual({ enviados: 0, perdidos: 1 });
+    expect(whatsapp.enviarTexto).not.toHaveBeenCalled();
+    expect(lembretes.fechar).toHaveBeenCalledWith('lem-1', 'PERDIDO');
+  });
+
   it('dono sem telefone: nao envia e NAO fecha — o lembrete continua esperando', async () => {
     admins.findById.mockResolvedValue({ ...DONO, telefone: null });
     lembretes.vencidos.mockResolvedValue([umLembrete()]);
@@ -147,7 +178,12 @@ describe('DispararLembretesUseCase', () => {
   });
 
   it('cada dono recebe o seu, no proprio numero', async () => {
-    const outra = { id: 'adm-2', nome: 'Fabi', telefone: '5585988880000' };
+    const outra = {
+      id: 'adm-2',
+      nome: 'Fabi',
+      telefone: '5585988880000',
+      ativo: true,
+    };
     lembretes.vencidos.mockResolvedValue([
       umLembrete({ id: 'lem-1', texto: 'o meu' }),
       { ...umLembrete({ id: 'lem-2', texto: 'o dela' }), donoId: outra.id },

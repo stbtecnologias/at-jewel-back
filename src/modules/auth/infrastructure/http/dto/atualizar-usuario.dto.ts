@@ -1,4 +1,11 @@
-import { IsOptional, IsString, Matches, MaxLength, ValidateIf } from 'class-validator';
+import {
+  IsBoolean,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  ValidateIf,
+} from 'class-validator';
 import { SanitizeText } from '../../../../../shared/http/sanitize/sanitize-text.transform';
 
 export class AtualizarUsuarioDto {
@@ -23,4 +30,14 @@ export class AtualizarUsuarioDto {
     message: 'Telefone inválido. Use DDD + número, ex.: (99) 99999-9999',
   })
   telefone?: string;
+
+  /**
+   * Liga e desliga a conta — migracao 77, 09/11/2026.
+   *
+   * Campo ausente nao e tocado, como os outros. `false` fecha o painel, as
+   * agentes e os avisos que saem; o historico que a pessoa criou fica.
+   */
+  @IsOptional()
+  @IsBoolean()
+  ativo?: boolean;
 }

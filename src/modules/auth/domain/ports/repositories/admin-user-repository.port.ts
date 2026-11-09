@@ -47,7 +47,13 @@ export interface IAdminUserRepository {
    */
   atualizarDados(
     id: string,
-    dados: { nome?: string | null; telefone?: string | null; telefoneHash?: string | null },
+    dados: {
+      nome?: string | null;
+      telefone?: string | null;
+      telefoneHash?: string | null;
+      /** Migracao 77. `false` desliga a conta — ver `AtualizarUsuarioUseCase`. */
+      ativo?: boolean;
+    },
   ): Promise<AdminUser>;
   atualizarSenha(id: string, passwordHash: string): Promise<void>;
 }

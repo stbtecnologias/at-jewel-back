@@ -41,4 +41,8 @@ export class AdminUserOrmEntity {
   // Papel dinamico (migration 21): varchar referenciando roles.chave.
   @Column({ type: 'varchar', length: 40, default: 'ADMIN' })
   role: AdminRole;
+
+  /** Migracao 77. `false` = desligado — ver o cabecalho da migracao. */
+  @Column({ type: 'boolean', default: true })
+  ativo: boolean;
 }

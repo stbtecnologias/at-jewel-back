@@ -28,6 +28,22 @@ export class RefreshTokenUseCase {
       throw new UnauthorizedException('Refresh token inválido');
     }
 
+    // ======================================================================
+    // A SESSAO DE QUEM FOI DESLIGADO NAO SE RENOVA — migracao 77, 09/11/2026.
+    //
+    // ESTA E A PORTA QUE IMPORTA, e nao a do login. Quem ja estava dentro
+    // nunca mais passa pelo `login-admin`: a aba so renova. Sem esta linha, a
+    // conta desativada continuaria logada indefinidamente, e o `ativo` seria
+    // uma marca que nao fecha nada para quem ja estava usando o sistema.
+    //
+    // E A SESSAO MORRE AQUI, nao so para de renovar: o refresh e zerado, como
+    // nos dois casos abaixo. Quem recarregar a pagina cai na tela de login.
+    // ======================================================================
+    if (!admin.ativo) {
+      await this.adminUserRepo.updateRefreshToken(admin.id, null, null);
+      throw new UnauthorizedException('Refresh token inválido');
+    }
+
     const hash = createHash('sha256').update(rawRefreshToken).digest('hex');
     if (hash !== admin.refreshTokenHash) {
       // Hash nao bate. Pode ser: (a) token roubado e expirado pela rotacao,

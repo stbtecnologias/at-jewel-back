@@ -5,12 +5,15 @@ import type { IAdminUserRepository } from '../../domain/ports/repositories/admin
 import type { IGoogleTokenVerifier } from '../../domain/ports/google-token-verifier.port';
 
 describe('LoginGoogleUseCase', () => {
+  // `ativo` desde a migracao 77, 09/11/2026 — conta desligada nao entra, nem
+  // pela porta do Google. Esta aqui trabalha na casa.
   const admin = {
     id: 'a1',
     email: 'dona@atjewel.com',
     role: 'ADMIN' as const,
     passwordHash: 'x',
     nome: 'Dona',
+    ativo: true,
   };
 
   function montar(overrides?: {

@@ -54,20 +54,26 @@ export class UsuariosController {
   }
 
   /**
-   * Edita nome e telefone. Papel, e-mail e senha ficam de fora — ver o comentario
-   * em `AtualizarUsuarioUseCase`.
+   * Edita nome, telefone e o LIGA/DESLIGA. Papel, e-mail e senha ficam de
+   * fora — ver o comentario em `AtualizarUsuarioUseCase`.
    *
    * Campo ausente do corpo nao e tocado; `telefone: ""` apaga o telefone.
+   *
+   * O ID DE QUEM PEDE VAI JUNTO desde 09/11/2026, e so para uma coisa:
+   * impedir que alguem desative a propria conta. Mesma trava do remover.
    */
   @Patch(':id')
   atualizarUsuario(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AtualizarUsuarioDto,
+    @Request() req: { user: JwtPayload },
   ) {
     return this.atualizar.execute({
       id,
       nome: dto.nome,
       telefone: dto.telefone,
+      ativo: dto.ativo,
+      solicitanteId: req.user.sub,
     });
   }
 
