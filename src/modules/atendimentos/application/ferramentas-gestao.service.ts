@@ -868,11 +868,38 @@ export class FerramentasGestaoService {
         // ================================================================
         const empresaPedida = verLoja ? empresa?.trim() : undefined;
 
+        // ================================================================
+        // O PERIODO PASSOU A SER RECORTE — 30/10/2026, pedido dele.
+        //
+        // *"Quando a gestão quiser ver todas as vendas do mês de outubro (ou
+        //   outro mês/período), você pode listar tudo. Não é preciso
+        //   perguntar qual a vendedora."*
+        //
+        // ================================================================
+        // A REGRA ANTIGA E DE 02/10, E O MUNDO MUDOU EM 27/10.
+        //
+        // Ela nasceu quando o teto da lista era 500, e "periodo sozinho
+        // devolveria a loja inteira do mes" era um perigo de verdade. Desde
+        // 27/10 a lista inteira E O PADRAO, e o teto e `TETO_DE_LISTA`, que
+        // vale 20.000.
+        //
+        // A MEDIDA QUE FECHA O ARGUMENTO: outubro de 2026 tem DEZENOVE
+        // vendas, e o historico inteiro desde 2023 tem 1.412. "A loja
+        // inteira do mes" custa dezenove linhas.
+        //
+        // E O PRECO DA REGRA VELHA ERA PIOR QUE A LISTA: ele pediu "as
+        // vendas de todas as vendedoras em outubro", ela pediu o nome, ele
+        // insistiu duas vezes — e no fim ela chamou esta ferramenta UMA VEZ
+        // POR VENDEDORA, oito vezes. O titulo saiu com oito recortes
+        // emendados e o rodape repetido sete.
+        // ================================================================
         const temRecorte = Boolean(
           cliente?.trim() ||
             vendedora?.trim() ||
             documento?.trim() ||
-            empresaPedida,
+            empresaPedida ||
+            periodo ||
+            (de?.trim() && ate?.trim()),
         );
         if (!temRecorte) {
           return { status: 'EXIGE_RECORTE', linhas: [] };

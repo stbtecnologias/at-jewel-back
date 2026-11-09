@@ -632,7 +632,8 @@ const GESTAO_VENDAS_DETALHADAS_TOOL: Anthropic.Tool = {
     'Lista as vendas UMA A UMA, com data, documento, cliente, vendedora, valor e AS PECAS de cada uma — e ja diz quantas sao e quanto somam. ' +
     'E ESTA A FERRAMENTA DE "AS VENDAS": "me traga as vendas da Camila em 2025", "as vendas da Ylka", "me lista as vendas", "quais as compras da cliente X", "quais vendas a Camila fez em setembro", "quais pecas tinha a venda 1157", "o que o cliente Y comprou". ' +
     'PEDIR "AS VENDAS" E PEDIR A LISTA, e nao o total: quem quer so o numero pergunta QUANTO ou QUANTAS ("quanto a Camila vendeu em 2025"), e ai e o vendas_de_vendedora. Na duvida entre os dois, venha para ca — a lista ja vem com o total dentro, e o resumo nao vem com a lista. ' +
-    'Informe pelo menos UM entre cliente, vendedora e documento — periodo sozinho nao serve. ' +
+    'O PERIODO SOZINHO JA SERVE: "as vendas de outubro", "a lista de vendas de todas as vendedoras do mes" sao a LOJA INTEIRA naquela janela, numa chamada SO. Nao pergunte de qual vendedora, e NUNCA CHAME UMA VEZ POR VENDEDORA — a lista ja traz a coluna Vendedora, e uma chamada por nome emenda oito recortes no titulo e repete o rodape. ' +
+    'So pergunte o recorte quando nao vier NADA: nem nome, nem documento, nem janela de tempo. ' +
     'SO VENDA CONCLUIDA ENTRA: devolucao fica de fora, e e por isso que a CONTAGEM desta lista fecha com a do resumo. O VALOR nao fecha — o resumo desconta devolucao e esta soma nao —, e a resposta tem de dizer qual e qual quando os dois aparecerem. ' +
     'A LISTA COMPLETA SAI SOZINHA na conversa, escrita pelo sistema, logo depois da sua resposta — voce nao precisa repeti-la nem oferecer. Ela so nao sai se a pessoa pedir uma quantidade (`quantas`).',
   input_schema: {
@@ -4132,15 +4133,26 @@ export class AnthropicClient implements ILlmClient {
                 quantas: inteiroPositivo(entrada.quantas),
               });
 
-              // Faltou DE QUEM ou DE QUAL VENDA. Nao e "nao encontrei": e uma
-              // pergunta que ainda nao fechou.
+              // Faltou o RECORTE. Nao e "nao encontrei": e uma pergunta que
+              // ainda nao fechou.
               if (r.status === 'EXIGE_RECORTE') {
+                // ============================================================
+                // DESDE 30/10 O PERIODO JA E RECORTE, entao chegar aqui quer
+                // dizer que nao veio NADA — nem nome, nem documento, nem
+                // janela de tempo.
+                //
+                // A FRASE PASSOU A OFERECER O PERIODO PRIMEIRO, e isso e o
+                // conserto do caso dele: a pergunta antiga so sabia pedir
+                // NOME, e foi ela que fez a agente insistir em "qual
+                // vendedora?" depois de ele ter dito "todas" duas vezes.
+                // ============================================================
+                //
                 // A EMPRESA SO ENTRA NA FRASE PARA QUEM PODE USA-LA: para os
                 // outros ela nem existe como parametro, e oferecer um recorte
                 // que a pessoa nao tem criaria uma pergunta sem resposta.
                 return params.gestaoVendasPorEmpresaDisponivel
-                  ? 'Esta consulta e sempre sobre alguem, sobre uma venda ou sobre uma EMPRESA do grupo. Pergunte de qual cliente, vendedora, documento ou empresa ela quer, sem mencionar permissao nem limitacao de acesso.'
-                  : 'Esta consulta e sempre sobre alguem ou sobre uma venda. Pergunte de qual cliente, de qual vendedora ou de qual documento ela quer, sem mencionar permissao nem limitacao de acesso.';
+                  ? 'Faltou o recorte. Pergunte de que PERIODO ela quer — este mes, este ano, entre duas datas — ou, se ela preferir, de qual cliente, vendedora, documento ou empresa. Sem mencionar permissao nem limitacao de acesso.'
+                  : 'Faltou o recorte. Pergunte de que PERIODO ela quer — este mes, este ano, entre duas datas — ou, se ela preferir, de qual cliente, de qual vendedora ou de qual documento. Sem mencionar permissao nem limitacao de acesso.';
               }
               if (r.status === 'NAO_ENCONTRADA') {
                 if (r.sobre === 'cliente') {

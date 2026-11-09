@@ -104,6 +104,32 @@ function fimDoPrefixoComum(a: string, b: string): number {
 
 const SEPARADORES = new Set([' ', '·', '—', '-', '/', ',']);
 
+/**
+ * A nota de dois relatórios somados, SEM FRASE REPETIDA.
+ *
+ * ==========================================================================
+ * A COMPARAÇÃO ERA DE STRING INTEIRA, E ISSO SÓ FUNCIONA NA PRIMEIRA SOMA.
+ *
+ * Defeito visto em 30/10/2026, no teste dele. A gestora pediu as vendas de
+ * outubro, a agente chamou a ferramenta UMA VEZ POR VENDEDORA — oito —, e os
+ * oito relatórios foram somados dois a dois. O rodapé saiu assim:
+ *
+ *   "Só vendas concluídas — devolução não entra. Peça as devoluções para
+ *    vê-las. Dois recortes no mesmo arquivo — sem linha de total." ×7
+ *
+ * Porque `segundo.nota === primeiro.nota` só pega a repetição IMEDIATA: da
+ * segunda soma em diante, `primeiro.nota` já é a nota CONCATENADA, nunca
+ * igual à nota solta que chega — e o aviso do total era acrescentado de novo
+ * a cada par.
+ *
+ * AGORA A UNIDADE É A FRASE, e não o parágrafo. Cada frase entra uma vez, na
+ * ordem em que apareceu. Oito somas ou oitenta, a nota é a mesma.
+ *
+ * A causa raiz das oito chamadas foi corrigida no mesmo dia — período passou
+ * a ser recorte —, mas a guarda fica AQUI, no funil: qualquer soma de muitos
+ * relatórios cairia nisto de novo, e basta uma para a cliente ler.
+ * ==========================================================================
+ */
 function notaSomada(
   primeiro: Relatorio,
   segundo: Relatorio,
@@ -112,10 +138,25 @@ function notaSomada(
     primeiro.total || segundo.total
       ? 'Dois recortes no mesmo arquivo — sem linha de total.'
       : '';
-  const notas = [
-    primeiro.nota,
-    segundo.nota === primeiro.nota ? '' : segundo.nota,
-    avisoDoTotal,
-  ].filter((n): n is string => !!n && n.length > 0);
-  return notas.length > 0 ? notas.join(' ') : undefined;
+
+  const frases: string[] = [];
+  for (const nota of [primeiro.nota, segundo.nota, avisoDoTotal]) {
+    for (const frase of emFrases(nota)) {
+      if (!frases.includes(frase)) frases.push(frase);
+    }
+  }
+  return frases.length > 0 ? frases.join(' ') : undefined;
+}
+
+/**
+ * As frases de uma nota, uma a uma, com a pontuação preservada.
+ *
+ * O PONTO FINAL FICA COM A FRASE porque ela volta a ser texto corrido logo
+ * em seguida: tirá-lo faria "devolução não entra Peça as devoluções".
+ */
+function emFrases(nota: string | undefined): string[] {
+  if (!nota) return [];
+  return (nota.match(/[^.!?]+[.!?]*/g) ?? [])
+    .map((f) => f.trim())
+    .filter((f) => f.length > 0);
 }

@@ -1026,13 +1026,33 @@ describe('FerramentasGestaoService', () => {
     };
 
     /* ESTE E O TESTE. O resto e contorno. */
-    it('sem cliente, sem vendedora e sem documento, PEDE o recorte — e não consulta', async () => {
+    it('o PERÍODO sozinho já é recorte: traz a loja inteira do mês', async () => {
+      // ====================================================================
+      // ESTE TESTE DIZIA O CONTRÁRIO ATÉ 30/10/2026 — e estava certo quando
+      // foi escrito. A regra é de 02/10, quando o teto da lista era 500 e
+      // "a loja inteira do mês" era perigo de verdade.
+      //
+      // Desde 27/10 a lista inteira é O PADRÃO e o teto é 20.000. A medida
+      // que fecha o argumento: outubro de 2026 tem DEZENOVE vendas, e todo o
+      // histórico desde 2023 tem 1.412.
+      //
+      // O pedido dele, depois de a agente lhe pedir o nome da vendedora duas
+      // vezes seguidas: *"quando a gestão quiser ver todas as vendas do mês
+      // de outubro, você pode listar tudo — não é preciso perguntar qual a
+      // vendedora"*.
+      // ====================================================================
       const r = await servico.montar().gestaoVendasDetalhadas({ periodo: 'MES' });
 
+      expect(r.status).toBe('OK');
+      expect(vendasDetalhadas).toHaveBeenCalled();
+    });
+
+    it('sem recorte NENHUM — nem nome, nem documento, nem janela — ainda pede', async () => {
+      // A recusa acontece ANTES da consulta: recusar depois deixaria a lista
+      // carregada em memória, a um `return` de distância de vazar.
+      const r = await servico.montar().gestaoVendasDetalhadas({});
+
       expect(r.status).toBe('EXIGE_RECORTE');
-      // Periodo sozinho devolveria a loja inteira do mes, que e outra pergunta.
-      // E a recusa acontece ANTES da consulta: recusar depois deixaria a lista
-      // carregada em memoria, a um `return` de distancia de vazar.
       expect(vendasDetalhadas).not.toHaveBeenCalled();
     });
 

@@ -189,16 +189,26 @@ describe('a empresa como recorte das vendas uma a uma', () => {
   // mesmo erro, como no `itens_mais_vendidos`: entregar as vendas de uma
   // filial inteira a quem não pode vê-las não levanta exceção nenhuma.
   // ==========================================================================
-  it('sem ver a loja, a empresa é ignorada — e sozinha não é recorte', async () => {
+  it('sem ver a loja, a empresa é ignorada — e a consulta sai SEM a filial', async () => {
+    // ========================================================================
+    // ESTE TESTE TERMINAVA EM `EXIGE_RECORTE` ATÉ 30/10/2026, e terminava por
+    // um motivo que deixou de valer: o período não contava como recorte, e a
+    // pergunta morria antes de chegar à barreira da empresa.
+    //
+    // Agora o período basta, então a consulta ACONTECE — e é aqui que a
+    // barreira de verdade aparece: ela sai com `empresaId: null`. A filial foi
+    // IGNORADA, não recusada; dizer "você não pode ver essa filial"
+    // confirmaria o que a pergunta queria saber.
+    // ========================================================================
     const { servico, detalhadas, listar } = montar({ empresas: [SP] });
 
     const r = await servico
       .montar({ verLoja: false })
       .gestaoVendasDetalhadas({ empresa: 'SP', periodo: 'ANO' });
 
-    expect(r.status).toBe('EXIGE_RECORTE');
+    expect(r.status).toBe('OK');
     expect(listar).not.toHaveBeenCalled();
-    expect(detalhadas).not.toHaveBeenCalled();
+    expect(detalhadas.mock.calls[0][0]).toMatchObject({ empresaId: null });
   });
 
   /* E COM OUTRO RECORTE A CONSULTA ACONTECE, mas sem a filial: a resposta é

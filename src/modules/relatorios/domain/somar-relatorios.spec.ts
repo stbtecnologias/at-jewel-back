@@ -181,3 +181,75 @@ describe('somarRelatorios — duas tabelas da mesma mensagem viram uma', () => {
     expect(r!.paisagem).toBe(true);
   });
 });
+
+/**
+ * ==========================================================================
+ * O RODAPÉ REPETIDO SETE VEZES — produção, 30/10/2026, 08:55.
+ *
+ * Ele pediu *"a lista de vendas de todas as vendedoras do mês de outubro"*.
+ * A agente pediu o nome da vendedora; ele disse "todas"; e ela então chamou
+ * a ferramenta UMA VEZ POR VENDEDORA — oito —, somando os oito relatórios
+ * dois a dois.
+ *
+ * No fim da mensagem, para a gestora ler:
+ *
+ *   "Só vendas concluídas — devolução não entra. Peça as devoluções para
+ *    vê-las. Dois recortes no mesmo arquivo — sem linha de total." ×7
+ *
+ * A causa das oito chamadas foi corrigida no mesmo dia — o período passou a
+ * ser recorte. MAS A GUARDA FICA AQUI, no funil: qualquer soma de muitos
+ * relatórios cairia nisto de novo, e basta uma para a cliente ler.
+ * ==========================================================================
+ */
+describe('somarRelatorios — a nota não se repete, por mais somas que haja', () => {
+  const NOTA = 'Só vendas concluídas — devolução não entra.';
+  const AVISO = 'Dois recortes no mesmo arquivo — sem linha de total.';
+
+  // UMA LINHA DIFERENTE POR VENDEDORA, como na vida real. Com linhas
+  // idênticas, `somarRelatorios` devolve o primeiro inteiro — "a mesma
+  // consulta duas vezes não é soma" —, e a nota nem chegaria a ser montada.
+  const deUma = (nome: string) =>
+    vendas(
+      `Vendas da ${nome} — outubro`,
+      [['20/10/2026', `Cliente de ${nome}`, 'R$ 1']],
+      {
+        nota: NOTA,
+        total: { data: '', cliente: 'Total', valor: 'R$ 1' },
+      },
+    );
+
+  /* ESTE É O TESTE. */
+  it('oito relatórios somados deixam UMA nota e UM aviso', () => {
+    const nomes = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+    const somado = nomes
+      .map(deUma)
+      .reduce((acc, r) => somarRelatorios(acc, r)!, deUma('Zero'));
+
+    const nota = somado.nota ?? '';
+    expect(nota.split(NOTA).length - 1).toBe(1);
+    expect(nota.split(AVISO).length - 1).toBe(1);
+  });
+
+  /**
+   * A COMPARAÇÃO ANTIGA ERA DE STRING INTEIRA, e por isso só pegava a
+   * repetição IMEDIATA: da segunda soma em diante `primeiro.nota` já era a
+   * nota concatenada, nunca igual à nota solta que chegava.
+   */
+  it('duas somas já bastavam para duplicar, e não duplicam mais', () => {
+    const dois = somarRelatorios(deUma('A'), deUma('B'))!;
+    const tres = somarRelatorios(dois, deUma('C'))!;
+
+    expect(tres.nota!.split(NOTA).length - 1).toBe(1);
+  });
+
+  it('notas DIFERENTES continuam entrando as duas', () => {
+    const outra = 'Peça as devoluções para vê-las.';
+    const somado = somarRelatorios(
+      vendas('Um', [['20/10/2026', 'C', 'R$ 1']], { nota: NOTA }),
+      vendas('Dois', [['21/10/2026', 'D', 'R$ 2']], { nota: outra }),
+    )!;
+
+    expect(somado.nota).toContain(NOTA);
+    expect(somado.nota).toContain(outra);
+  });
+});
