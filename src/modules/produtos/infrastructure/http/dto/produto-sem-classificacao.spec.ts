@@ -80,6 +80,26 @@ describe('o produto que chega sem categoria, familia ou unidade', () => {
       expect(dto.unidade).toBe('');
     });
 
+    /**
+     * AS TRES FORMAS DE DIZER "NAO TENHO" — pergunta dele em 10/11/2026.
+     *
+     * O integrador pode mandar o campo ausente, `null` ou `""`, e as tres
+     * precisam dar no mesmo. Esta ultima ja funcionava quando o teste foi
+     * escrito — `''` e string valida e o transformador a devolve intacta —,
+     * e esta aqui para NAO PARAR de funcionar: e a forma que mais sai de
+     * export de ERP, onde campo sem valor vira coluna vazia e nao ausente.
+     */
+    it('string vazia tambem passa, e continua vazia', () => {
+      const payload = { ...BASE, categoria: '', familia: '', unidade: '' };
+
+      expect(erros(CriarProdutoDto as never, payload)).toEqual([]);
+
+      const dto = instancia<CriarProdutoDto>(CriarProdutoDto as never, payload);
+      expect(dto.categoria).toBe('');
+      expect(dto.familia).toBe('');
+      expect(dto.unidade).toBe('');
+    });
+
     it('`null` explicito tambem vira vazio', () => {
       const dto = instancia<CriarProdutoDto>(CriarProdutoDto as never, {
         ...BASE,
