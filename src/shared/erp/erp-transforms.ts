@@ -35,6 +35,34 @@ export function idErpEntrada(valor: unknown): unknown {
 }
 
 /**
+ * O campo de texto que PODE NAO VIR — 10/11/2026.
+ *
+ * ==========================================================================
+ * NASCEU DE 75 PRODUTOS RECUSADOS NUM LOTE SO.
+ *
+ * `categoria` e `familia` eram `@IsNotEmpty()`, e o ERP tem pecas sem
+ * classificacao no cadastro dele — BAU, GIFT CARD, FECHO, CORRENTE, RUBELITA,
+ * e brincos e colares normais. Todas voltavam com 400 e NAO ENTRAVAM. A base
+ * ficava com 100% de preenchimento porque o que faltava era barrado na porta,
+ * e nao porque o cadastro estivesse completo.
+ *
+ * `undefined` e `null` viram STRING VAZIA, e nao `null`, por tres motivos
+ * medidos: as colunas sao NOT NULL, os tipos de dominio e de ORM sao `string`,
+ * e ha dez pontos que interpolam estes campos direto em texto que vai para a
+ * vendedora — onde `${null}` imprime a palavra "null". E a casa ja tratava
+ * `''` como "nao informado" antes disto, no analytics:
+ *
+ *   COALESCE(NULLIF(p.familia, ''), 'Sem familia')
+ *
+ * O QUE NAO E TEXTO PASSA INTACTO, para o `@IsString()` recusar com a mensagem
+ * certa: afrouxar o obrigatorio nao e afrouxar o tipo.
+ * ==========================================================================
+ */
+export function textoOuVazio(valor: unknown): unknown {
+  return valor === undefined || valor === null ? '' : valor;
+}
+
+/**
  * Aceita a flag como numero (1/0), texto ('1'/'0'/'true'/'false') ou boolean.
  *
  * Devolve o valor original quando nao reconhece, para o `@IsBoolean()` falhar

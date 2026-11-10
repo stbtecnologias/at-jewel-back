@@ -1,3 +1,4 @@
+import { Transform } from 'class-transformer';
 import {
   IsNotEmpty,
   IsNumber,
@@ -6,6 +7,7 @@ import {
   IsUUID,
   Min,
 } from 'class-validator';
+import { textoOuVazio } from '../../../../../shared/erp/erp-transforms';
 
 export class ErpProdutoDto {
   @IsUUID()
@@ -16,17 +18,19 @@ export class ErpProdutoDto {
   @IsNotEmpty()
   codigo_erp: string;
 
+  // A MESMA REGRA DA OUTRA PORTA — 10/11/2026. Ver `criar-produto.dto.ts`: o
+  // ERP tem pecas sem classificacao, e recusa-las nao preenchia nada.
+  @Transform(({ value }) => textoOuVazio(value))
   @IsString()
-  @IsNotEmpty()
-  categoria: string;
+  categoria: string = '';
 
+  @Transform(({ value }) => textoOuVazio(value))
   @IsString()
-  @IsNotEmpty()
-  familia: string;
+  familia: string = '';
 
+  @Transform(({ value }) => textoOuVazio(value))
   @IsString()
-  @IsNotEmpty()
-  unidade: string;
+  unidade: string = '';
 
   @IsNumber()
   @Min(0)

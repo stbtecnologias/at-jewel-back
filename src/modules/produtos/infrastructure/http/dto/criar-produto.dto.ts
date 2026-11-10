@@ -1,12 +1,13 @@
+import { Transform } from 'class-transformer';
 import {
   IsInt,
   IsISO8601,
-  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
   Min,
 } from 'class-validator';
+import { textoOuVazio } from '../../../../../shared/erp/erp-transforms';
 
 export class CriarProdutoDto {
   // ID do registro na tabela do ERP: chave tecnica, imutavel. Segue o
@@ -19,17 +20,31 @@ export class CriarProdutoDto {
   @IsString()
   codigo_erp?: string;
 
+  // ======================================================================
+  // CLASSIFICACAO QUE PODE NAO VIR — 10/11/2026.
+  //
+  // Eram `@IsNotEmpty()`, e isso recusou 75 produtos de um lote do ERP com
+  // "categoria should not be empty". As pecas existem la; o cadastro e que
+  // esta incompleto, e recusar nao preenchia nada — so as mantinha fora.
+  //
+  // Decisao do Lucas: aceitar como vier. Ausente vira string vazia, que e o
+  // que o analytics ja procura. Ver `textoOuVazio`.
+  // ======================================================================
+  // O `= ''` E O CAMPO AUSENTE; o `@Transform` e o campo que vem `null`. Sao
+  // dois caminhos diferentes: o transformador nao roda para chave que nao
+  // existe no JSON, entao sem o valor inicial o campo chegaria `undefined` e o
+  // `@IsString()` recusaria do mesmo jeito.
+  @Transform(({ value }) => textoOuVazio(value))
   @IsString()
-  @IsNotEmpty()
-  categoria: string;
+  categoria: string = '';
 
+  @Transform(({ value }) => textoOuVazio(value))
   @IsString()
-  @IsNotEmpty()
-  familia: string;
+  familia: string = '';
 
+  @Transform(({ value }) => textoOuVazio(value))
   @IsString()
-  @IsNotEmpty()
-  unidade: string;
+  unidade: string = '';
 
   @IsNumber()
   @Min(0)

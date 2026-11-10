@@ -1,6 +1,28 @@
 import { Produto } from '../../entities/produto.entity';
 
+/**
+ * "AS PECAS SEM CLASSIFICACAO" — o valor que a tela manda para achar o vazio.
+ *
+ * ==========================================================================
+ * EXISTE PORQUE A STRING VAZIA NAO SOBREVIVE AO CAMINHO.
+ *
+ * Desde 10/11/2026 `categoria` e `familia` podem chegar vazias do ERP. O
+ * filtro daqui ja aceitaria `''` — ele testa `!== undefined` —, mas o front
+ * monta a query descartando vazio (`v !== ''`), entao `categoria=` sumiria
+ * antes de chegar e a tela mostraria tudo.
+ *
+ * Mudar aquela linha do front afetaria TODOS os filtros daquela tela. Este
+ * sentinela afeta um.
+ *
+ * O VALOR E IMPOSSIVEL DE COLIDIR com categoria de verdade: as da casa sao
+ * JEWEL, HOME, GOLDESIGN, AT WEAR, COLLAB, AP, CONSERTO, WISH — nenhuma com
+ * underscore. O front repete este literal, com comentario apontando para ca.
+ * ==========================================================================
+ */
+export const SEM_CLASSIFICACAO = '__SEM__';
+
 export interface FiltroProduto {
+  /** Um valor de verdade, ou `SEM_CLASSIFICACAO` para achar as vazias. */
   categoria?: string;
   familia?: string;
   ativo?: boolean;

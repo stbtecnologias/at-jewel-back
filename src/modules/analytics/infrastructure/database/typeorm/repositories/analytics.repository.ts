@@ -369,13 +369,22 @@ export class AnalyticsRepository implements IAnalyticsRepository {
       EstatisticasInventario['porCategoria']
     >(
       `
-      SELECT categoria AS categoria,
+      -- A CATEGORIA VAZIA TEM NOME — 10/11/2026.
+      --
+      -- Desde que a categoria deixou de ser obrigatoria no cadastro (os 75
+      -- produtos que o ERP nao conseguia mandar), ela pode chegar vazia. Sem
+      -- isto o grafico ganhava uma fatia de rotulo em branco, que nao diz
+      -- nem que peca e nem que falta cadastro.
+      --
+      -- E o MESMO tratamento que a familia ja tinha aqui do lado, no
+      -- tempoMedioEstoque. Copiado de la, e nao inventado.
+      SELECT COALESCE(NULLIF(categoria, ''), 'Sem categoria') AS categoria,
              COUNT(*)::int AS quantidade,
              COALESCE(SUM(${saldoDe('sal')}), 0)::int AS "totalEstoque"
       FROM produtos
       LEFT JOIN ${SALDO_POR_PRODUTO} sal ON sal.produto_id = produtos.id
       WHERE ativo = true
-      GROUP BY categoria
+      GROUP BY COALESCE(NULLIF(categoria, ''), 'Sem categoria')
       ORDER BY quantidade DESC
       `,
     );

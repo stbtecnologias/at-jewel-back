@@ -12,6 +12,7 @@ import {
   IProdutoRepository,
   ProdutoAlerta,
   SaldoDaPeca,
+  SEM_CLASSIFICACAO,
 } from '../../../../domain/ports/repositories/produto-repository.port';
 import {
   SALDO_POR_PRODUTO,
@@ -190,11 +191,24 @@ export class ProdutoRepository implements IProdutoRepository {
   private montarConsulta(filtros: FiltroProduto) {
     const qb = this.repo.createQueryBuilder('p');
 
+    // O SENTINELA VIRA "IGUAL A VAZIO" — 10/11/2026. Ver `SEM_CLASSIFICACAO`:
+    // e assim que a tela acha as pecas que o ERP manda sem classificacao, e
+    // que antes de hoje nem chegavam a entrar na base.
     if (filtros.categoria !== undefined) {
-      qb.andWhere('p.categoria = :categoria', { categoria: filtros.categoria });
+      if (filtros.categoria === SEM_CLASSIFICACAO) {
+        qb.andWhere("p.categoria = ''");
+      } else {
+        qb.andWhere('p.categoria = :categoria', {
+          categoria: filtros.categoria,
+        });
+      }
     }
     if (filtros.familia !== undefined) {
-      qb.andWhere('p.familia = :familia', { familia: filtros.familia });
+      if (filtros.familia === SEM_CLASSIFICACAO) {
+        qb.andWhere("p.familia = ''");
+      } else {
+        qb.andWhere('p.familia = :familia', { familia: filtros.familia });
+      }
     }
     if (filtros.ativo !== undefined) {
       qb.andWhere('p.ativo = :ativo', { ativo: filtros.ativo });
