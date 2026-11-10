@@ -36,6 +36,14 @@ export interface Conexao {
 
 const PREFIXO = 'vend-';
 
+/**
+ * O rotulo da sessao que sobrou de uma vendedora que nao existe mais.
+ *
+ * Virou constante em 10/11/2026 porque passou a ser dito em dois lugares — a
+ * tela e o aviso no Telegram —, e texto repetido e texto que diverge.
+ */
+const ORFA_COM_SESSAO = 'Vendedora desligada — conexão ainda ativa';
+
 /** `vend-<uuid>`. O nome da sessao e DERIVADO do id da vendedora. */
 const RE_SESSAO_VENDEDORA = new RegExp(
   `^${PREFIXO}([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$`,
@@ -113,6 +121,32 @@ export class ConexoesService {
   }
 
   /**
+   * O nome legivel de UMA sessao — 10/11/2026, para o aviso no Telegram.
+   *
+   * `null` E LISTA DE PERMISSAO, e nao "nao sei o nome". Mesmo desenho do
+   * `agenteDa`: o que a casa nao reconhece cai em `null`, e sobre `null` nao
+   * se fala. O canal `/ws` do WAHA entrega TODAS as sessoes da instalacao,
+   * inclusive as descartaveis que alguem cria na mao — sem esta barreira o
+   * Telegram apitaria a cada teste.
+   *
+   * A ORFA FALA, com o mesmo texto da tela: vendedora desligada com sessao no
+   * ar e exatamente o que nao pode existir em silencio.
+   *
+   * Existe separado do `listar()` porque aquele monta a tela inteira e conta
+   * chats sessao por sessao — trabalho demais para uma pergunta de uma
+   * palavra, num caminho que roda a cada evento do WAHA.
+   */
+  async rotuloDaSessao(sessao: string): Promise<string | null> {
+    if (this.sessoes.ehDaCasa(sessao)) return this.sessoes.rotuloDe(sessao);
+
+    const vendedoraId = this.vendedoraDaSessao(sessao);
+    if (!vendedoraId) return null;
+
+    const v = await this.vendedoras.buscarPorId(vendedoraId);
+    return v ? `Vendedora: ${v.nome}` : ORFA_COM_SESSAO;
+  }
+
+  /**
    * A lista da tela: a loja primeiro, as vendedoras ativas depois, e por
    * ultimo as sessoes orfas — se houver.
    */
@@ -142,7 +176,7 @@ export class ConexoesService {
         montar(
           s.nome,
           this.vendedoraDaSessao(s.nome)
-            ? 'Vendedora desligada — conexão ainda ativa'
+            ? ORFA_COM_SESSAO
             : `Sessão desconhecida: ${s.nome}`,
           this.vendedoraDaSessao(s.nome),
           'ORFA',
