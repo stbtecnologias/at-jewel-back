@@ -24,9 +24,21 @@ import { TelegramClient } from '../telegram/telegram.client';
  * de uma sessao a REINICIA: em chip sem aparelho, isso pode significar QR
  * novo, que e o pior cenario possivel. Aqui nenhuma sessao e tocada.
  *
- * A CHAVE VAI NO CABECALHO. O `WebSocket` embutido do Node 22 nao aceita
- * cabecalho, e a chave teria de viajar na query string, onde aparece em log
- * de acesso e em historico. E o unico motivo de existir a dependencia `ws`.
+ * A CHAVE VAI NA QUERY STRING, E ISSO FOI MEDIDO, NAO ESCOLHIDO. O primeiro
+ * desenho mandava `X-Api-Key` no cabecalho, justamente para a chave nao
+ * aparecer em log de acesso. Contra o WAHA de verdade o canal abria e fechava
+ * em um segundo, em laco:
+ *
+ *   so cabecalho       fechou  code=1008 reason=Unauthorized
+ *   so query string    SEGUE ABERTO
+ *   os dois            SEGUE ABERTO
+ *   sem chave nenhuma  fechou  code=1008 reason=Unauthorized
+ *
+ * O `/ws` nao le cabecalho. Por isso a URL montada aqui NUNCA e escrita em
+ * log — e o unico lugar de onde a chave poderia vazar deste arquivo.
+ *
+ * A dependencia `ws` fica mesmo assim: o `WebSocket` global do Node 22 ainda
+ * e experimental, e este canal precisa ficar de pe por semanas.
  *
  * SEM `WAHA_BASE_URL`, O MODULO E INERTE. O homolog foi isolado em 22/09
  * esvaziando a variavel, de proposito. Sem esta guarda ele ficaria em laco de
@@ -42,10 +54,7 @@ export interface SocketDoWaha {
   fechar(): void;
 }
 
-export type FabricaDeSocket = (
-  url: string,
-  cabecalhos: Record<string, string>,
-) => SocketDoWaha;
+export type FabricaDeSocket = (url: string) => SocketDoWaha;
 
 /** Espera entre tentativas, parando na ultima. */
 const ESPERAS_MS = [1_000, 2_000, 5_000, 10_000, 30_000, 60_000];
@@ -59,8 +68,8 @@ const ESPERAS_MS = [1_000, 2_000, 5_000, 10_000, 30_000, 60_000];
  */
 const CARENCIA_DO_CANAL_MS = 60_000;
 
-const fabricaPadrao: FabricaDeSocket = (url, cabecalhos) => {
-  const ws = new WebSocket(url, { headers: cabecalhos });
+const fabricaPadrao: FabricaDeSocket = (url) => {
+  const ws = new WebSocket(url);
   return {
     aoAbrir: (f) => ws.on('open', f),
     aoReceber: (f) => ws.on('message', (d: unknown) => void f(String(d))),
@@ -125,12 +134,15 @@ export class OuvinteDeStatusService implements OnModuleInit, OnModuleDestroy {
       /\/$/,
       '',
     );
-    return `${base.replace(/^http/, 'ws')}/ws?events=session.status`;
+    const chave = this.config.get<string>('WAHA_API_KEY') ?? '';
+    return (
+      `${base.replace(/^http/, 'ws')}/ws?events=session.status` +
+      `&x-api-key=${encodeURIComponent(chave)}`
+    );
   }
 
   private conectar(): void {
-    const chave = this.config.get<string>('WAHA_API_KEY') ?? '';
-    const socket = this.fabrica(this.url, { 'X-Api-Key': chave });
+    const socket = this.fabrica(this.url);
     this.socket = socket;
 
     socket.aoAbrir(() => {

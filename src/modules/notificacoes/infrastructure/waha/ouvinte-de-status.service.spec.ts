@@ -71,12 +71,25 @@ describe('OuvinteDeStatusService', () => {
     expect(criou).toBe(false);
   });
 
-  it('a chave vai no CABECALHO, nunca na url', () => {
+  /**
+   * A CHAVE VAI NA QUERY STRING, e isso foi MEDIDO, nao escolhido.
+   *
+   * O primeiro desenho mandava `X-Api-Key` no cabecalho, para a chave nao
+   * aparecer em log de acesso. Contra o WAHA de verdade (2026.8.2, GOWS,
+   * CORE) o canal abria e fechava em um segundo, em laco:
+   *
+   *   so cabecalho       fechou  code=1008 reason=Unauthorized
+   *   so query string    SEGUE ABERTO
+   *   os dois            SEGUE ABERTO
+   *   sem chave nenhuma  fechou  code=1008 reason=Unauthorized
+   *
+   * O `/ws` nao le cabecalho. Entao a chave vai na URL — e, por isso, a URL
+   * NUNCA e escrita em log: e o unico lugar onde ela poderia vazar daqui.
+   */
+  it('a chave vai na query string, que e o que o /ws aceita', () => {
     let url = '';
-    let cab: Record<string, string> = {};
-    const fabrica: FabricaDeSocket = (u, c) => {
+    const fabrica: FabricaDeSocket = (u) => {
       url = u;
-      cab = c;
       return sockete().s;
     };
 
@@ -88,9 +101,9 @@ describe('OuvinteDeStatusService', () => {
     );
     o.onModuleInit();
 
-    expect(url).toBe('ws://waha:3000/ws?events=session.status');
-    expect(url).not.toContain('chave');
-    expect(cab['X-Api-Key']).toBe('chave');
+    expect(url).toBe(
+      'ws://waha:3000/ws?events=session.status&x-api-key=chave',
+    );
     o.onModuleDestroy();
   });
 
