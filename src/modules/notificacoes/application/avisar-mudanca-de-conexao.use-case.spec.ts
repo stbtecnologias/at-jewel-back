@@ -121,6 +121,71 @@ describe('AvisarMudancaDeConexaoUseCase', () => {
     ]);
   });
 
+  /**
+   * QUEM NUNCA SUBIU NAO CAIU — achado do Lucas em 10/11, no local.
+   *
+   * Ele conectou a ALINE pela PRIMEIRA vez e recebeu "Fora do ar: 8 min".
+   * Os oito minutos eram um teste meu, que criou e apagou a sessao dela as
+   * 17:05 — o back dele estava escutando o mesmo WAHA, viu o `SCAN_QR_CODE` e
+   * o `STOPPED`, e guardou aquilo como hora da queda.
+   *
+   * O erro de fundo: eu tratava QUALQUER estado diferente de `WORKING` como
+   * queda. `SCAN_QR_CODE` quer dizer o contrario — a sessao NAO esta
+   * autenticada, e pode nunca ter estado.
+   */
+  it('quem nunca esteve no ar nao ganha tempo fora do ar', async () => {
+    const uc = new AvisarMudancaDeConexaoUseCase(casa, telegram);
+    await uc.executar({
+      sessao: 'default',
+      status: 'SCAN_QR_CODE',
+      numero: null,
+      em: EM,
+    });
+    await uc.executar({
+      sessao: 'default',
+      status: 'STOPPED',
+      numero: null,
+      em: new Date(EM.getTime() + 60_000),
+    });
+    enviados.length = 0;
+
+    await uc.executar({
+      sessao: 'default',
+      status: 'WORKING',
+      numero: '5585920110403@c.us',
+      em: new Date(EM.getTime() + 8 * 60_000),
+    });
+
+    expect(bloco()).toEqual([{ rotulo: 'Número', valor: '+55 85 92011-0403' }]);
+  });
+
+  /** Mas quem ESTAVA no ar e parou, caiu — e o tempo e verdadeiro. */
+  it('sessao que estava no ar e foi parada conta o tempo fora', async () => {
+    const uc = new AvisarMudancaDeConexaoUseCase(casa, telegram);
+    await uc.executar({
+      sessao: 'default',
+      status: 'WORKING',
+      numero: '55@c.us',
+      em: EM,
+    });
+    await uc.executar({
+      sessao: 'default',
+      status: 'STOPPED',
+      numero: null,
+      em: new Date(EM.getTime() + 60_000),
+    });
+    enviados.length = 0;
+
+    await uc.executar({
+      sessao: 'default',
+      status: 'WORKING',
+      numero: '5585920110403@c.us',
+      em: new Date(EM.getTime() + 4 * 60_000),
+    });
+
+    expect(JSON.stringify(bloco())).toContain('Fora do ar: 3 min');
+  });
+
   /** Depois de um build a hora da queda se perde: melhor omitir que mentir. */
   it('WORKING sem queda conhecida nao inventa tempo fora do ar', async () => {
     await new AvisarMudancaDeConexaoUseCase(casa, telegram).executar({

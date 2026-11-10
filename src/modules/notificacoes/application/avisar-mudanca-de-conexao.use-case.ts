@@ -115,6 +115,17 @@ export class AvisarMudancaDeConexaoUseCase {
   /** sessao -> quando saiu do ar, para a volta dizer quanto tempo ficou. */
   private readonly caiuEm = new Map<string, Date>();
   /**
+   * Sessoes que este processo JA VIU no ar.
+   *
+   * QUEM NUNCA SUBIU NAO CAIU — achado do Lucas em 10/11, no local. Ele
+   * conectou uma vendedora pela PRIMEIRA vez e recebeu "Fora do ar: 8 min";
+   * os oito minutos eram um teste que criou e apagou a sessao dela, e o back
+   * dele, escutando o mesmo WAHA, guardou aquilo como hora da queda. Tratar
+   * tudo que nao e `WORKING` como queda estava errado: `SCAN_QR_CODE` diz
+   * justamente que a sessao NAO esta autenticada, e pode nunca ter estado.
+   */
+  private readonly esteveNoAr = new Set<string>();
+  /**
    * Nomes ja avisados como desconhecidos.
    *
    * SILENCIO E O SINAL DE "ESTA TUDO BEM" DESTE SISTEMA, entao sessao
@@ -170,6 +181,7 @@ export class AvisarMudancaDeConexaoUseCase {
     const linhas: LinhaDoBloco[] = [];
 
     if (evento.status === 'WORKING') {
+      this.esteveNoAr.add(evento.sessao);
       linhas.push({ rotulo: 'Número', valor: this.numero(evento.numero) });
       const caiu = this.caiuEm.get(evento.sessao);
       this.caiuEm.delete(evento.sessao);
@@ -181,7 +193,7 @@ export class AvisarMudancaDeConexaoUseCase {
         });
       }
     } else {
-      if (!this.caiuEm.has(evento.sessao)) {
+      if (this.caiu(evento) && !this.caiuEm.has(evento.sessao)) {
         this.caiuEm.set(evento.sessao, evento.em);
       }
       linhas.push({ rotulo: 'Estado', valor: evento.status });
@@ -194,6 +206,25 @@ export class AvisarMudancaDeConexaoUseCase {
     if (orfa) linhas.push({ rotulo: 'Sessão', valor: evento.sessao });
 
     return linhas;
+  }
+
+  /**
+   * Este evento significa que a conexao CAIU — e nao so que nao esta no ar.
+   *
+   * `FAILED` so existe em sessao que estava autenticada: o vinculo quebrou,
+   * entao caiu, mesmo que este processo nunca a tenha visto no ar.
+   *
+   * `SCAN_QR_CODE` diz o contrario — a sessao NAO esta autenticada. Pedir QR
+   * nao e cair; e nunca ter subido, ou ja ter caido antes (e aí o `FAILED`
+   * anterior ja marcou a hora).
+   *
+   * `STOPPED` e `UNKNOWN` sao ambiguos: so contam como queda se este processo
+   * viu a sessao no ar antes.
+   */
+  private caiu(evento: EventoDeStatus): boolean {
+    if (evento.status === 'FAILED') return true;
+    if (evento.status === 'SCAN_QR_CODE') return false;
+    return this.esteveNoAr.has(evento.sessao);
   }
 
   /** O mesmo status, na mesma sessao, dentro da janela. */
