@@ -1,30 +1,48 @@
+import { Transform } from 'class-transformer';
 import {
   IsBoolean,
-  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
   Min,
 } from 'class-validator';
+import { vazioSeNulo } from '../../../../../shared/erp/erp-transforms';
 
 export class AtualizarProdutoDto {
   @IsOptional()
   @IsString()
   id_erp_produto?: string;
 
+  // ======================================================================
+  // A CLASSIFICACAO QUE PODE CHEGAR VAZIA — 10/11/2026, a tarde.
+  //
+  // Eram `@IsOptional() @IsString() @IsNotEmpty()`, e o `@IsOptional()` so
+  // desliga os outros validadores quando o valor e `null` ou `undefined`.
+  // String vazia nao e nenhum dos dois, entao o `@IsNotEmpty()` rodava e
+  // devolvia 400 — foi o que o integrador recebeu horas depois de a correcao
+  // da criacao subir:
+  //
+  //   {"statusCode":400,"message":["categoria should not be empty"]}
+  //
+  // SEM INICIALIZADOR, ao contrario do `CriarProdutoDto`. Aqui o use case faz
+  // atualizacao parcial por ausencia, entao chave ausente TEM de chegar
+  // `undefined`; `= ''` faria todo PATCH parcial apagar a classificacao da
+  // peca. O `vazioSeNulo` mexe so no `null`, e o teste do campo ausente em
+  // `atualizar-sem-classificacao.spec.ts` existe para travar isso.
+  // ======================================================================
+  @Transform(({ value }) => vazioSeNulo(value))
   @IsOptional()
   @IsString()
-  @IsNotEmpty()
   categoria?: string;
 
+  @Transform(({ value }) => vazioSeNulo(value))
   @IsOptional()
   @IsString()
-  @IsNotEmpty()
   familia?: string;
 
+  @Transform(({ value }) => vazioSeNulo(value))
   @IsOptional()
   @IsString()
-  @IsNotEmpty()
   unidade?: string;
 
   @IsOptional()

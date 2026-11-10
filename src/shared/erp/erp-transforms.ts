@@ -63,6 +63,33 @@ export function textoOuVazio(valor: unknown): unknown {
 }
 
 /**
+ * O MESMO CAMPO, NA PORTA DE ATUALIZACAO — 10/11/2026, a tarde.
+ *
+ * ==========================================================================
+ * PARECE O `textoOuVazio`, E A DIFERENCA E DE PROPOSITO.
+ *
+ * Aqui `undefined` PASSA INTACTO. Na criacao, ausente e vazio sao a mesma
+ * coisa — a peca nasce sem classificacao. Na atualizacao nao sao: o use case
+ * preserva por ausencia —
+ *
+ *   categoria: input.categoria !== undefined ? input.categoria
+ *                                            : existente.categoria
+ *
+ * — entao transformar `undefined` em `''` faria qualquer PATCH parcial apagar
+ * a classificacao da peca. Ausente quer dizer "nao mexe"; `null` e `''`
+ * querem dizer "nao tenho".
+ *
+ * Nao servisse esta funcao, serviria o `textoOuVazio` por acidente, porque
+ * `@Transform` nao roda para chave ausente do JSON. Depender desse detalhe
+ * para nao perder dado e apostar numa particularidade da biblioteca. Esta
+ * funcao diz a intencao, e fica certa mesmo se aquele detalhe mudar.
+ * ==========================================================================
+ */
+export function vazioSeNulo(valor: unknown): unknown {
+  return valor === null ? '' : valor;
+}
+
+/**
  * Aceita a flag como numero (1/0), texto ('1'/'0'/'true'/'false') ou boolean.
  *
  * Devolve o valor original quando nao reconhece, para o `@IsBoolean()` falhar
