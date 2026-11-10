@@ -285,8 +285,8 @@ describe('OuvinteDeStatusService', () => {
         return e.s;
       };
       const telegram = {
-        enviar: async (nivel: string, titulo: string) => {
-          enviados.push({ nivel, titulo });
+        enviar: async (nivel: string, aviso: { titulo: string }) => {
+          enviados.push({ nivel, titulo: aviso.titulo });
           return true;
         },
       } as never;

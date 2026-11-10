@@ -44,6 +44,16 @@ const PREFIXO = 'vend-';
  */
 export const ORFA_COM_SESSAO = 'Vendedora desligada — conexão ainda ativa';
 
+/** Quem e uma sessao, em partes. Ver `identidadeDaSessao`. */
+export interface IdentidadeDaSessao {
+  nome: string;
+  funcao: string;
+  /** O nome no WAHA. So vai para o aviso quando `orfa`. */
+  sessao: string;
+  /** Sessao de vendedora que nao existe mais: o nome nao identifica ninguem. */
+  orfa: boolean;
+}
+
 /** `vend-<uuid>`. O nome da sessao e DERIVADO do id da vendedora. */
 const RE_SESSAO_VENDEDORA = new RegExp(
   `^${PREFIXO}([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$`,
@@ -121,7 +131,13 @@ export class ConexoesService {
   }
 
   /**
-   * O nome legivel de UMA sessao — 10/11/2026, para o aviso no Telegram.
+   * QUEM E esta sessao — 10/11/2026, para o aviso no Telegram.
+   *
+   * Devolve NOME e FUNCAO separados, e nao um rotulo pronto, porque o aviso
+   * quer o nome em negrito e a funcao menor embaixo. Partir o rotulo com
+   * expressao regular do outro lado seria recriar a divergencia que o
+   * `SessoesDaCasaService` existe para impedir — por isso as partes dos
+   * numeros da casa vem de `partesDe`, e o rotulo da tela e composto delas.
    *
    * `null` E LISTA DE PERMISSAO, e nao "nao sei o nome". Mesmo desenho do
    * `agenteDa`: o que a casa nao reconhece cai em `null`, e sobre `null` nao
@@ -129,21 +145,33 @@ export class ConexoesService {
    * inclusive as descartaveis que alguem cria na mao — sem esta barreira o
    * Telegram apitaria a cada teste.
    *
-   * A ORFA FALA, com o mesmo texto da tela: vendedora desligada com sessao no
-   * ar e exatamente o que nao pode existir em silencio.
+   * A ORFA FALA, e por isso leva `orfa: true`: o nome dela nao identifica
+   * ninguem, entao o aviso precisa acrescentar a sessao, senao dois orfaos
+   * dao dois avisos identicos.
    *
    * Existe separado do `listar()` porque aquele monta a tela inteira e conta
    * chats sessao por sessao — trabalho demais para uma pergunta de uma
    * palavra, num caminho que roda a cada evento do WAHA.
    */
-  async rotuloDaSessao(sessao: string): Promise<string | null> {
-    if (this.sessoes.ehDaCasa(sessao)) return this.sessoes.rotuloDe(sessao);
+  async identidadeDaSessao(
+    sessao: string,
+  ): Promise<IdentidadeDaSessao | null> {
+    if (this.sessoes.ehDaCasa(sessao)) {
+      return { ...this.sessoes.partesDe(sessao), sessao, orfa: false };
+    }
 
     const vendedoraId = this.vendedoraDaSessao(sessao);
     if (!vendedoraId) return null;
 
     const v = await this.vendedoras.buscarPorId(vendedoraId);
-    return v ? `Vendedora: ${v.nome}` : ORFA_COM_SESSAO;
+    if (v) return { nome: v.nome, funcao: 'vendedora', sessao, orfa: false };
+
+    return {
+      nome: 'Vendedora desligada',
+      funcao: 'conexão ainda ativa',
+      sessao,
+      orfa: true,
+    };
   }
 
   /**

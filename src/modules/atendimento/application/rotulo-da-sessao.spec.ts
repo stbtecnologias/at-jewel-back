@@ -2,20 +2,21 @@ import { ConexoesService } from './conexoes.service';
 
 /**
  * ==========================================================================
- * O NOME DE UMA SESSAO, PARA QUEM NAO QUER A TELA INTEIRA — 10/11/2026.
+ * QUEM E ESTA SESSAO, EM PARTES — 10/11/2026.
  *
- * O aviso no Telegram precisa dizer DE QUEM e a conexao que caiu. O `listar()`
- * ja sabe traduzir, mas ele monta onze linhas e conta chats sessao por sessao
- * — trabalho demais para responder a uma pergunta de uma palavra.
+ * O aviso no Telegram quer o nome em negrito na primeira linha e a funcao
+ * menor embaixo. Partir o rotulo da tela com expressao regular seria recriar
+ * a divergencia que o `SessoesDaCasaService` existe para impedir — o
+ * comentario dele diz, em maiusculas, que TODA traducao agente <-> sessao
+ * passa por ali, depois de o `atwpp` ter aprendido do jeito ruim. Entao as
+ * partes nascem la, e o rotulo da tela e composto delas.
  *
- * `null` E LISTA DE PERMISSAO, e nao "nao sei o nome". E o mesmo desenho do
- * `agenteDa`: sessao de teste, sessao criada na mao, qualquer coisa que a
- * casa nao reconhece cai em `null` — e sobre `null` o aviso NAO FALA. O `/ws`
- * do WAHA entrega todas as sessoes da instalacao, inclusive as descartaveis,
- * e sem esta barreira o Telegram apitaria a cada teste de alguem.
+ * `null` E LISTA DE PERMISSAO, e nao "nao sei o nome". O `/ws` do WAHA
+ * entrega todas as sessoes da instalacao, inclusive as descartaveis que
+ * alguem cria na mao, e sobre `null` o aviso NAO FALA.
  *
- * A ORFA FALA. Vendedora desligada com sessao no ar e precisamente o que o
- * `ConexoesService` diz que nao pode existir em silencio.
+ * A ORFA FALA, e leva o nome da sessao junto: o rotulo dela nao nomeia
+ * ninguem, entao dois orfaos dariam dois avisos identicos.
  * ==========================================================================
  */
 
@@ -26,29 +27,41 @@ const monta = (vendedora: { nome: string } | null): ConexoesService =>
     {} as never,
     {
       ehDaCasa: (s: string) => s === 'default',
-      rotuloDe: () => 'Anastasia (gestão)',
+      partesDe: () => ({ nome: 'Anastasia', funcao: 'gestão' }),
     } as never,
     { buscarPorId: async () => vendedora } as never,
   );
 
-describe('ConexoesService.rotuloDaSessao', () => {
-  it('numero da casa usa o rotulo que a tela ja usa', async () => {
-    expect(await monta(null).rotuloDaSessao('default')).toBe('Anastasia (gestão)');
+describe('ConexoesService.identidadeDaSessao', () => {
+  it('numero da casa vem com nome e funcao separados', async () => {
+    expect(await monta(null).identidadeDaSessao('default')).toEqual({
+      nome: 'Anastasia',
+      funcao: 'gestão',
+      sessao: 'default',
+      orfa: false,
+    });
   });
 
-  it('vendedora que existe vira "Vendedora: NOME"', async () => {
-    expect(await monta({ nome: 'MARINA' }).rotuloDaSessao(`vend-${UUID}`)).toBe(
-      'Vendedora: MARINA',
-    );
+  it('vendedora que existe usa o nome dela', async () => {
+    expect(
+      await monta({ nome: 'MARINA' }).identidadeDaSessao(`vend-${UUID}`),
+    ).toEqual({
+      nome: 'MARINA',
+      funcao: 'vendedora',
+      sessao: `vend-${UUID}`,
+      orfa: false,
+    });
   });
 
   it('sessao de vendedora que nao existe mais e orfa, e FALA', async () => {
-    expect(await monta(null).rotuloDaSessao(`vend-${UUID}`)).toBe(
-      'Vendedora desligada — conexão ainda ativa',
-    );
+    const i = await monta(null).identidadeDaSessao(`vend-${UUID}`);
+
+    expect(i?.orfa).toBe(true);
+    expect(i?.nome).toBe('Vendedora desligada');
+    expect(i?.sessao).toBe(`vend-${UUID}`);
   });
 
   it('sessao de nome desconhecido devolve null', async () => {
-    expect(await monta(null).rotuloDaSessao('teste-criado-na-mao')).toBeNull();
+    expect(await monta(null).identidadeDaSessao('teste-criado-na-mao')).toBeNull();
   });
 });

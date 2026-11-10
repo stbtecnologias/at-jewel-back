@@ -215,9 +215,13 @@ export class OuvinteDeStatusService implements OnModuleInit, OnModuleDestroy {
     this.cancelarCarencia();
     if (this.avisouPerda) {
       this.avisouPerda = false;
-      void this.telegram.enviar('bom', 'Contato com o WAHA restabelecido', [
-        'Os avisos de conexão voltaram a funcionar.',
-      ]);
+      void this.telegram.enviar('bom', {
+        titulo: 'Contato com o WAHA restabelecido',
+        subtitulo: 'canal de eventos',
+        etiquetas: ['canal'],
+        recado: 'Os avisos de conexão voltaram a funcionar.',
+        silencioso: true,
+      });
     }
   }
 
@@ -281,9 +285,12 @@ export class OuvinteDeStatusService implements OnModuleInit, OnModuleDestroy {
       this.carencia = this.agendar(() => {
         this.carencia = null;
         this.avisouPerda = true;
-        void this.telegram.enviar('ruim', 'Sem contato com o WAHA', [
-          'Mudanças de conexão não estão sendo observadas.',
-        ]);
+        void this.telegram.enviar('ruim', {
+          titulo: 'Sem contato com o WAHA',
+          subtitulo: 'canal de eventos',
+          etiquetas: ['canal'],
+          recado: 'Mudanças de conexão não estão sendo observadas.',
+        });
       }, CARENCIA_DO_CANAL_MS);
     }
 

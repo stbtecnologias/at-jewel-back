@@ -94,12 +94,30 @@ export class SessoesDaCasaService {
     return this.anastasia;
   }
 
-  /** O rotulo da linha na tela de Conexoes. */
-  rotuloDe(sessao: string): string {
+  /**
+   * O nome e a funcao, SEPARADOS — 10/11/2026.
+   *
+   * O aviso no Telegram quer o nome em negrito na primeira linha e a funcao
+   * menor embaixo. Partir o rotulo com expressao regular do outro lado seria
+   * recriar exatamente a divergencia que este servico existe para impedir:
+   * aqui as partes nascem, e o rotulo da tela e COMPOSTO delas. Uma fonte,
+   * duas formas.
+   */
+  partesDe(sessao: string): { nome: string; funcao: string } {
     const agente = this.agenteDa(sessao);
-    if (agente === 'ELENA') return 'Helena (vendedoras e catálogo)';
+    if (agente === 'ELENA') {
+      return { nome: 'Helena', funcao: 'vendedoras e catálogo' };
+    }
     // Com um numero so ele ainda e "a loja", que e como a tela sempre o
     // chamou; separados, cada um ganha o nome de quem atende.
-    return this.separadas ? 'Anastasia (gestão)' : 'Loja (Anastasia)';
+    return this.separadas
+      ? { nome: 'Anastasia', funcao: 'gestão' }
+      : { nome: 'Loja', funcao: 'Anastasia' };
+  }
+
+  /** O rotulo da linha na tela de Conexoes, composto das partes. */
+  rotuloDe(sessao: string): string {
+    const { nome, funcao } = this.partesDe(sessao);
+    return `${nome} (${funcao})`;
   }
 }

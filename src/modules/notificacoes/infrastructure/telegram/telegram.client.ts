@@ -9,9 +9,17 @@ import { ConfigService } from '@nestjs/config';
  * hora que importa. O alarme nao pode dividir destino com o que ele vigia.
  *
  * ESTE ARQUIVO E PORTATIL DE PROPOSITO. Ele nao sabe o que e sessao, joia,
- * vendedora ou WAHA: recebe nivel, titulo e linhas. Para servir outro sistema
- * basta copia-lo e trocar `TELEGRAM_SISTEMA` — o prefixo entre colchetes e o
- * que diz de onde o aviso veio quando o mesmo bot atende varios projetos.
+ * vendedora ou WAHA: recebe um `Aviso` em partes e monta a mensagem. Para
+ * servir outro sistema basta copia-lo e trocar `TELEGRAM_SISTEMA` — o nome
+ * entre colchetes, DENTRO do negrito, e o que diz de onde o aviso veio ja na
+ * previa da notificacao, que muitas vezes e tudo o que se le.
+ *
+ * O FORMATO FOI MEDIDO CONTRA O TELEGRAM DE VERDADE, e nao suposto:
+ * `blockquote`, `code`, hashtag e `disable_notification` foram os quatro
+ * aceitos numa sondagem em 10/11. A primeira versao recuava as linhas de
+ * detalhe com tres espacos — e a tela do celular mostrou que o Telegram
+ * praticamente nao exibe espaco a esquerda: o que era hierarquia virava tres
+ * linhas iguais.
  *
  * NASCE DESLIGADO. `TELEGRAM_ALERTAS_ATIVOS` e o interruptor, pelo mesmo
  * motivo do `AlertasScheduler`: este e um dos dois lugares da casa que falam
@@ -21,6 +29,27 @@ import { ConfigService } from '@nestjs/config';
  */
 
 export type NivelDoAviso = 'bom' | 'atencao' | 'ruim' | 'neutro';
+
+/** Uma linha do bloco de detalhe. Com `valor`, ele sai em monoespacado. */
+export interface LinhaDoBloco {
+  rotulo: string;
+  valor?: string;
+}
+
+export interface Aviso {
+  /** Primeira linha, em negrito, depois do icone e do nome do sistema. */
+  titulo: string;
+  /** Linha menor logo abaixo — a funcao de quem e o aviso. */
+  subtitulo?: string;
+  /** Viram hashtag, para filtrar o historico com um toque. Sem `#`. */
+  etiquetas?: string[];
+  /** O dado tecnico, separado da mensagem humana. */
+  bloco?: LinhaDoBloco[];
+  /** O que fazer. Texto normal, no fim. */
+  recado?: string;
+  /** Notícia boa nao precisa tocar. */
+  silencioso?: boolean;
+}
 
 /** O envio HTTP, injetavel para o teste nao sair para a rede. */
 export type EnvioHttp = (
@@ -32,14 +61,6 @@ export type EnvioHttp = (
     signal?: AbortSignal;
   },
 ) => Promise<{ ok: boolean; status: number }>;
-
-/**
- * O `fetch` do Node NAO tem prazo total — so um limite por cabecalho/corpo,
- * de ~300 s. Com o Telegram alcancavel mas mudo (proxy travado, DNS preso),
- * tres tentativas levariam ate QUINZE MINUTOS para desistir, e o log de "nao
- * enviado" — unico registro de que o aviso existiu — chegaria depois disso.
- */
-const PRAZO_MS = 10_000;
 
 const ICONE: Record<NivelDoAviso, string> = {
   bom: '🟢',
@@ -53,13 +74,21 @@ const ICONE: Record<NivelDoAviso, string> = {
  *
  * O numero sai do que se perde: sem tabela, aviso que nao sai some para
  * sempre. Duas esperas curtas cobrem o soluco de rede e o 429 esporadico sem
- * segurar o ouvinte — que esta esperando esta promessa.
+ * segurar quem esta esperando esta promessa.
  */
 const ESPERAS_MS = [100, 300];
 
 /**
- * O NOME DA VENDEDORA E DADO DE FORA. Com `parse_mode: HTML`, um `<` solto
- * faz o Telegram recusar a mensagem inteira com 400 — e o aviso some.
+ * O `fetch` do Node NAO tem prazo total — so um limite por cabecalho/corpo,
+ * de ~300 s. Com o Telegram alcancavel mas mudo (proxy travado, DNS preso),
+ * tres tentativas levariam ate QUINZE MINUTOS para desistir, e o log de "nao
+ * enviado" — unico registro de que o aviso existiu — chegaria depois disso.
+ */
+const PRAZO_MS = 10_000;
+
+/**
+ * COM `parse_mode: HTML`, UM `<` SOLTO DERRUBA A MENSAGEM INTEIRA (400). E
+ * tudo o que entra aqui vem de fora: nome de vendedora, nome do sistema.
  */
 function esc(texto: string): string {
   return texto
@@ -91,13 +120,9 @@ export class TelegramClient {
    * Devolve `false` so quando havia o que enviar e nao saiu. Desligado ou sem
    * configuracao devolve `true`: nada falhou, e so nao era para falar.
    */
-  async enviar(
-    nivel: NivelDoAviso,
-    titulo: string,
-    linhas: string[],
-  ): Promise<boolean> {
-    const texto = this.montar(nivel, titulo, linhas);
-    const resumo = this.resumo(nivel, titulo, linhas);
+  async enviar(nivel: NivelDoAviso, aviso: Aviso): Promise<boolean> {
+    const texto = this.montar(nivel, aviso);
+    const resumo = this.resumo(nivel, aviso);
 
     const ativo = this.config.get<string>('TELEGRAM_ALERTAS_ATIVOS') === 'true';
     if (!ativo) {
@@ -111,7 +136,7 @@ export class TelegramClient {
       // Ligado e sem configuracao e engano de quem subiu, nao desenho: avisa
       // alto, mas nao quebra nada.
       this.logger.warn(
-        `TELEGRAM_ALERTAS_ATIVOS=true sem token ou sem chat. Nao enviado: ${titulo}`,
+        `TELEGRAM_ALERTAS_ATIVOS=true sem token ou sem chat. Nao enviado: ${aviso.titulo}`,
       );
       return true;
     }
@@ -121,6 +146,7 @@ export class TelegramClient {
       chat_id: chat,
       text: texto,
       parse_mode: 'HTML',
+      disable_notification: aviso.silencioso === true,
     });
 
     for (let i = 0; i < ESPERAS_MS.length + 1; i++) {
@@ -132,10 +158,10 @@ export class TelegramClient {
           signal: AbortSignal.timeout(PRAZO_MS),
         });
         if (r.ok) return true;
-        this.logger.warn(`Telegram devolveu ${r.status} em "${titulo}".`);
+        this.logger.warn(`Telegram devolveu ${r.status} em "${aviso.titulo}".`);
       } catch (err) {
         this.logger.warn(
-          `Falha de rede ao avisar "${titulo}": ${err instanceof Error ? err.message : String(err)}`,
+          `Falha de rede ao avisar "${aviso.titulo}": ${err instanceof Error ? err.message : String(err)}`,
         );
       }
       if (i < ESPERAS_MS.length) await espera(ESPERAS_MS[i]);
@@ -148,42 +174,58 @@ export class TelegramClient {
   }
 
   /**
-   * A HIERARQUIA E FEITA COM O QUE O TELEGRAM RESPEITA — 10/11/2026.
+   * A HIERARQUIA E FEITA COM O QUE O TELEGRAM RESPEITA.
    *
-   * A primeira versao recuava as linhas de detalhe com tres espacos. Visto na
-   * tela do celular, o Telegram praticamente nao mostra espaco a esquerda: o
-   * que era para ser hierarquia virava tres linhas iguais.
-   *
-   * Entao: NEGRITO no titulo, que e o que aparece na previa da notificacao e
-   * e a unica coisa que a pessoa le quando o celular esta na mao de alguem;
-   * ITALICO na primeira linha de detalhe, que e o contexto (estado, numero,
-   * hora); e o resto em texto normal, que e onde mora o que fazer.
-   *
-   * O prefixo `[<SISTEMA>]` fica ANTES do titulo, e nao depois, porque o mesmo
-   * bot vai atender mais de um projeto — quem le precisa saber de onde veio
-   * antes de ler o que aconteceu.
+   * NEGRITO no titulo, que e o que aparece na previa da notificacao e a unica
+   * coisa que se le com o celular na mao de alguem — e o nome do sistema vai
+   * DENTRO dele, para a previa dizer de onde veio. Hashtag na linha de baixo,
+   * que filtra o historico com um toque. `blockquote` separando o dado
+   * tecnico da mensagem humana, e `code` no valor, que sai monoespacado e
+   * copia com um toque.
    */
-  private montar(
-    nivel: NivelDoAviso,
-    titulo: string,
-    linhas: string[],
-  ): string {
+  private montar(nivel: NivelDoAviso, aviso: Aviso): string {
     const sistema = this.config.get<string>('TELEGRAM_SISTEMA') ?? '';
-    // O prefixo tambem vem de fora (`.env`) e esta em TODA mensagem: um `<`
-    // nele faria o Telegram recusar cada aviso com 400, para sempre.
-    const partes = [`${ICONE[nivel]} [${esc(sistema)}] <b>${esc(titulo)}</b>`];
-    if (linhas.length > 0) partes.push(`<i>${esc(linhas[0])}</i>`);
-    for (const l of linhas.slice(1)) partes.push(esc(l));
+    const partes = [
+      `${ICONE[nivel]} <b>[${esc(sistema)}] ${esc(aviso.titulo)}</b>`,
+    ];
+
+    const segunda = [
+      aviso.subtitulo ? esc(aviso.subtitulo) : null,
+      aviso.etiquetas?.length
+        ? aviso.etiquetas.map((e) => `#${esc(e)}`).join(' ')
+        : null,
+    ].filter((x): x is string => x !== null);
+    if (segunda.length) partes.push(segunda.join(' · '));
+
+    if (aviso.bloco?.length) {
+      const linhas = aviso.bloco.map((l) =>
+        l.valor === undefined
+          ? esc(l.rotulo)
+          : `${esc(l.rotulo)}: <code>${esc(l.valor)}</code>`,
+      );
+      // LINHA EM BRANCO ANTES DO BLOCO, pedido do Lucas depois de ver na tela:
+      // colado, o dado tecnico competia com o titulo em vez de apoia-lo.
+      partes.push('', `<blockquote>${linhas.join('\n')}</blockquote>`);
+    }
+
+    if (aviso.recado) partes.push(esc(aviso.recado));
+
     return partes.join('\n');
   }
 
   /** A mesma coisa sem marcacao, para o log nao ficar cheio de etiqueta. */
-  private resumo(
-    nivel: NivelDoAviso,
-    titulo: string,
-    linhas: string[],
-  ): string {
+  private resumo(nivel: NivelDoAviso, aviso: Aviso): string {
     const sistema = this.config.get<string>('TELEGRAM_SISTEMA') ?? '';
-    return [`${ICONE[nivel]} [${sistema}] ${titulo}`, ...linhas].join(' | ');
+    const bloco = (aviso.bloco ?? []).map((l) =>
+      l.valor === undefined ? l.rotulo : `${l.rotulo}: ${l.valor}`,
+    );
+    return [
+      `${ICONE[nivel]} [${sistema}] ${aviso.titulo}`,
+      aviso.subtitulo,
+      ...bloco,
+      aviso.recado,
+    ]
+      .filter(Boolean)
+      .join(' | ');
   }
 }

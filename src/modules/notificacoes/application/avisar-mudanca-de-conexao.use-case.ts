@@ -1,11 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import {
-  ConexoesService,
-  ORFA_COM_SESSAO,
-} from '../../atendimento/application/conexoes.service';
+import { ConexoesService } from '../../atendimento/application/conexoes.service';
 import { FUSO_DA_LOJA } from '../../../shared/erp/data-do-erp';
 import {
   TelegramClient,
+  type LinhaDoBloco,
   type NivelDoAviso,
 } from '../infrastructure/telegram/telegram.client';
 
@@ -23,10 +21,12 @@ import {
  * conta: clicar Conectar no painel avisa igual, e deslogar pelo celular nem
  * daria para distinguir.
  *
- * NAO HA MEMORIA DE ESTADO AQUI, e e decisao dele: *"o estado que esta agora
- * fica sem nada alertado"*. O ouvinte sobe e espera. O `ultimo` abaixo e
- * trava anti-enxurrada, nao deteccao de mudanca — quem detecta mudanca e o
- * WAHA, que so manda evento quando algo muda.
+ * NAO HA MEMORIA DE ESTADO AQUI, e e decisao dele: "o estado que esta agora
+ * fica sem nada alertado". O ouvinte sobe e espera. Os dois mapas abaixo nao
+ * detectam mudanca — quem detecta e o WAHA, que so manda evento quando algo
+ * muda. Um e trava anti-enxurrada; o outro so guarda a hora da queda para a
+ * mensagem de volta poder dizer quanto tempo ficou fora. Perder os dois num
+ * reinicio nao estraga nada: a linha some, e so.
  * ==========================================================================
  */
 
@@ -40,7 +40,13 @@ export interface EventoDeStatus {
 
 interface Fala {
   nivel: NivelDoAviso;
+  /** Vai depois do nome: "Anastasia <sufixo>". */
   sufixo: string;
+  /** Hashtag, sem `#`. */
+  etiqueta: string;
+  /** Como a hora aparece no bloco. */
+  quando: string;
+  silencioso?: boolean;
   recado?: string;
 }
 
@@ -51,19 +57,45 @@ interface Fala {
  * os dois seria mensagem dobrada para um acontecimento so.
  */
 const FALA: Record<string, Fala> = {
-  WORKING: { nivel: 'bom', sufixo: 'reconectada' },
+  WORKING: {
+    nivel: 'bom',
+    sufixo: 'reconectada',
+    etiqueta: 'ok',
+    quando: 'Desde',
+    // Noticia boa nao precisa tocar.
+    silencioso: true,
+  },
   SCAN_QR_CODE: {
     nivel: 'atencao',
-    sufixo: 'esperando leitura do QR',
-    recado: 'O código expira — escaneie logo.',
+    sufixo: 'aguardando QR',
+    etiqueta: 'qr',
+    // "PEDIDO AS", E NAO "EXPIRA AS". O `session.status` nao traz validade
+    // nenhuma, e o WhatsApp renova o codigo sozinho sem mudar de estado — um
+    // horario de expiracao seria chute com cara de dado.
+    quando: 'Pedido às',
+    recado: 'Escaneie logo — o código expira.',
   },
   FAILED: {
     nivel: 'ruim',
     sufixo: 'caiu',
+    etiqueta: 'falha',
+    quando: 'Desde',
     recado: 'Precisa reconectar pelo painel.',
   },
-  STOPPED: { nivel: 'neutro', sufixo: 'desconectada' },
-  UNKNOWN: { nivel: 'neutro', sufixo: 'em estado desconhecido' },
+  STOPPED: {
+    nivel: 'neutro',
+    sufixo: 'desconectada',
+    etiqueta: 'off',
+    quando: 'Desde',
+    // Desconectar costuma ser alguem clicando no painel, olhando a tela.
+    silencioso: true,
+  },
+  UNKNOWN: {
+    nivel: 'neutro',
+    sufixo: 'em estado desconhecido',
+    etiqueta: 'off',
+    quando: 'Desde',
+  },
 };
 
 /**
@@ -80,6 +112,8 @@ export class AvisarMudancaDeConexaoUseCase {
   private readonly logger = new Logger(AvisarMudancaDeConexaoUseCase.name);
   /** sessao -> ultimo status falado e quando. So anti-enxurrada. */
   private readonly ultimo = new Map<string, { status: string; em: number }>();
+  /** sessao -> quando saiu do ar, para a volta dizer quanto tempo ficou. */
+  private readonly caiuEm = new Map<string, Date>();
   /**
    * Nomes ja avisados como desconhecidos.
    *
@@ -103,8 +137,8 @@ export class AvisarMudancaDeConexaoUseCase {
 
     // Lista de permissao: `null` e sessao que a casa nao reconhece — de teste,
     // criada na mao. O `/ws` entrega todas, e sobre essas nao se fala.
-    const rotulo = await this.conexoes.rotuloDaSessao(evento.sessao);
-    if (!rotulo) {
+    const quem = await this.conexoes.identidadeDaSessao(evento.sessao);
+    if (!quem) {
       if (!this.desconhecidas.has(evento.sessao)) {
         this.desconhecidas.add(evento.sessao);
         this.logger.warn(
@@ -118,17 +152,48 @@ export class AvisarMudancaDeConexaoUseCase {
 
     if (this.repetido(evento)) return;
 
-    const linhas =
-      evento.status === 'WORKING'
-        ? [`Número ${this.numeroLimpo(evento.numero)} · ${this.quando(evento.em)}`]
-        : [`Estado: ${evento.status} · ${this.quando(evento.em)}`];
+    await this.telegram.enviar(fala.nivel, {
+      titulo: `${quem.nome} ${fala.sufixo}`,
+      subtitulo: quem.funcao,
+      etiquetas: [fala.etiqueta],
+      bloco: this.bloco(evento, fala, quem.orfa),
+      recado: fala.recado,
+      silencioso: fala.silencioso,
+    });
+  }
+
+  private bloco(
+    evento: EventoDeStatus,
+    fala: Fala,
+    orfa: boolean,
+  ): LinhaDoBloco[] {
+    const linhas: LinhaDoBloco[] = [];
+
+    if (evento.status === 'WORKING') {
+      linhas.push({ rotulo: 'Número', valor: this.numero(evento.numero) });
+      const caiu = this.caiuEm.get(evento.sessao);
+      this.caiuEm.delete(evento.sessao);
+      if (caiu) {
+        linhas.push({
+          rotulo:
+            `Fora do ar: ${this.duracao(evento.em.getTime() - caiu.getTime())} ` +
+            `(${this.hora(caiu)} → ${this.hora(evento.em)})`,
+        });
+      }
+    } else {
+      if (!this.caiuEm.has(evento.sessao)) {
+        this.caiuEm.set(evento.sessao, evento.em);
+      }
+      linhas.push({ rotulo: 'Estado', valor: evento.status });
+      linhas.push({ rotulo: `${fala.quando} ${this.hora(evento.em)}` });
+    }
+
     // A ORFA NAO NOMEIA NINGUEM: sem o nome da sessao, dois orfaos dao dois
     // avisos identicos, e so a tela de Conexoes diria qual e qual — que e a
     // conferencia manual que isto existe para tirar.
-    if (rotulo === ORFA_COM_SESSAO) linhas.push(`Sessão: ${evento.sessao}`);
-    if (fala.recado) linhas.push(fala.recado);
+    if (orfa) linhas.push({ rotulo: 'Sessão', valor: evento.sessao });
 
-    await this.telegram.enviar(fala.nivel, `${rotulo} ${fala.sufixo}`, linhas);
+    return linhas;
   }
 
   /** O mesmo status, na mesma sessao, dentro da janela. */
@@ -146,23 +211,32 @@ export class AvisarMudancaDeConexaoUseCase {
     return false;
   }
 
-  /** `5585920110403@c.us` vira `5585920110403`. */
-  private numeroLimpo(numero: string | null): string {
+  /** `5585920110403@c.us` vira `+55 85 92011-0403`. */
+  private numero(numero: string | null): string {
     if (!numero) return 'não informado';
-    return numero.split('@')[0];
+    const so = numero.split('@')[0].replace(/\D/g, '');
+    const m = /^55(\d{2})(\d{4,5})(\d{4})$/.exec(so);
+    return m ? `+55 ${m[1]} ${m[2]}-${m[3]}` : so;
   }
 
-  /** `dd/MM HH:mm` no fuso da loja. */
-  private quando(em: Date): string {
+  private duracao(ms: number): string {
+    const min = Math.round(ms / 60_000);
+    if (min < 1) return 'menos de 1 min';
+    if (min < 60) return `${min} min`;
+    const h = Math.floor(min / 60);
+    const resto = min % 60;
+    return resto ? `${h} h ${resto} min` : `${h} h`;
+  }
+
+  /** `HH:mm` no fuso da loja. */
+  private hora(em: Date): string {
     const p = new Intl.DateTimeFormat('pt-BR', {
       timeZone: FUSO_DA_LOJA,
-      day: '2-digit',
-      month: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
     }).formatToParts(em);
     const v = (t: string) => p.find((x) => x.type === t)?.value ?? '';
-    return `${v('day')}/${v('month')} ${v('hour')}:${v('minute')}`;
+    return `${v('hour')}:${v('minute')}`;
   }
 }
