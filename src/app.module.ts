@@ -39,6 +39,7 @@ import { AgentesModule } from './modules/agentes/agentes.module';
 import { AtendimentoModule } from './modules/atendimento/atendimento.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AtendimentosModule } from './modules/atendimentos/atendimentos.module';
+import { NotificacoesModule } from './modules/notificacoes/notificacoes.module';
 import { ConversaOrmEntity } from './modules/agentes/infrastructure/database/typeorm/entities/conversa.orm-entity';
 import { AgentePromptOrmEntity } from './modules/agentes/infrastructure/database/typeorm/entities/agente-prompt.orm-entity';
 import { AgenteEventoOrmEntity } from './modules/agente-eventos/infrastructure/database/typeorm/entities/agente-evento.orm-entity';
@@ -158,6 +159,9 @@ import { AlertasModule } from './modules/alertas/alertas.module';
     AgentesModule,
     AtendimentoModule,
     AtendimentosModule,
+    // Avisa no Telegram quando uma conexao do WhatsApp muda de estado. Nasce
+    // desligado (TELEGRAM_ALERTAS_ATIVOS); inerte sem WAHA_BASE_URL.
+    NotificacoesModule,
   ],
   controllers: [HealthController],
   providers: [
