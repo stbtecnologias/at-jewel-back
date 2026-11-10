@@ -28,8 +28,16 @@ const cfg = (v: Record<string, string>): ConfigService =>
   ({ get: (k: string) => v[k] }) as unknown as ConfigService;
 
 describe('TelegramClient', () => {
-  it('monta a mensagem com icone, prefixo e recuo', async () => {
-    let corpo: { chat_id?: string; text?: string } = {};
+  /**
+   * O RECUO DE TRES ESPACOS NAO APARECIA — visto na tela dele em 10/11.
+   *
+   * O Telegram praticamente nao mostra espaco a esquerda, entao o que era
+   * para ser hierarquia virava tres linhas iguais. A hierarquia agora e feita
+   * com o que ele RESPEITA: negrito no titulo, que e o que aparece na previa
+   * da notificacao, e italico na linha de contexto.
+   */
+  it('monta a mensagem com icone, prefixo, titulo em negrito e contexto em italico', async () => {
+    let corpo: { chat_id?: string; text?: string; parse_mode?: string } = {};
     const envio: EnvioHttp = async (_u, i) => {
       corpo = JSON.parse(i.body) as typeof corpo;
       return { ok: true, status: 200 };
@@ -42,11 +50,47 @@ describe('TelegramClient', () => {
     );
 
     expect(corpo.chat_id).toBe('42');
+    expect(corpo.parse_mode).toBe('HTML');
     expect(corpo.text).toBe(
-      '🔴 [A.T JEWEL] Anastasia (gestão) caiu\n' +
-        '   Estado: FAILED · 10/11 17:34\n' +
-        '   Precisa reconectar pelo painel.',
+      '🔴 [A.T JEWEL] <b>Anastasia (gestão) caiu</b>\n' +
+        '<i>Estado: FAILED · 10/11 17:34</i>\n' +
+        'Precisa reconectar pelo painel.',
     );
+  });
+
+  /**
+   * O NOME DA VENDEDORA E DADO DE FORA, e com `parse_mode: HTML` um `<` solto
+   * quebraria a mensagem inteira — o Telegram recusa com 400 e o aviso some.
+   */
+  it('escapa o que vem de fora, para um caractere nao derrubar o aviso', async () => {
+    let corpo: { text?: string } = {};
+    const envio: EnvioHttp = async (_u, i) => {
+      corpo = JSON.parse(i.body) as typeof corpo;
+      return { ok: true, status: 200 };
+    };
+
+    await new TelegramClient(cfg(LIGADO), envio).enviar(
+      'neutro',
+      'Vendedora: ANA & <b>BIA</b> desconectada',
+      ['Estado: STOPPED'],
+    );
+
+    expect(corpo.text).toBe(
+      '⚪ [A.T JEWEL] <b>Vendedora: ANA &amp; &lt;b&gt;BIA&lt;/b&gt; desconectada</b>\n' +
+        '<i>Estado: STOPPED</i>',
+    );
+  });
+
+  it('titulo sem linha nenhuma continua valendo', async () => {
+    let corpo: { text?: string } = {};
+    const envio: EnvioHttp = async (_u, i) => {
+      corpo = JSON.parse(i.body) as typeof corpo;
+      return { ok: true, status: 200 };
+    };
+
+    await new TelegramClient(cfg(LIGADO), envio).enviar('bom', 'Tudo certo', []);
+
+    expect(corpo.text).toBe('🟢 [A.T JEWEL] <b>Tudo certo</b>');
   });
 
   it('o interruptor desligado NAO envia, e devolve true', async () => {

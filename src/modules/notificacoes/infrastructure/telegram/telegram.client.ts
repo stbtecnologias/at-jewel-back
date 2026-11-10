@@ -44,6 +44,17 @@ const ICONE: Record<NivelDoAviso, string> = {
  */
 const ESPERAS_MS = [100, 300];
 
+/**
+ * O NOME DA VENDEDORA E DADO DE FORA. Com `parse_mode: HTML`, um `<` solto
+ * faz o Telegram recusar a mensagem inteira com 400 — e o aviso some.
+ */
+function esc(texto: string): string {
+  return texto
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 const envioPadrao: EnvioHttp = async (url, init) => {
   const r = await fetch(url, init);
   return { ok: r.ok, status: r.status };
@@ -73,10 +84,11 @@ export class TelegramClient {
     linhas: string[],
   ): Promise<boolean> {
     const texto = this.montar(nivel, titulo, linhas);
+    const resumo = this.resumo(nivel, titulo, linhas);
 
     const ativo = this.config.get<string>('TELEGRAM_ALERTAS_ATIVOS') === 'true';
     if (!ativo) {
-      this.logger.log(`[desligado, nao enviado] ${texto.replace(/\n/g, ' | ')}`);
+      this.logger.log(`[desligado, nao enviado] ${resumo}`);
       return true;
     }
 
@@ -92,7 +104,11 @@ export class TelegramClient {
     }
 
     const url = `https://api.telegram.org/bot${token}/sendMessage`;
-    const corpo = JSON.stringify({ chat_id: chat, text: texto });
+    const corpo = JSON.stringify({
+      chat_id: chat,
+      text: texto,
+      parse_mode: 'HTML',
+    });
 
     for (let i = 0; i < ESPERAS_MS.length + 1; i++) {
       try {
@@ -113,19 +129,45 @@ export class TelegramClient {
 
     // A ultima linha de defesa: sem tabela, este log e o unico lugar onde o
     // aviso perdido ainda existe.
-    this.logger.error(`AVISO NAO ENVIADO: ${texto.replace(/\n/g, ' | ')}`);
+    this.logger.error(`AVISO NAO ENVIADO: ${resumo}`);
     return false;
   }
 
-  /** `<icone> [<SISTEMA>] <titulo>` e as demais linhas com tres espacos. */
+  /**
+   * A HIERARQUIA E FEITA COM O QUE O TELEGRAM RESPEITA — 10/11/2026.
+   *
+   * A primeira versao recuava as linhas de detalhe com tres espacos. Visto na
+   * tela do celular, o Telegram praticamente nao mostra espaco a esquerda: o
+   * que era para ser hierarquia virava tres linhas iguais.
+   *
+   * Entao: NEGRITO no titulo, que e o que aparece na previa da notificacao e
+   * e a unica coisa que a pessoa le quando o celular esta na mao de alguem;
+   * ITALICO na primeira linha de detalhe, que e o contexto (estado, numero,
+   * hora); e o resto em texto normal, que e onde mora o que fazer.
+   *
+   * O prefixo `[<SISTEMA>]` fica ANTES do titulo, e nao depois, porque o mesmo
+   * bot vai atender mais de um projeto — quem le precisa saber de onde veio
+   * antes de ler o que aconteceu.
+   */
   private montar(
     nivel: NivelDoAviso,
     titulo: string,
     linhas: string[],
   ): string {
     const sistema = this.config.get<string>('TELEGRAM_SISTEMA') ?? '';
-    const cabeca = `${ICONE[nivel]} [${sistema}] ${titulo}`;
-    if (linhas.length === 0) return cabeca;
-    return [cabeca, ...linhas.map((l) => `   ${l}`)].join('\n');
+    const partes = [`${ICONE[nivel]} [${sistema}] <b>${esc(titulo)}</b>`];
+    if (linhas.length > 0) partes.push(`<i>${esc(linhas[0])}</i>`);
+    for (const l of linhas.slice(1)) partes.push(esc(l));
+    return partes.join('\n');
+  }
+
+  /** A mesma coisa sem marcacao, para o log nao ficar cheio de etiqueta. */
+  private resumo(
+    nivel: NivelDoAviso,
+    titulo: string,
+    linhas: string[],
+  ): string {
+    const sistema = this.config.get<string>('TELEGRAM_SISTEMA') ?? '';
+    return [`${ICONE[nivel]} [${sistema}] ${titulo}`, ...linhas].join(' | ');
   }
 }
