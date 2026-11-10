@@ -1,5 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConexoesService } from '../../atendimento/application/conexoes.service';
+import {
+  ConexoesService,
+  ORFA_COM_SESSAO,
+} from '../../atendimento/application/conexoes.service';
 import { FUSO_DA_LOJA } from '../../../shared/erp/data-do-erp';
 import {
   TelegramClient,
@@ -77,6 +80,17 @@ export class AvisarMudancaDeConexaoUseCase {
   private readonly logger = new Logger(AvisarMudancaDeConexaoUseCase.name);
   /** sessao -> ultimo status falado e quando. So anti-enxurrada. */
   private readonly ultimo = new Map<string, { status: string; em: number }>();
+  /**
+   * Nomes ja avisados como desconhecidos.
+   *
+   * SILENCIO E O SINAL DE "ESTA TUDO BEM" DESTE SISTEMA, entao sessao
+   * descartada precisa deixar rastro. Em producao o log e `info` e o `debug`
+   * nao existe la: se `WAHA_SESSION_ELENA` estiver errada ou faltando, todo
+   * evento da Helena cairia no `null` da lista de permissao sem deixar marca,
+   * e o canal pareceria saudavel porque as outras sessoes seguem avisando.
+   * Um `warn` por NOME, uma vez so, torna isso visivel sem virar enxurrada.
+   */
+  private readonly desconhecidas = new Set<string>();
 
   constructor(
     private readonly conexoes: ConexoesService,
@@ -91,9 +105,14 @@ export class AvisarMudancaDeConexaoUseCase {
     // criada na mao. O `/ws` entrega todas, e sobre essas nao se fala.
     const rotulo = await this.conexoes.rotuloDaSessao(evento.sessao);
     if (!rotulo) {
-      this.logger.debug(
-        `Sessao "${evento.sessao}" nao e nossa: ${evento.status} ignorado.`,
-      );
+      if (!this.desconhecidas.has(evento.sessao)) {
+        this.desconhecidas.add(evento.sessao);
+        this.logger.warn(
+          `Sessao "${evento.sessao}" nao e reconhecida pela casa: os eventos ` +
+            'dela serao ignorados. Se isto e uma agente, confira WAHA_SESSION ' +
+            'e WAHA_SESSION_ELENA.',
+        );
+      }
       return;
     }
 
@@ -103,6 +122,10 @@ export class AvisarMudancaDeConexaoUseCase {
       evento.status === 'WORKING'
         ? [`Número ${this.numeroLimpo(evento.numero)} · ${this.quando(evento.em)}`]
         : [`Estado: ${evento.status} · ${this.quando(evento.em)}`];
+    // A ORFA NAO NOMEIA NINGUEM: sem o nome da sessao, dois orfaos dao dois
+    // avisos identicos, e so a tela de Conexoes diria qual e qual — que e a
+    // conferencia manual que isto existe para tirar.
+    if (rotulo === ORFA_COM_SESSAO) linhas.push(`Sessão: ${evento.sessao}`);
     if (fala.recado) linhas.push(fala.recado);
 
     await this.telegram.enviar(fala.nivel, `${rotulo} ${fala.sufixo}`, linhas);

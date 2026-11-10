@@ -42,7 +42,7 @@ const PREFIXO = 'vend-';
  * Virou constante em 10/11/2026 porque passou a ser dito em dois lugares — a
  * tela e o aviso no Telegram —, e texto repetido e texto que diverge.
  */
-const ORFA_COM_SESSAO = 'Vendedora desligada — conexão ainda ativa';
+export const ORFA_COM_SESSAO = 'Vendedora desligada — conexão ainda ativa';
 
 /** `vend-<uuid>`. O nome da sessao e DERIVADO do id da vendedora. */
 const RE_SESSAO_VENDEDORA = new RegExp(

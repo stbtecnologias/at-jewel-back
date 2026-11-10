@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { AvisarMudancaDeConexaoUseCase } from './avisar-mudanca-de-conexao.use-case';
 
 /**
@@ -173,5 +174,66 @@ describe('AvisarMudancaDeConexaoUseCase', () => {
 
     expect(enviados).toHaveLength(1);
     expect(enviados[0].nivel).toBe('neutro');
+  });
+
+  /**
+   * A ORFA PRECISA DIZER QUAL E — achado da revisao de 10/11.
+   *
+   * O rotulo da orfa nao nomeia ninguem: "Vendedora desligada — conexao ainda
+   * ativa". Com dois orfaos no WAHA, os dois avisos sairiam identicos, e o
+   * Lucas teria de abrir a tela de Conexoes para descobrir qual — que e
+   * exatamente a conferencia manual que esta funcionalidade existe para tirar.
+   */
+  it('a orfa leva o nome da sessao, senao o aviso nao diz qual e', async () => {
+    await new AvisarMudancaDeConexaoUseCase(
+      conexoes('Vendedora desligada — conexão ainda ativa'),
+      telegram,
+    ).executar({
+      sessao: 'vend-9ef62011-af97-4bde-83d8-a63142b45c73',
+      status: 'FAILED',
+      numero: null,
+      em: EM,
+    });
+
+    expect(enviados[0].linhas).toContain(
+      'Sessão: vend-9ef62011-af97-4bde-83d8-a63142b45c73',
+    );
+  });
+
+  it('quem tem nome proprio NAO ganha a linha da sessao', async () => {
+    await new AvisarMudancaDeConexaoUseCase(
+      conexoes('Anastasia (gestão)'),
+      telegram,
+    ).executar({ sessao: 'default', status: 'FAILED', numero: null, em: EM });
+
+    expect(enviados[0].linhas.join(' ')).not.toContain('Sessão:');
+  });
+
+  /**
+   * SILENCIO E O SINAL DE "ESTA TUDO BEM" DESTE SISTEMA — revisao de 10/11.
+   *
+   * Em producao o nivel de log e `info`, entao o `debug` da sessao ignorada
+   * NAO EXISTE la. Se `WAHA_SESSION_ELENA` estiver errada ou faltando, todo
+   * evento da Helena cai no `null` da lista de permissao e e descartado sem
+   * deixar rastro — e o canal parece saudavel porque as outras sessoes
+   * seguem avisando. Um `warn`, UMA vez por nome, e o que torna isso visivel
+   * sem virar enxurrada.
+   */
+  it('sessao desconhecida vira aviso no log UMA vez, nao a cada evento', async () => {
+    const avisos: string[] = [];
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation((m: unknown) => {
+      avisos.push(String(m));
+    });
+
+    const uc = new AvisarMudancaDeConexaoUseCase(conexoes(null), telegram);
+    await uc.executar({ sessao: 'teste-na-mao', status: 'FAILED', numero: null, em: EM });
+    await uc.executar({ sessao: 'teste-na-mao', status: 'WORKING', numero: null, em: EM });
+    await uc.executar({ sessao: 'outra-na-mao', status: 'FAILED', numero: null, em: EM });
+
+    expect(avisos.filter((a) => a.includes('teste-na-mao'))).toHaveLength(1);
+    expect(avisos.filter((a) => a.includes('outra-na-mao'))).toHaveLength(1);
+    expect(enviados).toHaveLength(0);
+
+    jest.restoreAllMocks();
   });
 });

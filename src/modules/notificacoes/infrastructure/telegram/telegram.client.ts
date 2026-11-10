@@ -25,8 +25,21 @@ export type NivelDoAviso = 'bom' | 'atencao' | 'ruim' | 'neutro';
 /** O envio HTTP, injetavel para o teste nao sair para a rede. */
 export type EnvioHttp = (
   url: string,
-  init: { method: string; headers: Record<string, string>; body: string },
+  init: {
+    method: string;
+    headers: Record<string, string>;
+    body: string;
+    signal?: AbortSignal;
+  },
 ) => Promise<{ ok: boolean; status: number }>;
+
+/**
+ * O `fetch` do Node NAO tem prazo total — so um limite por cabecalho/corpo,
+ * de ~300 s. Com o Telegram alcancavel mas mudo (proxy travado, DNS preso),
+ * tres tentativas levariam ate QUINZE MINUTOS para desistir, e o log de "nao
+ * enviado" — unico registro de que o aviso existiu — chegaria depois disso.
+ */
+const PRAZO_MS = 10_000;
 
 const ICONE: Record<NivelDoAviso, string> = {
   bom: '🟢',
@@ -116,6 +129,7 @@ export class TelegramClient {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: corpo,
+          signal: AbortSignal.timeout(PRAZO_MS),
         });
         if (r.ok) return true;
         this.logger.warn(`Telegram devolveu ${r.status} em "${titulo}".`);
@@ -155,7 +169,9 @@ export class TelegramClient {
     linhas: string[],
   ): string {
     const sistema = this.config.get<string>('TELEGRAM_SISTEMA') ?? '';
-    const partes = [`${ICONE[nivel]} [${sistema}] <b>${esc(titulo)}</b>`];
+    // O prefixo tambem vem de fora (`.env`) e esta em TODA mensagem: um `<`
+    // nele faria o Telegram recusar cada aviso com 400, para sempre.
+    const partes = [`${ICONE[nivel]} [${esc(sistema)}] <b>${esc(titulo)}</b>`];
     if (linhas.length > 0) partes.push(`<i>${esc(linhas[0])}</i>`);
     for (const l of linhas.slice(1)) partes.push(esc(l));
     return partes.join('\n');

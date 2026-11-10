@@ -9,16 +9,11 @@ import {
  * ==========================================================================
  * O CANAL QUE NAO TOCA EM NENHUMA SESSAO — 10/11/2026.
  *
- * Medido no WAHA local (2026.8.2, GOWS, CORE): uma sessao criada com
- * `webhooks: []` — nenhum webhook configurado — ainda assim teve os eventos
- * `session.status` entregues pelo canal `/ws`. E por isso que este caminho
- * foi escolhido: nenhuma sessao e reescrita, e reescrever a config de uma
- * sessao a REINICIA — em chip sem aparelho, isso significa QR novo.
- *
- * A CHAVE VAI NO CABECALHO. O `WebSocket` embutido do Node 22 nao aceita
- * cabecalho, e a chave teria de viajar na query string, onde aparece em log
- * de acesso. E o unico motivo de existir a dependencia `ws` — e ha teste so
- * para isso.
+ * MEDIDO antes de escolher: uma sessao criada com `webhooks: []` — nenhum
+ * webhook configurado — ainda assim teve os eventos `session.status`
+ * entregues pelo canal `/ws`, no WAHA 2026.8.2, GOWS, tier CORE. E por isso
+ * que este caminho foi escolhido: nenhuma sessao e reescrita, e reescrever a
+ * config de uma sessao a REINICIA — em chip sem aparelho, QR novo.
  * ==========================================================================
  */
 
@@ -31,17 +26,33 @@ interface Pontas {
   abrir?: () => void;
   receber?: (t: string) => Promise<void> | void;
   fechar?: () => void;
+  pong?: () => void;
 }
 
-function sockete(): { s: SocketDoWaha; h: Pontas } {
+interface Espiao {
+  s: SocketDoWaha;
+  h: Pontas;
+  pings: number;
+  derrubado: boolean;
+}
+
+function sockete(): Espiao {
   const h: Pontas = {};
-  const s: SocketDoWaha = {
-    aoAbrir: (f) => (h.abrir = f),
-    aoReceber: (f) => (h.receber = f),
-    aoFechar: (f) => (h.fechar = f),
-    fechar: () => undefined,
+  const e: Espiao = {
+    h,
+    pings: 0,
+    derrubado: false,
+    s: {
+      aoAbrir: (f) => (h.abrir = f),
+      aoReceber: (f) => (h.receber = f),
+      aoFechar: (f) => (h.fechar = f),
+      aoPong: (f) => (h.pong = f),
+      pingar: () => e.pings++,
+      derrubar: () => (e.derrubado = true),
+      fechar: () => undefined,
+    },
   };
-  return { s, h };
+  return e;
 }
 
 const EVENTO = JSON.stringify({
@@ -52,6 +63,7 @@ const EVENTO = JSON.stringify({
 });
 
 const nadaFaz = { executar: async () => undefined } as never;
+const semTelegram = { enviar: async () => true } as never;
 
 describe('OuvinteDeStatusService', () => {
   it('sem WAHA_BASE_URL o ouvinte NAO conecta', () => {
@@ -64,7 +76,7 @@ describe('OuvinteDeStatusService', () => {
     new OuvinteDeStatusService(
       cfg(''),
       nadaFaz,
-      {} as never,
+      semTelegram,
       fabrica,
     ).onModuleInit();
 
@@ -96,33 +108,56 @@ describe('OuvinteDeStatusService', () => {
     const o = new OuvinteDeStatusService(
       cfg('http://waha:3000'),
       nadaFaz,
-      {} as never,
+      semTelegram,
       fabrica,
     );
     o.onModuleInit();
 
-    expect(url).toBe(
-      'ws://waha:3000/ws?events=session.status&x-api-key=chave',
+    expect(url).toBe('ws://waha:3000/ws?events=session.status&x-api-key=chave');
+    o.onModuleDestroy();
+  });
+
+  /**
+   * URL TORTA NAO PODE DERRUBAR A API INTEIRA.
+   *
+   * `new WebSocket('waha:3000')` estoura SINCRONO, e a mensagem do erro traz
+   * a URL COMPLETA — com a chave dentro. Dentro do `onModuleInit` isso nao e
+   * "o aviso nao funciona": e o Nest nao subir, com a chave no stack trace.
+   * E `WAHA_BASE_URL` nao esta no `.env.example`, o que torna o erro de
+   * digitacao bem mais provavel do que parece.
+   */
+  it('URL invalida nao derruba o boot, e nao fica tentando', () => {
+    const fabrica: FabricaDeSocket = () => {
+      throw new SyntaxError('Invalid URL: ws:// errado?x-api-key=SEGREDO');
+    };
+
+    const o = new OuvinteDeStatusService(
+      cfg('http:// errado'),
+      nadaFaz,
+      semTelegram,
+      fabrica,
     );
+
+    expect(() => o.onModuleInit()).not.toThrow();
     o.onModuleDestroy();
   });
 
   it('evento valido chega no caso de uso', async () => {
     const vistos: Array<{ sessao: string; status: string }> = [];
-    const { s, h } = sockete();
+    const e = sockete();
 
     const o = new OuvinteDeStatusService(
       cfg('http://waha:3000'),
       {
-        executar: async (e: { sessao: string; status: string }) => {
-          vistos.push(e);
+        executar: async (ev: { sessao: string; status: string }) => {
+          vistos.push(ev);
         },
       } as never,
-      {} as never,
-      () => s,
+      semTelegram,
+      () => e.s,
     );
     o.onModuleInit();
-    await h.receber?.(EVENTO);
+    await e.h.receber?.(EVENTO);
 
     expect(vistos[0].sessao).toBe('default');
     expect(vistos[0].status).toBe('FAILED');
@@ -130,7 +165,7 @@ describe('OuvinteDeStatusService', () => {
   });
 
   it('JSON quebrado e evento sem status nao estouram', async () => {
-    const { s, h } = sockete();
+    const e = sockete();
     const quebra = {
       executar: async () => {
         throw new Error('nunca deveria ser chamado');
@@ -140,14 +175,14 @@ describe('OuvinteDeStatusService', () => {
     const o = new OuvinteDeStatusService(
       cfg('http://waha:3000'),
       quebra,
-      {} as never,
-      () => s,
+      semTelegram,
+      () => e.s,
     );
     o.onModuleInit();
 
-    await expect(h.receber?.('{ isso nao e json')).resolves.toBeUndefined();
+    await expect(e.h.receber?.('{ isso nao e json')).resolves.toBeUndefined();
     await expect(
-      h.receber?.(
+      e.h.receber?.(
         JSON.stringify({ event: 'session.status', session: 'x', payload: {} }),
       ),
     ).resolves.toBeUndefined();
@@ -156,16 +191,16 @@ describe('OuvinteDeStatusService', () => {
 
   it('evento que nao e session.status e ignorado', async () => {
     const vistos: unknown[] = [];
-    const { s, h } = sockete();
+    const e = sockete();
 
     const o = new OuvinteDeStatusService(
       cfg('http://waha:3000'),
-      { executar: async (e: unknown) => void vistos.push(e) } as never,
-      {} as never,
-      () => s,
+      { executar: async (ev: unknown) => void vistos.push(ev) } as never,
+      semTelegram,
+      () => e.s,
     );
     o.onModuleInit();
-    await h.receber?.(
+    await e.h.receber?.(
       JSON.stringify({ event: 'message', session: 'default', payload: {} }),
     );
 
@@ -174,7 +209,7 @@ describe('OuvinteDeStatusService', () => {
   });
 
   it('falha do caso de uso nao derruba o ouvinte', async () => {
-    const { s, h } = sockete();
+    const e = sockete();
     const quebra = {
       executar: async () => {
         throw new Error('telegram fora');
@@ -184,27 +219,29 @@ describe('OuvinteDeStatusService', () => {
     const o = new OuvinteDeStatusService(
       cfg('http://waha:3000'),
       quebra,
-      {} as never,
-      () => s,
+      semTelegram,
+      () => e.s,
     );
     o.onModuleInit();
 
-    await expect(h.receber?.(EVENTO)).resolves.toBeUndefined();
+    await expect(e.h.receber?.(EVENTO)).resolves.toBeUndefined();
     o.onModuleDestroy();
   });
 
   it('o numero so viaja quando o WAHA manda `me`', async () => {
     const vistos: Array<{ numero: string | null }> = [];
-    const { s, h } = sockete();
+    const e = sockete();
 
     const o = new OuvinteDeStatusService(
       cfg('http://waha:3000'),
-      { executar: async (e: { numero: string | null }) => void vistos.push(e) } as never,
-      {} as never,
-      () => s,
+      {
+        executar: async (ev: { numero: string | null }) => void vistos.push(ev),
+      } as never,
+      semTelegram,
+      () => e.s,
     );
     o.onModuleInit();
-    await h.receber?.(
+    await e.h.receber?.(
       JSON.stringify({
         event: 'session.status',
         session: 'default',
@@ -215,5 +252,168 @@ describe('OuvinteDeStatusService', () => {
 
     expect(vistos[0].numero).toBe('5585920110403@c.us');
     o.onModuleDestroy();
+  });
+
+  /**
+   * ==========================================================================
+   * ABRIR NAO E ESTAR DE PE — achado da revisao de 10/11.
+   *
+   * O `code=1008 Unauthorized` que eu medi e um CLOSE FRAME: ele so existe
+   * depois do handshake ter dado certo. Ou seja, o `ws` emite `open` e logo
+   * em seguida `close`. Se `open` zera a espera e cancela a carencia, um
+   * servidor que aceita e derruba produz:
+   *
+   *   - laco de um segundo, para sempre, martelando o WAHA;
+   *   - a carencia NUNCA amadurece, entao o aviso "Sem contato com o WAHA"
+   *     nunca sai;
+   *   - duas linhas de log por segundo, ~170 mil por dia.
+   *
+   * O vigia fica cego E mudo — que e o defeito de tres dias de silencio
+   * reproduzido um nivel acima. Por isso "saudavel" passou a significar
+   * ABERTO HA UM TEMPO, e nao "abriu".
+   * ==========================================================================
+   */
+  describe('abrir e cair na hora', () => {
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => jest.useRealTimers());
+
+    const montar = (enviados: Array<{ nivel: string; titulo: string }>) => {
+      const sockets: Espiao[] = [];
+      const fabrica: FabricaDeSocket = () => {
+        const e = sockete();
+        sockets.push(e);
+        return e.s;
+      };
+      const telegram = {
+        enviar: async (nivel: string, titulo: string) => {
+          enviados.push({ nivel, titulo });
+          return true;
+        },
+      } as never;
+      const o = new OuvinteDeStatusService(
+        cfg('http://waha:3000'),
+        nadaFaz,
+        telegram,
+        fabrica,
+      );
+      return { o, sockets };
+    };
+
+    it('NAO zera a espera: a segunda queda espera mais que a primeira', () => {
+      const { o, sockets } = montar([]);
+      o.onModuleInit();
+
+      // Abre e cai na hora, duas vezes.
+      sockets[0].h.abrir?.();
+      sockets[0].h.fechar?.();
+      jest.advanceTimersByTime(1_000);
+      expect(sockets).toHaveLength(2);
+
+      sockets[1].h.abrir?.();
+      sockets[1].h.fechar?.();
+      jest.advanceTimersByTime(1_000);
+      expect(sockets).toHaveLength(2); // ainda nao: a espera agora e maior
+
+      jest.advanceTimersByTime(1_000);
+      expect(sockets).toHaveLength(3);
+
+      o.onModuleDestroy();
+    });
+
+    it('a carencia amadurece e o aviso de perda SAI, mesmo abrindo no meio', async () => {
+      const enviados: Array<{ nivel: string; titulo: string }> = [];
+      const { o, sockets } = montar(enviados);
+      o.onModuleInit();
+
+      sockets[0].h.abrir?.();
+      sockets[0].h.fechar?.();
+
+      // Reconecta e cai de novo, varias vezes, dentro da carencia.
+      for (let i = 0; i < 20; i++) {
+        jest.advanceTimersByTime(5_000);
+        const ultimo = sockets[sockets.length - 1];
+        ultimo.h.abrir?.();
+        ultimo.h.fechar?.();
+      }
+
+      expect(enviados.map((e) => e.titulo)).toContain('Sem contato com o WAHA');
+      o.onModuleDestroy();
+    });
+
+    it('conexao que FICA de pe zera a espera', () => {
+      const { o, sockets } = montar([]);
+      o.onModuleInit();
+
+      sockets[0].h.abrir?.();
+      sockets[0].h.fechar?.();
+      jest.advanceTimersByTime(1_000);
+
+      // A segunda fica de pe tempo suficiente para ser considerada saudavel.
+      sockets[1].h.abrir?.();
+      jest.advanceTimersByTime(31_000);
+      sockets[1].h.fechar?.();
+
+      jest.advanceTimersByTime(1_000);
+      expect(sockets).toHaveLength(3); // voltou para a primeira espera
+
+      o.onModuleDestroy();
+    });
+  });
+
+  /**
+   * ==========================================================================
+   * O CANO MORTO — achado da revisao de 10/11.
+   *
+   * `session.status` e fluxo de pouquissimo trafego: dias sem um unico quadro
+   * sao normais. Entao "nao chega nada" e indistinguivel de "esta tudo bem".
+   * Se o conteiner do WAHA congelar, ou a rota cair sem FIN, o socket fica
+   * ABERTO do nosso lado e nenhum `close` dispara — o ouvinte escuta um cano
+   * morto por semanas, dizendo que esta de pe.
+   *
+   * Por isso ping com prazo: sem pong dentro do prazo, derruba de proposito,
+   * e o caminho de queda que ja existe faz o resto.
+   * ==========================================================================
+   */
+  describe('cano morto', () => {
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => jest.useRealTimers());
+
+    it('manda ping enquanto esta de pe', () => {
+      const e = sockete();
+      const o = new OuvinteDeStatusService(
+        cfg('http://waha:3000'),
+        nadaFaz,
+        semTelegram,
+        () => e.s,
+      );
+      o.onModuleInit();
+      e.h.abrir?.();
+
+      jest.advanceTimersByTime(30_000);
+      expect(e.pings).toBe(1);
+
+      e.h.pong?.();
+      jest.advanceTimersByTime(30_000);
+      expect(e.pings).toBe(2);
+
+      o.onModuleDestroy();
+    });
+
+    it('sem pong dentro do prazo, derruba a conexao', () => {
+      const e = sockete();
+      const o = new OuvinteDeStatusService(
+        cfg('http://waha:3000'),
+        nadaFaz,
+        semTelegram,
+        () => e.s,
+      );
+      o.onModuleInit();
+      e.h.abrir?.();
+
+      jest.advanceTimersByTime(90_000);
+
+      expect(e.derrubado).toBe(true);
+      o.onModuleDestroy();
+    });
   });
 });

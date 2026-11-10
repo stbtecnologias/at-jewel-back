@@ -44,6 +44,21 @@ import { TelegramClient } from '../telegram/telegram.client';
  * esvaziando a variavel, de proposito. Sem esta guarda ele ficaria em laco de
  * reconexao eterno — e la o `nest start --watch` reinicia a cada arquivo
  * salvo.
+ *
+ * ==========================================================================
+ * AS DUAS LICOES DA REVISAO DE 10/11, E AS DUAS SAO SOBRE FICAR DE PE SOZINHO.
+ *
+ * ABRIR NAO E ESTAR DE PE. O `code=1008` que eu medi e um close frame: ele so
+ * existe DEPOIS do handshake. Logo, `open` e `close` em sequencia. Se `open`
+ * zerasse a espera e cancelasse a carencia, um servidor que aceita e derruba
+ * daria laco de um segundo para sempre, sem NENHUM aviso saindo — o vigia
+ * cego e mudo, que e o defeito original um nivel acima. Por isso "saudavel"
+ * significa aberto ha `ESTAVEL_MS`, e nao "abriu".
+ *
+ * CANO MORTO. `session.status` tem pouquissimo trafego: dias sem um quadro
+ * sao normais, entao "nao chega nada" e indistinguivel de "esta tudo bem". Se
+ * o conteiner congelar ou a rota cair sem FIN, o socket fica aberto do nosso
+ * lado e nenhum `close` dispara. Por isso ping com prazo.
  * ==========================================================================
  */
 
@@ -51,6 +66,11 @@ export interface SocketDoWaha {
   aoAbrir(fn: () => void): void;
   aoReceber(fn: (texto: string) => Promise<void> | void): void;
   aoFechar(fn: () => void): void;
+  aoPong(fn: () => void): void;
+  /** Sonda de vida. A resposta chega em `aoPong`. */
+  pingar(): void;
+  /** Corta na marra, para o caminho de queda rodar. */
+  derrubar(): void;
   fechar(): void;
 }
 
@@ -58,6 +78,13 @@ export type FabricaDeSocket = (url: string) => SocketDoWaha;
 
 /** Espera entre tentativas, parando na ultima. */
 const ESPERAS_MS = [1_000, 2_000, 5_000, 10_000, 30_000, 60_000];
+
+/** Quanto tempo aberto para a conexao contar como saudavel. */
+const ESTAVEL_MS = 30_000;
+
+/** De quanto em quanto se sonda, e quanto se espera pela resposta. */
+const PING_MS = 30_000;
+const PONG_LIMITE_MS = 60_000;
 
 /**
  * Quanto o canal pode ficar fora antes de isso virar aviso.
@@ -79,6 +106,9 @@ const fabricaPadrao: FabricaDeSocket = (url) => {
       // atras e e quem agenda a reconexao.
       ws.on('error', () => undefined);
     },
+    aoPong: (f) => ws.on('pong', f),
+    pingar: () => ws.ping(),
+    derrubar: () => ws.terminate(),
     fechar: () => ws.close(),
   };
 };
@@ -97,6 +127,9 @@ export class OuvinteDeStatusService implements OnModuleInit, OnModuleDestroy {
   private tentativa = 0;
   private reconexao: NodeJS.Timeout | null = null;
   private carencia: NodeJS.Timeout | null = null;
+  private estabilidade: NodeJS.Timeout | null = null;
+  private sonda: NodeJS.Timeout | null = null;
+  private ultimoPong = 0;
   private avisouPerda = false;
   private jaConectou = false;
   private encerrado = false;
@@ -121,10 +154,10 @@ export class OuvinteDeStatusService implements OnModuleInit, OnModuleDestroy {
 
   onModuleDestroy(): void {
     this.encerrado = true;
+    this.pararRelogios();
     if (this.reconexao) clearTimeout(this.reconexao);
-    if (this.carencia) clearTimeout(this.carencia);
     this.reconexao = null;
-    this.carencia = null;
+    this.cancelarCarencia();
     this.socket?.fechar();
     this.socket = null;
   }
@@ -142,24 +175,64 @@ export class OuvinteDeStatusService implements OnModuleInit, OnModuleDestroy {
   }
 
   private conectar(): void {
-    const socket = this.fabrica(this.url);
+    let socket: SocketDoWaha;
+    try {
+      socket = this.fabrica(this.url);
+    } catch (err) {
+      // URL TORTA NAO PODE DERRUBAR A API INTEIRA. O `ws` estoura SINCRONO em
+      // URL invalida, e a mensagem do erro traz a URL COMPLETA, com a chave
+      // dentro — por isso so o nome do erro vai para o log, nunca a mensagem.
+      // E nao se reagenda: URL errada nao fica certa esperando.
+      this.encerrado = true;
+      this.logger.error(
+        `WAHA_BASE_URL invalida (${err instanceof Error ? err.name : 'erro'}): ` +
+          'aviso de conexao inerte. Confira o formato, ex.: http://waha:3000',
+      );
+      return;
+    }
+
     this.socket = socket;
 
     socket.aoAbrir(() => {
-      this.tentativa = 0;
-      this.cancelarCarencia();
-      if (this.avisouPerda) {
-        this.avisouPerda = false;
-        void this.telegram.enviar('bom', 'Contato com o WAHA restabelecido', [
-          'Os avisos de conexão voltaram a funcionar.',
-        ]);
-      }
       this.jaConectou = true;
+      this.ultimoPong = Date.now();
       this.logger.log('Canal de eventos do WAHA aberto.');
+
+      // SO DEPOIS DE FICAR DE PE e que a conexao conta como saudavel.
+      this.estabilidade = this.agendar(() => this.saudavel(), ESTAVEL_MS);
+      this.sonda = this.agendar(() => this.sondar(), PING_MS);
     });
 
+    socket.aoPong(() => (this.ultimoPong = Date.now()));
     socket.aoReceber((texto) => this.tratar(texto));
     socket.aoFechar(() => this.aoCair());
+  }
+
+  /** Aberto ha tempo suficiente: zera a espera e desarma a carencia. */
+  private saudavel(): void {
+    this.estabilidade = null;
+    this.tentativa = 0;
+    this.cancelarCarencia();
+    if (this.avisouPerda) {
+      this.avisouPerda = false;
+      void this.telegram.enviar('bom', 'Contato com o WAHA restabelecido', [
+        'Os avisos de conexão voltaram a funcionar.',
+      ]);
+    }
+  }
+
+  /** Sonda de vida: sem resposta no prazo, derruba de proposito. */
+  private sondar(): void {
+    if (!this.socket) return;
+    if (Date.now() - this.ultimoPong > PONG_LIMITE_MS) {
+      this.logger.warn(
+        'Canal do WAHA sem resposta a sonda: derrubando para reconectar.',
+      );
+      this.socket.derrubar();
+      return;
+    }
+    this.socket.pingar();
+    this.sonda = this.agendar(() => this.sondar(), PING_MS);
   }
 
   /**
@@ -200,11 +273,13 @@ export class OuvinteDeStatusService implements OnModuleInit, OnModuleDestroy {
   private aoCair(): void {
     if (this.encerrado) return;
     this.socket = null;
+    this.pararRelogios();
 
     // Nunca conectou: e configuracao errada ou WAHA fora na subida. Isso e
     // log, e nao aviso repetido no Telegram.
     if (this.jaConectou && !this.avisouPerda && !this.carencia) {
       this.carencia = this.agendar(() => {
+        this.carencia = null;
         this.avisouPerda = true;
         void this.telegram.enviar('ruim', 'Sem contato com o WAHA', [
           'Mudanças de conexão não estão sendo observadas.',
@@ -216,6 +291,14 @@ export class OuvinteDeStatusService implements OnModuleInit, OnModuleDestroy {
     this.tentativa++;
     this.logger.warn(`Canal do WAHA caiu. Nova tentativa em ${espera} ms.`);
     this.reconexao = this.agendar(() => this.conectar(), espera);
+  }
+
+  /** Os relogios que so fazem sentido com a conexao de pe. */
+  private pararRelogios(): void {
+    if (this.estabilidade) clearTimeout(this.estabilidade);
+    if (this.sonda) clearTimeout(this.sonda);
+    this.estabilidade = null;
+    this.sonda = null;
   }
 
   private cancelarCarencia(): void {

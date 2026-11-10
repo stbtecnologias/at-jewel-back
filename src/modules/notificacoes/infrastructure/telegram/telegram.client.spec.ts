@@ -146,4 +146,45 @@ describe('TelegramClient', () => {
       new TelegramClient(cfg(LIGADO), envio).enviar('ruim', 'x', []),
     ).resolves.toBe(false);
   });
+
+  /**
+   * O PREFIXO VEM DE FORA TAMBEM — achado da revisao de 10/11.
+   *
+   * O escape nasceu pensando no nome da vendedora, mas `TELEGRAM_SISTEMA` sai
+   * do `.env` e esta em TODA mensagem. Um `A.T JEWEL <prod>` faria o Telegram
+   * recusar cada aviso com 400, para sempre, e so o log saberia.
+   */
+  it('o nome do sistema tambem e escapado', async () => {
+    let corpo: { text?: string } = {};
+    const envio: EnvioHttp = async (_u, i) => {
+      corpo = JSON.parse(i.body) as typeof corpo;
+      return { ok: true, status: 200 };
+    };
+
+    await new TelegramClient(
+      cfg({ ...LIGADO, TELEGRAM_SISTEMA: 'A.T JEWEL <prod>' }),
+      envio,
+    ).enviar('bom', 'ok', []);
+
+    expect(corpo.text).toBe('🟢 [A.T JEWEL &lt;prod&gt;] <b>ok</b>');
+  });
+
+  /**
+   * O `fetch` do Node NAO tem prazo total — so um limite de ~300 s por
+   * cabecalho/corpo. Com `api.telegram.org` alcancavel mas mudo (proxy
+   * travado, DNS preso), tres tentativas levariam ate QUINZE MINUTOS para
+   * desistir — e o log de "nao enviado", que e o unico registro de que o
+   * aviso existiu, chegaria um quarto de hora depois.
+   */
+  it('o envio leva prazo, para nao ficar pendurado', async () => {
+    let temPrazo = false;
+    const envio: EnvioHttp = async (_u, i) => {
+      temPrazo = (i as { signal?: unknown }).signal !== undefined;
+      return { ok: true, status: 200 };
+    };
+
+    await new TelegramClient(cfg(LIGADO), envio).enviar('bom', 'ok', []);
+
+    expect(temPrazo).toBe(true);
+  });
 });
