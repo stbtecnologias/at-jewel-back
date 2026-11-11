@@ -104,6 +104,12 @@ const MANIFESTO = {
   // 36 a 41 ainda nao foram levantadas para o manifesto — verify as ignora.
   // 42 cria TRES tabelas. O marcador e catalogo_fotos porque ela referencia
   // catalogos: se ela existe, as outras duas existem.
+  '36_clientes_telefone_email_nao_unicos.sql':{ tipo: 'consulta', alvo: "SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'clientes_telefone_1_hash_key')" },
+  '37_admin_users_telefone.sql':             { tipo: 'coluna',   alvo: 'admin_users.telefone_hash' },
+  '38_auditoria_atendimentos.sql':           { tipo: 'permissao', alvo: 'ADMIN|atendimentos:read' },
+  '39_vendedora_whatsapp_externo.sql':       { tipo: 'coluna',   alvo: 'vendedoras.whatsapp_externo_hash' },
+  '40_leads.sql':                            { tipo: 'tabela',   alvo: 'leads' },
+  '41_leads_encaminhamento.sql':             { tipo: 'constraint', alvo: 'chk_lead_encaminhamento' },
   '42_catalogos.sql':                     { tipo: 'tabela',     alvo: 'catalogo_fotos' },
   // 43 nao cria objeto nenhum: so troca o DEFAULT de uma coluna. Nenhum dos
   // tipos de marcador serve, e inventar um 'default' para uma migracao unica
@@ -113,18 +119,37 @@ const MANIFESTO = {
   // 46 cria QUATRO objetos. O marcador e movimentacoes_pagamentos porque ela
   // referencia movimentacoes, que referencia operacoes: se ela existe, as
   // outras tres existem.
+  '43_catalogo_fotos_versoes.sql':           { tipo: 'consulta', alvo: "SELECT 1 FROM information_schema.columns WHERE table_name = 'catalogo_fotos' AND column_name = 'versoes' AND column_default = '0'" },
+  '44_catalogo_finais.sql':                  { tipo: 'tabela',   alvo: 'catalogo_finais' },
+  '45_catalogo_fotos_juros.sql':             { tipo: 'coluna',   alvo: 'catalogo_fotos.juros_percentual' },
   '46_movimentacoes.sql':                 { tipo: 'tabela',     alvo: 'movimentacoes_pagamentos' },
   '47_produto_foto_propria.sql':          { tipo: 'coluna',     alvo: 'produtos.foto_arquivo_id' },
   '48_catalogo_capa.sql':                 { tipo: 'coluna',     alvo: 'catalogos.capa_referencia_id' },
   '49_referencia_observacao.sql':         { tipo: 'coluna',     alvo: 'catalogo_referencias.observacao' },
+  '50_juros_sem_regra_da_casa.sql':          { tipo: 'consulta', alvo: "SELECT 1 FROM pg_description d JOIN pg_class c ON c.oid = d.objoid JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = d.objsubid WHERE c.relname = 'catalogo_fotos' AND a.attname = 'juros_percentual' AND d.description LIKE '%ZERO na conta%'" },
   '51_clientes_read_all.sql':             { tipo: 'permissao',  alvo: 'ADMIN|clientes:read_all' },
   '52_ocorrencia_cliente_fotos.sql':      { tipo: 'tabela',     alvo: 'ocorrencia_fotos' },
   '53_interacao_contato_whatsapp.sql':    { tipo: 'enum',       alvo: 'tipo_interacao|CONTATO_CLIENTE' },
   '54_atendimentos_write.sql':             { tipo: 'permissao',  alvo: 'ADMIN|atendimentos:write' },
+  '55_vendedora_sem_codigo.sql':             { tipo: 'dado',     alvo: 'codigo_erp preenchido nas vendedoras que estavam sem' },
+  '56_conversas_whatsapp.sql':               { tipo: 'tabela',   alvo: 'conversas_whatsapp' },
+  '57_estoque_so_local.sql':                 { tipo: 'constraint', alvo: 'uq_estoque_chave' },
   '58_movimentacoes_entidades_uuid.sql':   { tipo: 'coluna',     alvo: 'movimentacoes.entidade_destino_id' },
   '59_catalogo_aprovacao.sql':             { tipo: 'coluna',     alvo: 'catalogos.aprovado_final_id' },
+  '60_lead_ciclo_de_vida.sql':               { tipo: 'coluna',   alvo: 'leads.status_vendedora' },
+  '61_cliente_sem_codigo.sql':               { tipo: 'dado',     alvo: 'codigo_erp preenchido nos clientes que estavam sem' },
+  '62_vendedora_prefixo_vd.sql':             { tipo: 'dado',     alvo: 'codigo da vendedora trocado de AT- para VD-' },
   '63_operacao_id_erp_bruto.sql':          { tipo: 'coluna',     alvo: 'operacoes.id_erp_bruto' },
   '64_interacao_abertura.sql':            { tipo: 'enum',       alvo: 'tipo_interacao|ABERTURA' },
+  '65_locais_estoque_id_erp.sql':            { tipo: 'coluna',   alvo: 'locais_estoque.id_erp_bruto' },
+  '66_movimentacoes_id_erp_bruto.sql':       { tipo: 'coluna',   alvo: 'movimentacoes.id_erp_bruto' },
+  '67_equipes.sql':                          { tipo: 'tabela',   alvo: 'equipes' },
+  '68_agente_combinados.sql':                { tipo: 'tabela',   alvo: 'agente_combinados' },
+  '69_funil_do_lead.sql':                    { tipo: 'tipo',     alvo: 'estado_lead' },
+  '70_permissoes_custo_e_estoque.sql':       { tipo: 'permissao', alvo: 'ADMIN|produtos:custo' },
+  '71_alertas_configuracao.sql':             { tipo: 'tabela',   alvo: 'alerta_regras' },
+  '72_papel_gerente_vendas.sql':             { tipo: 'permissao', alvo: 'GERENTE_VENDAS|agentes:anastasia' },
+  '73_lembretes.sql':                        { tipo: 'tabela',   alvo: 'lembretes' },
   '74_produto_fotos.sql':                 { tipo: 'tabela',     alvo: 'produto_fotos' },
   '75_gerente_vendas_foto.sql':           { tipo: 'permissao',  alvo: 'GERENTE_VENDAS|produtos:foto' },
   // Migracao de DADOS: nao cria objeto, preenche coluna. Nenhum marcador do
@@ -132,6 +157,8 @@ const MANIFESTO = {
   // 50 nao cria objeto nenhum: so troca o COMMENT de uma coluna. Fica de fora
   // pelo mesmo motivo da 43 — nenhum marcador serve, e inventar um 'comentario'
   // para uma migracao unica seria mais maquinario do que ela merece.
+  '76_catalogo_excluido.sql':                { tipo: 'constraint', alvo: 'catalogos_status_check' },
+  '77_usuario_ativo.sql':                    { tipo: 'coluna',   alvo: 'admin_users.ativo' },
 };
 
 // ---------------------------------------------------------------------------
@@ -354,6 +381,14 @@ async function existeMarcador(client, { tipo, alvo }) {
       );
       return rows.length > 0;
     }
+    // Quando nenhum dos tipos acima serve: um SELECT que devolve linha SE a
+    // migracao estiver em vigor. E a saida para migracao que so REMOVE algo,
+    // so ajusta default ou so escreve comentario — ela nao cria objeto, mas
+    // deixa um efeito que da para perguntar ao banco.
+    case 'consulta': {
+      const { rows } = await client.query(alvo);
+      return rows.length > 0;
+    }
     default:
       throw new Error(`Tipo de marcador desconhecido: ${tipo}`);
   }
@@ -365,6 +400,19 @@ async function verificar(client, migracoes) {
     const marcador = MANIFESTO[m.nome];
     if (!marcador) {
       resultado.push({ nome: m.nome, estado: 'sem-manifesto' });
+      continue;
+    }
+    // `dado`: migracao que so mexe em LINHA, sem deixar traco no schema —
+    // preencher codigo que faltava, trocar prefixo. Nao da para provar que
+    // rodou: num banco vazio qualquer predicado que eu escrevesse seria
+    // verdadeiro a toa. Entao ela e DECLARADA como nao verificavel, que e
+    // diferente de ESQUECIDA — e e essa diferenca que o `??` nao sabia dizer.
+    if (marcador.tipo === 'dado') {
+      resultado.push({
+        nome: m.nome,
+        estado: 'declarado',
+        marcador: `dado — ${marcador.alvo}`,
+      });
       continue;
     }
     const existe = await existeMarcador(client, marcador);
@@ -491,6 +539,7 @@ async function cmdVerify(client, migracoes) {
     const icone =
       r.estado === 'presente' ? '\x1b[32mok  \x1b[0m'
       : r.estado === 'ausente' ? '\x1b[31mNAO \x1b[0m'
+      : r.estado === 'declarado' ? '\x1b[90m--  \x1b[0m'
       : '\x1b[33m??  \x1b[0m';
     console.log(`  ${icone} ${r.nome}${r.marcador ? `   (${r.marcador})` : ''}`);
   }
@@ -526,11 +575,28 @@ async function cmdBaseline(client, migracoes, cfg) {
 
   // Barreira dupla: o baseline mente se o schema estiver incompleto, entao ele
   // roda a verificacao por conta propria antes de gravar qualquer linha.
-  const ausentes = (await verificar(client, novas)).filter((r) => r.estado === 'ausente');
-  if (ausentes.length) {
-    console.log('  \x1b[31mBaseline abortado.\x1b[0m Estas migracoes nao estao no schema:');
-    for (const a of ausentes) console.log(`    - ${a.nome}   (${a.marcador})`);
-    console.log('\n  Aplique-as antes de carimbar. Rode `npm run db:verify` para o quadro completo.\n');
+  //
+  // CORRIGIDO EM 11/11/2026: antes ele filtrava so `ausente`, e quem estava
+  // `sem-manifesto` passava direto — carimbado SEM verificacao nenhuma. Com
+  // 27 migracoes fora do manifesto, a "barreira dupla" era decorativa
+  // justamente nas que ninguem tinha como conferir. `declarado` passa de
+  // proposito: e uma migracao de dado, dita como nao verificavel.
+  const checagem = await verificar(client, novas);
+  const ausentes = checagem.filter((r) => r.estado === 'ausente');
+  const semManifesto = checagem.filter((r) => r.estado === 'sem-manifesto');
+
+  if (ausentes.length || semManifesto.length) {
+    console.log('  \x1b[31mBaseline abortado.\x1b[0m');
+    if (ausentes.length) {
+      console.log('  Estas migracoes nao estao no schema:');
+      for (const a of ausentes) console.log(`    - ${a.nome}   (${a.marcador})`);
+    }
+    if (semManifesto.length) {
+      console.log('  Estas nao tem marcador, entao nao da para provar que rodaram:');
+      for (const s of semManifesto) console.log(`    ? ${s.nome}`);
+      console.log('  Acrescente o marcador em MANIFESTO antes de carimbar.');
+    }
+    console.log('\n  Rode `npm run db:verify` para o quadro completo.\n');
     process.exitCode = 1;
     return;
   }
