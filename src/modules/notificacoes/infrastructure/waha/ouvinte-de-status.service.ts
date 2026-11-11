@@ -131,6 +131,8 @@ export class OuvinteDeStatusService implements OnModuleInit, OnModuleDestroy {
   private sonda: NodeJS.Timeout | null = null;
   private ultimoPong = 0;
   private avisouPerda = false;
+  /** O "estou no ar" sai uma vez por processo — uma por deploy. */
+  private anunciou = false;
   private jaConectou = false;
   private encerrado = false;
 
@@ -213,6 +215,30 @@ export class OuvinteDeStatusService implements OnModuleInit, OnModuleDestroy {
     this.estabilidade = null;
     this.tentativa = 0;
     this.cancelarCarencia();
+
+    // ======================================================================
+    // O DEPLOY SE ANUNCIA — decisao do Lucas em 11/11/2026.
+    //
+    // Ele nao tem shell na maquina de producao: so a pipeline do GitLab. Sem
+    // esta linha, "nao chegou nada" significaria ao mesmo tempo *nenhuma
+    // conexao mudou* e *o vigia nem levantou* — e silencio, neste sistema, e
+    // o sinal de que esta tudo bem.
+    //
+    // UMA POR PROCESSO, ou seja uma por deploy, e nao uma por reconexao: o
+    // ir e vir do canal ja tem os seus proprios avisos, logo abaixo.
+    // ======================================================================
+    if (!this.anunciou) {
+      this.anunciou = true;
+      void this.telegram.enviar('bom', {
+        titulo: 'Vigia de conexões no ar',
+        subtitulo: 'canal de eventos',
+        etiquetas: ['canal'],
+        recado: 'Mudanças de conexão passam a ser avisadas aqui.',
+        silencioso: true,
+      });
+      return;
+    }
+
     if (this.avisouPerda) {
       this.avisouPerda = false;
       void this.telegram.enviar('bom', {

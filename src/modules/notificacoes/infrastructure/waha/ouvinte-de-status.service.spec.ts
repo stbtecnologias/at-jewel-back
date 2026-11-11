@@ -340,6 +340,57 @@ describe('OuvinteDeStatusService', () => {
       o.onModuleDestroy();
     });
 
+    /**
+     * ==========================================================================
+     * O DEPLOY TEM DE SE ANUNCIAR — decisao do Lucas em 11/11/2026.
+     *
+     * Ele nao tem shell na maquina de producao: so a pipeline do GitLab. Entao
+     * "o ouvinte subiu?" nao e uma pergunta que ele possa responder por log —
+     * e silencio, para este sistema, e o sinal de que esta tudo bem. Sem um
+     * aviso de subida, "nao chegou nada" quer dizer ao mesmo tempo *nenhuma
+     * conexao mudou* e *o vigia nem levantou*.
+     *
+     * SAI NA ESTABILIDADE, e nao no `open`, pelo mesmo motivo do resto deste
+     * arquivo: abrir nao e estar de pe. E se a conexao NUNCA estabilizar, o
+     * que chega e a carencia com "Sem contato com o WAHA" — os dois caminhos
+     * falam, e nenhum deixa o Lucas no escuro.
+     * ==========================================================================
+     */
+    it('anuncia que esta no ar quando a conexao fica de pe', () => {
+      const enviados: Array<{ nivel: string; titulo: string }> = [];
+      const { o, sockets } = montar(enviados);
+      o.onModuleInit();
+
+      sockets[0].h.abrir?.();
+      expect(enviados).toHaveLength(0); // abrir ainda nao e estar de pe
+
+      jest.advanceTimersByTime(31_000);
+
+      expect(enviados).toHaveLength(1);
+      expect(enviados[0].nivel).toBe('bom');
+      expect(enviados[0].titulo).toBe('Vigia de conexões no ar');
+      o.onModuleDestroy();
+    });
+
+    /** Uma por processo — ou seja, uma por deploy, e nao uma por reconexao. */
+    it('anuncia UMA vez, mesmo reconectando depois', () => {
+      const enviados: Array<{ nivel: string; titulo: string }> = [];
+      const { o, sockets } = montar(enviados);
+      o.onModuleInit();
+
+      sockets[0].h.abrir?.();
+      jest.advanceTimersByTime(31_000);
+      sockets[0].h.fechar?.();
+      jest.advanceTimersByTime(1_000);
+      sockets[1].h.abrir?.();
+      jest.advanceTimersByTime(31_000);
+
+      expect(
+        enviados.filter((e) => e.titulo === 'Vigia de conexões no ar'),
+      ).toHaveLength(1);
+      o.onModuleDestroy();
+    });
+
     it('conexao que FICA de pe zera a espera', () => {
       const { o, sockets } = montar([]);
       o.onModuleInit();
