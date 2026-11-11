@@ -385,7 +385,7 @@ function confirmar(pergunta) {
   return new Promise((resolve) => rl.question(pergunta, (r) => { rl.close(); resolve(r.trim()); }));
 }
 
-async function exigirConfirmacao(cfg, acao) {
+async function exigirConfirmacao(cfg, acao, noDeploy = false) {
   if (!cfg.producao) return true;
 
   console.log('');
@@ -394,6 +394,30 @@ async function exigirConfirmacao(cfg, acao) {
   console.log(`  banco: ${cfg.database}`);
   console.log(`  acao:  ${acao}`);
   console.log('');
+
+  // ========================================================================
+  // A PIPELINE MIGRA SOZINHA — 11/11/2026.
+  //
+  // A barreira digitada nasceu contra UM HUMANO copiando comando de um
+  // terminal para outro: "local e producao usam o MESMO nome de banco, o
+  // MESMO usuario e a MESMA porta — so o host difere" (cabecalho deste
+  // arquivo). Esse risco e real, e continua coberto logo abaixo.
+  //
+  // So que o Lucas NAO TEM shell na maquina de producao: so a pipeline do
+  // GitLab. Para ele a barreira nunca produziu a pausa consciente que ela
+  // promete — ela empurrava a migracao para o DBeaver, onde o SQL e escrito
+  // a mao e o `schema_migrations` e carimbado por digitacao. Trocava um
+  // caminho testado e idempotente por um manual. Diminuia a seguranca.
+  //
+  // A distincao NAO e uma variavel que alguem deixa ligada: e estrutural.
+  // Terminal existe -> ha quem confirmar, e se confirma. Nao existe -> e o
+  // deploy, e ele segue. O que sobra de risco: `docker exec` SEM `-it`
+  // apontado para producao migra sem perguntar. Fica dito.
+  // ========================================================================
+  if (noDeploy && !process.stdin.isTTY) {
+    console.log('  Sem terminal: seguindo — migracao automatizada no deploy.\n');
+    return true;
+  }
 
   // Sem TTY (ex.: `docker exec` sem -it) nao ha como confirmar. Abortar e o
   // certo: rodar direto seria exatamente o que a barreira existe para impedir.
@@ -540,7 +564,9 @@ async function cmdMigrate(client, migracoes, cfg) {
   for (const m of pendentes) console.log(`    - ${m.nome}`);
   console.log('');
 
-  if (!(await exigirConfirmacao(cfg, `aplicar ${pendentes.length} migracao(oes)`))) {
+  // `true`: este e o comando que a pipeline roda no deploy. O `baseline`
+  // NAO recebe — ele carimba sem executar, e isso ninguem automatiza.
+  if (!(await exigirConfirmacao(cfg, `aplicar ${pendentes.length} migracao(oes)`, true))) {
     process.exitCode = 1;
     return;
   }
