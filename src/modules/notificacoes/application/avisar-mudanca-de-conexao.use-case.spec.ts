@@ -395,4 +395,153 @@ describe('AvisarMudancaDeConexaoUseCase', () => {
       expect(enviados).toHaveLength(2);
     });
   });
+  /**
+   * ========================================================================
+   * A HISTORIA QUE O WAHA MANDA — 11/11/2026.
+   *
+   * O caso: o Lucas recebeu cinco "reconectada" seguidos, de sessoes que
+   * NUNCA cairam. Capturei o evento da KEYCIANE as 16:45 escutando o /ws de
+   * producao, e o payload contava a historia inteira:
+   *
+   *     08:00:57  STARTING
+   *     08:00:58  WORKING    (+0,691s)
+   *     16:45:07  STARTING            <- 8,7 h depois
+   *     16:45:08  WORKING    (+0,216s)
+   *
+   * O motor do WAHA refez a sessao sozinho, com a credencial guardada, em
+   * 216 MILESIMOS. Ninguem ficou sem atendimento. Nao e noticia.
+   *
+   * O campo "statuses" do payload — que a gente recebia e jogava fora — e
+   * quem separa os dois casos, E E MELHOR QUE A NOSSA MEMORIA: ele sobrevive
+   * ao reinicio do back, que apaga os mapas daqui.
+   * ========================================================================
+   */
+  describe('a historia do WAHA', () => {
+    const marco = (status: string, em: Date) => ({ status, em });
+
+    it('o motor que se curou sozinho nao vira aviso', async () => {
+      await new AvisarMudancaDeConexaoUseCase(casa, telegram).executar({
+        sessao: 'default',
+        status: 'WORKING',
+        numero: '5585920110403@c.us',
+        em: new Date(EM.getTime() + 216),
+        historia: [
+          marco('WORKING', new Date(EM.getTime() - 8.7 * 3_600_000)),
+          marco('STARTING', EM),
+          marco('WORKING', new Date(EM.getTime() + 216)),
+        ],
+      });
+
+      expect(enviados).toHaveLength(0);
+    });
+
+    /** Piscada curta e ruido; parada longa e queda, mesmo vindo de STARTING. */
+    it('STARTING que demora nao e piscada: e queda com tempo de verdade', async () => {
+      await new AvisarMudancaDeConexaoUseCase(casa, telegram).executar({
+        sessao: 'default',
+        status: 'WORKING',
+        numero: '5585920110403@c.us',
+        em: new Date(EM.getTime() + 10 * 60_000),
+        historia: [
+          marco('WORKING', new Date(EM.getTime() - 3_600_000)),
+          marco('STARTING', EM),
+          marco('WORKING', new Date(EM.getTime() + 10 * 60_000)),
+        ],
+      });
+
+      expect(enviados).toHaveLength(1);
+      expect(enviados[0].aviso.titulo).toBe('Anastasia reconectada');
+      expect(JSON.stringify(bloco())).toContain('Fora do ar: 10 min');
+    });
+
+    /**
+     * ESTE E O CONSERTO DA PALAVRA. Ate 11/11 todo WORKING dizia
+     * "reconectada", mesmo quando o proprio codigo sabia que nao houve queda
+     * — a linha "Fora do ar" nem aparecia nas cinco mensagens dele.
+     */
+    it('sem queda nenhuma a palavra e "conectada"', async () => {
+      await new AvisarMudancaDeConexaoUseCase(casa, telegram).executar({
+        sessao: 'default',
+        status: 'WORKING',
+        numero: '5585920110403@c.us',
+        em: new Date(EM.getTime() + 2_000),
+        historia: [
+          marco('STARTING', new Date(EM.getTime() - 1_000)),
+          marco('SCAN_QR_CODE', EM),
+          marco('WORKING', new Date(EM.getTime() + 2_000)),
+        ],
+      });
+
+      expect(enviados[0].aviso.titulo).toBe('Anastasia conectada');
+      expect(bloco()).toEqual([
+        { rotulo: 'Número', valor: '+55 85 92011-0403' },
+      ]);
+    });
+
+    /**
+     * A historia vale MESMO SEM MEMORIA — processo recem-subido, mapas
+     * vazios. E o que conserta o tempo fora do ar depois de um deploy.
+     */
+    it('depois de FAILED a volta e verdadeira, sem o processo ter visto a queda', async () => {
+      await new AvisarMudancaDeConexaoUseCase(casa, telegram).executar({
+        sessao: 'default',
+        status: 'WORKING',
+        numero: '5585920110403@c.us',
+        em: new Date(EM.getTime() + 2 * 3_600_000),
+        historia: [
+          marco('WORKING', new Date(EM.getTime() - 3_600_000)),
+          marco('FAILED', EM),
+          marco('WORKING', new Date(EM.getTime() + 2 * 3_600_000)),
+        ],
+      });
+
+      expect(enviados[0].aviso.titulo).toBe('Anastasia reconectada');
+      expect(JSON.stringify(bloco())).toContain('Fora do ar: 2 h');
+    });
+
+    /**
+     * O EVENTO REAL, COMO VEIO DO /ws DE PRODUCAO as 16:45 de 11/11/2026.
+     *
+     * Carimbos copiados da captura, sem arredondar. Este teste existe para
+     * que a proxima mudanca na regra tenha de passar pelo caso que originou
+     * o conserto, e nao por uma versao idealizada dele.
+     */
+    it('o evento real da KEYCIANE nao vira mensagem nenhuma', async () => {
+      await new AvisarMudancaDeConexaoUseCase(casa, telegram).executar({
+        sessao: 'vend-9b0d8d87-1ecd-4eae-a0ad-dee716758007',
+        status: 'WORKING',
+        numero: '5585900000000@c.us',
+        em: new Date(1794426308112),
+        historia: [
+          marco('WORKING', new Date(1794394858252)),
+          marco('STARTING', new Date(1794426307896)),
+          marco('WORKING', new Date(1794426308112)),
+        ],
+      });
+
+      expect(enviados).toHaveLength(0);
+    });
+
+    /** Payload sem a historia (WAHA antigo) nao pode derrubar nada. */
+    it('sem historia, vale a memoria do processo, como antes', async () => {
+      const uc = new AvisarMudancaDeConexaoUseCase(casa, telegram);
+      await uc.executar({
+        sessao: 'default',
+        status: 'FAILED',
+        numero: null,
+        em: EM,
+      });
+      enviados.length = 0;
+
+      await uc.executar({
+        sessao: 'default',
+        status: 'WORKING',
+        numero: '5585920110403@c.us',
+        em: new Date(EM.getTime() + 4 * 60_000),
+      });
+
+      expect(enviados[0].aviso.titulo).toBe('Anastasia reconectada');
+      expect(JSON.stringify(bloco())).toContain('Fora do ar: 4 min');
+    });
+  });
 });

@@ -467,4 +467,73 @@ describe('OuvinteDeStatusService', () => {
       o.onModuleDestroy();
     });
   });
+  /**
+   * A HISTORIA NAO PODE SER JOGADA FORA — 11/11/2026.
+   *
+   * O payload do `session.status` traz `statuses`, os ultimos estados com
+   * carimbo de hora. E com ele que a regra separa a sessao que CAIU da que o
+   * motor do WAHA refez sozinho em 216 milesimos. Ate hoje o ouvinte lia um
+   * campo so (`status`) e descartava o resto — e o Lucas recebia
+   * "reconectada" de quem nunca saiu do ar.
+   */
+  it('repassa a historia de estados que veio no payload', async () => {
+    const e = sockete();
+    const vistos: Array<{ historia?: Array<{ status: string; em: Date }> }> = [];
+    const o = new OuvinteDeStatusService(
+      cfg('http://waha:3000'),
+      {
+        executar: async (ev: { historia?: Array<{ status: string; em: Date }> }) =>
+          void vistos.push(ev),
+      } as never,
+      semTelegram,
+      () => e.s,
+    );
+    o.onModuleInit();
+    await e.h.receber?.(
+      JSON.stringify({
+        event: 'session.status',
+        session: 'default',
+        me: { id: '5585920110403@c.us' },
+        payload: {
+          status: 'WORKING',
+          statuses: [
+            { status: 'WORKING', timestamp: 1794394858252 },
+            { status: 'STARTING', timestamp: 1794426307896 },
+            { status: 'WORKING', timestamp: 1794426308112 },
+          ],
+        },
+      }),
+    );
+
+    expect(vistos[0].historia).toEqual([
+      { status: 'WORKING', em: new Date(1794394858252) },
+      { status: 'STARTING', em: new Date(1794426307896) },
+      { status: 'WORKING', em: new Date(1794426308112) },
+    ]);
+    o.onModuleDestroy();
+  });
+
+  /** Payload sem `statuses`, ou torto, nao pode derrubar o ouvinte. */
+  it('payload sem historia entrega historia indefinida, sem quebrar', async () => {
+    const e = sockete();
+    const vistos: Array<{ historia?: unknown }> = [];
+    const o = new OuvinteDeStatusService(
+      cfg('http://waha:3000'),
+      { executar: async (ev: { historia?: unknown }) => void vistos.push(ev) } as never,
+      semTelegram,
+      () => e.s,
+    );
+    o.onModuleInit();
+    await e.h.receber?.(
+      JSON.stringify({
+        event: 'session.status',
+        session: 'default',
+        payload: { status: 'WORKING', statuses: [{ status: 'WORKING' }, 'lixo'] },
+      }),
+    );
+
+    expect(vistos).toHaveLength(1);
+    expect(vistos[0].historia).toBeUndefined();
+    o.onModuleDestroy();
+  });
 });

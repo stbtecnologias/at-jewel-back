@@ -30,12 +30,25 @@ import {
  * ==========================================================================
  */
 
+/** Um estado pelo qual a sessao passou, com a hora que o WAHA carimbou. */
+export interface MarcoDeStatus {
+  status: string;
+  em: Date;
+}
+
 export interface EventoDeStatus {
   sessao: string;
   status: string;
   /** So chega preenchido em WORKING. */
   numero: string | null;
   em: Date;
+  /**
+   * Os ultimos estados, do mais antigo ao mais novo, como o WAHA os manda
+   * em `payload.statuses`. O ultimo e o deste evento.
+   *
+   * Pode faltar: WAHA antigo, payload torto. Quem le trata a ausencia.
+   */
+  historia?: MarcoDeStatus[];
 }
 
 interface Fala {
@@ -59,7 +72,9 @@ interface Fala {
 const FALA: Record<string, Fala> = {
   WORKING: {
     nivel: 'bom',
-    sufixo: 'reconectada',
+    // A PALAVRA PADRAO E "CONECTADA". "Reconectada" so quando se SABE que
+    // houve queda — pela historia do WAHA ou pela memoria do processo.
+    sufixo: 'conectada',
     etiqueta: 'ok',
     quando: 'Desde',
     // Noticia boa nao precisa tocar.
@@ -106,6 +121,16 @@ const FALA: Record<string, Fala> = {
  * sao as duas noticias que mais importam.
  */
 const JANELA_REPETIDO_MS = 5 * 60_000;
+
+/**
+ * Quanto tempo parada ainda e piscada, e nao queda.
+ *
+ * O caso medido em 11/11 levou 216 MILESIMOS entre o STARTING e o WORKING.
+ * Um minuto e folga larga de proposito: o que esta em jogo e nao chamar de
+ * queda o que ninguem sentiu. Acima disso, alguem ficou sem atendimento, e
+ * ai e noticia mesmo que tenha voltado sozinho.
+ */
+const PISCADA_MS = 60_000;
 
 @Injectable()
 export class AvisarMudancaDeConexaoUseCase {
@@ -163,49 +188,137 @@ export class AvisarMudancaDeConexaoUseCase {
 
     if (this.repetido(evento)) return;
 
+    const conteudo =
+      evento.status === 'WORKING'
+        ? this.daVolta(evento, fala)
+        : this.daQueda(evento, fala);
+
+    // So a piscada devolve `null`: o motor do WAHA refez a sessao sozinho e
+    // nao ha noticia nenhuma para dar.
+    if (!conteudo) return;
+
+    // A ORFA NAO NOMEIA NINGUEM: sem o nome da sessao, dois orfaos dao dois
+    // avisos identicos, e so a tela de Conexoes diria qual e qual — que e a
+    // conferencia manual que isto existe para tirar.
+    if (quem.orfa) {
+      conteudo.linhas.push({ rotulo: 'Sessão', valor: evento.sessao });
+    }
+
     await this.telegram.enviar(fala.nivel, {
-      titulo: `${quem.nome} ${fala.sufixo}`,
+      titulo: `${quem.nome} ${conteudo.sufixo}`,
       subtitulo: quem.funcao,
       etiquetas: [fala.etiqueta],
-      bloco: this.bloco(evento, fala, quem.orfa),
+      bloco: conteudo.linhas,
       recado: fala.recado,
       silencioso: fala.silencioso,
     });
   }
 
-  private bloco(
+  /**
+   * A volta ao ar — e o unico caminho que pode decidir NAO falar.
+   *
+   * A palavra muda com o que se sabe: sem queda conhecida e "conectada". Ate
+   * 11/11 todo WORKING dizia "reconectada", inclusive nas cinco mensagens em
+   * que o proprio codigo sabia que nao houve queda — a linha "Fora do ar"
+   * nao aparecia em nenhuma delas.
+   */
+  private daVolta(
     evento: EventoDeStatus,
     fala: Fala,
-    orfa: boolean,
-  ): LinhaDoBloco[] {
-    const linhas: LinhaDoBloco[] = [];
+  ): { sufixo: string; linhas: LinhaDoBloco[] } | null {
+    const lido = this.lerHistoria(evento);
+    this.esteveNoAr.add(evento.sessao);
 
-    if (evento.status === 'WORKING') {
-      this.esteveNoAr.add(evento.sessao);
-      linhas.push({ rotulo: 'Número', valor: this.numero(evento.numero) });
-      const caiu = this.caiuEm.get(evento.sessao);
-      this.caiuEm.delete(evento.sessao);
-      if (caiu) {
-        linhas.push({
-          rotulo:
-            `Fora do ar: ${this.duracao(evento.em.getTime() - caiu.getTime())} ` +
-            `(${this.hora(caiu)} → ${this.hora(evento.em)})`,
-        });
-      }
-    } else {
-      if (this.caiu(evento) && !this.caiuEm.has(evento.sessao)) {
-        this.caiuEm.set(evento.sessao, evento.em);
-      }
-      linhas.push({ rotulo: 'Estado', valor: evento.status });
-      linhas.push({ rotulo: `${fala.quando} ${this.hora(evento.em)}` });
+    const daMemoria = this.caiuEm.get(evento.sessao) ?? null;
+    this.caiuEm.delete(evento.sessao);
+
+    if (lido === 'piscada') return null;
+
+    // A HISTORIA GANHA DA MEMORIA quando ela sabe: vem do WAHA e sobrevive
+    // ao reinicio do back, que apaga os mapas daqui.
+    const caiu = lido && lido !== 'estreia' ? lido.desde : daMemoria;
+
+    const linhas: LinhaDoBloco[] = [
+      { rotulo: 'Número', valor: this.numero(evento.numero) },
+    ];
+    if (caiu) {
+      linhas.push({
+        rotulo:
+          `Fora do ar: ${this.duracao(evento.em.getTime() - caiu.getTime())} ` +
+          `(${this.hora(caiu)} → ${this.hora(evento.em)})`,
+      });
     }
 
-    // A ORFA NAO NOMEIA NINGUEM: sem o nome da sessao, dois orfaos dao dois
-    // avisos identicos, e so a tela de Conexoes diria qual e qual — que e a
-    // conferencia manual que isto existe para tirar.
-    if (orfa) linhas.push({ rotulo: 'Sessão', valor: evento.sessao });
+    return { sufixo: caiu ? 'reconectada' : fala.sufixo, linhas };
+  }
 
-    return linhas;
+  /** Tudo que nao e WORKING: sempre fala, e guarda a hora quando e queda. */
+  private daQueda(
+    evento: EventoDeStatus,
+    fala: Fala,
+  ): { sufixo: string; linhas: LinhaDoBloco[] } {
+    if (this.caiu(evento) && !this.caiuEm.has(evento.sessao)) {
+      this.caiuEm.set(evento.sessao, evento.em);
+    }
+
+    return {
+      sufixo: fala.sufixo,
+      linhas: [
+        { rotulo: 'Estado', valor: evento.status },
+        { rotulo: `${fala.quando} ${this.hora(evento.em)}` },
+      ],
+    };
+  }
+
+  /**
+   * O QUE A HISTORIA DO WAHA DIZ SOBRE ESTA VOLTA — 11/11/2026.
+   *
+   * Medido no `/ws` de producao as 16:45, no evento da KEYCIANE:
+   *
+   *     08:00:57  STARTING
+   *     08:00:58  WORKING    (+0,691s)
+   *     16:45:07  STARTING            <- 8,7 h depois
+   *     16:45:08  WORKING    (+0,216s)
+   *
+   * O motor refez a sessao sozinho em 216 milesimos, com a credencial
+   * guardada. A conta que NAO se faz aqui e o intervalo entre o WORKING
+   * anterior e o STARTING: aquelas 8,7 horas sao o tempo em que ela esteve
+   * NO AR, porque a lista so registra transicao.
+   *
+   * `null` quando a historia nao ajuda (WAHA antigo, payload torto, janela
+   * curta demais) — ai vale a memoria do processo, como antes.
+   */
+  private lerHistoria(
+    evento: EventoDeStatus,
+  ): 'piscada' | 'estreia' | { desde: Date } | null {
+    const h = evento.historia;
+    if (!h || h.length < 2) return null;
+
+    const agora = h[h.length - 1];
+    if (agora.status !== 'WORKING') return null;
+
+    // STARTING e estado de PASSAGEM: o que interessa e o que vinha antes
+    // dele, e desde quando a sessao deixou de estar no ar.
+    let i = h.length - 2;
+    let parouEm = agora.em;
+    while (i >= 0 && h[i].status === 'STARTING') {
+      parouEm = h[i].em;
+      i -= 1;
+    }
+    if (i < 0) return null;
+
+    const antes = h[i];
+    if (antes.status === 'WORKING') {
+      const parada = agora.em.getTime() - parouEm.getTime();
+      return parada < PISCADA_MS ? 'piscada' : { desde: parouEm };
+    }
+    if (antes.status === 'FAILED' || antes.status === 'STOPPED') {
+      return { desde: antes.em };
+    }
+    // SCAN_QR_CODE: acabou de autenticar. Se houve queda antes, quem sabe e
+    // a memoria — a janela de tres estados do WAHA ja nao alcanca.
+    if (antes.status === 'SCAN_QR_CODE') return 'estreia';
+    return null;
   }
 
   /**

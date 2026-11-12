@@ -6,7 +6,10 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import WebSocket from 'ws';
-import { AvisarMudancaDeConexaoUseCase } from '../../application/avisar-mudanca-de-conexao.use-case';
+import {
+  AvisarMudancaDeConexaoUseCase,
+  type MarcoDeStatus,
+} from '../../application/avisar-mudanca-de-conexao.use-case';
 import { TelegramClient } from '../telegram/telegram.client';
 
 /**
@@ -113,11 +116,42 @@ const fabricaPadrao: FabricaDeSocket = (url) => {
   };
 };
 
+/**
+ * A HISTORIA DE ESTADOS QUE VEIO NO PAYLOAD — 11/11/2026.
+ *
+ * O `session.status` traz `statuses`: os ultimos estados com carimbo de hora.
+ * E com ele que a regra separa a sessao que CAIU daquela que o motor do WAHA
+ * refez sozinho em 216 milesimos. Ate 11/11 o ouvinte lia so o `status` e
+ * descartava o resto — e chegava "reconectada" de quem nunca saiu do ar.
+ *
+ * DESCONFIA DE TUDO: payload e dado de fora. Qualquer marco torto derruba a
+ * historia inteira, e `undefined` faz a regra cair na memoria do processo,
+ * que e o comportamento de antes. Nunca estoura.
+ */
+function historiaDe(brutos: unknown): MarcoDeStatus[] | undefined {
+  if (!Array.isArray(brutos) || brutos.length === 0) return undefined;
+
+  const marcos: MarcoDeStatus[] = [];
+  for (const bruto of brutos) {
+    const m = bruto as { status?: unknown; timestamp?: unknown };
+    if (typeof m?.status !== 'string' || !m.status) return undefined;
+    if (typeof m?.timestamp !== 'number' || !Number.isFinite(m.timestamp)) {
+      return undefined;
+    }
+    marcos.push({ status: m.status, em: new Date(m.timestamp) });
+  }
+  return marcos;
+}
+
 interface CorpoDoEvento {
   event?: string;
   session?: string;
   me?: { id?: string } | null;
-  payload?: { status?: string };
+  payload?: {
+    status?: string;
+    /** Os ultimos estados com carimbo de hora, em milissegundos. */
+    statuses?: unknown;
+  };
 }
 
 @Injectable()
@@ -292,6 +326,7 @@ export class OuvinteDeStatusService implements OnModuleInit, OnModuleDestroy {
         status,
         numero: corpo.me?.id ?? null,
         em: new Date(),
+        historia: historiaDe(corpo.payload?.statuses),
       });
     } catch (err) {
       this.logger.warn(
