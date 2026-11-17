@@ -56,7 +56,13 @@ export const PERMISSOES: PermissaoDef[] = [
   // NUNCA esteve neste catalogo — ou seja, ninguem conseguia conceder nem
   // revogar pela tela de Papeis. Entrou aqui em 08/09/2026, junto com a
   // escrita que o reabrir exige.
-  { chave: 'atendimentos:read', label: 'Ver os atendimentos da equipe e o que a vendedora relatou', grupo: 'Atendimento' },
+  // O ROTULO CITA A LINHA DO TEMPO desde 17/11/2026, porque e esta chave que
+  // abre a aba Timeline do menu WhatsApp. Nao e dado do WhatsApp: e o mesmo
+  // dado de atendimentos noutro recorte — a antiga tela de Auditoria saiu do
+  // menu em 08/09 justamente por mostrar as MESMAS tabelas por episodio, em
+  // vez do dia por hora. Quem procurasse "o que libera o WhatsApp" jamais
+  // acharia sob "ver os atendimentos da equipe".
+  { chave: 'atendimentos:read', label: 'Ver os atendimentos da equipe e a Linha do Tempo do WhatsApp', grupo: 'Atendimento' },
   { chave: 'atendimentos:write', label: 'Reabrir atendimento fechado por engano', grupo: 'Atendimento' },
   { chave: 'catalogo:read', label: 'Ver catálogos e as fotos que os compõem', grupo: 'Catálogo' },
   { chave: 'catalogo:write', label: 'Criar catálogos, referências e receber fotos', grupo: 'Catálogo' },
@@ -89,7 +95,27 @@ export const PERMISSOES: PermissaoDef[] = [
   { chave: 'vendedoras:write', label: 'Editar vendedoras', grupo: 'Vendedoras' },
   { chave: 'agentes:anastasia', label: 'Conversar com a Anastasia', grupo: 'Agentes' },
   { chave: 'agentes:elena', label: 'Conversar com a Helena', grupo: 'Agentes' },
-  { chave: 'whatsapp:manage', label: 'Gerenciar WhatsApp', grupo: 'Administração' },
+  // ====================================================================
+  // DUAS CHAVES ONDE HAVIA UMA — 17/11/2026.
+  //
+  // O `whatsapp:manage` guardava as OITO rotas do controller de WhatsApp, e
+  // juntava duas coisas de peso muito diferente: religar um numero que caiu,
+  // e LER o que a vendedora falou com a cliente. Nao dava para conceder uma
+  // sem a outra — e foi exatamente onde o pedido de 17/11 esbarrou: a gerente
+  // de vendas precisa da regua do time e do conectar/desconectar, e nao pode
+  // ler conversa de ninguem.
+  //
+  // Entao `whatsapp:manage` ficou com a ADMINISTRACAO DA CONEXAO (listar,
+  // status, conectar, QR, desconectar) e a leitura dos chats saiu para a
+  // chave propria abaixo. O mesmo recorte que o `clientes:contato` fez em
+  // 28/09, e pelo mesmo motivo.
+  //
+  // A NOVA NASCE SEM NENHUM PAPEL MARCADO (RN-03, negar por padrao). Quem lia
+  // os chats ate aqui — ADMIN e GERENTE — para de ler ate alguem marcar na
+  // tela de Papeis. O SUPERADMIN segue inteiro, pelo curinga.
+  // ====================================================================
+  { chave: 'whatsapp:manage', label: 'Gerenciar conexões do WhatsApp', grupo: 'Administração' },
+  { chave: 'whatsapp:conversas', label: 'Ler as conversas do WhatsApp', grupo: 'Administração' },
   { chave: 'usuarios:manage', label: 'Gerenciar usuários', grupo: 'Administração' },
   { chave: 'roles:manage', label: 'Gerenciar papéis e permissões', grupo: 'Administração' },
   { chave: 'prompts:manage', label: 'Editar prompts das agentes', grupo: 'Administração' },

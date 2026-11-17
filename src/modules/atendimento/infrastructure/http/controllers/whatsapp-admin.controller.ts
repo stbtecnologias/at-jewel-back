@@ -58,7 +58,29 @@ export class WhatsappAdminController {
     return { qr: await this.waha.qrDataUrl(sessao) };
   }
 
-  /** Os chats da conexao. */
+  /**
+   * Os chats da conexao.
+   *
+   * ========================================================================
+   * DAQUI PARA BAIXO E LER CONVERSA, E ISSO E OUTRA PERMISSAO — 17/11/2026.
+   *
+   * As tres rotas de leitura (`chats`, `mensagens`, `midia`) saem do
+   * `whatsapp:manage` da classe e passam a exigir `whatsapp:conversas`.
+   * Administrar a conexao e ler o que a vendedora falou com a cliente sao
+   * coisas de peso diferente; ver o comentario do catalogo em
+   * `auth/domain/permissions.ts`.
+   *
+   * A NOVA ENTRA SOZINHA, e nao ao lado do `whatsapp:manage`: a lista do
+   * decorador e um OU. Listar as duas deixaria o `whatsapp:manage` passando,
+   * e o recorte nao valeria nada.
+   *
+   * O guard usa `getAllAndOverride`, entao a permissao do metodo SUBSTITUI a
+   * da classe. O corolario e perigoso: apagar uma destas linhas devolve a
+   * rota ao `whatsapp:manage` em silencio, sem erro nenhum. E por isso que
+   * `whatsapp-admin.permissoes.spec.ts` le o metadado rota por rota.
+   * ========================================================================
+   */
+  @Permissions('whatsapp:conversas')
   @Get('conexoes/:sessao/chats')
   async chats(@Param('sessao') sessao: string) {
     await this.conexoes.exigirValida(sessao);
@@ -71,6 +93,7 @@ export class WhatsappAdminController {
    * Vem do WAHA na hora, e nao de tabela nossa: ele ja guarda o historico, e
    * copiar conversa de cliente para o nosso banco e decisao que ninguem tomou.
    */
+  @Permissions('whatsapp:conversas')
   @Get('conexoes/:sessao/chats/:chatId/mensagens')
   async mensagens(
     @Param('sessao') sessao: string,
@@ -95,12 +118,14 @@ export class WhatsappAdminController {
    * ja esta aberta no servidor do ERP. Aqui e o oposto — e a conversa de uma
    * cliente, e o endereco e adivinhavel (o chatId E o telefone dela).
    *
-   * Entao ela exige `whatsapp:manage` como todas as outras deste controller, e
-   * o front busca o arquivo com o token e monta um blob. Custa um componente a
-   * mais na tela; a alternativa era deixar conversa de cliente atras de uma URL
-   * que se adivinha com um numero de telefone.
+   * Entao ela e guardada — hoje por `whatsapp:conversas`, a mesma das outras
+   * duas rotas de leitura (era `whatsapp:manage` ate 17/11/2026) — e o front
+   * busca o arquivo com o token e monta um blob. Custa um componente a mais na
+   * tela; a alternativa era deixar conversa de cliente atras de uma URL que se
+   * adivinha com um numero de telefone.
    * ==========================================================================
    */
+  @Permissions('whatsapp:conversas')
   @Get('conexoes/:sessao/chats/:chatId/mensagens/:mensagemId/midia')
   async midia(
     @Param('sessao') sessao: string,
