@@ -42,6 +42,11 @@ import type { NomeComemorativo } from '../../../shared/tempo/datas-comemorativas
 import type {
   GestaoCarteiraHandler,
   GestaoEpocaHandler,
+  GestaoPorMetalHandler,
+  GestaoValorDasVendasHandler,
+  GestaoPorPedraHandler,
+  GestaoQuemVendePedraHandler,
+  GestaoPorTipoHandler,
   GestaoPorEmpresaHandler,
   GestaoVendasDetalhadasHandler,
   GestaoAtribuirVendedoraHandler,
@@ -341,6 +346,11 @@ export interface FerramentasGestao {
   gestaoCarteira: GestaoCarteiraHandler;
   gestaoEpoca: GestaoEpocaHandler;
   gestaoPorEmpresa: GestaoPorEmpresaHandler;
+  gestaoPorMetal: GestaoPorMetalHandler;
+  gestaoValorDasVendas: GestaoValorDasVendasHandler;
+  gestaoPorTipo: GestaoPorTipoHandler;
+  gestaoPorPedra: GestaoPorPedraHandler;
+  gestaoQuemVendePedra: GestaoQuemVendePedraHandler;
   gestaoVendasDetalhadas: GestaoVendasDetalhadasHandler;
   gestaoMelhores: GestaoMelhoresHandler;
   /** As compras de cada cliente, ano a ano — 27/10/2026. */
@@ -397,6 +407,11 @@ export interface FerramentasGestao {
   gestaoItensExigeVendedora?: boolean;
   gestaoEpocaExigeVendedora?: boolean;
   gestaoPorEmpresaDisponivel?: boolean;
+  gestaoPorMetalDisponivel?: boolean;
+  gestaoValorDasVendasDisponivel?: boolean;
+  gestaoPorTipoDisponivel?: boolean;
+  gestaoPorPedraDisponivel?: boolean;
+  gestaoQuemVendePedraDisponivel?: boolean;
   /** A empresa como recorte das vendas uma a uma — 26/10/2026. */
   gestaoVendasPorEmpresaDisponivel?: boolean;
 }
@@ -635,10 +650,41 @@ export class FerramentasGestaoService {
     const alcanca = (vendedoraId: string): boolean =>
       equipe === null || equipe.includes(vendedoraId);
 
+    /**
+     * PODE PEDIR UMA QUEBRA? — 17/11/2026.
+     *
+     * ==================================================================
+     * `verLoja` SOZINHO FECHAVA A PORTA NA CARA DA GERENTE.
+     *
+     * O canal dela e a Helena, e la o `verLoja` e CRAVADO FALSO — esta
+     * escrito no `processar-mensagem-interna`: "o faturamento da loja nao
+     * entra pela Helena". Com as quebras penduradas em `verLoja`, a
+     * Nathalia nao tinha nenhuma delas onde ela trabalha.
+     *
+     * E A TRAVA FECHA UM VAZAMENTO: um GERENTE_VENDAS sem `equipe_id`
+     * resolve para `equipe = null`, e recorte nulo e a loja inteira. Sem
+     * esta condicao, um cadastro incompleto abriria o faturamento sem
+     * nenhum sinal — a resposta pareceria correta.
+     *
+     * O padrao da casa e o mesmo do `verLoja`: um esquecimento TIRA uma
+     * resposta, nao ABRE o faturamento.
+     * ==================================================================
+     */
+    const podeQuebrar = verLoja || equipe !== null;
+
+    /** `null` e a loja; a lista e a equipe. Ver `vendedoras` no port. */
+    const recorteDeVendedoras = verLoja ? null : equipe;
+
+    const escopoDaResposta = verLoja ? ('LOJA' as const) : ('EQUIPE' as const);
     return {
       gestaoItensExigeVendedora: !verLoja,
       gestaoEpocaExigeVendedora: !verLoja,
       gestaoPorEmpresaDisponivel: verLoja,
+      gestaoPorMetalDisponivel: podeQuebrar,
+      gestaoValorDasVendasDisponivel: podeQuebrar,
+      gestaoPorTipoDisponivel: podeQuebrar,
+      gestaoPorPedraDisponivel: podeQuebrar,
+      gestaoQuemVendePedraDisponivel: podeQuebrar,
       gestaoVendasPorEmpresaDisponivel: verLoja,
 
       /**
@@ -1147,7 +1193,17 @@ export class FerramentasGestaoService {
               : undefined,
           nota: notaDeVendas(somente),
           geradoPor: solicitante ?? undefined,
-        });
+          },
+          {
+            // A LISTA DESTA FERRAMENTA NÃO APARECE NA CONVERSA — 17/11/2026.
+            //
+            // A descrição manda o modelo não repetir a lista, então o texto
+            // que esta ferramenta devolve é só para ele. Sem esta marca, o
+            // portão da entrega descontava essas linhas como "já vistas" e
+            // duas vendas em novembro não chegaram à gestão.
+            listaNaoAparece: true,
+          },
+        );
 
         return {
           status: 'OK' as const,
@@ -1180,6 +1236,176 @@ export class FerramentasGestaoService {
           datas?.ate,
         );
         return { status: 'OK' as const, linhas: linhas.map(linhaDaEmpresa) };
+      },
+
+      /**
+       * "O que vende mais, ouro branco ou amarelo?" — 16/11/2026.
+       *
+       * A SEGUNDA BARREIRA, como no `gestaoPorEmpresa` logo acima: o schema
+       * so e oferecido a quem ve a loja, e aqui se confere de novo. Schema e
+       * pedido, nao permissao.
+       */
+
+      /**
+       * "Valor das vendas desse mes" — 17/11/2026. Os numeros e nada mais.
+       *
+       * A MESMA TRAVA DAS QUEBRAS: dinheiro da loja para quem a enxerga, e o
+       * do time para a gerente. Ver `podeQuebrar`.
+       */
+      gestaoValorDasVendas: async ({ periodo, de, ate }) => {
+        if (!podeQuebrar) {
+          return {
+            status: 'INDISPONIVEL' as const,
+            linhas: [],
+            periodo: '',
+            escopo: escopoDaResposta,
+          };
+        }
+        const datas = datasDeRecorte(de, ate);
+        const v = await this.consultarVendas.valorDasVendas(
+          datas ? undefined : periodo,
+          datas?.de,
+          datas?.ate,
+          undefined,
+          recorteDeVendedoras,
+        );
+        return {
+          status: 'OK' as const,
+          linhas: linhasDoValor(v),
+          periodo: v.periodo,
+          escopo: escopoDaResposta,
+        };
+      },
+
+      gestaoPorMetal: async ({ periodo, de, ate }) => {
+        if (!podeQuebrar) {
+          return {
+            status: 'INDISPONIVEL' as const,
+            linhas: [],
+            periodo: '',
+            escopo: escopoDaResposta,
+          };
+        }
+        const datas = datasDeRecorte(de, ate);
+        const quebra = await this.consultarVendas.porMetal(
+          datas ? undefined : periodo,
+          datas?.de,
+          datas?.ate,
+          undefined,
+          recorteDeVendedoras,
+        );
+        return {
+          status: 'OK' as const,
+          linhas: quebra.linhas.map(linhaDoMetal),
+          periodo: quebra.periodo,
+          escopo: escopoDaResposta,
+        };
+      },
+      /**
+       * "Quantas peças de cada tipo?" — 16/11/2026.
+       *
+       * A SEGUNDA BARREIRA, como no `gestaoPorMetal` logo acima: o schema só
+       * é oferecido a quem vê a loja, e aqui se confere de novo.
+       */
+      gestaoPorTipo: async ({ periodo, de, ate, compararAnoAnterior }) => {
+        if (!podeQuebrar) {
+          return {
+            status: 'INDISPONIVEL' as const,
+            linhas: [],
+            total: null,
+            foraDaJoia: [],
+            periodo: '',
+            escopo: escopoDaResposta,
+          };
+        }
+        const datas = datasDeRecorte(de, ate);
+        const quebra = await this.consultarVendas.porTipo(
+          datas ? undefined : periodo,
+          datas?.de,
+          datas?.ate,
+          compararAnoAnterior ?? false,
+          undefined,
+          recorteDeVendedoras,
+        );
+        const daJoia = quebra.linhas.filter((l) => l.joia);
+        return {
+          status: 'OK' as const,
+          linhas: daJoia.map((l) => linhaDoTipo(l, quebra)),
+          total: daJoia.length
+            ? linhaDoTotalDeJoia(quebra)
+            : null,
+          foraDaJoia: quebra.linhas
+            .filter((l) => !l.joia)
+            .map((l) => linhaDoTipo(l, quebra)),
+          periodo: quebra.periodo,
+          escopo: escopoDaResposta,
+        };
+      },
+
+      /** "Qual pedra sai mais?" — 16/11/2026. A mesma barreira. */
+      gestaoPorPedra: async ({ periodo, de, ate, compararAnoAnterior }) => {
+        if (!podeQuebrar) {
+          return {
+            status: 'INDISPONIVEL' as const,
+            linhas: [],
+            nota: null,
+            periodo: '',
+            escopo: escopoDaResposta,
+          };
+        }
+        const datas = datasDeRecorte(de, ate);
+        const quebra = await this.consultarVendas.porPedra(
+          datas ? undefined : periodo,
+          datas?.de,
+          datas?.ate,
+          compararAnoAnterior ?? false,
+          undefined,
+          recorteDeVendedoras,
+        );
+        return {
+          status: 'OK' as const,
+          linhas: quebra.linhas.map((l) => linhaDaPedra(l, quebra)),
+          nota: quebra.linhas.length
+            ? `Foram ${pecas(quebra.pecasComPedra, 'peça')} com pedra no período. Uma peça com duas pedras conta nas duas, então a soma das linhas passa desse número.`
+            : null,
+          periodo: quebra.periodo,
+          escopo: escopoDaResposta,
+        };
+      },
+
+
+      /**
+       * "Quem vendeu mais diamante?" — 16/11/2026. A mesma barreira dupla.
+       */
+      gestaoQuemVendePedra: async ({ pedra, periodo, de, ate, limite }) => {
+        if (!podeQuebrar) {
+          return {
+            status: 'INDISPONIVEL' as const,
+            pedra: null,
+            linhas: [],
+            pedras: [],
+            periodo: '',
+            escopo: escopoDaResposta,
+          };
+        }
+        const datas = datasDeRecorte(de, ate);
+        const r = await this.consultarVendas.quemVendeuPedra(
+          pedra,
+          datas ? undefined : periodo,
+          datas?.de,
+          datas?.ate,
+          limite,
+          undefined,
+          recorteDeVendedoras,
+        );
+        return {
+          status: r.status,
+          pedra: r.pedra,
+          linhas: r.linhas.map(linhaDaVendedoraComPedra),
+          pedras: r.pedras,
+          periodo: r.periodo,
+          escopo: escopoDaResposta,
+        };
       },
 
       gestaoEpoca: async ({ vendedora, mes, dataComemorativa }) => {
@@ -4899,6 +5125,136 @@ function linhaDaVenda(v: {
  * O TICKET SAI DA DIVISAO e nao vem do banco: receita liquida dividida por
  * vendas, igual ao resumo. Empresa sem venda no recorte nao divide por zero.
  */
+/**
+ * "Colar: 118 peças — R$ 6.718.994,16"  ou
+ * "Colar: 118 peças contra 144 — 26 a menos"
+ *
+ * COMPARANDO, O DINHEIRO SAI DA LINHA. A pergunta virou "caiu ou subiu", e
+ * três números por linha — atual, anterior e valor — é linha que ninguém lê
+ * numa mensagem de WhatsApp.
+ */
+export function linhaDoTipo(
+  t: {
+    tipo: string;
+    quantidade: number;
+    valor: number;
+    quantidadeAnterior: number;
+  },
+  quebra: { comparando: boolean; ano: string | null; anoAnterior: string | null },
+): string {
+  const inicio = `${t.tipo}: ${pecas(t.quantidade, 'peça')}`;
+  return quebra.comparando
+    ? `${inicio}${em(quebra.ano)} contra ${t.quantidadeAnterior}${em(quebra.anoAnterior)} — ${diferencaEmPecas(t.quantidade, t.quantidadeAnterior)}`
+    : `${inicio} — ${moeda(t.valor)}`;
+}
+
+/**
+ * O ANO NA LINHA — 16/11/2026, e não num cabeçalho.
+ *
+ * No teste local o Lucas leu "119 contra 146" e perguntou quem era quem.
+ * A agente reescreve a resposta ao repassar — ela trocou a lista por uma
+ * numerada e trocou o cabeçalho por uma frase dela —, e o que sobrevive
+ * intacto são os NÚMEROS. Então o ano anda junto deles.
+ */
+function em(ano: string | null): string {
+  return ano ? ` em ${ano}` : '';
+}
+
+export function linhaDoTotalDeJoia(quebra: {
+  totalDeJoia: number;
+  totalDeJoiaAnterior: number;
+  comparando: boolean;
+  ano: string | null;
+  anoAnterior: string | null;
+}): string {
+  const inicio = `Total de joia: ${pecas(quebra.totalDeJoia, 'peça')}`;
+  return quebra.comparando
+    ? `${inicio}${em(quebra.ano)} contra ${quebra.totalDeJoiaAnterior}${em(quebra.anoAnterior)} — ${diferencaEmPecas(quebra.totalDeJoia, quebra.totalDeJoiaAnterior)}`
+    : inicio;
+}
+
+/**
+ * A SUBTRAÇÃO É NOSSA, e não do modelo — a regra de 27/10. "igual" existe
+ * porque "0 a menos" é frase que ninguém diz.
+ */
+function diferencaEmPecas(agora: number, antes: number): string {
+  const diferenca = agora - antes;
+  if (diferenca === 0) return 'igual';
+  return `${Math.abs(diferenca)} a ${diferenca > 0 ? 'mais' : 'menos'}`;
+}
+
+export function linhaDaPedra(
+  p: { pedra: string; quantidade: number; valor: number; quantidadeAnterior: number },
+  quebra: { comparando: boolean; ano: string | null; anoAnterior: string | null },
+): string {
+  const inicio = `${p.pedra}: ${pecas(p.quantidade, 'peça')}`;
+  return quebra.comparando
+    ? `${inicio}${em(quebra.ano)} contra ${p.quantidadeAnterior}${em(quebra.anoAnterior)} — ${diferencaEmPecas(p.quantidade, p.quantidadeAnterior)}`
+    : `${inicio} — ${moeda(p.valor)}`;
+}
+
+/** "CAMILA BRITO: 56 peças — R$ 2.604.780,00" */
+function linhaDaVendedoraComPedra(v: {
+  nome: string;
+  quantidade: number;
+  valor: number;
+}): string {
+  return `${v.nome}: ${pecas(v.quantidade, 'peça')} — ${moeda(v.valor)}`;
+}
+
+/**
+ * "Ouro branco: 200 peças — R$ 11.001.864,62"
+ *
+ * O dinheiro sai pelo `moeda`, o formatador unico da casa (27/10), e a
+ * unidade concorda com o numero pelo `pecas`, como as outras linhas.
+ */
+
+/**
+ * "25 vendas — R$ 1.837.916,80"
+ *
+ * ==========================================================================
+ * OS DOIS LADOS SO QUANDO HA DEVOLUCAO.
+ *
+ * Sem devolucao no periodo, o bruto e a receita sao o MESMO numero, e numero
+ * repetido com dois rotulos diferentes faz quem le procurar a diferenca que
+ * nao existe.
+ *
+ * Com devolucao, as duas linhas sao obrigatorias: a lista de vendas NAO
+ * desconta e esta receita desconta. Na conversa de 16/11 a gestora recebeu
+ * R$ 1.837.916,80 e R$ 1.815.870,80 no mesmo mes, sem saber qual era qual.
+ * ==========================================================================
+ */
+function linhasDoValor(v: {
+  quantidade: number;
+  bruto: number;
+  devolucoes: number;
+  valorDevolvido: number;
+  receita: number;
+  ticketMedio: number;
+}): string[] {
+  if (v.quantidade === 0) return [];
+
+  const linhas = [
+    `${v.quantidade} ${v.quantidade === 1 ? 'venda' : 'vendas'} — ${moeda(v.bruto)}`,
+  ];
+  if (v.devolucoes > 0) {
+    linhas.push(
+      `Devoluções: ${v.devolucoes} — ${moeda(v.valorDevolvido)}`,
+      `Receita, já descontada a devolução: ${moeda(v.receita)}`,
+    );
+  }
+  linhas.push(`Ticket médio: ${moeda(v.ticketMedio)}`);
+  return linhas;
+}
+
+export function linhaDoMetal(m: {
+  metal: string;
+  quantidade: number;
+  valor: number;
+}): string {
+  return `${m.metal}: ${pecas(m.quantidade, 'peça')} — ${moeda(m.valor)}`;
+}
+
 function linhaDaEmpresa(e: {
   empresa: string;
   vendas: number;

@@ -163,6 +163,67 @@ export interface VendedoraNoRanking {
   familiasDevolvidas: { familia: string; quantidade: number }[];
 }
 
+/**
+ * UMA LINHA CRUA DA QUEBRA POR METAL — 16/11/2026.
+ *
+ * A `cor` e a etiqueta saem como estao no cadastro: quem NOMEIA o metal e o
+ * dicionario (`metalDaCor` e `metalDaEtiqueta`), no caso de uso. Aqui nao ha
+ * regra de negocio nenhuma — e de proposito, porque esta casa nao tem teste de
+ * repositorio, e regra dentro do SQL seria regra sem teste.
+ */
+export interface VendasPorCor {
+  cor: string | null;
+  etiqueta: string | null;
+  /** Soma das quantidades — pode ser fracionaria (o ERP usa NUMERIC). */
+  quantidade: number;
+  valor: number;
+}
+
+/**
+ * UMA LINHA CRUA DA QUEBRA POR TIPO DE PEÇA — 16/11/2026.
+ *
+ * Os três campos saem como estão no cadastro: quem NOMEIA o tipo é o
+ * dicionário (`tipoDaPeca`), no caso de uso. Aqui não há regra de negócio
+ * nenhuma — pelo mesmo motivo do `VendasPorCor`: esta casa não tem teste de
+ * repositório, e regra dentro do SQL seria regra sem teste.
+ *
+ * OS DOIS RECORTES VÊM NA MESMA LINHA, e não em duas consultas: é o `FILTER`
+ * do Postgres, como o `compararPeriodoNosAnos` já faz desde 29/09. Com isso o
+ * corte no mesmo dia dos dois anos fica garantido por construção, e não por
+ * aviso na descrição da ferramenta.
+ */
+export interface VendasPorTipoCru {
+  categoria: string | null;
+  /** O PREFIXO, duas letras — é tudo o que o `tipoDaPeca` lê do código. */
+  codigoErp: string | null;
+  familia: string | null;
+  quantidade: number;
+  valor: number;
+  /** Zero quando não se pediu comparação. */
+  quantidadeAnterior: number;
+  valorAnterior: number;
+}
+
+/**
+ * UMA LINHA CRUA DA QUEBRA POR PEDRA — 16/11/2026.
+ *
+ * AS DUAS FONTES VIAJAM, e as duas são parciais: medido nas 582 peças
+ * vendidas em 2026, juntas reconhecem pedra em 337; o campo `tipo_pedra`
+ * sozinho perderia 43 e a etiqueta sozinha perderia 49.
+ */
+export interface VendasPorPedraCru {
+  /** Preenchidos só quando se pediu a quebra por vendedora. */
+  vendedoraId: string | null;
+  vendedora: string | null;
+  tipoPedra: string | null;
+  etiqueta: string | null;
+  quantidade: number;
+  valor: number;
+  /** Zero quando não se pediu comparação. Ver `VendasPorTipoCru`. */
+  quantidadeAnterior: number;
+  valorAnterior: number;
+}
+
 export interface ItemMaisVendido {
   produtoId: string;
   codigoErp: string | null;
@@ -326,6 +387,8 @@ export interface IVendasMovimentacaoRepository {
   resumo(
     janela: JanelaDeVendas,
     vendedoraId?: string | null,
+    /** O recorte de equipe. Ver `vendedoras` no `vendasPorMetal`. */
+    vendedoras?: string[] | null,
   ): Promise<ResumoDeVendas>;
 
   /** Quem vendeu mais no periodo. So quem teve venda aparece. */
@@ -402,9 +465,20 @@ export interface IVendasMovimentacaoRepository {
    * na linha, para quem quiser os dois.
    * ========================================================================
    */
+  /**
+   * `prefixos` É O CONSERTO DE 16/11/2026, e ele manda quando vem.
+   *
+   * Com prefixos, a peça de joia casa pelo CÓDIGO — é o que traz de volta
+   * o colar riviera e o brinco solitário, que a `familia` escondia. O que
+   * está fora da joia segue casando pela `familia`, porque ali ela é limpa.
+   *
+   * `null` quando a palavra NÃO é tipo de joia — "riviera", "vaso",
+   * "corset" —, e aí vale a regra antiga, inteira.
+   */
   rankingPorFamilia(
     janela: JanelaDeVendas,
     familia: string,
+    prefixos: string[] | null,
     limite: number,
   ): Promise<VendedoraPorFamilia[]>;
 
@@ -459,9 +533,78 @@ export interface IVendasMovimentacaoRepository {
     vendedoraId: string | null,
   ): Promise<ComparacaoAnual[]>;
 
+  /**
+   * AS VENDAS QUEBRADAS PELO CAMPO `cor` DA PECA — 16/11/2026.
+   *
+   * SEM JANELA E O HISTORICO INTEIRO, igual ao `receitaPorEmpresa`.
+   *
+   * A DEVOLUCAO NAO ABATE, e e a mesma clausula do `itensMaisVendidos`:
+   * `m.saida` sozinho. Abater peca a peca ja produziu linha negativa aqui ao
+   * lado, e a agente apagou a linha ao responder.
+   *
+   * A ETIQUETA VEM JUNTO E ENTRA NO GROUP BY porque e a SEGUNDA FONTE do
+   * metal: das 166 pecas JEWEL sem `cor`, 53 nomeiam o metal na etiqueta.
+   */
+  /**
+   * O RECORTE DE VENDEDORAS — 17/11/2026.
+   *
+   * `null` e SEM RECORTE (a loja inteira); uma lista e exatamente aquelas;
+   * e `[]` e NINGUEM, nao todos. A distincao e a mesma que o
+   * `vendedorasDaEquipeDoUsuario` ja faz de proposito com duas consultas em
+   * vez de um JOIN: sem equipe e `null`, equipe vazia e recorte legitimo que
+   * nao devolve nada.
+   *
+   * Tres chamadores: a loja manda `null`, a gerente manda a equipe dela, e a
+   * vendedora manda o proprio id.
+   */
+  vendasPorMetal(
+    janela?: JanelaDeVendas,
+    vendedoras?: string[] | null,
+  ): Promise<VendasPorCor[]>;
+  /**
+   * AS VENDAS QUEBRADAS PELO TIPO DA PEÇA — 16/11/2026.
+   *
+   * SEM JANELA É O HISTÓRICO INTEIRO, igual ao `vendasPorMetal`.
+   *
+   * COM `anterior`, a mesma varredura traz os dois recortes lado a lado — é
+   * como se compara ano com ano sem deixar a subtração para o modelo.
+   *
+   * A DEVOLUÇÃO NÃO ABATE: `m.saida` sozinho, a mesma cláusula do
+   * `itensMaisVendidos`.
+   */
+  vendasPorTipo(
+    janela?: JanelaDeVendas,
+    anterior?: JanelaDeVendas,
+    /** Ver `vendedoras` no `vendasPorMetal`. */
+    vendedoras?: string[] | null,
+  ): Promise<VendasPorTipoCru[]>;
+
+  /**
+   * AS VENDAS QUEBRADAS PELA PEDRA — 16/11/2026.
+   *
+   * UMA PEÇA COM DUAS PEDRAS CONTA NAS DUAS, e quem decide isso é o caso de
+   * uso: aqui só viajam as duas fontes cruas.
+   */
+  /**
+   * COM `porVendedora`, a mesma consulta quebra por quem vendeu — é o que
+   * responde "quem vendeu mais diamante". A pedra NÃO é coluna: ela sai do
+   * dicionário, no caso de uso, e por isso o filtro por pedra não pode
+   * acontecer aqui.
+   */
+  vendasPorPedra(
+    janela?: JanelaDeVendas,
+    anterior?: JanelaDeVendas,
+    porVendedora?: boolean,
+    /** Ver `vendedoras` no `vendasPorMetal`. */
+    vendedoras?: string[] | null,
+  ): Promise<VendasPorPedraCru[]>;
+
+
+  /** Ver `prefixos` no `rankingPorFamilia`. */
   rankingPorFamiliaNoMes(
     mes: number,
     familia: string,
+    prefixos: string[] | null,
     porAno: number,
   ): Promise<VendedoraPorFamiliaNoAno[]>;
 }

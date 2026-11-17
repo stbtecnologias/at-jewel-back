@@ -1,4 +1,12 @@
 import { datasDeRecorte } from '../../../shared/tempo/recorte-de-datas';
+// OS FORMATADORES VEM DA GESTAO, e nao sao copiados: muda o recorte, nao o
+// formato. Exportados de la em 17/11 por este motivo.
+import {
+  linhaDaPedra,
+  linhaDoMetal,
+  linhaDoTipo,
+  linhaDoTotalDeJoia,
+} from './ferramentas-gestao.service';
 import { moeda } from '../../../shared/formato/moeda';
 import { TETO_DE_LISTA } from '../../../shared/limites/teto-de-lista';
 import {
@@ -29,6 +37,9 @@ import type {
   MelhoresClientesHandler,
   RegistrarRelatoHandler,
   EstrategiaDeVendasHandler,
+  GestaoPorMetalHandler,
+  GestaoPorPedraHandler,
+  GestaoPorTipoHandler,
 } from '../../agentes/domain/ports/llm-client.port';
 import { AgendarContatoVendedoraUseCase } from './use-cases/agendar-contato-vendedora.use-case';
 import { ConsultarAgendaVendedoraUseCase } from './use-cases/consultar-agenda-vendedora.use-case';
@@ -169,6 +180,29 @@ export interface FerramentasVendedora {
   clientesPorFidelidade: ClientesPorFidelidadeHandler;
   /** As pecas que ELA vendeu numa faixa de valor. */
   minhasPecasPorValor: MinhasPecasPorValorHandler;
+  /**
+   * AS QUEBRAS DELA — 17/11/2026.
+   *
+   * ======================================================================
+   * "QUANTAS PEROLAS VENDI?"
+   *
+   * Pedido do Lucas ao corrigir o roteiro de teste: a vendedora pergunta das
+   * PROPRIAS vendas, e so delas. Uma ferramenta por dimensao responde todas
+   * as perguntas daquela dimensao, porque a quebra vem inteira — "quantas
+   * perolas", "quantos diamantes" e "quantas pedras eu vendi" saem da mesma
+   * consulta.
+   *
+   * NENHUMA DELAS TEM CAMPO "DE QUEM". O escopo sai do contexto, como nos
+   * lembretes e no `minhas_pecas_por_valor`: nao ha o que o modelo preencha
+   * errado, e o nome que ela digitar e ignorado.
+   *
+   * A FORMA DA RESPOSTA E A MESMA DA GESTAO, de proposito: muda o recorte,
+   * nao o formato. Por isso os tipos sao reusados e os formatadores tambem.
+   * ======================================================================
+   */
+  minhasVendasPorPedra: GestaoPorPedraHandler;
+  minhasVendasPorTipo: GestaoPorTipoHandler;
+  minhasVendasPorMetal: GestaoPorMetalHandler;
   agendarContato: AgendarContatoHandler;
   /** So existe quando ha mensagem original para extrair — ver `montar`. */
   registrarRelato?: RegistrarRelatoHandler;
@@ -1010,6 +1044,73 @@ export class FerramentasVendedoraService {
           }),
         );
         return pecasParaOModelo(r, recorte);
+      },
+
+      // ================================================================
+      // AS QUEBRAS DELA — 17/11/2026. Ver a interface.
+      //
+      // O recorte e SEMPRE `[vendedoraId]`, montado aqui e nao recebido: a
+      // ferramenta nao tem campo de vendedora para o modelo preencher.
+      // ================================================================
+      minhasVendasPorPedra: async ({ periodo, de, ate, compararAnoAnterior }) => {
+        const datas = datasDeRecorte(de, ate);
+        const quebra = await this.vendas.porPedra(
+          datas ? undefined : periodo,
+          datas?.de,
+          datas?.ate,
+          compararAnoAnterior ?? false,
+          undefined,
+          [vendedoraId],
+        );
+        return {
+          status: 'OK' as const,
+          linhas: quebra.linhas.map((l) => linhaDaPedra(l, quebra)),
+          nota: quebra.linhas.length
+            ? `Foram ${quebra.pecasComPedra} peças com pedra no período. Uma peça com duas pedras conta nas duas, então a soma das linhas passa desse número.`
+            : null,
+          periodo: quebra.periodo,
+          escopo: 'VENDEDORA' as const,
+        };
+      },
+
+      minhasVendasPorTipo: async ({ periodo, de, ate, compararAnoAnterior }) => {
+        const datas = datasDeRecorte(de, ate);
+        const quebra = await this.vendas.porTipo(
+          datas ? undefined : periodo,
+          datas?.de,
+          datas?.ate,
+          compararAnoAnterior ?? false,
+          undefined,
+          [vendedoraId],
+        );
+        const daJoia = quebra.linhas.filter((l) => l.joia);
+        return {
+          status: 'OK' as const,
+          linhas: daJoia.map((l) => linhaDoTipo(l, quebra)),
+          total: daJoia.length ? linhaDoTotalDeJoia(quebra) : null,
+          foraDaJoia: quebra.linhas
+            .filter((l) => !l.joia)
+            .map((l) => linhaDoTipo(l, quebra)),
+          periodo: quebra.periodo,
+          escopo: 'VENDEDORA' as const,
+        };
+      },
+
+      minhasVendasPorMetal: async ({ periodo, de, ate }) => {
+        const datas = datasDeRecorte(de, ate);
+        const quebra = await this.vendas.porMetal(
+          datas ? undefined : periodo,
+          datas?.de,
+          datas?.ate,
+          undefined,
+          [vendedoraId],
+        );
+        return {
+          status: 'OK' as const,
+          linhas: quebra.linhas.map(linhaDoMetal),
+          periodo: quebra.periodo,
+          escopo: 'VENDEDORA' as const,
+        };
       },
 
       agendarContato: async ({ cliente, quandoIso }) => {

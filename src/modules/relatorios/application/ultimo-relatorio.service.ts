@@ -55,6 +55,29 @@ interface Guardado {
    * ====================================================================
    */
   linhasNaConversa?: number;
+  /**
+   * O TEXTO DESTA FERRAMENTA NÃO APARECE NA CONVERSA — 17/11/2026.
+   *
+   * ====================================================================
+   * A PREMISSA DO `linhasNaConversa` É FALSA PARA UMA FERRAMENTA.
+   *
+   * O número vem do texto que a FERRAMENTA devolveu, e o portão assume que
+   * esse texto é o que a pessoa viu — porque o modelo relata as linhas. O
+   * `vendas_detalhadas` é o contrário: a descrição dele manda o modelo NÃO
+   * repetir a lista, justamente porque a tabela sai sozinha.
+   *
+   * Em 17/11 isso calou os dois lados. Duas vendas em novembro, a gestão
+   * perguntou "quais as vendas desse mês", a agente respondeu "a lista sai
+   * logo abaixo" e NÃO SAIU NADA: a ferramenta escreveu duas linhas no
+   * resultado, o portão leu 2 − 2 = 0 e entendeu que a conversa já tinha
+   * mostrado. O número que decidiu "ela já viu" veio de um texto que
+   * ninguém viu.
+   *
+   * Com lista grande o acidente se escondia: 10 no texto contra 25 na
+   * tabela deixam 15 de sobra, e ela saía inteira. Com 10 ou menos, parava.
+   * ====================================================================
+   */
+  listaNaoAparece?: boolean;
 }
 
 /**
@@ -98,7 +121,12 @@ export class UltimoRelatorioService {
    * Chamado por quem PRODUZ a tabela, e não por quem a escreve em texto: é o
    * que mantém o dado longe do modelo.
    */
-  guardar(chave: string | null | undefined, relatorio: Relatorio): void {
+  guardar(
+    chave: string | null | undefined,
+    relatorio: Relatorio,
+    /** Ver `listaNaoAparece` no `Guardado`. */
+    opcoes?: { listaNaoAparece?: boolean },
+  ): void {
     if (!chave) return;
 
     // ====================================================================
@@ -124,6 +152,9 @@ export class UltimoRelatorioService {
           em: Date.now(),
           idade: 0,
           rico: true,
+          // A MARCA NÃO SE PERDE NA SOMA: duas tabelas na mesma mensagem
+          // continuam sendo uma lista que a conversa não mostrou.
+          listaNaoAparece: atual.listaNaoAparece || opcoes?.listaNaoAparece,
         });
         return;
       }
@@ -137,6 +168,7 @@ export class UltimoRelatorioService {
       em: Date.now(),
       idade: 0,
       rico: true,
+      listaNaoAparece: opcoes?.listaNaoAparece,
     });
   }
 
@@ -182,7 +214,11 @@ export class UltimoRelatorioService {
       // Antes daqui só havia um `return`, e essa informação se perdia no
       // único ponto do código onde ela existia.
       // ==================================================================
-      atual.linhasNaConversa = contarLinhasDeLista(texto);
+      // ZERO QUANDO A LISTA NÃO APARECE: o texto desta ferramenta foi só
+      // para o modelo, e descontá-lo faria a tabela não sair. Ver a marca.
+      atual.linhasNaConversa = atual.listaNaoAparece
+        ? 0
+        : contarLinhasDeLista(texto);
       return;
     }
 

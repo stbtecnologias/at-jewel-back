@@ -311,3 +311,110 @@ describe('UltimoRelatorioService', () => {
     });
   });
 });
+
+/**
+ * A LISTA CURTA NÃO SAÍA — 17/11/2026.
+ *
+ * ==========================================================================
+ * DUAS VENDAS, E NENHUMA LINHA CHEGOU À GESTÃO.
+ *
+ * Conversa de 17/11 às 11:02, em produção:
+ *
+ *   — "quais as vendas desse mes?"
+ *   — "A lista completa sai logo abaixo. São 2 vendas em novembro, as duas
+ *      de 09/11, cada uma de R$ 1.500,00 — somando R$ 3.000,00."
+ *
+ * E não saiu nada. Os dois lados calados, cada um porque o outro ia falar:
+ *
+ *   - a AGENTE não listou porque a descrição manda não repetir ("a lista
+ *     completa sai sozinha... você não precisa repeti-la");
+ *   - o SISTEMA não entregou porque achou que a conversa já tinha mostrado
+ *     as duas.
+ *
+ * A PREMISSA DO PORTÃO É QUE O TEXTO DA FERRAMENTA É O QUE A PESSOA VÊ. Para
+ * as outras ferramentas é verdade — o modelo relata as linhas. Para o
+ * `vendas_detalhadas` é falso por desenho, e o número 2 que decidiu "ela já
+ * viu" veio de um texto que NINGUÉM viu.
+ *
+ * Com lista grande o acidente se escondia: a ferramenta manda 10 ao modelo, a
+ * tabela tem 25, sobram 15 e ela saía inteira. Com 10 ou menos, para de sair.
+ * ==========================================================================
+ */
+describe('a lista que não aparece na conversa', () => {
+  const TABELA = (quantas: number) => ({
+    titulo: 'Listagem de Vendas',
+    colunas: [{ chave: 'valor', titulo: 'Total', peso: 1 }],
+    linhas: Array.from({ length: quantas }, (_, i) => ({
+      valor: `R$ ${i + 1},00`,
+    })),
+  });
+
+  /** O texto que a FERRAMENTA devolve: uma linha marcada por venda. */
+  const TEXTO = (quantas: number) =>
+    Array.from({ length: quantas }, (_, i) => `- venda ${i + 1}`).join('\n');
+
+  it('com a marca, duas vendas continuam valendo entrega', () => {
+    const s = new UltimoRelatorioService();
+
+    s.guardar('c1', TABELA(2) as never, { listaNaoAparece: true });
+    s.guardarTexto('c1', 'Listagem de Vendas', TEXTO(2));
+
+    expect(s.quantasNaoForamMostradas('c1')).toBe(2);
+  });
+
+  /**
+   * O COMPORTAMENTO ANTIGO FICA INTACTO para quem não marca: as ferramentas
+   * que escrevem na conversa continuam descontando o que já mostraram.
+   */
+  it('sem a marca, duas vendas continuam valendo zero', () => {
+    const s = new UltimoRelatorioService();
+
+    s.guardar('c2', TABELA(2) as never);
+    s.guardarTexto('c2', 'Listagem de Vendas', TEXTO(2));
+
+    expect(s.quantasNaoForamMostradas('c2')).toBe(0);
+  });
+
+  /**
+   * A LISTA DO ANO CONTINUA SAINDO INTEIRA — pedido do Lucas em 17/11:
+   * *"quando ela pedir a lista do ano de vendas, sai na tabela completa"*.
+   *
+   * Antes dava 25 − 10 = 15; agora dá 25. Os dois são maiores que zero, então
+   * a entrega é a MESMA — e a tabela sempre levou a lista inteira.
+   */
+  it('a lista grande sai igual, com a marca ou sem ela', () => {
+    const comMarca = new UltimoRelatorioService();
+    comMarca.guardar('c3', TABELA(25) as never, { listaNaoAparece: true });
+    comMarca.guardarTexto('c3', 'Listagem de Vendas', TEXTO(10));
+
+    const semMarca = new UltimoRelatorioService();
+    semMarca.guardar('c4', TABELA(25) as never);
+    semMarca.guardarTexto('c4', 'Listagem de Vendas', TEXTO(10));
+
+    expect(comMarca.quantasNaoForamMostradas('c3')).toBe(25);
+    expect(semMarca.quantasNaoForamMostradas('c4')).toBe(15);
+    // O QUE IMPORTA É O PORTÃO, e ele é o mesmo nos dois.
+    expect(comMarca.quantasNaoForamMostradas('c3')).toBeGreaterThan(0);
+    expect(semMarca.quantasNaoForamMostradas('c4')).toBeGreaterThan(0);
+  });
+
+  it('uma venda só também sai', () => {
+    const s = new UltimoRelatorioService();
+
+    s.guardar('c5', TABELA(1) as never, { listaNaoAparece: true });
+    s.guardarTexto('c5', 'Listagem de Vendas', TEXTO(1));
+
+    expect(s.quantasNaoForamMostradas('c5')).toBe(1);
+  });
+
+  /** Duas tabelas na mesma mensagem se somam, e a marca não se perde. */
+  it('a marca sobrevive à soma de duas tabelas', () => {
+    const s = new UltimoRelatorioService();
+
+    s.guardar('c6', TABELA(2) as never, { listaNaoAparece: true });
+    s.guardar('c6', TABELA(3) as never, { listaNaoAparece: true });
+    s.guardarTexto('c6', 'Listagem de Vendas', TEXTO(5));
+
+    expect(s.quantasNaoForamMostradas('c6')).toBeGreaterThan(0);
+  });
+});

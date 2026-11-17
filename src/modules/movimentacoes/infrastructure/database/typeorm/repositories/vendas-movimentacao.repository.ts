@@ -24,6 +24,9 @@ import type {
   PecasNaFaixa,
   ResumoDeVendas,
   VendedoraNoRanking,
+  VendasPorCor,
+  VendasPorPedraCru,
+  VendasPorTipoCru,
 } from '../../../../domain/ports/repositories/vendas-movimentacao-repository.port';
 
 /**
@@ -223,6 +226,7 @@ export class VendasMovimentacaoRepository
   async resumo(
     janela: JanelaDeVendas,
     vendedoraId?: string | null,
+    vendedoras: string[] | null = null,
   ): Promise<ResumoDeVendas> {
     // UMA VARREDURA SO para os quatro numeros. Duas consultas separadas
     // dariam o mesmo resultado e leriam a tabela duas vezes — e esta e a
@@ -250,8 +254,11 @@ export class VendasMovimentacaoRepository
          AND m.data_movimentacao >= $1
          AND m.data_movimentacao <= $2
          AND ($3::uuid IS NULL OR m.vendedora_id = $3::uuid)
+         -- O RECORTE DE EQUIPE (17/11/2026): NULL e a loja inteira, lista
+         -- vazia nao devolve nada. Conversa com o $3, que e UMA vendedora.
+         AND ($4::uuid[] IS NULL OR m.vendedora_id = ANY($4::uuid[]))
       `,
-      [janela.de, janela.ate, vendedoraId ?? null],
+      [janela.de, janela.ate, vendedoraId ?? null, vendedoras],
     );
 
     const quantidade = Number(linha?.quantidade ?? 0);
@@ -564,9 +571,242 @@ export class VendasMovimentacaoRepository
     }));
   }
 
+  /**
+   * AS VENDAS PELO CAMPO `cor` DA PECA — 16/11/2026.
+   *
+   * MESMA CLAUSULA DO `itensMaisVendidos` logo acima: so as SAIDAS, e a
+   * devolucao nao abate item por item. Ela volta o documento inteiro, e
+   * descontar a peca devolvida de "o que mais saiu" misturaria duas
+   * perguntas.
+   *
+   * A ETIQUETA ENTRA NO GROUP BY, e sobe a cardinalidade de 17 linhas para
+   * ~1.500. E de proposito: ela e a SEGUNDA FONTE do metal, e agrupar sem
+   * ela perderia a ligacao. Continua sendo um agregado sobre 2.383 itens.
+   *
+   * NAO HA REGRA DE NEGOCIO AQUI. Quem diz o que e ouro branco e o
+   * dicionario, no caso de uso — esta casa nao tem teste de repositorio.
+   */
+  async vendasPorMetal(
+    janela?: JanelaDeVendas,
+    vendedoras: string[] | null = null,
+  ): Promise<VendasPorCor[]> {
+    const linhas = await this.ds.query<
+      {
+        cor: string | null;
+        etiqueta: string | null;
+        quantidade: string;
+        valor: string;
+      }[]
+    >(
+      `
+      SELECT p.cor                                AS cor,
+             p.descricao_etiqueta                 AS etiqueta,
+             sum(i.quantidade)                    AS quantidade,
+             sum(i.quantidade * i.valor_unitario) AS valor
+        FROM movimentacoes_itens i
+        JOIN movimentacoes m ON m.id = i.movimentacao_id
+        JOIN produtos p      ON p.id = i.produto_id
+       WHERE m.ativo
+         AND m.saida
+         AND i.ativo
+         AND ($1::timestamptz IS NULL OR m.data_movimentacao >= $1)
+         AND ($2::timestamptz IS NULL OR m.data_movimentacao <= $2)
+         -- O RECORTE DE VENDEDORAS (17/11/2026): NULL e a loja inteira,
+         -- lista vazia nao devolve nada, e e isso que se quer.
+         AND ($3::uuid[] IS NULL OR m.vendedora_id = ANY($3::uuid[]))
+       GROUP BY p.cor, p.descricao_etiqueta
+      `,
+      [janela?.de ?? null, janela?.ate ?? null, vendedoras],
+    );
+
+    return linhas.map((l) => ({
+      cor: l.cor,
+      etiqueta: l.etiqueta,
+      quantidade: Number(l.quantidade),
+      valor: Number(l.valor),
+    }));
+  }
+
+  /**
+   * A QUEBRA POR TIPO DE PEÇA, COM OS DOIS RECORTES — 16/11/2026.
+   *
+   * ====================================================================
+   * UMA VARREDURA, DOIS ANOS.
+   *
+   * O `WHERE` abre para a UNIÃO das duas janelas e o `FILTER` separa cada
+   * uma. É o mesmo arranjo do `compararPeriodoNosAnos` (29/09), e o motivo
+   * é o mesmo: comparar ano com ano em duas chamadas deixa a subtração
+   * para quem chamou, e o corte no mesmo dia vira promessa em vez de fato.
+   *
+   * SEM `anterior`, as colunas de comparação saem zeradas e ninguém olha.
+   * ====================================================================
+   *
+   * `upper(left(codigo_erp, 2))` — existe UMA peça cadastrada com `br`
+   * minúsculo, e sem o `upper` ela viraria um tipo só dela.
+   */
+  async vendasPorTipo(
+    janela?: JanelaDeVendas,
+    anterior?: JanelaDeVendas,
+    vendedoras: string[] | null = null,
+  ): Promise<VendasPorTipoCru[]> {
+    const linhas = await this.ds.query<
+      {
+        categoria: string | null;
+        codigo_erp: string | null;
+        familia: string | null;
+        quantidade: string;
+        valor: string;
+        quantidade_anterior: string;
+        valor_anterior: string;
+      }[]
+    >(
+      `
+      SELECT p.categoria                   AS categoria,
+             upper(left(p.codigo_erp, 2))  AS codigo_erp,
+             p.familia                     AS familia,
+             COALESCE(sum(i.quantidade) FILTER (
+               WHERE $1::timestamptz IS NULL
+                  OR (m.data_movimentacao >= $1 AND m.data_movimentacao <= $2)
+             ), 0)                                               AS quantidade,
+             COALESCE(sum(i.quantidade * i.valor_unitario) FILTER (
+               WHERE $1::timestamptz IS NULL
+                  OR (m.data_movimentacao >= $1 AND m.data_movimentacao <= $2)
+             ), 0)                                               AS valor,
+             COALESCE(sum(i.quantidade) FILTER (
+               WHERE $3::timestamptz IS NOT NULL
+                 AND m.data_movimentacao >= $3 AND m.data_movimentacao <= $4
+             ), 0)                                     AS quantidade_anterior,
+             COALESCE(sum(i.quantidade * i.valor_unitario) FILTER (
+               WHERE $3::timestamptz IS NOT NULL
+                 AND m.data_movimentacao >= $3 AND m.data_movimentacao <= $4
+             ), 0)                                          AS valor_anterior
+        FROM movimentacoes_itens i
+        JOIN movimentacoes m ON m.id = i.movimentacao_id
+        JOIN produtos p      ON p.id = i.produto_id
+       WHERE m.ativo
+         AND m.saida
+         AND i.ativo
+         AND (
+              $1::timestamptz IS NULL
+           OR (m.data_movimentacao >= $1 AND m.data_movimentacao <= $2)
+           OR ($3::timestamptz IS NOT NULL
+               AND m.data_movimentacao >= $3 AND m.data_movimentacao <= $4)
+         )
+         -- O RECORTE DE VENDEDORAS (17/11/2026): NULL e a loja inteira,
+         -- lista vazia nao devolve nada, e e isso que se quer.
+         AND ($5::uuid[] IS NULL OR m.vendedora_id = ANY($5::uuid[]))
+       GROUP BY p.categoria, upper(left(p.codigo_erp, 2)), p.familia
+      `,
+      [
+        janela?.de ?? null,
+        janela?.ate ?? null,
+        anterior?.de ?? null,
+        anterior?.ate ?? null,
+        vendedoras,
+      ],
+    );
+
+    return linhas.map((l) => ({
+      categoria: l.categoria,
+      codigoErp: l.codigo_erp,
+      familia: l.familia,
+      quantidade: Number(l.quantidade),
+      valor: Number(l.valor),
+      quantidadeAnterior: Number(l.quantidade_anterior),
+      valorAnterior: Number(l.valor_anterior),
+    }));
+  }
+
+  /**
+   * A QUEBRA POR PEDRA — 16/11/2026.
+   *
+   * AS DUAS FONTES ENTRAM NO `GROUP BY`, e nenhuma delas basta: medido nas
+   * 582 peças vendidas em 2026, juntas reconhecem pedra em 337 — o campo
+   * sozinho perderia 43 peças, a etiqueta sozinha perderia 49.
+   */
+  async vendasPorPedra(
+    janela?: JanelaDeVendas,
+    anterior?: JanelaDeVendas,
+    porVendedora = false,
+    vendedoras: string[] | null = null,
+  ): Promise<VendasPorPedraCru[]> {
+    const linhas = await this.ds.query<
+      {
+        vendedora_id: string | null;
+        vendedora: string | null;
+        tipo_pedra: string | null;
+        etiqueta: string | null;
+        quantidade: string;
+        valor: string;
+        quantidade_anterior: string;
+        valor_anterior: string;
+      }[]
+    >(
+      `
+      SELECT CASE WHEN $3::boolean THEN v.id   END AS vendedora_id,
+             CASE WHEN $3::boolean THEN v.nome END AS vendedora,
+             p.tipo_pedra           AS tipo_pedra,
+             p.descricao_etiqueta   AS etiqueta,
+             COALESCE(sum(i.quantidade) FILTER (
+               WHERE $1::timestamptz IS NULL
+                  OR (m.data_movimentacao >= $1 AND m.data_movimentacao <= $2)
+             ), 0)                                               AS quantidade,
+             COALESCE(sum(i.quantidade * i.valor_unitario) FILTER (
+               WHERE $1::timestamptz IS NULL
+                  OR (m.data_movimentacao >= $1 AND m.data_movimentacao <= $2)
+             ), 0)                                               AS valor,
+             COALESCE(sum(i.quantidade) FILTER (
+               WHERE $4::timestamptz IS NOT NULL
+                 AND m.data_movimentacao >= $4 AND m.data_movimentacao <= $5
+             ), 0)                                     AS quantidade_anterior,
+             COALESCE(sum(i.quantidade * i.valor_unitario) FILTER (
+               WHERE $4::timestamptz IS NOT NULL
+                 AND m.data_movimentacao >= $4 AND m.data_movimentacao <= $5
+             ), 0)                                          AS valor_anterior
+        FROM movimentacoes_itens i
+        JOIN movimentacoes m ON m.id = i.movimentacao_id
+        JOIN produtos p      ON p.id = i.produto_id
+        LEFT JOIN vendedoras v ON v.id = m.vendedora_id
+       WHERE m.ativo
+         AND m.saida
+         AND i.ativo
+         AND (
+              $1::timestamptz IS NULL
+           OR (m.data_movimentacao >= $1 AND m.data_movimentacao <= $2)
+           OR ($4::timestamptz IS NOT NULL
+               AND m.data_movimentacao >= $4 AND m.data_movimentacao <= $5)
+         )
+         -- O RECORTE DE VENDEDORAS (17/11/2026): NULL e a loja inteira,
+         -- lista vazia nao devolve nada, e e isso que se quer.
+         AND ($6::uuid[] IS NULL OR m.vendedora_id = ANY($6::uuid[]))
+       GROUP BY 1, 2, p.tipo_pedra, p.descricao_etiqueta
+      `,
+      [
+        janela?.de ?? null,
+        janela?.ate ?? null,
+        porVendedora,
+        anterior?.de ?? null,
+        anterior?.ate ?? null,
+        vendedoras,
+      ],
+    );
+
+    return linhas.map((l) => ({
+      vendedoraId: l.vendedora_id,
+      vendedora: l.vendedora,
+      tipoPedra: l.tipo_pedra,
+      etiqueta: l.etiqueta,
+      quantidade: Number(l.quantidade),
+      valor: Number(l.valor),
+      quantidadeAnterior: Number(l.quantidade_anterior),
+      valorAnterior: Number(l.valor_anterior),
+    }));
+  }
+
   async rankingPorFamilia(
     janela: JanelaDeVendas,
     familia: string,
+    prefixos: string[] | null,
     limite: number,
   ): Promise<VendedoraPorFamilia[]> {
     // ====================================================================
@@ -620,7 +860,25 @@ export class VendasMovimentacaoRepository
          AND m.saida
          AND m.data_movimentacao >= $1
          AND m.data_movimentacao <= $2
-         AND upper(p.familia) = upper($3::text)
+         AND (
+           -- O TIPO DA PECA, E NAO A COLUNA "familia" — 16/11/2026.
+           --
+           -- RIVEIRA são 73 colares e 17 pulseiras; SOLITARIO são 29
+           -- brincos, 13 colares, 8 anéis. Casando por igualdade na
+           -- "familia", essas pecas sumiam da conta do tipo delas: 108
+           -- colares em 2026 onde a verdade são 118.
+           --
+           -- SEM PREFIXO a regra antiga vale inteira, e é o que mantém
+           -- "quantas rivieras" e "quantos vasos" funcionando.
+           CASE WHEN $5::text[] IS NULL
+                THEN upper(p.familia) = upper($3::text)
+                ELSE (p.categoria = 'JEWEL'
+                      AND upper(left(p.codigo_erp, 2))
+                            = ANY($5::text[]))
+                  OR (COALESCE(p.categoria, '') <> 'JEWEL'
+                      AND upper(p.familia) = upper($3::text))
+           END
+         )
        GROUP BY v.id, v.nome
       -- QUEM SO DEVOLVEU NO PERIODO FICA DE FORA: sem esta linha ela
       -- apareceria com quantidade negativa no ranking de "quem mais vende",
@@ -630,7 +888,7 @@ export class VendasMovimentacaoRepository
        ORDER BY quantidade DESC, valor DESC
        LIMIT $4
       `,
-      [janela.de, janela.ate, familia, limite],
+      [janela.de, janela.ate, familia, limite, prefixos],
     );
 
     return linhas.map((l) => ({
@@ -753,6 +1011,7 @@ export class VendasMovimentacaoRepository
   async rankingPorFamiliaNoMes(
     mes: number,
     familia: string,
+    prefixos: string[] | null,
     porAno: number,
   ): Promise<VendedoraPorFamiliaNoAno[]> {
     // ====================================================================
@@ -795,7 +1054,25 @@ export class VendasMovimentacaoRepository
            -- A LINHA QUE DEFINE A PERGUNTA. Ver o bloco acima.
            AND m.saida
            AND extract(month from m.data_movimentacao) = $1
-           AND upper(p.familia) = upper($2::text)
+           AND (
+             -- O TIPO DA PECA, E NAO A COLUNA "familia" — 16/11/2026.
+             --
+             -- RIVEIRA são 73 colares e 17 pulseiras; SOLITARIO são 29
+             -- brincos, 13 colares, 8 anéis. Casando por igualdade na
+             -- "familia", essas pecas sumiam da conta do tipo delas: 108
+             -- colares em 2026 onde a verdade são 118.
+             --
+             -- SEM PREFIXO a regra antiga vale inteira, e é o que mantém
+             -- "quantas rivieras" e "quantos vasos" funcionando.
+             CASE WHEN $4::text[] IS NULL
+                  THEN upper(p.familia) = upper($2::text)
+                  ELSE (p.categoria = 'JEWEL'
+                        AND upper(left(p.codigo_erp, 2))
+                              = ANY($4::text[]))
+                    OR (COALESCE(p.categoria, '') <> 'JEWEL'
+                        AND upper(p.familia) = upper($2::text))
+             END
+           )
          GROUP BY 1, 2, 3
       )
       SELECT ano, vendedora_id, nome, quantidade, valor
@@ -809,7 +1086,7 @@ export class VendasMovimentacaoRepository
        WHERE r.posicao <= $3
        ORDER BY ano DESC, quantidade DESC
       `,
-      [mes, familia, porAno],
+      [mes, familia, porAno, prefixos],
     );
 
     return linhas.map((l) => ({

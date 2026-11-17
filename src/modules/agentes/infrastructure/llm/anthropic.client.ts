@@ -579,6 +579,217 @@ const GESTAO_POR_EMPRESA_TOOL: Anthropic.Tool = {
 };
 
 /**
+ * QUANTAS PEÇAS DE CADA TIPO — 16/11/2026.
+ *
+ * ==========================================================================
+ * A GESTORA PEDIU QUANTIDADE E RECEBEU VALOR.
+ *
+ * Em 15/11: *"não quero código de nada, quero por quantidade de peças"*. O
+ * que saiu foi a lista de 60 itens ordenada por valor, com quantidade 1 em
+ * 58 das 60 linhas — e a Anastasia explicou com precisão o que faltava:
+ * *"só consigo contar um tipo de cada vez"*.
+ *
+ * A COMPARAÇÃO É UM PARÂMETRO, E NÃO DUAS CHAMADAS: assim o corte no mesmo
+ * dia dos dois anos é fato, e não promessa escrita nesta descrição.
+ * ==========================================================================
+ */
+const GESTAO_POR_TIPO_TOOL: Anthropic.Tool = {
+  name: 'vendas_por_tipo_de_peca',
+  description:
+    'Quantas PEÇAS DE CADA TIPO a loja vendeu — colar, brinco, anel, pulseira, pingente, piercing —, com o total de joia ja somado. Use para "quantas pecas de cada tipo", "foram quantos colares e quantos aneis", "o que mais saiu em QUANTIDADE", "a quebra por tipo de peca". Devolve TODOS os tipos de uma vez, do que mais saiu para o que menos saiu. Sem periodo, e o historico inteiro. ' +
+    'PARA COMPARAR COM O ANO PASSADO use `compararAnoAnterior: true`, e NAO chame duas vezes: a comparacao ja vem cortada no mesmo dia e mes dos dois anos, e a diferenca de cada tipo ja vem calculada em pecas. Repasse como esta. ' +
+    'CADA LINHA JA DIZ O ANO DE CADA LADO: "119 pecas em 2026 contra 146 em 2025". REPASSE OS ANOS, e nao troque por "contra o ano passado" — sem eles quem le ve dois numeros e nao sabe qual e qual. ' +
+    'SEM `periodo` E SEM DATAS E O HISTORICO INTEIRO, e e o padrao CERTO quando ela nao disser recorte. NAO escolha MES por conta propria: o mes corrente pode estar vazio e a resposta parece dizer que nunca houve venda. ' +
+    'O TOTAL DE JOIA JA VEM PRONTO em `total` — nunca some os tipos a mao. ' +
+    'O que NAO e joia (vaso, vela, corset, saia, livro) vem separado em `foraDaJoia`, fora da lista principal: mencione so se perguntarem, ou em uma frase curta no fim. ' +
+    'Para QUEM vendeu cada tipo, use `quem_mais_vende`. Para quanto FATUROU, use `consultar_vendas`.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
+        description: 'Recorte de tempo. Omita para o historico inteiro.',
+      },
+      compararAnoAnterior: {
+        type: 'boolean',
+        description:
+          'true quando ela quiser comparar com o ano passado — "e no ano passado?", "esse ano contra o ano passado". O mesmo dia e mes sao usados nos dois anos, automaticamente.',
+      },
+      ...DATAS_LIVRES,
+    },
+    required: [],
+  },
+};
+
+/**
+ * QUAL PEDRA SAI MAIS — 16/11/2026.
+ *
+ * A pedra sai do dicionario da casa (as 21 do `PEDRAS`), lida do campo
+ * `tipo_pedra` E da etiqueta. Medido nas 582 pecas vendidas em 2026: juntas
+ * reconhecem pedra em 337; o campo sozinho perderia 43, a etiqueta sozinha
+ * perderia 49.
+ */
+const GESTAO_POR_PEDRA_TOOL: Anthropic.Tool = {
+  name: 'vendas_por_pedra',
+  description:
+    'Quanto a loja vendeu de CADA PEDRA — diamante, esmeralda, safira, rubi, topazio, opala, turquesa e as demais —, com quantidade de pecas e valor. Use para "qual pedra sai mais", "quanto vendemos de esmeralda", "a quebra por pedra". Devolve TODAS as pedras de uma vez, da que mais saiu para a que menos saiu. Sem periodo, e o historico inteiro. ' +
+    'SEM `periodo` E SEM DATAS E O HISTORICO INTEIRO, e e o padrao CERTO quando ela nao disser recorte. NAO escolha MES por conta propria: o mes corrente pode estar vazio e a resposta parece dizer que nunca houve venda. UMA PECA COM DUAS PEDRAS CONTA NAS DUAS — um colar com esmeralda e diamante entra nas duas linhas —, entao a soma das linhas PASSA do numero de pecas. A `nota` diz quantas pecas foram, e REPASSE A NOTA sempre que ela vier: sem ela quem somar acha que a conta esta errada. ' +
+    'NEM TODA PECA TEM PEDRA, e e correto: corrente, elo e fio de ouro liso nao entram em nenhuma linha. Nao diga que faltou dado. ' +
+    'PARA COMPARAR COM O ANO PASSADO use `compararAnoAnterior: true`, e NAO chame duas vezes: os dois anos vem cortados no mesmo dia, cada linha ja diz o ano de cada lado e a diferenca ja vem calculada. REPASSE OS ANOS. ' +
+    'Para QUEM vendeu uma pedra, use quem_mais_vende_pedra.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
+        description: 'Recorte de tempo. Omita para o historico inteiro.',
+      },
+      compararAnoAnterior: {
+        type: 'boolean',
+        description:
+          'true para comparar com o ano passado. O mesmo dia e mes sao usados nos dois anos, automaticamente.',
+      },
+      ...DATAS_LIVRES,
+    },
+    required: [],
+  },
+};
+
+/**
+ * QUEM VENDEU MAIS UMA PEDRA — 16/11/2026.
+ *
+ * Nasceu no teste local, quando o Lucas perguntou "quem vendeu mais
+ * diamante esse ano?" e a Anastasia respondeu com precisao que nao
+ * conseguia: o ranking dela conta por TIPO de peca, e nao por pedra.
+ *
+ * A PEDRA NAO E COLUNA: o filtro acontece no caso de uso, pelo dicionario.
+ * Por isso o nome aceita acento, plural e sigla — e, quando nao existe,
+ * volta a lista em vez de zero.
+ */
+const GESTAO_QUEM_VENDE_PEDRA_TOOL: Anthropic.Tool = {
+  name: 'quem_mais_vende_pedra',
+  description:
+    'O ranking das vendedoras para UMA PEDRA — "quem vendeu mais diamante", "qual vendedora mais vendeu esmeralda esse ano", "quem vende mais perola". Conta PECAS e traz o valor de cada uma. ' +
+    'O NOME DA PEDRA VAI COMO ELA FALOU: diamante, esmeralda, safira, rubi, topazio, opala, perola, turquesa, ametista, citrino, agua marinha e outras. Acento e plural nao atrapalham. Se a pedra nao existir no catalogo, a resposta traz a LISTA das que existem — repasse e pergunte qual. ' +
+    'UMA PECA COM DUAS PEDRAS CONTA NAS DUAS: quem vendeu um colar de esmeralda e diamante aparece nos dois rankings. ' +
+    'SEM `periodo` E SEM DATAS E O HISTORICO INTEIRO, e e o padrao CERTO quando ela nao disser recorte. NAO escolha MES por conta propria: o mes corrente pode estar vazio e a resposta parece dizer que nunca houve venda. ' + +
+    'Para a quebra de TODAS as pedras de uma vez, sem vendedora, use vendas_por_pedra. Para ranking por TIPO de peca, use quem_mais_vende.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      pedra: {
+        type: 'string',
+        description:
+          'A pedra, como a pessoa falou. Nao traduza nem corrija: mande o termo dela.',
+      },
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
+        description: 'Recorte de tempo. Omita para o historico inteiro.',
+      },
+      limite: {
+        type: 'number',
+        description:
+          'Quantas vendedoras listar. Omita para a lista inteira, que e o padrao.',
+      },
+      ...DATAS_LIVRES,
+    },
+    required: ['pedra'],
+  },
+};
+
+/**
+ * DE QUEM E O NUMERO — 17/11/2026.
+ *
+ * A gerente de vendas ve O TIME DELA, que cobre 77% das pecas de 2026. Um
+ * total rotulado como "a loja" seria numero errado parecendo certo, e e o
+ * mesmo defeito do periodo vazio que mordeu em 16/11: a resposta que nao diz
+ * de quem e convida o modelo a decidir por conta.
+ *
+ * Entra no CABECALHO do resultado, junto do periodo, e nao numa instrucao
+ * solta — a agente reescreve a resposta ao repassar, e o que sobrevive
+ * intacto e o que esta colado nos numeros.
+ */
+function deQuem(escopo: 'LOJA' | 'EQUIPE' | 'VENDEDORA'): string {
+  if (escopo === 'EQUIPE') return 'a sua equipe';
+  if (escopo === 'VENDEDORA') return 'as suas vendas';
+  return 'a loja';
+}
+/**
+ * O VALOR DAS VENDAS, SEM A LISTA — 17/11/2026.
+ *
+ * ==========================================================================
+ * A GESTORA PEDIU O TOTAL QUATRO VEZES E LEVOU 25 LINHAS QUATRO VEZES.
+ *
+ * E nao era o modelo insistindo: NAO EXISTIA ferramenta para o valor da loja
+ * sem lista. O `vendas_de_vendedora` exige nome, o `consultar_vendas` e da
+ * propria vendedora, e o `vendas_detalhadas` imprime a tabela como efeito de
+ * ser chamado — nao da para consulta-lo em silencio.
+ *
+ * O Lucas separou as duas perguntas em 17/11: *"valor das vendas desse mes e
+ * diferente de quais as vendas desse mes"*.
+ * ==========================================================================
+ */
+const GESTAO_VALOR_DAS_VENDAS_TOOL: Anthropic.Tool = {
+  name: 'valor_das_vendas',
+  description:
+    'QUANTO a loja vendeu num periodo, em NUMEROS e SEM LISTA: quantas vendas, o valor somado, a devolucao do periodo, a receita ja descontada e o ticket medio. ' +
+    'E ESTA A FERRAMENTA DO "VALOR": "valor das vendas desse mes", "quanto vendemos esse ano", "o total das vendas", "o somatorio", "qual o faturamento de novembro". Nao imprime tabela nenhuma. ' +
+    'NAO E A FERRAMENTA DE "AS VENDAS": "quais as vendas desse mes", "me lista as vendas", "me traga as vendas da Camila" pedem a LISTA, e a lista e o vendas_detalhadas. A pergunta com QUAIS, LISTA ou TRAGA pede linhas; a com VALOR, QUANTO, TOTAL ou SOMATORIO pede numero. ' +
+    'SE ELA JA RECEBEU A LISTA e depois pedir so o total, venha para ca — ou responda com o numero que ja esta na conversa. NAO chame o vendas_detalhadas de novo: ele reimprime as linhas todas. ' +
+    'SAO DOIS VALORES QUANDO HOUVE DEVOLUCAO, e os dois vem rotulados: a soma das vendas (que e a que aparece na lista) e a receita ja descontada. REPASSE OS DOIS como estao — eles DISCORDAM de proposito, e quem le precisa saber qual e qual. Sem devolucao no periodo, vem um numero so.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
+        description: 'Recorte de tempo. O padrao e MES.',
+      },
+      ...DATAS_LIVRES,
+    },
+    required: [],
+  },
+};
+/**
+ * O QUE VENDE MAIS, OURO BRANCO OU AMARELO — 16/11/2026.
+ *
+ * ==========================================================================
+ * A PERGUNTA DA GESTORA QUE A AGENTE NAO SABIA RESPONDER.
+ *
+ * Em 15/11 ela perguntou, e a Anastasia respondeu com precisao que nao
+ * conseguia: o `quem_mais_vende` recebe UM parametro, `familia`, e conta
+ * por tipo de peca. O metal estava na base o tempo todo, em `produtos.cor`
+ * e na etiqueta — faltava alcance, nao dado.
+ *
+ * A QUEBRA VEM INTEIRA, e nao um metal por chamada: a pergunta e sempre
+ * comparativa, e duas chamadas fariam o modelo somar de cabeca.
+ * ==========================================================================
+ */
+const GESTAO_POR_METAL_TOOL: Anthropic.Tool = {
+  name: 'vendas_por_metal',
+  description:
+    'Quanto a loja vendeu de CADA TIPO DE OURO — branco, amarelo, rose, negro e tambem platina —, com quantidade de pecas e valor. Use para "o que vende mais, ouro branco ou amarelo", "quanto saiu de OB esse ano", "a quebra por metal", "qual ouro sai mais". Devolve TODOS os metais de uma vez, do que mais faturou para o que menos. Sem periodo, e o historico inteiro. ' +
+    'SEM `periodo` E SEM DATAS E O HISTORICO INTEIRO, e e o padrao CERTO quando ela nao disser recorte. NAO escolha MES por conta propria: o mes corrente pode estar vazio e a resposta parece dizer que nunca houve venda. A LINHA "Sem classificacao de metal" NAO E UM METAL: sao pecas cujo cadastro nao diz o material, quase todas decoracao e roupa. REPASSE ESSA LINHA SEMPRE que ela vier, porque sem ela a soma dos metais nao fecha com o faturamento e quem le acha que o numero esta errado. Nunca a chame de "outros metais". ' +
+    'NAO SOME OS METAIS A MAO para dar um total: esta consulta ja traz todos, e o faturamento do periodo tem ferramenta propria.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
+        description:
+          'Recorte de tempo. Omita para o historico inteiro. Para comparar dois anos, chame UMA VEZ POR ANO com `de` e `ate`, e use o MESMO dia e mes nos dois — comparar o ano passado inteiro com o ano corrente ate hoje infla o passado.',
+      },
+      ...DATAS_LIVRES,
+    },
+    required: [],
+  },
+};
+
+/**
  * AS VENDAS UMA A UMA — 02/10/2026.
  *
  * TRES PERGUNTAS NUMA FERRAMENTA, porque sao a mesma consulta com filtros
@@ -631,11 +842,14 @@ const GESTAO_VENDAS_DETALHADAS_TOOL: Anthropic.Tool = {
   description:
     'Lista as vendas UMA A UMA, com data, documento, cliente, vendedora, valor e AS PECAS de cada uma — e ja diz quantas sao e quanto somam. ' +
     'E ESTA A FERRAMENTA DE "AS VENDAS": "me traga as vendas da Camila em 2025", "as vendas da Ylka", "me lista as vendas", "quais as compras da cliente X", "quais vendas a Camila fez em setembro", "quais pecas tinha a venda 1157", "o que o cliente Y comprou". ' +
+    'QUANDO ELA PEDE SO O VALOR, NAO E AQUI: "valor das vendas desse mes", "quanto vendemos", "o total", "o somatorio" vao para o valor_das_vendas, que responde em numeros e NAO imprime tabela. Esta ferramenta imprime a lista inteira sempre que e chamada, entao chama-la para entregar um numero manda 25 linhas para quem pediu um. ' +
     'PEDIR "AS VENDAS" E PEDIR A LISTA, e nao o total: quem quer so o numero pergunta QUANTO ou QUANTAS ("quanto a Camila vendeu em 2025"), e ai e o vendas_de_vendedora. Na duvida entre os dois, venha para ca — a lista ja vem com o total dentro, e o resumo nao vem com a lista. ' +
     'O PERIODO SOZINHO JA SERVE: "as vendas de outubro", "a lista de vendas de todas as vendedoras do mes" sao a LOJA INTEIRA naquela janela, numa chamada SO. Nao pergunte de qual vendedora, e NUNCA CHAME UMA VEZ POR VENDEDORA — a lista ja traz a coluna Vendedora, e uma chamada por nome emenda oito recortes no titulo e repete o rodape. ' +
     'So pergunte o recorte quando nao vier NADA: nem nome, nem documento, nem janela de tempo. ' +
     'SO VENDA CONCLUIDA ENTRA: devolucao fica de fora, e e por isso que a CONTAGEM desta lista fecha com a do resumo. O VALOR nao fecha — o resumo desconta devolucao e esta soma nao —, e a resposta tem de dizer qual e qual quando os dois aparecerem. ' +
-    'A LISTA COMPLETA SAI SOZINHA na conversa, escrita pelo sistema, logo depois da sua resposta — voce nao precisa repeti-la nem oferecer. Ela so nao sai se a pessoa pedir uma quantidade (`quantas`).',
+    'A LISTA COMPLETA SAI SOZINHA na conversa, escrita pelo sistema, logo depois da sua resposta — e ela SAI SEMPRE, com 1 venda ou com 300. ' +
+    'NAO LISTE AS VENDAS NA SUA RESPOSTA. Nao numere, nao enumere, nao escreva "1. 09/11 — R$ 1.500": a tabela vem logo depois com as mesmas linhas, e repetir entrega a lista DUAS VEZES. Diga so o resumo — quantas vendas e quanto somam — e para. ' +
+    'E NAO ANUNCIE A LISTA: nao escreva "a lista completa sai logo abaixo". Ela sai, e quem le vai ver. ',
   input_schema: {
     type: 'object',
     properties: {
@@ -938,7 +1152,9 @@ const GESTAO_ITENS_DA_VENDEDORA_TOOL: Anthropic.Tool = {
 const GESTAO_POR_FAMILIA_TOOL: Anthropic.Tool = {
   name: 'quem_mais_vende',
   description:
-    'O ranking das vendedoras para UM tipo de peca, da que mais vendeu para a que menos vendeu, com quantidade e valor. Conta PECAS, nao faturamento — e a devolucao ja esta abatida. Aceita QUALQUER tipo do catalogo, que tem dezenas: alem de brinco, anel, colar e pulseira, existem pingente, piercing, solitario, argolas e tambem decoracao (vaso, vela, livro, bowl). Se o nome nao existir, a resposta traz a lista. NUNCA SOME VARIOS TIPOS A MAO para chegar a um total por vendedora: para isso existe o panorama_da_equipe, que ja conta TODAS as pecas de TODAS as familias numa consulta so.',
+    'O ranking das vendedoras para UM tipo de peca, da que mais vendeu para a que menos vendeu, com quantidade e valor. Conta PECAS, nao faturamento — e a devolucao ja esta abatida. Aceita QUALQUER tipo do catalogo, que tem dezenas: alem de brinco, anel, colar e pulseira, existem pingente, piercing, solitario, argolas e tambem decoracao (vaso, vela, livro, bowl). Se o nome nao existir, a resposta traz a lista. NUNCA SOME VARIOS TIPOS A MAO para chegar a um total por vendedora: para isso existe o panorama_da_equipe, que ja conta TODAS as pecas de TODAS as familias numa consulta so. ' +
+    'O ESTILO CONTA COMO O TIPO DA PECA: um colar riviera conta como COLAR, um brinco solitario conta como BRINCO. Se ela estranhar que o numero de colares subiu em relacao a uma resposta antiga, foi isso — antes o estilo era contado a parte, e as pecas ficavam de fora do proprio tipo. Para contar um ESTILO sozinho, peca "riviera" ou "solitario" como familia. ' +
+    'PARA A QUEBRA INTEIRA por tipo, sem vendedora, use vendas_por_tipo_de_peca.',
   input_schema: {
     type: 'object',
     properties: {
@@ -1540,6 +1756,88 @@ const CAMPOS_DE_FAIXA_DE_VALOR = {
   },
 };
 
+/**
+ * AS QUEBRAS DA PROPRIA VENDEDORA — 17/11/2026.
+ *
+ * ==========================================================================
+ * "QUANTAS PEROLAS VENDI?"
+ *
+ * Pedido do Lucas ao corrigir o roteiro: pela Helena a vendedora pergunta das
+ * PROPRIAS vendas. Nenhuma das tres tem campo de vendedora — o escopo sai do
+ * contexto, como no `minhas_pecas_por_valor` e nos lembretes.
+ * ==========================================================================
+ */
+const MINHAS_VENDAS_POR_PEDRA_TOOL: Anthropic.Tool = {
+  name: 'minhas_vendas_por_pedra',
+  description:
+    'Quanto VOCE, a vendedora com quem estou falando, vendeu de CADA PEDRA — diamante, esmeralda, safira, rubi, topazio, perola e as demais. Use para "quantas perolas vendi", "quantos diamantes vendi", "quantas pedras eu vendi", "vendi mais esmeralda ou safira". Devolve TODAS as pedras de uma vez: para uma pedra so, leia a linha dela. ' +
+    'UMA PECA COM DUAS PEDRAS CONTA NAS DUAS, e a `nota` explica isso com o numero de pecas — REPASSE A NOTA. ' +
+    'SO AS VENDAS DELA. Se ela perguntar das de outra pessoa, diga que por aqui voce ve as dela — sem falar de permissao nem de acesso. ' +
+    'Sem periodo e o historico inteiro dela, e e o padrao certo quando ela nao disser recorte. Para comparar com o ano passado use `compararAnoAnterior`.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
+        description: 'Recorte de tempo. Omita para o historico inteiro.',
+      },
+      compararAnoAnterior: {
+        type: 'boolean',
+        description:
+          'true para comparar com o ano passado. O mesmo dia e mes nos dois anos, automaticamente.',
+      },
+      ...DATAS_LIVRES,
+    },
+    required: [],
+  },
+};
+
+/** "Quantos colares eu vendi?" — a irma por tipo de peca. */
+const MINHAS_VENDAS_POR_TIPO_TOOL: Anthropic.Tool = {
+  name: 'minhas_vendas_por_tipo',
+  description:
+    'Quantas PECAS DE CADA TIPO voce vendeu — colar, brinco, anel, pulseira, pingente, piercing —, com o total de joia ja somado. Use para "quantos colares eu vendi", "quantas pecas vendi de cada tipo", "o que eu mais vendi em quantidade". ' +
+    'O TOTAL DE JOIA JA VEM PRONTO: nunca some os tipos a mao. O que nao e joia vem separado em `foraDaJoia`. ' +
+    'SO AS VENDAS DELA. Sem periodo e o historico inteiro dela. Para comparar com o ano passado use `compararAnoAnterior`, e NAO chame duas vezes.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
+        description: 'Recorte de tempo. Omita para o historico inteiro.',
+      },
+      compararAnoAnterior: {
+        type: 'boolean',
+        description: 'true para comparar com o ano passado.',
+      },
+      ...DATAS_LIVRES,
+    },
+    required: [],
+  },
+};
+
+/** "Vendi mais ouro branco ou amarelo?" — a irma por metal. */
+const MINHAS_VENDAS_POR_METAL_TOOL: Anthropic.Tool = {
+  name: 'minhas_vendas_por_metal',
+  description:
+    'Quanto VOCE vendeu de cada tipo de ouro — branco, amarelo, rose, negro e platina —, com quantidade de pecas e valor. Use para "vendi mais ouro branco ou amarelo", "quanto saiu de OB para mim esse ano". ' +
+    'A LINHA "Sem classificacao de metal" NAO E UM METAL: sao pecas cujo cadastro nao diz o material. REPASSE ESSA LINHA sempre que ela vier. ' +
+    'SO AS VENDAS DELA. Sem periodo e o historico inteiro dela.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
+        description: 'Recorte de tempo. Omita para o historico inteiro.',
+      },
+      ...DATAS_LIVRES,
+    },
+    required: [],
+  },
+};
 /**
  * AS PECAS DELA NUMA FAIXA DE VALOR — 13/10/2026.
  *
@@ -2278,6 +2576,31 @@ export class AnthropicClient implements ILlmClient {
     if (params.gestaoPorEmpresa && params.gestaoPorEmpresaDisponivel) {
       tools.push(GESTAO_POR_EMPRESA_TOOL);
     }
+    // SO PARA QUEM VE A LOJA, pelo mesmo motivo do faturamento por empresa:
+    // a quebra do grupo nao tem versao estreita.
+    if (
+      params.gestaoValorDasVendas &&
+      params.gestaoValorDasVendasDisponivel
+    ) {
+      tools.push(GESTAO_VALOR_DAS_VENDAS_TOOL);
+    }
+    if (params.gestaoPorMetal && params.gestaoPorMetalDisponivel) {
+      tools.push(GESTAO_POR_METAL_TOOL);
+    }
+    // AS DUAS IRMAS DA QUEBRA POR METAL, e a mesma trava: so para quem ve a
+    // loja, porque a quebra do grupo nao tem versao estreita.
+    if (params.gestaoPorTipo && params.gestaoPorTipoDisponivel) {
+      tools.push(GESTAO_POR_TIPO_TOOL);
+    }
+    if (params.gestaoPorPedra && params.gestaoPorPedraDisponivel) {
+      tools.push(GESTAO_POR_PEDRA_TOOL);
+    }
+    if (
+      params.gestaoQuemVendePedra &&
+      params.gestaoQuemVendePedraDisponivel
+    ) {
+      tools.push(GESTAO_QUEM_VENDE_PEDRA_TOOL);
+    }
     // So quando o canal NAO e o da vendedora — as duas usam o mesmo nome.
     if (params.gestaoEpoca && !params.clientesPorEpoca) {
       tools.push(
@@ -2333,6 +2656,17 @@ export class AnthropicClient implements ILlmClient {
     if (params.melhoresClientes) tools.push(MELHORES_TOOL);
     if (params.clientesPorFidelidade) tools.push(FIDELIDADE_TOOL);
     if (params.minhasPecasPorValor) tools.push(MINHAS_PECAS_POR_VALOR_TOOL);
+    // AS QUEBRAS DELA — 17/11. A presenca do handler e o portao: so o canal
+    // da vendedora monta esses tres.
+    if (params.minhasVendasPorPedra) {
+      tools.push(MINHAS_VENDAS_POR_PEDRA_TOOL);
+    }
+    if (params.minhasVendasPorTipo) {
+      tools.push(MINHAS_VENDAS_POR_TIPO_TOOL);
+    }
+    if (params.minhasVendasPorMetal) {
+      tools.push(MINHAS_VENDAS_POR_METAL_TOOL);
+    }
     if (params.agendarContato) tools.push(AGENDAR_TOOL);
 
     const first = await this.client.messages.create({
@@ -4061,6 +4395,287 @@ export class AnthropicClient implements ILlmClient {
               return (
                 `Faturamento por empresa:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
                 'Repasse os nomes e numeros exatamente como estao. Se ela perguntou por UMA empresa, responda so a dela e diga que pode trazer as outras. Nao some as empresas por conta propria.'
+              );
+            },
+          ),
+        );
+      } else if (
+        toolUse.name === 'vendas_por_metal' &&
+        params.gestaoPorMetal
+      ) {
+        toolResults.push(
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const entrada = toolUse.input as {
+                periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+                de?: string;
+                ate?: string;
+              };
+              const r = await params.gestaoPorMetal!({
+                periodo: entrada.periodo,
+                de: entrada.de ? String(entrada.de) : undefined,
+                ate: entrada.ate ? String(entrada.ate) : undefined,
+              });
+              if (r.status === 'INDISPONIVEL') {
+                return 'Esta consulta nao esta disponivel por aqui. Diga isso em uma frase, sem mencionar permissao nem limitacao de acesso.';
+              }
+              if (r.linhas.length === 0) {
+                return `Nao houve venda nenhuma em ${deQuem(r.escopo)}, em ${r.periodo}. DIGA O PERIODO ao responder — "em ${r.periodo} nao houve venda" — e ofereca outro. NAO invente outro recorte: se ela nao disser qual, ofereca o historico inteiro.`;
+              }
+              return (
+                `Vendas por tipo de ouro — ${deQuem(r.escopo)}, ${r.periodo}:\n${r.linhas.map((l) => `- ${l}`).join(`\n`)}\n\n` +
+                'Repasse os nomes e numeros exatamente como estao. A linha QUANDO O CABECALHO DISSER A SUA EQUIPE, a resposta TEM de dizer que o numero e da EQUIPE dela e nao da loja: ela nao enxerga a loja, e numero sem dono parece ser da loja inteira. "Sem classificacao de metal", se vier, TEM de ser repassada — sem ela a soma nao fecha com o faturamento. Nao some os metais por conta propria.'
+              );
+            },
+          ),
+        );
+      } else if (
+        toolUse.name === 'vendas_por_tipo_de_peca' &&
+        params.gestaoPorTipo
+      ) {
+        toolResults.push(
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const entrada = toolUse.input as {
+                periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+                de?: string;
+                ate?: string;
+                compararAnoAnterior?: boolean;
+              };
+              const r = await params.gestaoPorTipo!({
+                periodo: entrada.periodo,
+                de: entrada.de ? String(entrada.de) : undefined,
+                ate: entrada.ate ? String(entrada.ate) : undefined,
+                compararAnoAnterior: entrada.compararAnoAnterior === true,
+              });
+              if (r.status === 'INDISPONIVEL') {
+                return 'Esta consulta nao esta disponivel por aqui. Diga isso em uma frase, sem mencionar permissao nem limitacao de acesso.';
+              }
+              if (r.linhas.length === 0 && r.foraDaJoia.length === 0) {
+                return `Nao houve venda nenhuma em ${deQuem(r.escopo)}, em ${r.periodo}. DIGA O PERIODO ao responder — "em ${r.periodo} nao houve venda" — e ofereca outro. NAO invente outro recorte: se ela nao disser qual, ofereca o historico inteiro.`;
+              }
+              const blocos = [
+                `Pecas vendidas por tipo — ${deQuem(r.escopo)}, ${r.periodo}:\n${r.linhas.map((l) => `- ${l}`).join(`\n`)}`,
+              ];
+              if (r.total) blocos.push(r.total);
+              if (r.foraDaJoia.length > 0) {
+                blocos.push(
+                  `Fora da joia: ${r.foraDaJoia.join(`; `)}`,
+                );
+              }
+              return (
+                blocos.join('\n\n') +
+                '\n\nRepasse os nomes, numeros E ANOS exatamente como estao QUANDO O CABECALHO DISSER A SUA EQUIPE, a resposta TEM de dizer que o numero e da EQUIPE dela e nao da loja: ela nao enxerga a loja, e numero sem dono parece ser da loja inteira. — quem le precisa saber qual numero e de qual ano. O total de joia JA ESTA SOMADO — nao some os tipos por conta propria. As linhas de fora da joia so entram se perguntarem, ou em uma frase curta no fim.'
+              );
+            },
+          ),
+        );
+      } else if (
+        toolUse.name === 'vendas_por_pedra' &&
+        params.gestaoPorPedra
+      ) {
+        toolResults.push(
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const entrada = toolUse.input as {
+                periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+                de?: string;
+                ate?: string;
+                compararAnoAnterior?: boolean;
+              };
+              const r = await params.gestaoPorPedra!({
+                periodo: entrada.periodo,
+                de: entrada.de ? String(entrada.de) : undefined,
+                ate: entrada.ate ? String(entrada.ate) : undefined,
+                compararAnoAnterior: entrada.compararAnoAnterior === true,
+              });
+              if (r.status === 'INDISPONIVEL') {
+                return 'Esta consulta nao esta disponivel por aqui. Diga isso em uma frase, sem mencionar permissao nem limitacao de acesso.';
+              }
+              if (r.linhas.length === 0) {
+                return `Nenhuma peca com pedra reconhecida em ${deQuem(r.escopo)}, em ${r.periodo}. DIGA O PERIODO ao responder, e ofereca outro — o historico inteiro, se ela nao disser qual.`;
+              }
+              return (
+                `Vendas por pedra — ${deQuem(r.escopo)}, ${r.periodo}:\n${r.linhas.map((l) => `- ${l}`).join(`\n`)}\n\n${r.nota ?? ''}` +
+                '\n\nRepasse os nomes e numeros exatamente como estao, E REPASSE A NOTA QUANDO O CABECALHO DISSER A SUA EQUIPE, a resposta TEM de dizer que o numero e da EQUIPE dela e nao da loja: ela nao enxerga a loja, e numero sem dono parece ser da loja inteira.: uma peca com duas pedras conta nas duas, entao a soma das linhas passa do numero de pecas. Sem a nota, quem somar acha que a conta esta errada.'
+              );
+            },
+          ),
+        );
+      } else if (
+        toolUse.name === 'quem_mais_vende_pedra' &&
+        params.gestaoQuemVendePedra
+      ) {
+        toolResults.push(
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const entrada = toolUse.input as {
+                pedra: string;
+                periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+                de?: string;
+                ate?: string;
+                limite?: number;
+              };
+              const r = await params.gestaoQuemVendePedra!({
+                pedra: String(entrada.pedra ?? ''),
+                periodo: entrada.periodo,
+                de: entrada.de ? String(entrada.de) : undefined,
+                ate: entrada.ate ? String(entrada.ate) : undefined,
+                limite: entrada.limite,
+              });
+              if (r.status === 'INDISPONIVEL') {
+                return 'Esta consulta nao esta disponivel por aqui. Diga isso em uma frase, sem mencionar permissao nem limitacao de acesso.';
+              }
+              if (r.status === 'PEDRA_DESCONHECIDA') {
+                return (
+                  `Essa pedra nao existe no catalogo. As que existem sao: ${r.pedras.join(', ')}.` +
+                  ' Diga isso em uma frase e pergunte qual delas ela quer.'
+                );
+              }
+              if (r.linhas.length === 0) {
+                return `Ninguem vendeu ${r.pedra} em ${deQuem(r.escopo)}, em ${r.periodo}. DIGA O PERIODO ao responder — "em ${r.periodo} ninguem vendeu ${r.pedra}" — e ofereca outro. NAO diga "neste ano" nem invente recorte nenhum: o consultado foi ${r.periodo}.`;
+              }
+              return (
+                `Quem mais vendeu ${r.pedra} — ${deQuem(r.escopo)}, ${r.periodo}:\n${r.linhas.map((l) => `- ${l}`).join(`\n`)}\n\n` +
+                'Repasse os nomes e numeros exatamente como estao. Uma peca com duas pedras conta nas duas QUANDO O CABECALHO DISSER A SUA EQUIPE, a resposta TEM de dizer que o numero e da EQUIPE dela e nao da loja: ela nao enxerga a loja, e numero sem dono parece ser da loja inteira., entao somar este ranking com o de outra pedra nao da o total de pecas da vendedora.'
+              );
+            },
+          ),
+        );
+      } else if (
+        toolUse.name === 'minhas_vendas_por_pedra' &&
+        params.minhasVendasPorPedra
+      ) {
+        toolResults.push(
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+                de?: string;
+                ate?: string;
+                compararAnoAnterior?: boolean;
+              };
+              const r = await params.minhasVendasPorPedra!({
+                periodo: e.periodo,
+                de: e.de ? String(e.de) : undefined,
+                ate: e.ate ? String(e.ate) : undefined,
+                compararAnoAnterior: e.compararAnoAnterior === true,
+              });
+              if (r.linhas.length === 0) {
+                return `Nenhuma peca com pedra reconhecida nas suas vendas em ${r.periodo}. DIGA O PERIODO ao responder, e ofereca outro.`;
+              }
+              return (
+                `As SUAS vendas por pedra, ${r.periodo}:\n${r.linhas.map((l) => `- ${l}`).join(`\n`)}\n\n${r.nota ?? ''}` +
+                '\n\nEstes numeros sao DELA, e nao da loja. Repasse nomes e numeros exatamente como estao, E REPASSE A NOTA.'
+              );
+            },
+          ),
+        );
+      } else if (
+        toolUse.name === 'minhas_vendas_por_tipo' &&
+        params.minhasVendasPorTipo
+      ) {
+        toolResults.push(
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+                de?: string;
+                ate?: string;
+                compararAnoAnterior?: boolean;
+              };
+              const r = await params.minhasVendasPorTipo!({
+                periodo: e.periodo,
+                de: e.de ? String(e.de) : undefined,
+                ate: e.ate ? String(e.ate) : undefined,
+                compararAnoAnterior: e.compararAnoAnterior === true,
+              });
+              if (r.linhas.length === 0 && r.foraDaJoia.length === 0) {
+                return `Voce nao vendeu nada em ${r.periodo}. DIGA O PERIODO ao responder, e ofereca outro.`;
+              }
+              const blocos = [
+                `As SUAS pecas por tipo, ${r.periodo}:\n${r.linhas.map((l) => `- ${l}`).join(`\n`)}`,
+              ];
+              if (r.total) blocos.push(r.total);
+              if (r.foraDaJoia.length > 0) {
+                blocos.push(`Fora da joia: ${r.foraDaJoia.join(`; `)}`);
+              }
+              return (
+                blocos.join('\n\n') +
+                '\n\nEstes numeros sao DELA, e nao da loja. O total de joia JA ESTA SOMADO — nao some os tipos por conta propria.'
+              );
+            },
+          ),
+        );
+      } else if (
+        toolUse.name === 'minhas_vendas_por_metal' &&
+        params.minhasVendasPorMetal
+      ) {
+        toolResults.push(
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+                de?: string;
+                ate?: string;
+              };
+              const r = await params.minhasVendasPorMetal!({
+                periodo: e.periodo,
+                de: e.de ? String(e.de) : undefined,
+                ate: e.ate ? String(e.ate) : undefined,
+              });
+              if (r.linhas.length === 0) {
+                return `Voce nao vendeu nada em ${r.periodo}. DIGA O PERIODO ao responder, e ofereca outro.`;
+              }
+              return (
+                `As SUAS vendas por tipo de ouro, ${r.periodo}:\n${r.linhas.map((l) => `- ${l}`).join(`\n`)}\n\n` +
+                'Estes numeros sao DELA, e nao da loja. A linha "Sem classificacao de metal", se vier, TEM de ser repassada.'
+              );
+            },
+          ),
+        );
+      } else if (
+        toolUse.name === 'valor_das_vendas' &&
+        params.gestaoValorDasVendas
+      ) {
+        toolResults.push(
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+                de?: string;
+                ate?: string;
+              };
+              const r = await params.gestaoValorDasVendas!({
+                periodo: e.periodo,
+                de: e.de ? String(e.de) : undefined,
+                ate: e.ate ? String(e.ate) : undefined,
+              });
+              if (r.status === 'INDISPONIVEL') {
+                return 'Esta consulta nao esta disponivel por aqui. Diga isso em uma frase, sem mencionar permissao nem limitacao de acesso.';
+              }
+              if (r.linhas.length === 0) {
+                return `Nao houve venda nenhuma em ${deQuem(r.escopo)}, em ${r.periodo}. DIGA O PERIODO ao responder, e ofereca outro.`;
+              }
+              return (
+                `Valor das vendas — ${deQuem(r.escopo)}, ${r.periodo}:\n${r.linhas.map((l) => `- ${l}`).join(`\n`)}\n\n` +
+                'Responda com os numeros, SEM listar venda nenhuma — ela pediu o valor, nao a lista. Se vierem dois valores, repasse os dois com os rotulos: eles discordam porque um desconta devolucao e o outro nao.'
               );
             },
           ),

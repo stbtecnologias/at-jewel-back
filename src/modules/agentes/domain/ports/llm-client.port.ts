@@ -982,6 +982,143 @@ export type GestaoPorEmpresaHandler = (input: {
   linhas: string[];
 }>;
 
+/**
+ * A QUEBRA DAS VENDAS POR TIPO DE OURO — 16/11/2026.
+ *
+ * Nasceu de uma pergunta da gestora em 15/11 que a agente nao sabia
+ * responder: o dado estava na base e nenhuma ferramenta alcancava.
+ *
+ * SEM PARAMETRO DE METAL, de proposito: sao cinco, e a pergunta e sempre
+ * comparativa. Devolver a quebra inteira evita resolver nome ("branco",
+ * "OB", "ouro branco" chegariam de tres jeitos) e ja responde a pergunta
+ * seguinte, que e "e o amarelo?".
+ *
+ * INDISPONIVEL e para quem nao enxerga a loja: a quebra do grupo nao tem
+ * versao estreita.
+ */
+/**
+ * A QUEBRA DAS VENDAS POR TIPO DE PEÇA — 16/11/2026.
+ *
+ * Nasceu do pedido da gestora em 15/11 — *"não quero código de nada, quero
+ * por quantidade de peças"* —, respondido com a lista de 60 itens ordenada
+ * por valor, onde a quantidade era 1 em 58 das 60 linhas.
+ *
+ * SEM PARÂMETRO DE TIPO, pelo mesmo motivo da quebra por metal: a pergunta é
+ * "quantos de cada", e devolver um tipo por chamada faria o modelo somar.
+ *
+ * `total` E `foraDaJoia` VIAJAM SEPARADOS da lista: o total vem calculado
+ * para o modelo não somar, e o que não é joia sai da lista principal porque
+ * numa lista única o corset (28 peças) apareceria acima do piercing (23).
+ */
+export type GestaoPorTipoHandler = (input: {
+  periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+  de?: string;
+  ate?: string;
+  compararAnoAnterior?: boolean;
+}) => Promise<{
+  status: 'OK' | 'INDISPONIVEL';
+  linhas: string[];
+  total: string | null;
+  foraDaJoia: string[];
+  /** O recorte consultado, por extenso — a resposta vazia precisa dele. */
+  periodo: string;
+  /** Ver `escopo` no `GestaoPorMetalHandler`. */
+  escopo: 'LOJA' | 'EQUIPE' | 'VENDEDORA';
+}>;
+
+/**
+ * A QUEBRA DAS VENDAS POR PEDRA — 16/11/2026.
+ *
+ * A `nota` NÃO É DECORAÇÃO: uma peça com duas pedras conta nas duas, então a
+ * soma das linhas passa do número de peças — 404 contra 337 em 2026. Sem a
+ * nota, quem somar conclui que o número está errado.
+ */
+export type GestaoPorPedraHandler = (input: {
+  periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+  de?: string;
+  ate?: string;
+  compararAnoAnterior?: boolean;
+}) => Promise<{
+  status: 'OK' | 'INDISPONIVEL';
+  linhas: string[];
+  nota: string | null;
+  periodo: string;
+  /** Ver `escopo` no `GestaoPorMetalHandler`. */
+  escopo: 'LOJA' | 'EQUIPE' | 'VENDEDORA';
+}>;
+
+/**
+ * QUEM VENDEU MAIS UMA PEDRA — 16/11/2026.
+ *
+ * Nasceu no teste local: perguntada *"quem vendeu mais diamante esse
+ * ano?"*, a Anastasia respondeu com razão que o ranking dela conta por
+ * TIPO de peça, não por pedra.
+ *
+ * `PEDRA_DESCONHECIDA` VEM COM A LISTA, e não é erro: é o caminho de
+ * "brilhante", que não está no dicionário. Mesmo desenho do
+ * `FAMILIA_DESCONHECIDA` do `quem_mais_vende`.
+ */
+export type GestaoQuemVendePedraHandler = (input: {
+  pedra: string;
+  periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+  de?: string;
+  ate?: string;
+  limite?: number;
+}) => Promise<{
+  status: 'OK' | 'INDISPONIVEL' | 'PEDRA_DESCONHECIDA';
+  pedra: string | null;
+  linhas: string[];
+  pedras: string[];
+  periodo: string;
+  /** Ver `escopo` no `GestaoPorMetalHandler`. */
+  escopo: 'LOJA' | 'EQUIPE' | 'VENDEDORA';
+}>;
+
+/**
+ * O VALOR DAS VENDAS, SEM A LISTA — 17/11/2026.
+ *
+ * ==========================================================================
+ * "VALOR DAS VENDAS DESSE MES" NAO E "QUAIS AS VENDAS DESSE MES".
+ *
+ * A gestora pediu o total quatro vezes e levou as 25 linhas quatro vezes. A
+ * causa nao era o modelo insistir: NAO EXISTIA ferramenta para o valor da
+ * loja sem lista. O `vendas_de_vendedora` exige nome (`required`), o
+ * `consultar_vendas` e da propria vendedora, e o `vendas_detalhadas` imprime
+ * a tabela como efeito de ser chamado.
+ *
+ * AS LINHAS TRAZEM OS DOIS LADOS quando ha devolucao no periodo — bruto e
+ * receita liquida —, porque a lista nao desconta e o resumo desconta: na
+ * conversa de 16/11 sairam R$ 1.837.916,80 e R$ 1.815.870,80 no mesmo mes.
+ */
+export type GestaoValorDasVendasHandler = (input: {
+  periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+  de?: string;
+  ate?: string;
+}) => Promise<{
+  status: 'OK' | 'INDISPONIVEL';
+  linhas: string[];
+  periodo: string;
+  escopo: 'LOJA' | 'EQUIPE' | 'VENDEDORA';
+}>;
+export type GestaoPorMetalHandler = (input: {
+  periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+  de?: string;
+  ate?: string;
+}) => Promise<{
+  status: 'OK' | 'INDISPONIVEL';
+  linhas: string[];
+  /** O recorte consultado, por extenso — a resposta vazia precisa dele. */
+  periodo: string;
+  /**
+   * DE QUEM E O NUMERO — 17/11/2026.
+   *
+   * A gerente de vendas ve O TIME DELA, que cobre 77% das pecas de 2026. Um
+   * total rotulado como da LOJA seria um numero errado parecendo certo — o
+   * mesmo defeito do periodo vazio que mordeu em 16/11.
+   */
+  escopo: 'LOJA' | 'EQUIPE' | 'VENDEDORA';
+}>;
+
 export type GestaoPanoramaHandler = (
   input: RecorteDeTempo,
 ) => Promise<{ linhas: string[] }>;
@@ -1445,8 +1582,18 @@ export interface ChatParams {
   gestaoEpoca?: GestaoEpocaHandler;
   gestaoVendasDetalhadas?: GestaoVendasDetalhadasHandler;
   gestaoPorEmpresa?: GestaoPorEmpresaHandler;
+  gestaoPorMetal?: GestaoPorMetalHandler;
+  gestaoValorDasVendas?: GestaoValorDasVendasHandler;
+  gestaoPorTipo?: GestaoPorTipoHandler;
+  gestaoPorPedra?: GestaoPorPedraHandler;
+  gestaoQuemVendePedra?: GestaoQuemVendePedraHandler;
   /** So quem ve a loja recebe a ferramenta — o grupo nao tem versao estreita. */
   gestaoPorEmpresaDisponivel?: boolean;
+  gestaoPorMetalDisponivel?: boolean;
+  gestaoValorDasVendasDisponivel?: boolean;
+  gestaoPorTipoDisponivel?: boolean;
+  gestaoPorPedraDisponivel?: boolean;
+  gestaoQuemVendePedraDisponivel?: boolean;
   /**
    * A EMPRESA COMO RECORTE DAS VENDAS UMA A UMA — 26/10/2026.
    *
@@ -1462,6 +1609,16 @@ export interface ChatParams {
   clientesPorFidelidade?: ClientesPorFidelidadeHandler;
   // Idem para `minhas_pecas_por_valor` — so as vendas dela.
   minhasPecasPorValor?: MinhasPecasPorValorHandler;
+  /**
+   * AS QUEBRAS DA PROPRIA VENDEDORA — 17/11/2026.
+   *
+   * A FORMA E A MESMA DA GESTAO, e os tipos tambem: muda o recorte, nao o
+   * formato. O `escopo` da resposta sai VENDEDORA, e e o que impede o
+   * modelo de repassar o numero dela como se fosse da loja.
+   */
+  minhasVendasPorPedra?: GestaoPorPedraHandler;
+  minhasVendasPorTipo?: GestaoPorTipoHandler;
+  minhasVendasPorMetal?: GestaoPorMetalHandler;
   // Idem para `agendar_contato` — a unica que escreve.
   agendarContato?: AgendarContatoHandler;
   // Canal da GESTAO. Nunca convivem com os de cima: quem monta os handlers e o
