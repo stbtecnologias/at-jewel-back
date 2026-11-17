@@ -1,4 +1,7 @@
-import { palavraDaSigla, PEDRAS } from '../../../shared/catalogo/sinonimos';
+import {
+  metalDaCor,
+  pedrasDaPeca,
+} from '../../../shared/catalogo/sinonimos';
 import type { Produto } from '../../erp/domain/entities/produto.entity';
 
 /**
@@ -42,34 +45,13 @@ function metalPorExtenso(cor: string): string {
   // O METAL VEM COLADO AO TEOR — `OB 18K`, `OA 14K`. So a primeira parte e
   // sigla; o `18K` ja se le em qualquer idioma.
   const partes = cor.trim().split(/\s+/);
-  const palavra = palavraDaSigla(partes[0]);
+  // O CONJUNTO `METAIS` CONFERE — 16/11/2026. Antes era o dicionario cru, e
+  // uma `cor` que comecasse com sigla de PEDRA viraria "Metal: esmeralda".
+  const palavra = metalDaCor(cor);
   if (!palavra) return cor.trim();
   return [palavra, ...partes.slice(1)].join(' ');
 }
 
-/**
- * As siglas de PEDRA que aparecem na etiqueta, por extenso.
- *
- * ==========================================================================
- * SO AS QUE `PEDRAS` LISTA, e isto nasceu de um defeito que o teste pegou.
- *
- * A primeira versao excluia so metal, e devolveu `Pedras: quilate, safira` —
- * porque `CTS` esta no mapa, por um motivo legitimo da BUSCA, e vira
- * "quilate". `quilate` viajaria para o prompt como se fosse nome de pedra.
- *
- * UMA SIGLA QUE NINGUEM MAPEOU TAMBEM NAO VIRA PALAVRA. Nomear errado e o
- * que faz o modelo de imagem TROCAR a pedra — a trava do molde.
- * ==========================================================================
- */
-function pedrasDaEtiqueta(etiqueta: string): string[] {
-  const achadas = new Set<string>();
-  for (const bruta of etiqueta.toUpperCase().split(/[^A-Z0-9]+/)) {
-    if (bruta.length < 2) continue;
-    const palavra = palavraDaSigla(bruta);
-    if (palavra && PEDRAS.has(palavra)) achadas.add(palavra);
-  }
-  return [...achadas];
-}
 
 /**
  * O que o cadastro sabe desta peca, em texto, para viajar na chamada.
@@ -89,18 +71,12 @@ export function fichaDaPeca(produto: Produto): string | null {
   // A PEDRA VEM DE DOIS LUGARES, e os dois sao parciais: `tipo_pedra` esta em
   // 20% das pecas, e a etiqueta nomeia pedra que o campo nao tem. Juntar as
   // duas cobre mais do que qualquer uma sozinha.
-  const pedras = new Set<string>();
-  if (produto.tipoPedra) {
-    // SO SE A SIGLA FOR CONHECIDA. `tipo_pedra` e campo de pedra, entao o
-    // valor E uma pedra — mas `SAFAM` nao e palavra, e o prompt em ingles
-    // carregaria a sigla como se fosse nome. Melhor calar.
-    const palavra = palavraDaSigla(produto.tipoPedra);
-    if (palavra) pedras.add(palavra);
-  }
-  if (produto.descricaoEtiqueta) {
-    for (const p of pedrasDaEtiqueta(produto.descricaoEtiqueta)) pedras.add(p);
-  }
-  if (pedras.size > 0) linhas.push(`Pedras: ${[...pedras].join(', ')}`);
+  //
+  // O `pedrasDaPeca` NASCEU AQUI e mudou de casa em 16/11/2026, para o lado
+  // do `PEDRAS`, quando a quebra de vendas por pedra precisou da mesma
+  // leitura. O que ele faz e o que esta funcao fazia, com uma guarda a mais.
+  const pedras = pedrasDaPeca(produto.tipoPedra, produto.descricaoEtiqueta);
+  if (pedras.length > 0) linhas.push(`Pedras: ${pedras.join(', ')}`);
 
   if (produto.familia) linhas.push(`Familia: ${produto.familia}`);
   if (produto.pesoGramas) linhas.push(`Peso: ${produto.pesoGramas} g`);

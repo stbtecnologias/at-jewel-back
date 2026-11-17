@@ -371,3 +371,246 @@ export const PEDRAS: ReadonlySet<string> = new Set([
   'agata',
   'apatita',
 ]);
+
+/**
+ * QUAIS CHAVES DO `SINONIMOS` SÃO METAL — 16/11/2026.
+ *
+ * ==========================================================================
+ * MESMO MOTIVO DO `PEDRAS`, E O MESMO DEFEITO ESPERANDO ACONTECER.
+ *
+ * O dicionário é de BUSCA e mistura tudo: `CTS` vira "quilate", `DMT` vira
+ * "diamante", `RIV` vira "riviera". Quem ler a `cor` de uma peça pelo
+ * dicionário cru e não conferir contra este conjunto vai acabar chamando
+ * quilate de metal.
+ *
+ * `ouro rosa` NÃO entra: ela e `ouro rose` compartilham a sigla `OR`, e a
+ * regra de colisão do `PALAVRA_DA_SIGLA` dá a vitória à primeira — `OR`
+ * sempre devolve `ouro rose`, então `ouro rosa` é inalcançável por aqui.
+ *
+ * `amarelo` e `branco` também ficam de fora pelo mesmo motivo: existem para a
+ * BUSCA achar decoração amarela de verdade, e `OA`/`OB` já caem em
+ * `ouro amarelo` e `ouro branco`.
+ * ==========================================================================
+ */
+export const METAIS: ReadonlySet<string> = new Set([
+  'ouro branco',
+  'ouro amarelo',
+  'ouro rose',
+  'ouro negro',
+  'platina',
+]);
+
+/**
+ * O METAL que a `cor` do cadastro nomeia, por extenso — ou `null`.
+ *
+ * A `cor` guarda duas coisas: nas joias é o material (`OA 18K`, `OB 18K`), na
+ * roupa e na decoração é cor de verdade (`ONÇA`, `MÁRMORE`, `JAC.AZUL`). Só a
+ * PRIMEIRA palavra é sigla — o `18K` que vem depois já se lê em qualquer
+ * idioma.
+ *
+ * E é a primeira palavra INTEIRA, nunca um prefixo: `ONÇA` começa com `ON` e
+ * são 19 peças de corset e saia que virariam ouro negro.
+ */
+export function metalDaCor(cor: string | null | undefined): string | null {
+  const primeira = (cor ?? '').trim().split(/\s+/)[0];
+  if (!primeira) return null;
+  const palavra = palavraDaSigla(primeira);
+  return palavra !== null && METAIS.has(palavra) ? palavra : null;
+}
+
+/**
+ * O METAL nomeado na ETIQUETA — a segunda fonte, e o molde é o
+ * `pedrasDaEtiqueta` da ficha da peça.
+ *
+ * Vale a pena: das 166 peças `JEWEL` sem `cor`, 53 dizem o metal na etiqueta
+ * — "ANEL 50PTS DTS 2.50 CTS OB 18K". Medido em 16/11/2026.
+ *
+ * VARRE POR PALAVRA INTEIRA, e não por pedaço: `50PTS` são pontos de
+ * diamante e contém `PT`. Procurar `PT` dentro das palavras transformaria
+ * meia etiqueta da casa em platina.
+ */
+export function metalDaEtiqueta(
+  etiqueta: string | null | undefined,
+): string | null {
+  for (const bruta of (etiqueta ?? '').toUpperCase().split(/[^A-Z0-9]+/)) {
+    if (bruta.length < 2) continue;
+    const palavra = palavraDaSigla(bruta);
+    if (palavra !== null && METAIS.has(palavra)) return palavra;
+  }
+  return null;
+}
+
+/**
+ * O TIPO DA PEÇA — 16/11/2026.
+ *
+ * ==========================================================================
+ * A `familia` GUARDA O TIPO E O ESTILO, MISTURADOS.
+ *
+ * Medido no catálogo inteiro em 16/11:
+ *
+ *   RIVEIRA    ->  73 peças com código CO (colar)  e  17 com PU (pulseira)
+ *   SOLITARIO  ->  29 BR, 13 CO, 8 AN, 1 PI
+ *
+ * Um colar riviera é um colar. Mas o `rankingPorFamilia` casa por igualdade
+ * na `familia`, e ele sumia da conta: perguntada quantos colares saíram em
+ * 2026, a agente respondia 108 quando a verdade é 118.
+ *
+ * DENTRO DA `JEWEL` O PREFIXO É LIMPO — estes seis cobrem 6.043 das 6.072
+ * peças, e a cauda inteira são 29. FORA DELA O PREFIXO É LIXO: `CO` reúne
+ * BANDEJA, COLAR, CORSET, LIVRO e SAIA; `C6` reúne BOWL, DIFUSOR, GUARDANAPO,
+ * JARRA e VASO. Mas ali a `familia` é limpa: VASO 182, BOWL 132, LIVRO 104.
+ *
+ * Por isso a regra tem duas pernas, cada uma no terreno onde foi medida.
+ * ==========================================================================
+ */
+export const PREFIXO_DO_TIPO: Readonly<Record<string, string>> = {
+  CO: 'colar',
+  BR: 'brinco',
+  AN: 'anel',
+  PU: 'pulseira',
+  PI: 'pingente',
+  PG: 'piercing',
+  // A cauda: 29 peças em todo o catálogo, e cada uma tem nome.
+  TO: 'tornozeleira',
+  CJ: 'conjunto',
+  AP: 'anel',
+  AL: 'anel',
+  EX: 'colar',
+};
+
+/** Quando o cadastro não diz nem código conhecido nem família. */
+export const SEM_TIPO = 'sem tipo';
+
+/**
+ * A JOIA É UM CONJUNTO DE TIPOS, E NÃO UMA CATEGORIA.
+ *
+ * Os 14 "colares" que não são `JEWEL` em 2026 são colares de verdade —
+ * COLLAB VR, WISH, GOLDESIGN —, com ouro 18K, diamante e fecho. A
+ * `categoria` ali é linha comercial, não classe de material: separar o colar
+ * da COLLAB do colar da JEWEL responderia a pergunta errada.
+ *
+ * SAI DO PRÓPRIO MAPA, e não de uma segunda lista escrita à mão: um tipo novo
+ * entra em um lugar só.
+ */
+export const TIPOS_DE_JOIA: ReadonlySet<string> = new Set(
+  Object.values(PREFIXO_DO_TIPO),
+);
+
+export function ehJoia(tipo: string): boolean {
+  return TIPOS_DE_JOIA.has(tipo);
+}
+
+/**
+ * O CAMINHO INVERSO: da palavra para os prefixos — 16/11/2026.
+ *
+ * É o que o `rankingPorFamilia` precisa para contar certo. Perguntada
+ * "quantos colares", a consulta tem de procurar `CO` e `EX` no código das
+ * joias, e não a palavra COLAR na `familia` — senão os colares riviera e
+ * solitário ficam de fora.
+ *
+ * `null` PARA O QUE NÃO É TIPO DE JOIA, e isso preserva o que já funcionava:
+ * "quantas rivieras vendemos" segue casando pela `familia`, porque riviera é
+ * estilo, não tipo. O vaso e o corset idem.
+ */
+export function prefixosDoTipo(tipo: string): string[] | null {
+  const palavra = tipo.trim().toLowerCase();
+  if (!TIPOS_DE_JOIA.has(palavra)) return null;
+  return Object.entries(PREFIXO_DO_TIPO)
+    .filter(([, nome]) => nome === palavra)
+    .map(([prefixo]) => prefixo);
+}
+
+/**
+ * O tipo da peça, em uma palavra — a mesma para as duas pernas, para que o
+ * colar da COLLAB e o colar da JEWEL somem numa linha só.
+ */
+export function tipoDaPeca(peca: {
+  categoria?: string | null;
+  codigoErp?: string | null;
+  familia?: string | null;
+}): string {
+  if ((peca.categoria ?? '').trim().toUpperCase() === 'JEWEL') {
+    // SOBE PARA MAIÚSCULA: existe uma peça cadastrada com `br` minúsculo.
+    const prefixo = (peca.codigoErp ?? '').trim().slice(0, 2).toUpperCase();
+    const tipo = PREFIXO_DO_TIPO[prefixo];
+    if (tipo) return tipo;
+  }
+  return (peca.familia ?? '').trim().toLowerCase() || SEM_TIPO;
+}
+
+/**
+ * A PEDRA QUE A PESSOA PEDIU, pelo nome que ela usou — 16/11/2026.
+ *
+ * ==========================================================================
+ * TRÊS CAMINHOS, PORQUE NENHUM SOZINHO BASTA.
+ *
+ * Medido contra o dicionário em 16/11: `diamante` e `esmeralda` casam
+ * diretos; `DTS` e `BRI` só casam por sigla; e `pérola`, `topázio` e
+ * `diamantes` não casam de jeito nenhum — acento e plural, que é exatamente
+ * como a gestora digita.
+ *
+ * O ACENTO SAI DOS DOIS LADOS: o dicionário escreve `topazio` e `perola` sem
+ * acento, então comparar texto cru erraria mesmo com a palavra certa.
+ *
+ * `null` É RESPOSTA, e boa: quem chama devolve a lista das pedras e pergunta
+ * qual — o mesmo caminho que o `quem_mais_vende` já usa para família.
+ * ==========================================================================
+ */
+// O `semAcento` DA CASA JA FAZ ISSO, e baixa a caixa junto. Ele mora umas
+// quatrocentas linhas acima, servindo a busca do catalogo desde 08/10.
+
+export function pedraDoTermo(termo: string): string | null {
+  const limpo = semAcento(termo.trim().toLowerCase());
+  if (!limpo) return null;
+
+  // O plural só é tentado DEPOIS do nome inteiro: nenhuma pedra do
+  // dicionário termina em "s", mas tirar letra antes de tentar o nome
+  // completo é o tipo de atalho que um dia morde.
+  for (const candidato of [limpo, limpo.replace(/s$/, '')]) {
+    for (const pedra of PEDRAS) {
+      if (semAcento(pedra) === candidato) return pedra;
+    }
+  }
+
+  const porSigla = palavraDaSigla(termo.trim());
+  return porSigla !== null && PEDRAS.has(porSigla) ? porSigla : null;
+}
+
+/**
+ * AS PEDRAS DA PEÇA, pelas DUAS fontes — e nenhuma delas basta sozinha.
+ *
+ * Medido em 16/11/2026 nas 582 peças vendidas no ano: juntas, as duas
+ * reconhecem pedra em 337. O campo `tipo_pedra` sozinho perderia 43 peças; a
+ * etiqueta sozinha perderia 49.
+ *
+ * SÓ AS QUE O `PEDRAS` LISTA, e isso nasceu de um defeito que o teste pegou:
+ * a primeira versão excluía só metal e devolveu "Pedras: quilate, safira", porque
+ * `CTS` está no mapa por um motivo legítimo da BUSCA e vira "quilate".
+ *
+ * Esta função nasceu dentro da `ficha-da-peca.ts`, que já fazia exatamente
+ * isto. Mudou de casa para o lado do `PEDRAS` — e ganhou no caminho a
+ * conferência contra o conjunto também no campo `tipo_pedra`, que lá não
+ * existia: sem ela, um `tipo_pedra` com sigla de quilate viraria uma pedra
+ * chamada "quilate".
+ */
+export function pedrasDaPeca(
+  tipoPedra: string | null | undefined,
+  etiqueta: string | null | undefined,
+): string[] {
+  const achadas = new Set<string>();
+
+  const doCampo = (tipoPedra ?? '').trim();
+  if (doCampo) {
+    const palavra = palavraDaSigla(doCampo);
+    if (palavra !== null && PEDRAS.has(palavra)) achadas.add(palavra);
+  }
+
+  // PALAVRA INTEIRA, nunca pedaço — o mesmo cuidado do `metalDaEtiqueta`.
+  for (const bruta of (etiqueta ?? '').toUpperCase().split(/[^A-Z0-9]+/)) {
+    if (bruta.length < 2) continue;
+    const palavra = palavraDaSigla(bruta);
+    if (palavra !== null && PEDRAS.has(palavra)) achadas.add(palavra);
+  }
+
+  return [...achadas];
+}
