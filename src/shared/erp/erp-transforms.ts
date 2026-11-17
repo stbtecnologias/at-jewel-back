@@ -110,3 +110,34 @@ export function booleanoEntrada(valor: unknown): unknown {
   }
   return valor;
 }
+
+/**
+ * O UUID OPCIONAL QUE PODE VIR VAZIO — 17/11/2026.
+ *
+ * ==========================================================================
+ * NASCEU DE 16 MOVIMENTACOES RECUSADAS POR DUAS ASPAS.
+ *
+ * O integrador manda `"idVendedora": ""` para a venda sem vendedora, e a
+ * resposta era `400 idVendedora must be a UUID`. O motivo e uma linha do
+ * class-validator: o `@IsOptional()` pula as outras validacoes quando o valor
+ * e `null` ou `undefined`, E SO NESSES DOIS CASOS. Campo ausente passa, `null`
+ * passa, `""` vira valor e o `@IsUUID()` recusa.
+ *
+ * Para um humano, "nao mandei", "mandei nulo" e "mandei vazio" dizem a mesma
+ * coisa. Para a biblioteca, os dois primeiros sao ausencia e o terceiro e um
+ * valor sem forma de UUID.
+ *
+ * SO TEXTO VAZIO VIRA AUSENCIA, e isso e deliberado. Em 16/11 eu havia
+ * proposto incluir `0` e `"0"`; mudei em 17/11, medindo: ha prova de que o ERP
+ * manda `""` e nenhuma de que mande `0`. Zero nao e vazio, e um valor — se
+ * aceitarmos como "nenhuma" e significar outra coisa, a movimentacao entra
+ * errada e CALADA. Recusando, o 400 conta, que e como este defeito apareceu.
+ *
+ * E um codigo do ERP no campo do nosso uuid — `"000000009599"` — continua
+ * recusado de proposito: ali e erro de mapeamento, nao ausencia.
+ * ==========================================================================
+ */
+export function uuidOuAusente(valor: unknown): unknown {
+  if (typeof valor === 'string' && valor.trim() === '') return undefined;
+  return valor;
+}

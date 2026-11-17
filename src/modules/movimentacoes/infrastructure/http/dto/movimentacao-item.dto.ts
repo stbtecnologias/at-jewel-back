@@ -13,6 +13,7 @@ import {
 import {
   booleanoEntrada,
   idErpEntrada,
+  uuidOuAusente,
 } from '../../../../../shared/erp/erp-transforms';
 
 // Teto defensivo alinhado ao DECIMAL(15,2) do schema — o mesmo de
@@ -56,6 +57,8 @@ export class MovimentacaoItemDto {
    * nasce com este envio, entao nao existe id nosso para ela antes.
    */
   @IsOptional()
+  // VAZIO VIRA AUSENTE — o mesmo conserto do pai, 17/11/2026.
+  @Transform(({ value }) => uuidOuAusente(value))
   @IsUUID()
   idProduto?: string;
 

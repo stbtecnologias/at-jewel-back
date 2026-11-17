@@ -18,6 +18,7 @@ import {
 import {
   booleanoEntrada,
   idErpEntrada,
+  uuidOuAusente,
 } from '../../../../../shared/erp/erp-transforms';
 import { MovimentacaoItemDto } from './movimentacao-item.dto';
 import { MovimentacaoPagamentoDto } from './movimentacao-pagamento.dto';
@@ -89,6 +90,8 @@ export class SincronizarMovimentacaoDto {
    * `ReferenciaInexistenteError`.
    */
   @IsOptional()
+  // VAZIO VIRA AUSENTE — ver `uuidOuAusente`.
+  @Transform(({ value }) => uuidOuAusente(value))
   @IsUUID()
   idOperacao?: string;
 
@@ -100,6 +103,8 @@ export class SincronizarMovimentacaoDto {
 
   /** O nosso UUID — vence o `idErpEmpresa`. Ver `idOperacao`. */
   @IsOptional()
+  // VAZIO VIRA AUSENTE — ver `uuidOuAusente`.
+  @Transform(({ value }) => uuidOuAusente(value))
   @IsUUID()
   idEmpresa?: string;
 
@@ -111,6 +116,8 @@ export class SincronizarMovimentacaoDto {
 
   /** O nosso UUID — vence o `idErpGrupoOrigem`. Ver `idOperacao`. */
   @IsOptional()
+  // VAZIO VIRA AUSENTE — ver `uuidOuAusente`.
+  @Transform(({ value }) => uuidOuAusente(value))
   @IsUUID()
   idGrupoOrigem?: string;
 
@@ -122,6 +129,8 @@ export class SincronizarMovimentacaoDto {
 
   /** O nosso UUID — vence o `idErpGrupoDestino`. Ver `idOperacao`. */
   @IsOptional()
+  // VAZIO VIRA AUSENTE — ver `uuidOuAusente`.
+  @Transform(({ value }) => uuidOuAusente(value))
   @IsUUID()
   idGrupoDestino?: string;
 
@@ -152,11 +161,15 @@ export class SincronizarMovimentacaoDto {
    * entrada/saida: o tipo encontrado ja diz qual ponta e o cliente.
    */
   @IsOptional()
+  // VAZIO VIRA AUSENTE — ver `uuidOuAusente`.
+  @Transform(({ value }) => uuidOuAusente(value))
   @IsUUID()
   idEntidadeOrigem?: string;
 
   /** A outra ponta. Ver `idEntidadeOrigem`. */
   @IsOptional()
+  // VAZIO VIRA AUSENTE — ver `uuidOuAusente`.
+  @Transform(({ value }) => uuidOuAusente(value))
   @IsUUID()
   idEntidadeDestino?: string;
 
@@ -168,6 +181,8 @@ export class SincronizarMovimentacaoDto {
 
   /** O nosso UUID — vence o `idErpVendedora`. Ver `idOperacao`. */
   @IsOptional()
+  // VAZIO VIRA AUSENTE — ver `uuidOuAusente`.
+  @Transform(({ value }) => uuidOuAusente(value))
   @IsUUID()
   idVendedora?: string;
 

@@ -14,6 +14,7 @@ import {
 import {
   booleanoEntrada,
   idErpEntrada,
+  uuidOuAusente,
 } from '../../../../../shared/erp/erp-transforms';
 
 const VALOR_MAXIMO = 9_999_999_999_999;
@@ -58,6 +59,8 @@ export class MovimentacaoPagamentoDto {
    * nasce com este envio.
    */
   @IsOptional()
+  // VAZIO VIRA AUSENTE — o mesmo conserto do pai, 17/11/2026.
+  @Transform(({ value }) => uuidOuAusente(value))
   @IsUUID()
   formaPagamentoId?: string;
 
