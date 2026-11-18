@@ -1090,6 +1090,29 @@ export type GestaoQuemVendePedraHandler = (input: {
  * receita liquida —, porque a lista nao desconta e o resumo desconta: na
  * conversa de 16/11 sairam R$ 1.837.916,80 e R$ 1.815.870,80 no mesmo mes.
  */
+/**
+ * AS CONSIGNACOES DO PERIODO — 18/11/2026.
+ *
+ * ==========================================================================
+ * "QUANTAS CONSIGNACOES TIVEMOS EM NOVEMBRO" E "QUANTAS JA FORAM DEVOLVIDAS".
+ *
+ * Consignacao e joia saindo para ficar com alguem; retorno e ela voltando.
+ * Nenhum dos dois e venda — foi o conserto de 18/11 que os tirou do total.
+ *
+ * AS DUAS PONTAS NAO SE SUBTRAEM: no historico ha 3.560 retornos contra
+ * 2.822 consignacoes, porque a maleta sai num documento e volta em pedacos.
+ * Nao ha "em aberto" calculavel aqui.
+ */
+export type GestaoConsignacoesHandler = (input: {
+  periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+  de?: string;
+  ate?: string;
+}) => Promise<{
+  status: 'OK' | 'INDISPONIVEL';
+  linhas: string[];
+  periodo: string;
+  escopo: 'LOJA' | 'EQUIPE' | 'VENDEDORA';
+}>;
 export type GestaoValorDasVendasHandler = (input: {
   periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
   de?: string;
@@ -1584,6 +1607,7 @@ export interface ChatParams {
   gestaoPorEmpresa?: GestaoPorEmpresaHandler;
   gestaoPorMetal?: GestaoPorMetalHandler;
   gestaoValorDasVendas?: GestaoValorDasVendasHandler;
+  gestaoConsignacoes?: GestaoConsignacoesHandler;
   gestaoPorTipo?: GestaoPorTipoHandler;
   gestaoPorPedra?: GestaoPorPedraHandler;
   gestaoQuemVendePedra?: GestaoQuemVendePedraHandler;
@@ -1591,6 +1615,7 @@ export interface ChatParams {
   gestaoPorEmpresaDisponivel?: boolean;
   gestaoPorMetalDisponivel?: boolean;
   gestaoValorDasVendasDisponivel?: boolean;
+  gestaoConsignacoesDisponivel?: boolean;
   gestaoPorTipoDisponivel?: boolean;
   gestaoPorPedraDisponivel?: boolean;
   gestaoQuemVendePedraDisponivel?: boolean;

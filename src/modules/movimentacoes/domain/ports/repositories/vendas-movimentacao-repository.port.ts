@@ -82,6 +82,23 @@ export interface PecasNaFaixa {
   totalDeLinhas: number;
 }
 
+/** Uma das duas pontas da consignacao. Ver `consignacoes`. */
+export interface PontaDeConsignacao {
+  /** Documentos no periodo. */
+  quantidade: number;
+  /** Soma do valor dos documentos, a preco de venda. */
+  valor: number;
+  /** Pecas somadas dos itens. */
+  pecas: number;
+}
+
+export interface ConsignacoesDoPeriodo {
+  /** O que SAIU: operacao CONSIGNACAO, do estoque para a conta de alguem. */
+  saidas: PontaDeConsignacao;
+  /** O que VOLTOU: operacao RETORNO DE CONSIGNACAO, de volta ao estoque. */
+  retornos: PontaDeConsignacao;
+}
+
 export interface ResumoDeVendas {
   /** Documentos de VENDA no periodo. */
   quantidade: number;
@@ -390,6 +407,33 @@ export interface IVendasMovimentacaoRepository {
     /** O recorte de equipe. Ver `vendedoras` no `vendasPorMetal`. */
     vendedoras?: string[] | null,
   ): Promise<ResumoDeVendas>;
+
+  /**
+   * A MERCADORIA QUE CIRCULOU — 18/11/2026.
+   *
+   * ======================================================================
+   * O MAIOR MOVIMENTO DA CASA, E ATE 18/11 NAO HAVIA COMO PERGUNTAR POR ELE.
+   *
+   * Consignacao e joia saindo para ficar com alguem; retorno e ela voltando.
+   * Nenhum dos dois e venda — ver `ehConsignacao`. Em 01 a 17/11 foram 149
+   * documentos e R$ 52,6 milhoes, trinta vezes o que a loja vendeu no mesmo
+   * periodo.
+   *
+   * Ate o conserto da consignacao isso entrava no total de vendas, e por
+   * isso ninguem precisava perguntar: ja estava la, errado. Tirar abriu a
+   * pergunta legitima, e e esta ferramenta.
+   *
+   * AS DUAS PONTAS NAO SE SUBTRAEM. No historico ha 3.560 retornos contra
+   * 2.822 consignacoes: uma maleta sai num documento e volta em pedacos, em
+   * documentos diferentes. Nao existe "em aberto" calculavel daqui, e quem
+   * tentar obtem numero negativo que nao significa nada.
+   * ======================================================================
+   */
+  consignacoes(
+    janela: JanelaDeVendas,
+    /** O recorte de equipe. Ver `vendedoras` no `vendasPorMetal`. */
+    vendedoras?: string[] | null,
+  ): Promise<ConsignacoesDoPeriodo>;
 
   /** Quem vendeu mais no periodo. So quem teve venda aparece. */
   rankingDeVendedoras(

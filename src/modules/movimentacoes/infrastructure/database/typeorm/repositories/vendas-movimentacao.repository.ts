@@ -16,6 +16,7 @@ import {
 } from '../../../../../../shared/database/sql/movimentacao-como-venda';
 import type {
   ComparacaoAnual,
+  ConsignacoesDoPeriodo,
   FiltroVendasDetalhadas,
   IVendasMovimentacaoRepository,
   ItemDaVenda,
@@ -292,6 +293,83 @@ export class VendasMovimentacaoRepository
       devolucoes: Number(linha?.devolucoes ?? 0),
       valorDevolvido,
       clientes: Number(linha?.clientes ?? 0),
+    };
+  }
+
+  /**
+   * AS DUAS PONTAS DA CONSIGNACAO — 18/11/2026. Ver a porta.
+   *
+   * ======================================================================
+   * AQUI O NOME DA OPERACAO MANDA, E E A UNICA CONSULTA EM QUE ISSO VALE.
+   *
+   * Em todo o resto a regra e a BANDEIRA, porque "saiu e entrou ao mesmo
+   * tempo" descreve o que a coisa e. Mas a bandeira nao sabe distinguir IDA
+   * de VOLTA — as duas pontas sao identicas nela. Quem sabe e a operacao.
+   *
+   * O casamento foi conferido na copia de producao em 18/11, e e perfeito
+   * nos 6.382 documentos:
+   *
+   *   CONSIGNACAO ............. ESTOQUES -> CONTAS DE ...
+   *   RETORNO DE CONSIGNACAO .. CONTAS DE ... -> ESTOQUES
+   *
+   * O casamento com o grupo de estoque e o que torna seguro depender do
+   * nome: se um dia a operacao for renomeada e o prefixo RETORNO sumir, a
+   * ida e a volta trocam de lugar e os dois numeros ficam espelhados — um
+   * erro visivel, e nao silencioso.
+   * ======================================================================
+   */
+  async consignacoes(
+    janela: JanelaDeVendas,
+    vendedoras: string[] | null = null,
+  ): Promise<ConsignacoesDoPeriodo> {
+    const [linha] = await this.ds.query<
+      {
+        saidas: string;
+        valor_saidas: string;
+        pecas_saidas: string;
+        retornos: string;
+        valor_retornos: string;
+        pecas_retornos: string;
+      }[]
+    >(
+      `
+      WITH consig AS (
+        SELECT m.id,
+               m.valor,
+               upper(COALESCE(o.nome, '')) LIKE 'RETORNO%' AS volta,
+               COALESCE((
+                 SELECT sum(i.quantidade)
+                   FROM movimentacoes_itens i
+                  WHERE i.movimentacao_id = m.id AND i.ativo
+               ), 0) AS pecas
+          FROM movimentacoes m
+          LEFT JOIN operacoes o ON o.id = m.operacao_id
+         WHERE ${ehConsignacao('m')}
+           AND m.data_movimentacao BETWEEN $1 AND $2
+           AND ($3::uuid[] IS NULL OR m.vendedora_id = ANY($3::uuid[]))
+      )
+      SELECT count(*) FILTER (WHERE NOT c.volta)                     AS saidas,
+             COALESCE(sum(c.valor) FILTER (WHERE NOT c.volta), 0)    AS valor_saidas,
+             COALESCE(sum(c.pecas) FILTER (WHERE NOT c.volta), 0)    AS pecas_saidas,
+             count(*) FILTER (WHERE c.volta)                         AS retornos,
+             COALESCE(sum(c.valor) FILTER (WHERE c.volta), 0)        AS valor_retornos,
+             COALESCE(sum(c.pecas) FILTER (WHERE c.volta), 0)        AS pecas_retornos
+      FROM consig c
+      `,
+      [janela.de, janela.ate, vendedoras],
+    );
+
+    return {
+      saidas: {
+        quantidade: Number(linha?.saidas ?? 0),
+        valor: Number(linha?.valor_saidas ?? 0),
+        pecas: Number(linha?.pecas_saidas ?? 0),
+      },
+      retornos: {
+        quantidade: Number(linha?.retornos ?? 0),
+        valor: Number(linha?.valor_retornos ?? 0),
+        pecas: Number(linha?.pecas_retornos ?? 0),
+      },
     };
   }
 

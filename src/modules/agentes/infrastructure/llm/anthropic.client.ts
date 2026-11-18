@@ -718,6 +718,43 @@ function deQuem(escopo: 'LOJA' | 'EQUIPE' | 'VENDEDORA'): string {
   return 'a loja';
 }
 /**
+ * AS CONSIGNACOES DO PERIODO — 18/11/2026.
+ *
+ * ==========================================================================
+ * A PERGUNTA NASCEU DO CONSERTO.
+ *
+ * Ate 17/11 a consignacao entrava no total de vendas, e por isso a gestao
+ * nunca precisou perguntar por ela: ja estava la, errada. Tira-la do numero
+ * abriu a pergunta legitima, e o Lucas a nomeou na hora: *"quantas
+ * consignacoes tivemos no mes de novembro"* e *"quantas ja foram
+ * devolvidas"*.
+ *
+ * E O MAIOR MOVIMENTO DA CASA: 149 documentos e R$ 52,6 milhoes em 01 a
+ * 17/11, trinta vezes o que a loja vendeu no mesmo periodo.
+ * ==========================================================================
+ */
+const GESTAO_CONSIGNACOES_TOOL: Anthropic.Tool = {
+  name: 'consignacoes',
+  description:
+    'A MERCADORIA EM CONSIGNACAO num periodo: quantas pecas sairam para ficar com alguem, e quantas voltaram. ' +
+    'E A FERRAMENTA DE "CONSIGNACAO": "quantas consignacoes tivemos em novembro", "quanto saiu em consignacao", "quantas ja foram devolvidas", "quanto voltou". ' +
+    'NAO E VENDA, E NUNCA FOI. Consignacao e joia saindo para a cliente ver ou para a mao da vendedora; retorno e ela voltando. Nenhum dos dois entra no faturamento. Se perguntarem o VALOR DAS VENDAS, e o valor_das_vendas, e la a consignacao ja esta fora. ' +
+    'OS DOIS NUMEROS NAO SE SUBTRAEM. Nao calcule "o que esta em aberto" nem "quanto falta voltar": uma maleta sai num documento e volta em pedacos, em documentos diferentes, e no historico ha MAIS retornos que consignacoes. Repasse as duas linhas como vieram e nao invente saldo. ' +
+    'E O VALOR E A PRECO DE VENDA, de mercadoria que circulou — nao e dinheiro que entrou. Se o numero parecer alto demais, e porque e isso mesmo: a mesma peca conta de novo cada vez que sai.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
+        description: 'Recorte de tempo. O padrao e MES.',
+      },
+      ...DATAS_LIVRES,
+    },
+    required: [],
+  },
+};
+/**
  * O VALOR DAS VENDAS, SEM A LISTA — 17/11/2026.
  *
  * ==========================================================================
@@ -2585,6 +2622,9 @@ export class AnthropicClient implements ILlmClient {
       params.gestaoValorDasVendasDisponivel
     ) {
       tools.push(GESTAO_VALOR_DAS_VENDAS_TOOL);
+    }
+    if (params.gestaoConsignacoes && params.gestaoConsignacoesDisponivel) {
+      tools.push(GESTAO_CONSIGNACOES_TOOL);
     }
     if (params.gestaoPorMetal && params.gestaoPorMetalDisponivel) {
       tools.push(GESTAO_POR_METAL_TOOL);
@@ -4646,6 +4686,38 @@ export class AnthropicClient implements ILlmClient {
               return (
                 `As SUAS vendas por tipo de ouro, ${r.periodo}:\n${r.linhas.map((l) => `- ${l}`).join(`\n`)}\n\n` +
                 'Estes numeros sao DELA, e nao da loja. A linha "Sem classificacao de metal", se vier, TEM de ser repassada.'
+              );
+            },
+          ),
+        );
+      } else if (
+        toolUse.name === 'consignacoes' &&
+        params.gestaoConsignacoes
+      ) {
+        toolResults.push(
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+                de?: string;
+                ate?: string;
+              };
+              const r = await params.gestaoConsignacoes!({
+                periodo: e.periodo,
+                de: e.de ? String(e.de) : undefined,
+                ate: e.ate ? String(e.ate) : undefined,
+              });
+              if (r.status === 'INDISPONIVEL') {
+                return 'Esta consulta nao esta disponivel por aqui. Diga isso em uma frase, sem mencionar permissao nem limitacao de acesso.';
+              }
+              if (r.linhas.length === 0) {
+                return `Nao houve consignacao nenhuma em ${deQuem(r.escopo)}, em ${r.periodo}. DIGA O PERIODO ao responder, e ofereca outro.`;
+              }
+              return (
+                `Consignacoes — ${deQuem(r.escopo)}, ${r.periodo}:\n${r.linhas.map((l) => `- ${l}`).join(`\n`)}\n\n` +
+                'Repasse as duas linhas como vieram. NAO subtraia uma da outra, NAO calcule o que esta em aberto e NAO chame isso de venda: e mercadoria que circulou, a preco de venda.'
               );
             },
           ),

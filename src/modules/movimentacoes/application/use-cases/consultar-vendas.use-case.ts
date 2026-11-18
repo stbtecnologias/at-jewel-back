@@ -13,6 +13,7 @@ import {
 import { TETO_DE_LISTA } from '../../../../shared/limites/teto-de-lista';
 import {
   VENDAS_MOVIMENTACAO_REPOSITORY,
+  type ConsignacoesDoPeriodo,
   type ItemMaisVendido,
   type FiltroVendasDetalhadas,
   type IVendasMovimentacaoRepository,
@@ -474,6 +475,37 @@ export class ConsultarVendasUseCase {
       clientes: r.clientes,
       periodo: rotuloDoPeriodo(janela),
     };
+  }
+
+  /**
+   * AS CONSIGNAÇÕES DO PERÍODO — 18/11/2026.
+   *
+   * ====================================================================
+   * A PERGUNTA NASCEU DO CONSERTO, E NÃO APESAR DELE.
+   *
+   * Até 17/11 a consignação entrava no total de vendas, e por isso a
+   * gestão nunca precisou perguntar por ela: já estava lá, errada. Tirá-la
+   * do número abriu a pergunta legítima, e o Lucas a nomeou na hora —
+   * *"quantas consignações tivemos no mês de novembro"* e *"quantas já
+   * foram devolvidas"*.
+   *
+   * SÃO DOIS NÚMEROS QUE NÃO SE SUBTRAEM. Ver a porta.
+   * ====================================================================
+   */
+  async consignacoes(
+    recorte?: RecorteDeVendas,
+    de?: Date,
+    ate?: Date,
+    agora: Date = new Date(),
+    /** Ver o recorte no `porMetal`. */
+    vendedoras: string[] | null = null,
+  ): Promise<ConsignacoesDoPeriodo & { periodo: string }> {
+    const janela =
+      de && ate ? fimDoDia({ de, ate }) : janelaDe(recorte ?? 'MES', agora);
+
+    const r = await this.vendas.consignacoes(janela, vendedoras);
+
+    return { ...r, periodo: rotuloDoPeriodo(janela) };
   }
 
   /**

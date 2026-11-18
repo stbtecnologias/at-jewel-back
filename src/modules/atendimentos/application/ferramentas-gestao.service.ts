@@ -43,6 +43,7 @@ import type {
   GestaoCarteiraHandler,
   GestaoEpocaHandler,
   GestaoPorMetalHandler,
+  GestaoConsignacoesHandler,
   GestaoValorDasVendasHandler,
   GestaoPorPedraHandler,
   GestaoQuemVendePedraHandler,
@@ -348,6 +349,7 @@ export interface FerramentasGestao {
   gestaoPorEmpresa: GestaoPorEmpresaHandler;
   gestaoPorMetal: GestaoPorMetalHandler;
   gestaoValorDasVendas: GestaoValorDasVendasHandler;
+  gestaoConsignacoes: GestaoConsignacoesHandler;
   gestaoPorTipo: GestaoPorTipoHandler;
   gestaoPorPedra: GestaoPorPedraHandler;
   gestaoQuemVendePedra: GestaoQuemVendePedraHandler;
@@ -409,6 +411,7 @@ export interface FerramentasGestao {
   gestaoPorEmpresaDisponivel?: boolean;
   gestaoPorMetalDisponivel?: boolean;
   gestaoValorDasVendasDisponivel?: boolean;
+  gestaoConsignacoesDisponivel?: boolean;
   gestaoPorTipoDisponivel?: boolean;
   gestaoPorPedraDisponivel?: boolean;
   gestaoQuemVendePedraDisponivel?: boolean;
@@ -682,6 +685,7 @@ export class FerramentasGestaoService {
       gestaoPorEmpresaDisponivel: verLoja,
       gestaoPorMetalDisponivel: podeQuebrar,
       gestaoValorDasVendasDisponivel: podeQuebrar,
+      gestaoConsignacoesDisponivel: podeQuebrar,
       gestaoPorTipoDisponivel: podeQuebrar,
       gestaoPorPedraDisponivel: podeQuebrar,
       gestaoQuemVendePedraDisponivel: podeQuebrar,
@@ -1252,6 +1256,38 @@ export class FerramentasGestaoService {
        * A MESMA TRAVA DAS QUEBRAS: dinheiro da loja para quem a enxerga, e o
        * do time para a gerente. Ver `podeQuebrar`.
        */
+
+      /**
+       * "Quantas consignacoes tivemos em novembro?" — 18/11/2026.
+       *
+       * A MESMA TRAVA DAS QUEBRAS: e movimento de mercadoria da loja, e
+       * quem nao alcanca loja nem equipe nao recebe a ferramenta.
+       */
+      gestaoConsignacoes: async ({ periodo, de, ate }) => {
+        if (!podeQuebrar) {
+          return {
+            status: 'INDISPONIVEL' as const,
+            linhas: [],
+            periodo: '',
+            escopo: escopoDaResposta,
+          };
+        }
+        const datas = datasDeRecorte(de, ate);
+        const c = await this.consultarVendas.consignacoes(
+          datas ? undefined : periodo,
+          datas?.de,
+          datas?.ate,
+          undefined,
+          recorteDeVendedoras,
+        );
+        return {
+          status: 'OK' as const,
+          linhas: linhasDeConsignacao(c),
+          periodo: c.periodo,
+          escopo: escopoDaResposta,
+        };
+      },
+
       gestaoValorDasVendas: async ({ periodo, de, ate }) => {
         if (!podeQuebrar) {
           return {
@@ -5233,6 +5269,35 @@ function linhaDaVendedoraComPedra(v: {
  * listagem tem o recorte `DEVOLVIDAS` desde 27/10.
  * ==========================================================================
  */
+/**
+ * "Saíram em consignação: 69 — R$ 26.892.660,00"
+ *
+ * ==========================================================================
+ * CADA PONTA SO APARECE SE EXISTIR, E AS DUAS NUNCA SE SUBTRAEM.
+ *
+ * Zero numa ponta e informacao de que nao houve movimento daquele lado, e
+ * "Voltaram: 0" so ocupa linha. Mas o maior cuidado e o outro: NAO existe
+ * "em aberto" aqui. No historico ha 3.560 retornos contra 2.822
+ * consignacoes, porque a maleta sai num documento e volta em pedacos — uma
+ * subtracao daria saldo negativo de mercadoria, que nao quer dizer nada.
+ * ==========================================================================
+ */
+function linhasDeConsignacao(c: {
+  saidas: { quantidade: number; valor: number; pecas: number };
+  retornos: { quantidade: number; valor: number; pecas: number };
+}): string[] {
+  const linhas: string[] = [];
+  if (c.saidas.quantidade > 0) {
+    linhas.push(
+      `Saíram em consignação: ${c.saidas.quantidade} — ${moeda(c.saidas.valor)}`,
+    );
+  }
+  if (c.retornos.quantidade > 0) {
+    linhas.push(`Voltaram: ${c.retornos.quantidade} — ${moeda(c.retornos.valor)}`);
+  }
+  return linhas;
+}
+
 function linhasDoValor(v: {
   quantidade: number;
   bruto: number;
