@@ -682,29 +682,48 @@ describe('o valor das vendas, sem a lista', () => {
   };
 
   /**
-   * OS DOIS LADOS, ROTULADOS. Na conversa de 16/11 sairam R$ 1.837.916,80 e
-   * R$ 1.815.870,80 no mesmo mes, e a gestora sem como saber qual era qual.
+   * UM NUMERO SO — 18/11/2026, decisao do Lucas.
+   *
+   * ======================================================================
+   * "SO QUERO SABER O VALOR DE VENDAS. NAO QUERO SABER SE HOUVE DEVOLUCAO
+   * OU CONSIGNACAO PARA O VALOR FINAL. QUERO O RESULTADO."
+   *
+   * Ate 17/11 a resposta trazia os dois lados rotulados — bruto e receita —
+   * porque os dois existiam e discordavam. A gestora recebeu
+   * R$ 1.837.916,80 e R$ 1.815.870,80 no mesmo mes e nao soube qual era
+   * qual, e foi isso que motivou a dupla.
+   *
+   * O Lucas cortou a duvida pela outra ponta: a agente fala UM numero, e e
+   * o liquido. Quem quiser a quebra pergunta pelas devolucoes, que tem
+   * ferramenta propria.
+   * ======================================================================
    */
-  it('com devolução no período, a resposta traz os dois números', async () => {
+  it('com devolução no período, a resposta traz UM numero: o liquido', async () => {
     const { ferramentas } = montarValor(COM_DEVOLUCAO);
 
     const r = await ferramentas.gestaoValorDasVendas({ periodo: 'MES' });
 
     expect(r.status).toBe('OK');
     expect(r.linhas).toEqual([
-      `25 vendas — ${moeda(1837916.8)}`,
-      `Devoluções: 1 — ${moeda(22046)}`,
-      `Receita, já descontada a devolução: ${moeda(1815870.8)}`,
+      `25 vendas — ${moeda(1815870.8)}`,
       `Ticket médio: ${moeda(72634.83)}`,
     ]);
   });
 
-  /**
-   * SEM DEVOLUÇÃO, AS DUAS LINHAS SERIAM O MESMO NÚMERO — e número repetido
-   * com dois rótulos diferentes faz quem lê procurar a diferença que não
-   * existe.
-   */
-  it('sem devolução, não repete o número com dois nomes', async () => {
+  it('a palavra "devolução" nao aparece na resposta', async () => {
+    const { ferramentas } = montarValor(COM_DEVOLUCAO);
+
+    const r = await ferramentas.gestaoValorDasVendas({ periodo: 'MES' });
+
+    for (const linha of r.linhas) {
+      expect(linha.toLowerCase()).not.toContain('devolu');
+      expect(linha.toLowerCase()).not.toContain('consigna');
+      expect(linha.toLowerCase()).not.toContain('receita');
+    }
+  });
+
+  /** Sem devolucao o numero e o mesmo — e e esse o ponto. */
+  it('sem devolução, a resposta tem a mesma forma', async () => {
     const { ferramentas } = montarValor({
       ...COM_DEVOLUCAO,
       devolucoes: 0,
@@ -718,6 +737,28 @@ describe('o valor das vendas, sem a lista', () => {
       `25 vendas — ${moeda(1837916.8)}`,
       `Ticket médio: ${moeda(72634.83)}`,
     ]);
+  });
+
+  /**
+   * O NUMERO DE PRODUCAO, 01 a 17/11/2026 — o caso que originou a correcao.
+   * Medido na copia: 29 vendas, R$ 1.893.544 de bruto, R$ 32.966 devolvidos.
+   */
+  it('o caso de novembro responde R$ 1.860.578,00', async () => {
+    const { ferramentas } = montarValor({
+      quantidade: 29,
+      bruto: 1893544,
+      devolucoes: 3,
+      valorDevolvido: 32966,
+      receita: 1860578,
+      ticketMedio: 64157.86,
+      clientes: 25,
+      periodo: 'de 01/11/2026 a 17/11/2026',
+    });
+
+    const r = await ferramentas.gestaoValorDasVendas({ periodo: 'MES' });
+
+    expect(r.linhas[0]).toBe(`29 vendas — ${moeda(1860578)}`);
+    expect(r.linhas).toHaveLength(2);
   });
 
   it('uma venda sai no singular', async () => {

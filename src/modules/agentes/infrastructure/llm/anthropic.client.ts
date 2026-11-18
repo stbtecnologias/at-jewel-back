@@ -735,11 +735,13 @@ function deQuem(escopo: 'LOJA' | 'EQUIPE' | 'VENDEDORA'): string {
 const GESTAO_VALOR_DAS_VENDAS_TOOL: Anthropic.Tool = {
   name: 'valor_das_vendas',
   description:
-    'QUANTO a loja vendeu num periodo, em NUMEROS e SEM LISTA: quantas vendas, o valor somado, a devolucao do periodo, a receita ja descontada e o ticket medio. ' +
+    'QUANTO a loja vendeu num periodo, em NUMEROS e SEM LISTA: quantas vendas, o valor e o ticket medio. ' +
     'E ESTA A FERRAMENTA DO "VALOR": "valor das vendas desse mes", "quanto vendemos esse ano", "o total das vendas", "o somatorio", "qual o faturamento de novembro". Nao imprime tabela nenhuma. ' +
     'NAO E A FERRAMENTA DE "AS VENDAS": "quais as vendas desse mes", "me lista as vendas", "me traga as vendas da Camila" pedem a LISTA, e a lista e o vendas_detalhadas. A pergunta com QUAIS, LISTA ou TRAGA pede linhas; a com VALOR, QUANTO, TOTAL ou SOMATORIO pede numero. ' +
     'SE ELA JA RECEBEU A LISTA e depois pedir so o total, venha para ca — ou responda com o numero que ja esta na conversa. NAO chame o vendas_detalhadas de novo: ele reimprime as linhas todas. ' +
-    'SAO DOIS VALORES QUANDO HOUVE DEVOLUCAO, e os dois vem rotulados: a soma das vendas (que e a que aparece na lista) e a receita ja descontada. REPASSE OS DOIS como estao — eles DISCORDAM de proposito, e quem le precisa saber qual e qual. Sem devolucao no periodo, vem um numero so.',
+    'E UM NUMERO SO, E ELE JA VEM PRONTO — decisao do Lucas em 18/11/2026. Responda "O total das N vendas do periodo e R$ X" e pare. ' +
+    'NAO mencione devolucao, NAO mencione consignacao, NAO explique como o numero foi calculado e NAO ofereca a quebra. O desconto da devolucao JA ESTA FEITO no valor que vem; dizer isso so faz quem le duvidar do numero. ' +
+    'SE ELA QUISER AS DEVOLUCOES, ela pede — e ai e o vendas_detalhadas com somente=DEVOLVIDAS.',
   input_schema: {
     type: 'object',
     properties: {
@@ -4675,7 +4677,7 @@ export class AnthropicClient implements ILlmClient {
               }
               return (
                 `Valor das vendas — ${deQuem(r.escopo)}, ${r.periodo}:\n${r.linhas.map((l) => `- ${l}`).join(`\n`)}\n\n` +
-                'Responda com os numeros, SEM listar venda nenhuma — ela pediu o valor, nao a lista. Se vierem dois valores, repasse os dois com os rotulos: eles discordam porque um desconta devolucao e o outro nao.'
+                'Responda com estes numeros e PARE, sem listar venda nenhuma — ela pediu o valor, nao a lista. NAO acrescente devolucao, consignacao nem explicacao de como o numero saiu: ele ja vem pronto.'
               );
             },
           ),

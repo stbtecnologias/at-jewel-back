@@ -5210,18 +5210,27 @@ function linhaDaVendedoraComPedra(v: {
  */
 
 /**
- * "25 vendas — R$ 1.837.916,80"
+ * "29 vendas — R$ 1.860.578,00"
  *
  * ==========================================================================
- * OS DOIS LADOS SO QUANDO HA DEVOLUCAO.
+ * UM NÚMERO SÓ, E ELE JÁ VEM DESCONTADO — 18/11/2026.
  *
- * Sem devolucao no periodo, o bruto e a receita sao o MESMO numero, e numero
- * repetido com dois rotulos diferentes faz quem le procurar a diferenca que
- * nao existe.
+ * Decisão do Lucas, em duas frases: *"só quero saber o valor de vendas; não
+ * quero saber se houve devolução ou consignação para o valor final; quero o
+ * resultado"* e *"você tem que descontar, mas para o usuário não precisa
+ * saber se teve devolução no texto"*.
  *
- * Com devolucao, as duas linhas sao obrigatorias: a lista de vendas NAO
- * desconta e esta receita desconta. Na conversa de 16/11 a gestora recebeu
- * R$ 1.837.916,80 e R$ 1.815.870,80 no mesmo mes, sem saber qual era qual.
+ * Até 17/11 saíam os dois lados rotulados — bruto e receita —, e a razão era
+ * boa: na conversa de 16/11 a gestora recebeu R$ 1.837.916,80 e
+ * R$ 1.815.870,80 no mesmo mês e não soube qual era qual. A dupla resolvia a
+ * ambiguidade mostrando-a.
+ *
+ * O Lucas cortou pela outra ponta: EM VEZ DE EXPLICAR A DIFERENÇA, NÃO
+ * OFERECER ESCOLHA. A conta continua a mesma — o desconto acontece —, mas
+ * quem lê recebe o resultado e não a aritmética.
+ *
+ * A QUEBRA NÃO SE PERDE: quem quiser as devoluções pergunta por elas, e a
+ * listagem tem o recorte `DEVOLVIDAS` desde 27/10.
  * ==========================================================================
  */
 function linhasDoValor(v: {
@@ -5234,17 +5243,13 @@ function linhasDoValor(v: {
 }): string[] {
   if (v.quantidade === 0) return [];
 
-  const linhas = [
-    `${v.quantidade} ${v.quantidade === 1 ? 'venda' : 'vendas'} — ${moeda(v.bruto)}`,
+  // `receita`, e não `bruto`: é o valor já descontado. O `bruto` continua no
+  // objeto porque o `vendas_detalhadas` soma as linhas visíveis, e as duas
+  // coisas são diferentes de propósito.
+  return [
+    `${v.quantidade} ${v.quantidade === 1 ? 'venda' : 'vendas'} — ${moeda(v.receita)}`,
+    `Ticket médio: ${moeda(v.ticketMedio)}`,
   ];
-  if (v.devolucoes > 0) {
-    linhas.push(
-      `Devoluções: ${v.devolucoes} — ${moeda(v.valorDevolvido)}`,
-      `Receita, já descontada a devolução: ${moeda(v.receita)}`,
-    );
-  }
-  linhas.push(`Ticket médio: ${moeda(v.ticketMedio)}`);
-  return linhas;
 }
 
 export function linhaDoMetal(m: {
