@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, FindOptionsWhere, ILike, Repository } from 'typeorm';
 import {
+  ehDevolucao,
+  ehVenda,
   receitaLiquida,
   vendaEfetiva,
 } from '../../../../../../shared/database/sql/movimentacao-como-venda';
@@ -969,9 +971,9 @@ export class ClienteRepository implements IClienteRepository {
              -- saiu dela: subtraia a peca devolvida da CONTAGEM e "comprou 7
              -- pecas" vira 5, numero que nao bate com nenhum documento. O
              -- valor segue liquido, porque e o que a tela de Vendas mostra.
-             COALESCE(sum(i.quantidade) FILTER (WHERE v.saida), 0) AS pecas,
-             COALESCE(sum(i.quantidade * i.valor_unitario) FILTER (WHERE v.saida), 0)
-               - COALESCE(sum(i.quantidade * i.valor_unitario) FILTER (WHERE v.entrada), 0) AS valor
+             COALESCE(sum(i.quantidade) FILTER (WHERE ${ehVenda('v')}), 0) AS pecas,
+             COALESCE(sum(i.quantidade * i.valor_unitario) FILTER (WHERE ${ehVenda('v')}), 0)
+               - COALESCE(sum(i.quantidade * i.valor_unitario) FILTER (WHERE ${ehDevolucao('v')}), 0) AS valor
         FROM alvo a
         JOIN movimentacoes v ON v.cliente_id = a.id AND v.ativo
         JOIN movimentacoes_itens i ON i.movimentacao_id = v.id AND i.ativo

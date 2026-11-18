@@ -6,6 +6,8 @@ import { DataSource } from 'typeorm';
 import {
   EMPRESAS_DO_GRUPO,
   STATUS_DE_MOVIMENTACAO as STATUS_SQL,
+  ehDevolucao,
+  ehVenda,
   formaPagamentoDe,
   receitaLiquida,
 } from '../../../../../../shared/database/sql/movimentacao-como-venda';
@@ -244,21 +246,21 @@ export class VendasDeMovimentacaoRepository implements IVendasLeituraRepository 
     const [linha] = await this.ds.query<LinhaResumo[]>(
       `
       WITH filtrados AS (
-        SELECT m.id, m.valor, m.saida, m.entrada, m.ativo
+        SELECT m.id, m.valor, m.saida, m.entrada, m.ativo  -- bandeira-crua-ok: projecao da CTE; quem filtra e o SELECT de fora
           FROM movimentacoes m
          WHERE TRUE ${where} ${joinPagamento}
       )
       SELECT
-        count(*) FILTER (WHERE f.saida AND f.ativo)                    AS concluidas,
+        count(*) FILTER (WHERE ${ehVenda('f')})                    AS concluidas,
         ${receitaLiquida('f')}
                                                                        AS receita,
-        count(*) FILTER (WHERE f.entrada AND f.ativo)                  AS devolvidas,
+        count(*) FILTER (WHERE ${ehDevolucao('f')})                  AS devolvidas,
         count(*) FILTER (WHERE NOT f.ativo)                            AS canceladas,
         COALESCE((
           SELECT sum(i.quantidade)
             FROM movimentacoes_itens i
             JOIN filtrados fi ON fi.id = i.movimentacao_id
-           WHERE i.ativo AND fi.saida AND fi.ativo
+           WHERE i.ativo AND ${ehVenda('fi')}
         ), 0)                                                          AS total_itens
       FROM filtrados f
       `,
@@ -295,11 +297,11 @@ export class VendasDeMovimentacaoRepository implements IVendasLeituraRepository 
       SELECT
         m.vendedora_id,
         vd.nome                                        AS vendedora_nome,
-        count(*) FILTER (WHERE m.saida)                AS total_vendas,
+        count(*) FILTER (WHERE ${ehVenda('m')})                AS total_vendas,
         ${receitaLiquida('m')}
                                                        AS receita,
-        COALESCE(sum(qi.qtd) FILTER (WHERE m.saida), 0) AS qtd_pecas,
-        count(DISTINCT m.cliente_id) FILTER (WHERE m.saida)
+        COALESCE(sum(qi.qtd) FILTER (WHERE ${ehVenda('m')}), 0) AS qtd_pecas,
+        count(DISTINCT m.cliente_id) FILTER (WHERE ${ehVenda('m')})
                                                        AS clientes_atendidos
       FROM movimentacoes m
       LEFT JOIN vendedoras vd ON vd.id = m.vendedora_id
@@ -310,7 +312,7 @@ export class VendasDeMovimentacaoRepository implements IVendasLeituraRepository 
       ) qi ON TRUE
       WHERE m.ativo ${where} ${joinPagamento}
       GROUP BY m.vendedora_id, vd.nome
-     HAVING count(*) FILTER (WHERE m.saida) > 0
+     HAVING count(*) FILTER (WHERE ${ehVenda('m')}) > 0
       ORDER BY receita DESC
       `,
       params,
@@ -364,7 +366,7 @@ export class VendasDeMovimentacaoRepository implements IVendasLeituraRepository 
       vendas AS (
         SELECT date_trunc('month', m.data_movimentacao AT TIME ZONE $${iFuso}) AS mes,
                ${receitaLiquida('m')} AS receita,
-               count(*) FILTER (WHERE m.saida)                        AS total
+               count(*) FILTER (WHERE ${ehVenda('m')})                        AS total
           FROM movimentacoes m
          WHERE m.ativo
            AND m.data_movimentacao >= $${iDe}

@@ -157,7 +157,7 @@ export class AnalyticsDeMovimentacaoRepository implements IAnalyticsRepository {
     const rows = await this.ds.query<{ receita: number; totalVendas: number }[]>(
       `
       WITH recorte AS (
-        SELECT m.valor, m.saida, m.entrada, m.ativo
+        SELECT m.valor, m.saida, m.entrada, m.ativo  -- bandeira-crua-ok: projecao da CTE; quem filtra e o SELECT de fora
           FROM movimentacoes m${join}
          WHERE m.ativo${where}
       )
@@ -371,7 +371,7 @@ export class AnalyticsDeMovimentacaoRepository implements IAnalyticsRepository {
       LEFT JOIN formas_pagamento fp ON fp.id = ${formaPagamentoDe('mp')}
       ${filtro}
       GROUP BY m.id, m.data_movimentacao, m.cliente_id, m.vendedora_id, m.valor,
-               m.ativo, m.entrada
+               m.ativo, m.entrada  -- bandeira-crua-ok: GROUP BY da coluna projetada
       ORDER BY m.data_movimentacao DESC
       `,
       params,

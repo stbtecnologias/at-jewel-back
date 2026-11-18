@@ -30,6 +30,7 @@ import { AtendimentoInteracaoOrmEntity } from '../entities/atendimento-interacao
 import { AtendimentoOrmEntity } from '../entities/atendimento.orm-entity';
 import { ClientePerfilOrmEntity } from '../../../../../clientes/infrastructure/database/typeorm/entities/cliente-perfil.orm-entity';
 import { escaparCuringas } from '../../../../../../shared/database/sql/escapar-curingas';
+import { ehVenda } from '../../../../../../shared/database/sql/movimentacao-como-venda';
 import { vendaEfetiva } from '../../../../../../shared/database/sql/movimentacao-como-venda';
 
 @Injectable()
@@ -790,7 +791,7 @@ export class AtendimentoRepository implements IAtendimentoRepository {
         SELECT max(date_trunc('day', a.fechado_em)) FROM atendimentos a
         UNION ALL
         SELECT max(date_trunc('day', m.data_movimentacao)) FROM movimentacoes m
-         WHERE m.vendedora_id IS NOT NULL AND m.saida AND m.ativo
+         WHERE m.vendedora_id IS NOT NULL AND ${ehVenda('m')}
         UNION ALL
         SELECT max(date_trunc('day', c.data_saida)) FROM consignacoes c WHERE c.vendedora_id IS NOT NULL
       ) t
