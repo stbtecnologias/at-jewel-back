@@ -1,3 +1,4 @@
+import { moeda } from '../../../shared/formato/moeda';
 import { FerramentasGestaoService } from './ferramentas-gestao.service';
 
 /**
@@ -53,10 +54,10 @@ const UMA_DEVOLUCAO = {
   status: 'devolvida',
 };
 
-function montar(vendas = [UMA_VENDA]) {
+function montar(vendas = [UMA_VENDA], valorDevolvido = 0) {
   const detalhadas = jest
     .fn()
-    .mockResolvedValue({ vendas, total: vendas.length });
+    .mockResolvedValue({ vendas, total: vendas.length, valorDevolvido });
   const relatorio = { guardar: jest.fn(), guardarTexto: jest.fn() };
 
   const deps = Array.from({ length: 32 }, (_, i) =>
@@ -155,5 +156,88 @@ describe('as vendas uma a uma: só o que foi concluído', () => {
     const nota = relatorio.guardar.mock.calls[0][1].nota as string;
     expect(nota).toContain('Só vendas concluídas');
     expect(nota).toContain('devolução não entra');
+  });
+});
+
+/**
+ * O MESMO PERIODO DA O MESMO NUMERO — 18/11/2026.
+ *
+ * ==========================================================================
+ * DUAS FERRAMENTAS DISSERAM DOIS VALORES NA MESMA CONVERSA.
+ *
+ * Às 10:24 de 18/11, em producao:
+ *
+ *   — "Qual o valor das vendas desse mes?"  -> R$ 1.860.578,00
+ *   — "Quais as vendas desse mes?"          -> rodape R$ 1.893.544,00
+ *
+ * Os dois estavam certos pela sua propria regra — um descontava a devolucao,
+ * o outro somava as linhas visiveis —, e e exatamente por isso que o defeito
+ * e grave: ninguem consegue dizer qual esta errado olhando so a tela.
+ *
+ * Decisao do Lucas: *"nao adianta uma ferramenta falar um valor e outra
+ * falar outra. Todas as ferramentas que falam vendas e retornam valores tem
+ * que estar alinhadas. O mesmo valor se for o mesmo periodo"*.
+ *
+ * O ALINHAMENTO VEIO PELA OUTRA PONTA. A primeira tentativa foi fazer o
+ * rodape descontar a devolucao — e cairia no mesmo erro, porque medindo as 3
+ * de novembro nenhuma era devolucao de venda DO MES: uma abatia uma compra de
+ * 23/09, e duas eram de clientes cuja venda no periodo aconteceu DEPOIS da
+ * devolucao.
+ *
+ * Decisao final: *"troca para as vendas limpas — R$ 1.893.544,00. Depois
+ * vamos analisar como tratamos essas devolucoes"*. Entao o rodape ficou como
+ * sempre foi, e quem mudou foi o `valor_das_vendas`, que passou a falar a
+ * venda limpa. Os dois dizem o mesmo porque medem a mesma coisa.
+ * ==========================================================================
+ */
+describe('o rodape da lista fala o mesmo numero que o valor_das_vendas', () => {
+  it('nao desconta devolucao: o rodape e a venda limpa', async () => {
+    // 2.500 devolvidos no periodo NAO entram: a lista e de venda, e o rodape
+    // e dela. E o mesmo R$ 52.500 que o `valor_das_vendas` responderia.
+    const { servico, relatorio } = montar([UMA_VENDA], 2500);
+
+    await servico
+      .montar({ verLoja: true })
+      .gestaoVendasDetalhadas({ de: '2026-01-01', ate: '2026-12-31' });
+
+    expect(relatorio.guardar.mock.calls[0][1].total).toMatchObject({
+      valor: moeda(52500),
+    });
+  });
+
+  it('sem devolucao no periodo, o rodape e a soma das linhas', async () => {
+    const { servico, relatorio } = montar([UMA_VENDA], 0);
+
+    await servico
+      .montar({ verLoja: true })
+      .gestaoVendasDetalhadas({ de: '2026-01-01', ate: '2026-12-31' });
+
+    expect(relatorio.guardar.mock.calls[0][1].total).toMatchObject({
+      valor: moeda(52500),
+    });
+  });
+
+  /**
+   * PEDINDO AS DEVOLUCOES, o rodape volta a ser a soma do que esta na tela:
+   * descontar ali subtrairia a devolucao DELA MESMA.
+   *
+   * A GARANTIA MORA NO REPOSITORIO, e nao aqui: `devolvidoNoMesmoRecorte`
+   * devolve 0 quando o status e DEVOLVIDAS. O duble reproduz esse contrato —
+   * devolver outra coisa testaria um mundo que nao existe.
+   */
+  it('na lista de devolucoes, o rodape e a soma das linhas', async () => {
+    const { servico, relatorio } = montar([UMA_DEVOLUCAO], 0);
+
+    await servico
+      .montar({ verLoja: true })
+      .gestaoVendasDetalhadas({
+        somente: 'DEVOLVIDAS',
+        de: '2026-01-01',
+        ate: '2026-12-31',
+      });
+
+    expect(relatorio.guardar.mock.calls[0][1].total).toMatchObject({
+      valor: moeda(-110460),
+    });
   });
 });

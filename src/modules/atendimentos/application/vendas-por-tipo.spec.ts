@@ -682,30 +682,36 @@ describe('o valor das vendas, sem a lista', () => {
   };
 
   /**
-   * UM NUMERO SO — 18/11/2026, decisao do Lucas.
+   * UM NUMERO SO, E E A VENDA LIMPA — 18/11/2026, decisao do Lucas.
    *
    * ======================================================================
-   * "SO QUERO SABER O VALOR DE VENDAS. NAO QUERO SABER SE HOUVE DEVOLUCAO
-   * OU CONSIGNACAO PARA O VALOR FINAL. QUERO O RESULTADO."
+   * "VENDAS" PASSA A SIGNIFICAR VENDAS, E NAO CAIXA DO PERIODO.
    *
-   * Ate 17/11 a resposta trazia os dois lados rotulados — bruto e receita —
-   * porque os dois existiam e discordavam. A gestora recebeu
-   * R$ 1.837.916,80 e R$ 1.815.870,80 no mesmo mes e nao soube qual era
-   * qual, e foi isso que motivou a dupla.
+   * A decisao veio em duas etapas, no mesmo dia. Primeiro: *"so quero saber
+   * o valor de vendas; nao quero saber se houve devolucao ou consignacao
+   * para o valor final; quero o resultado"* — o que tirou os dois lados
+   * rotulados que saiam ate 17/11.
    *
-   * O Lucas cortou a duvida pela outra ponta: a agente fala UM numero, e e
-   * o liquido. Quem quiser a quebra pergunta pelas devolucoes, que tem
-   * ferramenta propria.
+   * Depois, ao ver que as 3 devolucoes de novembro NAO eram de vendas de
+   * novembro (uma delas abatia uma compra de 23/09, e duas eram de clientes
+   * cuja venda no periodo aconteceu DEPOIS da devolucao), ele fechou:
+   * *"troca para as vendas limpas — R$ 1.893.544,00. Depois vamos analisar
+   * como tratamos essas devolucoes"*.
+   *
+   * ENTAO E O BRUTO. Subtrair devolucao de venda antiga media caixa do mes,
+   * e nao o que o mes vendeu. O tratamento das devolucoes ficou para uma
+   * conversa propria — e e por isso que `valorDevolvido` segue no objeto,
+   * sem ninguem usar: ele volta a ter dono quando essa conversa acontecer.
    * ======================================================================
    */
-  it('com devolução no período, a resposta traz UM numero: o liquido', async () => {
+  it('com devolução no período, a resposta traz UM numero: a venda limpa', async () => {
     const { ferramentas } = montarValor(COM_DEVOLUCAO);
 
     const r = await ferramentas.gestaoValorDasVendas({ periodo: 'MES' });
 
     expect(r.status).toBe('OK');
     expect(r.linhas).toEqual([
-      `25 vendas — ${moeda(1815870.8)}`,
+      `25 vendas — ${moeda(1837916.8)}`,
       `Ticket médio: ${moeda(72634.83)}`,
     ]);
   });
@@ -740,24 +746,27 @@ describe('o valor das vendas, sem a lista', () => {
   });
 
   /**
-   * O NUMERO DE PRODUCAO, 01 a 17/11/2026 — o caso que originou a correcao.
+   * O NUMERO DE PRODUCAO, 01 a 17/11/2026 — o caso que originou tudo.
    * Medido na copia: 29 vendas, R$ 1.893.544 de bruto, R$ 32.966 devolvidos.
+   *
+   * E O MESMO NUMERO QUE A LISTA SOMA. Ver
+   * `vendas-so-concluidas.spec.ts` -> "o rodape fala o mesmo numero".
    */
-  it('o caso de novembro responde R$ 1.860.578,00', async () => {
+  it('o caso de novembro responde R$ 1.893.544,00', async () => {
     const { ferramentas } = montarValor({
       quantidade: 29,
       bruto: 1893544,
       devolucoes: 3,
       valorDevolvido: 32966,
       receita: 1860578,
-      ticketMedio: 64157.86,
+      ticketMedio: 65294.62,
       clientes: 25,
       periodo: 'de 01/11/2026 a 17/11/2026',
     });
 
     const r = await ferramentas.gestaoValorDasVendas({ periodo: 'MES' });
 
-    expect(r.linhas[0]).toBe(`29 vendas — ${moeda(1860578)}`);
+    expect(r.linhas[0]).toBe(`29 vendas — ${moeda(1893544)}`);
     expect(r.linhas).toHaveLength(2);
   });
 

@@ -15,6 +15,8 @@ import { ConsultarVendasUseCase } from '../../../movimentacoes/application/use-c
  * corrigida no mesmo dia, porque a agente repetia isso na resposta e o numero
  * era de outro periodo.
  */
+import { vendaLimpa } from '../../../../shared/vendas/venda-limpa';
+
 export type PeriodoVendas = 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
 
 export interface VendasDoPeriodo {
@@ -88,10 +90,12 @@ export class ConsultarDesempenhoVendedoraUseCase {
       agora,
     );
 
+    // A VENDA LIMPA, e nao o caixa — 18/11/2026. Ver `vendaLimpa`.
+    const v = vendaLimpa(resumo);
     return {
-      quantidade: resumo.quantidade,
-      receita: resumo.receita,
-      ticketMedio: resumo.ticketMedio,
+      quantidade: v.quantidade,
+      receita: v.valor,
+      ticketMedio: v.ticketMedio,
     };
   }
 
@@ -111,10 +115,12 @@ export class ConsultarDesempenhoVendedoraUseCase {
   ): Promise<VendasDoPeriodo> {
     const resumo = await this.consultarVendas.resumoEntre(de, ate, vendedoraId);
 
+    // A VENDA LIMPA, e nao o caixa — 18/11/2026. Ver `vendaLimpa`.
+    const v = vendaLimpa(resumo);
     return {
-      quantidade: resumo.quantidade,
-      receita: resumo.receita,
-      ticketMedio: resumo.ticketMedio,
+      quantidade: v.quantidade,
+      receita: v.valor,
+      ticketMedio: v.ticketMedio,
     };
   }
 

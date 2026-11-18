@@ -11,6 +11,7 @@ import {
   tipoDaPeca,
 } from '../../../../shared/catalogo/sinonimos';
 import { TETO_DE_LISTA } from '../../../../shared/limites/teto-de-lista';
+import { vendaLimpa } from '../../../../shared/vendas/venda-limpa';
 import {
   VENDAS_MOVIMENTACAO_REPOSITORY,
   type ConsignacoesDoPeriodo,
@@ -463,15 +464,29 @@ export class ConsultarVendasUseCase {
 
     const r = await this.vendas.resumo(janela, null, vendedoras);
 
+    // A VENDA LIMPA, pela regra unica da casa — ver `vendaLimpa`.
+    const limpa = vendaLimpa(r);
+    const bruto = limpa.valor;
+
     return {
       quantidade: r.quantidade,
-      // O BRUTO VOLTA PELA SOMA: o repositorio devolve a receita liquida e o
-      // que foi devolvido, e o bruto e a soma dos dois. Nao ha consulta nova.
-      bruto: r.receita + r.valorDevolvido,
+      bruto,
       devolucoes: r.devolucoes,
       valorDevolvido: r.valorDevolvido,
       receita: r.receita,
-      ticketMedio: r.ticketMedio,
+      // ================================================================
+      // O TICKET ACOMPANHA O NÚMERO QUE A AGENTE FALA — 18/11/2026.
+      //
+      // O `resumo` divide a receita LÍQUIDA, e é o que a tela de Vendas
+      // mostra. Aqui a resposta é a venda limpa (decisão do Lucas: *"troca
+      // para as vendas limpas"*), então o ticket tem de ser dela — senão a
+      // própria resposta não fecha, e quem dividir R$ 1.893.544 por 29 acha
+      // R$ 65.294,62 onde está escrito R$ 64.157,86.
+      //
+      // A TELA SEGUE NO LÍQUIDO, de propósito, e é um dos pontos da
+      // conversa adiada sobre como tratar as devoluções.
+      // ================================================================
+      ticketMedio: limpa.ticketMedio,
       clientes: r.clientes,
       periodo: rotuloDoPeriodo(janela),
     };

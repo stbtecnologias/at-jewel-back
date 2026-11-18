@@ -20,6 +20,7 @@ import { UltimoRelatorioService } from '../../relatorios/application/ultimo-rela
 import type { ColunaDoRelatorio } from '../../relatorios/domain/relatorio';
 import { EstrategiaDeVendasService } from './estrategia-de-vendas.service';
 import { moeda } from '../../../shared/formato/moeda';
+import { vendaLimpa } from '../../../shared/vendas/venda-limpa';
 import { casaComNome, preferirExato } from '../../../shared/texto/nome-exato';
 import { APELIDOS_DE_EMPRESA } from '../../../shared/empresas/apelidos-de-empresa';
 import { TETO_DE_LISTA } from '../../../shared/limites/teto-de-lista';
@@ -750,11 +751,17 @@ export class FerramentasGestaoService {
           const v = datas
             ? await this.consultarVendas
                 .resumoEntre(datas.de, datas.ate, id)
-                .then((r) => ({
-                  quantidade: r.quantidade,
-                  receita: r.receita,
-                  ticketMedio: r.ticketMedio,
-                }))
+                // A MESMA REGRA DO OUTRO CAMINHO: sem isto, "as vendas da
+                // Camila em novembro" responderia um numero por periodo
+                // livre e outro por periodo nomeado. Ver `vendaLimpa`.
+                .then((r) => {
+                  const v = vendaLimpa(r);
+                  return {
+                    quantidade: v.quantidade,
+                    receita: v.valor,
+                    ticketMedio: v.ticketMedio,
+                  };
+                })
             : await this.desempenho.vendas(id, periodo ?? 'SEMANA');
           if (v.quantidade === 0) return [];
           return [
@@ -1123,8 +1130,28 @@ export class FerramentasGestaoService {
         // "manda em PDF", o arquivo sai DAQUI, e nao do que o modelo
         // escreveu. E a escolha (b) de 24/09.
         // ================================================================
-        // A SOMA DO QUE SAIU, uma vez: ela vai no rodape da tabela E na
-        // frase do modelo. Duas contas separadas poderiam divergir.
+        // ================================================================
+        // O MESMO PERIODO DA O MESMO NUMERO — 18/11/2026.
+        //
+        // As 10:24, em producao, duas ferramentas responderam a mesma
+        // pergunta com dois valores:
+        //
+        //   "qual o VALOR das vendas desse mes"  -> R$ 1.860.578,00
+        //   "QUAIS as vendas desse mes"          -> rodape R$ 1.893.544,00
+        //
+        // Os dois estavam certos pela propria regra — um descontava a
+        // devolucao do periodo, o outro somava as linhas visiveis —, e e
+        // por isso que o defeito e grave: ninguem consegue dizer qual mente
+        // olhando so a tela. Decisao do Lucas: *"todas as ferramentas que
+        // falam vendas e retornam valores tem que estar alinhadas"*.
+        //
+        // O ALINHAMENTO VEIO PELA OUTRA PONTA: o `valor_das_vendas` passou a
+        // falar a VENDA LIMPA, que e exatamente o que esta soma ja fazia. O
+        // rodape nao mudou; mudou quem estava fora de passo com ele.
+        //
+        // A soma vai no rodape da tabela E na frase do modelo. Duas contas
+        // separadas poderiam divergir — e foi o que aconteceu.
+        // ================================================================
         const somaDasVendas = moeda(
           r.vendas.reduce(
             (n, v) => n + (v.status === 'devolvida' ? -v.valor : v.valor),
@@ -5249,12 +5276,7 @@ function linhaDaVendedoraComPedra(v: {
  * "29 vendas — R$ 1.860.578,00"
  *
  * ==========================================================================
- * UM NÚMERO SÓ, E ELE JÁ VEM DESCONTADO — 18/11/2026.
- *
- * Decisão do Lucas, em duas frases: *"só quero saber o valor de vendas; não
- * quero saber se houve devolução ou consignação para o valor final; quero o
- * resultado"* e *"você tem que descontar, mas para o usuário não precisa
- * saber se teve devolução no texto"*.
+ * UM NÚMERO SÓ, E ELE É A VENDA LIMPA — 18/11/2026.
  *
  * Até 17/11 saíam os dois lados rotulados — bruto e receita —, e a razão era
  * boa: na conversa de 16/11 a gestora recebeu R$ 1.837.916,80 e
@@ -5262,11 +5284,21 @@ function linhaDaVendedoraComPedra(v: {
  * ambiguidade mostrando-a.
  *
  * O Lucas cortou pela outra ponta: EM VEZ DE EXPLICAR A DIFERENÇA, NÃO
- * OFERECER ESCOLHA. A conta continua a mesma — o desconto acontece —, mas
- * quem lê recebe o resultado e não a aritmética.
+ * OFERECER ESCOLHA — *"só quero saber o valor de vendas; quero o resultado"*.
  *
- * A QUEBRA NÃO SE PERDE: quem quiser as devoluções pergunta por elas, e a
- * listagem tem o recorte `DEVOLVIDAS` desde 27/10.
+ * E O RESULTADO É A VENDA, NÃO O CAIXA. A primeira versão descontava a
+ * devolução. Medindo as 3 de novembro, nenhuma era devolução de venda DO
+ * MÊS: uma abatia uma compra de 23/09, e duas eram de clientes cuja venda no
+ * período aconteceu DEPOIS da devolução. Descontá-las media quanto entrou no
+ * mês, e não quanto o mês vendeu — duas perguntas diferentes.
+ *
+ * Decisão: *"troca para as vendas limpas — R$ 1.893.544,00. Depois vamos
+ * analisar como tratamos essas devoluções"*. Por isso `receita` e
+ * `valorDevolvido` seguem no objeto sem ninguém usar: eles voltam a ter dono
+ * quando essa conversa acontecer.
+ *
+ * E É O MESMO NÚMERO QUE A LISTA SOMA. Era essa a queixa de 18/11: *"não
+ * adianta uma ferramenta falar um valor e outra falar outra"*.
  * ==========================================================================
  */
 /**
@@ -5308,11 +5340,10 @@ function linhasDoValor(v: {
 }): string[] {
   if (v.quantidade === 0) return [];
 
-  // `receita`, e não `bruto`: é o valor já descontado. O `bruto` continua no
-  // objeto porque o `vendas_detalhadas` soma as linhas visíveis, e as duas
-  // coisas são diferentes de propósito.
+  // `bruto`: a VENDA LIMPA, sem abater devolução. O `receita` continua no
+  // objeto, sem dono, à espera da conversa adiada — ver o bloco acima.
   return [
-    `${v.quantidade} ${v.quantidade === 1 ? 'venda' : 'vendas'} — ${moeda(v.receita)}`,
+    `${v.quantidade} ${v.quantidade === 1 ? 'venda' : 'vendas'} — ${moeda(v.bruto)}`,
     `Ticket médio: ${moeda(v.ticketMedio)}`,
   ];
 }

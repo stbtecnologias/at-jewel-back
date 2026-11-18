@@ -1341,7 +1341,16 @@ describe('o valor das vendas, sem a lista', () => {
     expect(r.valorDevolvido).toBe(22046);
     // O BRUTO é o que a lista mostra: receita + o que voltou.
     expect(r.bruto).toBeCloseTo(1837916.8, 2);
-    expect(r.ticketMedio).toBe(72634.83);
+    // ====================================================================
+    // O TICKET DIVIDE O BRUTO — 18/11/2026, e não a receita.
+    //
+    // O `resumo` do repositório devolve 72.634,83, que é a receita líquida
+    // dividida por 25, e é o que a tela de Vendas mostra. Aqui a resposta é
+    // a VENDA LIMPA, então o ticket tem de ser dela: senão a própria
+    // resposta não fecha — quem dividir 1.837.916,80 por 25 acha 73.516,67
+    // onde estaria escrito 72.634,83.
+    // ====================================================================
+    expect(r.ticketMedio).toBeCloseTo(1837916.8 / 25, 2);
   });
 
   it('diz o período que consultou', async () => {
