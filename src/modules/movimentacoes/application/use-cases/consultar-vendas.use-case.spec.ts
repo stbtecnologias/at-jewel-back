@@ -46,6 +46,11 @@ describe('ConsultarVendasUseCase', () => {
       // A listagem detalhada (02/10) nao e usada por este caso de uso — entra
       // no duble porque a porta a exige.
       listarDetalhadas: jest.fn().mockResolvedValue({ vendas: [], total: 0 }),
+      // Idem para as devolucoes em numero (18/11, tarde): os testes dela
+      // vivem em `devolucoes.spec.ts`.
+      devolucoes: jest
+        .fn()
+        .mockResolvedValue({ documentos: 0, pecas: 0, valor: 0 }),
       // Idem para as consignacoes (18/11): a porta as exige, este caso de uso
       // tem o metodo e os testes dele vivem em `consignacoes.spec.ts`.
       consignacoes: jest.fn().mockResolvedValue({

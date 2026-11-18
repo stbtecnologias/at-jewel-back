@@ -537,6 +537,17 @@ export interface GestaoLeituraResultado {
   vendedora?: string;
   /** Uma linha pronta por item. Vazio e resultado legitimo: nao ha nada. */
   linhas: string[];
+  /**
+   * O RECORTE DE TEMPO QUE A CONSULTA USOU — 18/11/2026.
+   *
+   * Sem ele o modelo inventa a moldura: perguntada *"quanto a Bianca
+   * vendeu esse mes"*, a agente respondeu *"nos ultimos 30 dias"* com os
+   * numeros certos de 01 a 18/11. Um buraco na instrucao vira uma frase
+   * inventada, e a inventada soa igual as verdadeiras.
+   *
+   * Ausente nas leituras que nao tem recorte (agenda, carteira).
+   */
+  periodo?: string;
   /** Nomes para desambiguar (AMBIGUA) ou sugerir (NAO_ENCONTRADA). */
   nomes?: string[];
 }
@@ -1113,6 +1124,26 @@ export type GestaoConsignacoesHandler = (input: {
   periodo: string;
   escopo: 'LOJA' | 'EQUIPE' | 'VENDEDORA';
 }>;
+/**
+ * AS DEVOLUCOES EM NUMERO, SEM A TABELA — 18/11/2026.
+ *
+ * Em producao, as 13:39, *"quantas pecas devolvidas em novembro"* trouxe
+ * a resposta E a listagem inteira com nome de cliente. Nao foi escolha do
+ * modelo: devolucao so existia dentro do `vendas_detalhadas`, que imprime
+ * a tabela como efeito de ser chamado.
+ *
+ * Mesmo desenho do `GestaoConsignacoesHandler`.
+ */
+export type GestaoDevolucoesHandler = (input: {
+  periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+  de?: string;
+  ate?: string;
+}) => Promise<{
+  status: 'OK' | 'INDISPONIVEL';
+  linhas: string[];
+  periodo: string;
+  escopo: 'LOJA' | 'EQUIPE' | 'VENDEDORA';
+}>;
 export type GestaoValorDasVendasHandler = (input: {
   periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
   de?: string;
@@ -1608,6 +1639,7 @@ export interface ChatParams {
   gestaoPorMetal?: GestaoPorMetalHandler;
   gestaoValorDasVendas?: GestaoValorDasVendasHandler;
   gestaoConsignacoes?: GestaoConsignacoesHandler;
+  gestaoDevolucoes?: GestaoDevolucoesHandler;
   gestaoPorTipo?: GestaoPorTipoHandler;
   gestaoPorPedra?: GestaoPorPedraHandler;
   gestaoQuemVendePedra?: GestaoQuemVendePedraHandler;
@@ -1616,6 +1648,7 @@ export interface ChatParams {
   gestaoPorMetalDisponivel?: boolean;
   gestaoValorDasVendasDisponivel?: boolean;
   gestaoConsignacoesDisponivel?: boolean;
+  gestaoDevolucoesDisponivel?: boolean;
   gestaoPorTipoDisponivel?: boolean;
   gestaoPorPedraDisponivel?: boolean;
   gestaoQuemVendePedraDisponivel?: boolean;

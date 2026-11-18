@@ -157,6 +157,19 @@ describe('FerramentasGestaoService', () => {
         itens: jest.fn().mockResolvedValue({ linhas: [] }),
         detalhadas: vendasDetalhadas,
         porEmpresa,
+        // O `gestaoVendas` passou a usar o `valorDasVendas` em 18/11: é o
+        // único caminho que devolve o RÓTULO do período, e sem ele o modelo
+        // inventa a moldura ("últimos 30 dias" para pergunta sobre o mês).
+        valorDasVendas: jest.fn().mockResolvedValue({
+          quantidade: 0,
+          bruto: 0,
+          devolucoes: 0,
+          valorDevolvido: 0,
+          receita: 0,
+          ticketMedio: 0,
+          clientes: 0,
+          periodo: 'de 01/11/2026 a 18/11/2026',
+        }),
       } as never,
       // As metricas de atendimento (ANA-08 a 12, 29/09) — dubladas: estes
       // testes descrevem o roteamento das ferramentas, nao o SQL.

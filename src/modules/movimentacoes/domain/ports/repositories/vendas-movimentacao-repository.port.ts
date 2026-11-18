@@ -97,6 +97,63 @@ export interface ConsignacoesDoPeriodo {
   saidas: PontaDeConsignacao;
   /** O que VOLTOU: operacao RETORNO DE CONSIGNACAO, de volta ao estoque. */
   retornos: PontaDeConsignacao;
+  /**
+   * O QUE AINDA ESTA FORA, HOJE — 18/11/2026.
+   *
+   * NAO E A DIFERENCA ENTRE AS DUAS PONTAS acima: documento nao casa com
+   * documento, e 80 retornos menos 69 consignacoes nao quer dizer nada. A
+   * conta e por PECA — saiu menos voltou menos vendida —, e o que sobra
+   * positivo esta na mao de alguem.
+   *
+   * E UMA POSICAO, NAO UM PERIODO: nao depende da janela, e quem mostrar
+   * tem de dizer "hoje". Medido em 18/11: 146 pecas, R$ 10.406.273,00.
+   */
+  emAberto: {
+    pecas: number;
+    valor: number;
+    /**
+     * Destas, quantas sairam DENTRO da janela perguntada.
+     *
+     * E a PONTE entre o fluxo e a posicao, e sem ela os tres numeros nao
+     * fecham para quem le: em 18/11 sairam 294 pecas em novembro,
+     * voltaram 309, e 146 seguem fora. Das 146, 110 sairam em novembro e
+     * 36 em meses anteriores — dito isso, a conta fecha.
+     */
+    doPeriodo: number;
+  };
+}
+
+/**
+ * AS DEVOLUCOES DE VENDA DO PERIODO — 18/11/2026.
+ *
+ * ======================================================================
+ * ELE PERGUNTOU UM NUMERO E LEVOU UMA TABELA.
+ *
+ * As 13:39 de 18/11, em producao: *"quantas pecas devolvidas em novembro
+ * de 2026"* respondeu certo e em seguida imprimiu a listagem inteira,
+ * cliente por cliente. A agente nao escolheu mandar a tabela — devolucao
+ * so existia dentro do `listarDetalhadas`, que imprime como efeito de ser
+ * chamado. Nao havia porta para o numero sozinho.
+ *
+ * E NAO CONFUNDIR COM RETORNO DE CONSIGNACAO. Sao operacoes diferentes:
+ * devolucao de venda e ENTRADA SEM SAIDA, de peca que foi vendida e
+ * voltou; retorno de consignacao tem AS DUAS BANDEIRAS, de peca que nunca
+ * foi vendida. Em novembro foram 3 devolucoes contra 80 retornos.
+ * ======================================================================
+ */
+export interface DevolucoesDoPeriodo {
+  /** Documentos de devolucao de venda no periodo. */
+  documentos: number;
+  /**
+   * Pecas somadas dos itens — E NAO E O MESMO NUMERO.
+   *
+   * Em novembro de 2026 foram 3 e 3, e por isso a frase inventada
+   * ("3 pecas" para 3 documentos) passou despercebida. Em agosto foram
+   * 7 documentos e 8 pecas.
+   */
+  pecas: number;
+  /** Soma do valor dos documentos devolvidos, positiva. */
+  valor: number;
 }
 
 export interface ResumoDeVendas {
@@ -434,6 +491,20 @@ export interface IVendasMovimentacaoRepository {
     /** O recorte de equipe. Ver `vendedoras` no `vendasPorMetal`. */
     vendedoras?: string[] | null,
   ): Promise<ConsignacoesDoPeriodo>;
+
+  /**
+   * AS DEVOLUCOES DE VENDA, EM NUMERO — 18/11/2026. Ver
+   * `DevolucoesDoPeriodo`.
+   *
+   * Existe para que "quantas devolucoes tivemos" tenha resposta sem
+   * passar pelo `listarDetalhadas`, que imprime a tabela sempre. Quem
+   * pede A LISTA continua indo la.
+   */
+  devolucoes(
+    janela: JanelaDeVendas,
+    /** O recorte de equipe. Ver `vendedoras` no `vendasPorMetal`. */
+    vendedoras?: string[] | null,
+  ): Promise<DevolucoesDoPeriodo>;
 
   /** Quem vendeu mais no periodo. So quem teve venda aparece. */
   rankingDeVendedoras(

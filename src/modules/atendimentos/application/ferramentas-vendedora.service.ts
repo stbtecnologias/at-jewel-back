@@ -561,10 +561,24 @@ export class FerramentasVendedoraService {
         if (v.quantidade === 0) {
           return { resumo: 'nenhuma venda concluída nesse período' };
         }
+        // ================================================================
+        // "EM RECEITA" ERA A PALAVRA ERRADA PARA O NUMERO CERTO —
+        // 18/11/2026.
+        //
+        // O campo se chama `receita` por heranca, mas desde hoje de
+        // manha ele carrega a VENDA LIMPA: o `ConsultarDesempenho`
+        // aplica `vendaLimpa` nos dois metodos. Receita e o liquido, e
+        // e outro numero — para a Bianca de 01 a 18/11, R$ 368.624,80
+        // contra os R$ 381.150,80 daqui.
+        //
+        // A FRASE E A MESMA DA ANASTASIA, palavra por palavra (ver
+        // `gestaoVendas`): dois canais com a mesma frase para o mesmo
+        // numero nao tem como divergir na leitura de quem ouve.
+        // ================================================================
         return {
           resumo:
             `${v.quantidade} ${v.quantidade === 1 ? 'venda' : 'vendas'}, ` +
-            `${moeda(v.receita)} em receita, ticket médio ${moeda(v.ticketMedio)}`,
+            `${moeda(v.receita)}, ticket médio ${moeda(v.ticketMedio)}`,
         };
       },
 

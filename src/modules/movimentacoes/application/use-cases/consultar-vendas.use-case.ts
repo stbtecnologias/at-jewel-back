@@ -15,6 +15,7 @@ import { vendaLimpa } from '../../../../shared/vendas/venda-limpa';
 import {
   VENDAS_MOVIMENTACAO_REPOSITORY,
   type ConsignacoesDoPeriodo,
+  type DevolucoesDoPeriodo,
   type ItemMaisVendido,
   type FiltroVendasDetalhadas,
   type IVendasMovimentacaoRepository,
@@ -519,6 +520,29 @@ export class ConsultarVendasUseCase {
       de && ate ? fimDoDia({ de, ate }) : janelaDe(recorte ?? 'MES', agora);
 
     const r = await this.vendas.consignacoes(janela, vendedoras);
+
+    return { ...r, periodo: rotuloDoPeriodo(janela) };
+  }
+
+  /**
+   * AS DEVOLUCOES DE VENDA DO PERIODO — 18/11/2026.
+   *
+   * A MESMA FORMA DA `consignacoes`, e pelo mesmo motivo: a pergunta
+   * "quantas" precisava de uma porta que nao imprimisse tabela. Ver
+   * `DevolucoesDoPeriodo`.
+   */
+  async devolucoes(
+    recorte?: RecorteDeVendas,
+    de?: Date,
+    ate?: Date,
+    agora: Date = new Date(),
+    /** Ver o recorte no `porMetal`. */
+    vendedoras: string[] | null = null,
+  ): Promise<DevolucoesDoPeriodo & { periodo: string }> {
+    const janela =
+      de && ate ? fimDoDia({ de, ate }) : janelaDe(recorte ?? 'MES', agora);
+
+    const r = await this.vendas.devolucoes(janela, vendedoras);
 
     return { ...r, periodo: rotuloDoPeriodo(janela) };
   }

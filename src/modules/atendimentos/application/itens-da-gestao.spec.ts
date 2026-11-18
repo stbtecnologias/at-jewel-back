@@ -38,7 +38,7 @@ const MARINA = {
 
 describe('itens_mais_vendidos e o escopo de quem pergunta', () => {
   let resolverVendedora: { execute: jest.Mock };
-  let consultarVendas: { itens: jest.Mock };
+  let consultarVendas: { itens: jest.Mock; valorDasVendas: jest.Mock };
   let listarProdutos: { execute: jest.Mock; contar: jest.Mock };
   let servico: FerramentasGestaoService;
 
@@ -60,6 +60,19 @@ describe('itens_mais_vendidos e o escopo de quem pergunta', () => {
       ]),
     };
     consultarVendas = {
+      // O `gestaoVendas` passou a usar o `valorDasVendas` em 18/11: e o
+      // unico caminho que devolve o ROTULO do periodo, e sem ele o modelo
+      // inventa a moldura ("ultimos 30 dias" para pergunta sobre o mes).
+      valorDasVendas: jest.fn().mockResolvedValue({
+        quantidade: 4,
+        bruto: 40000,
+        devolucoes: 0,
+        valorDevolvido: 0,
+        receita: 40000,
+        ticketMedio: 10000,
+        clientes: 3,
+        periodo: 'de 01/11/2026 a 18/11/2026',
+      }),
       itens: jest.fn().mockResolvedValue({
         linhas: [
           {
@@ -387,7 +400,7 @@ describe('o recorte de equipe nas ferramentas de gestao', () => {
   let resolverVendedora: { execute: jest.Mock };
   let vendedoras: { listar: jest.Mock; buscarPorId: jest.Mock };
   let desempenho: { vendas: jest.Mock; metas: jest.Mock };
-  let consultarVendas: { ranking: jest.Mock; itens: jest.Mock };
+  let consultarVendas: { ranking: jest.Mock; itens: jest.Mock; valorDasVendas: jest.Mock };
   let servico: FerramentasGestaoService;
 
   beforeEach(() => {
@@ -408,6 +421,19 @@ describe('o recorte de equipe nas ferramentas de gestao', () => {
     // O ranking devolve QUEM VENDEU — inclusive quem ja saiu. A Marina e da
     // equipe; a Beatriz e de fora e serve para provar o recorte.
     consultarVendas = {
+      // O `gestaoVendas` passou a usar o `valorDasVendas` em 18/11: e o
+      // unico caminho que devolve o ROTULO do periodo, e sem ele o modelo
+      // inventa a moldura ("ultimos 30 dias" para pergunta sobre o mes).
+      valorDasVendas: jest.fn().mockResolvedValue({
+        quantidade: 4,
+        bruto: 40000,
+        devolucoes: 0,
+        valorDevolvido: 0,
+        receita: 40000,
+        ticketMedio: 10000,
+        clientes: 3,
+        periodo: 'de 01/11/2026 a 18/11/2026',
+      }),
       ranking: jest.fn().mockResolvedValue({
         linhas: [
           { vendedoraId: MARINA_ID, nome: 'Marina', codigoErp: 'VD01', quantidade: 3, valor: 9000 },
@@ -724,6 +750,7 @@ describe('o recorte de equipe nas ferramentas de gestao', () => {
  */
 describe('o periodo livre nas ferramentas de venda', () => {
   let consultarVendas: {
+    valorDasVendas: jest.Mock;
     ranking: jest.Mock;
     rankingEntre: jest.Mock;
     itens: jest.Mock;
@@ -734,6 +761,19 @@ describe('o periodo livre nas ferramentas de venda', () => {
 
   beforeEach(() => {
     consultarVendas = {
+      // O `gestaoVendas` passou a usar o `valorDasVendas` em 18/11: e o
+      // unico caminho que devolve o ROTULO do periodo, e sem ele o modelo
+      // inventa a moldura ("ultimos 30 dias" para pergunta sobre o mes).
+      valorDasVendas: jest.fn().mockResolvedValue({
+        quantidade: 4,
+        bruto: 40000,
+        devolucoes: 0,
+        valorDevolvido: 0,
+        receita: 40000,
+        ticketMedio: 10000,
+        clientes: 3,
+        periodo: 'de 01/11/2026 a 18/11/2026',
+      }),
       ranking: jest.fn().mockResolvedValue({ linhas: [] }),
       rankingEntre: jest.fn().mockResolvedValue([]),
       itens: jest.fn().mockResolvedValue({ linhas: [] }),
@@ -870,12 +910,24 @@ describe('o periodo livre nas ferramentas de venda', () => {
     expect(consultarVendas.ranking).not.toHaveBeenCalled();
   });
 
+  /**
+   * O COLABORADOR MUDOU EM 18/11/2026, e a janela livre continua chegando.
+   *
+   * Era o `resumoEntre`; passou a ser o `valorDasVendas`, o mesmo caminho de
+   * "quanto a loja vendeu" — e o único que devolve o RÓTULO do período, sem
+   * o qual o modelo inventa a moldura ("últimos 30 dias" para uma pergunta
+   * sobre o mês).
+   */
   it('as vendas de UMA vendedora tambem', async () => {
     const r = await servico
       .montar({})
       .gestaoVendas({ vendedora: 'Camila', de: '2026-04-01', ate: '2026-09-28' });
 
-    expect(consultarVendas.resumoEntre).toHaveBeenCalled();
+    const args = consultarVendas.valorDasVendas.mock.calls[0];
+    // Recorte nomeado ausente e as duas datas presentes: é a janela livre.
+    expect(args[0]).toBeUndefined();
+    expect(args[1]).toBeInstanceOf(Date);
+    expect(args[2]).toBeInstanceOf(Date);
     expect(r.linhas[0]).toContain('4 vendas');
   });
 });
@@ -896,6 +948,7 @@ describe('o periodo livre nas ferramentas de venda', () => {
  */
 describe('o ranking por tipo de peça', () => {
   let consultarVendas: {
+    valorDasVendas: jest.Mock;
     porFamilia: jest.Mock;
     porFamiliaEntre: jest.Mock;
     porFamiliaNoMes: jest.Mock;
@@ -905,6 +958,19 @@ describe('o ranking por tipo de peça', () => {
 
   beforeEach(() => {
     consultarVendas = {
+      // O `gestaoVendas` passou a usar o `valorDasVendas` em 18/11: e o
+      // unico caminho que devolve o ROTULO do periodo, e sem ele o modelo
+      // inventa a moldura ("ultimos 30 dias" para pergunta sobre o mes).
+      valorDasVendas: jest.fn().mockResolvedValue({
+        quantidade: 4,
+        bruto: 40000,
+        devolucoes: 0,
+        valorDevolvido: 0,
+        receita: 40000,
+        ticketMedio: 10000,
+        clientes: 3,
+        periodo: 'de 01/11/2026 a 18/11/2026',
+      }),
       porFamilia: jest.fn().mockResolvedValue({ linhas: [] }),
       porFamiliaEntre: jest.fn().mockResolvedValue([]),
       porFamiliaNoMes: jest.fn().mockResolvedValue([

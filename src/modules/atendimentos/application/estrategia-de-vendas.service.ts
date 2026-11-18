@@ -90,7 +90,9 @@ export class EstrategiaDeVendasService {
         (vendasDoMes.quantidade === 0
           ? '- nenhuma venda ainda neste mês'
           : `- ${vendasDoMes.quantidade} ${vendasDoMes.quantidade === 1 ? 'venda' : 'vendas'}, ` +
-            `${moeda(vendasDoMes.receita)} em receita, ticket médio ${moeda(vendasDoMes.ticketMedio)}`),
+            // A MESMA PALAVRA DO `consultarVendas` — 18/11/2026: o campo
+            // se chama `receita` e o valor e a VENDA LIMPA. Ver la.
+            `${moeda(vendasDoMes.receita)}, ticket médio ${moeda(vendasDoMes.ticketMedio)}`),
     );
 
     if (metas.length > 0) {

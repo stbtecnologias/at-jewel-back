@@ -52,8 +52,9 @@ describe('as consignacoes', () => {
 
   /** Os numeros reais de 01 a 17/11/2026, medidos na copia de producao. */
   const NOVEMBRO = {
-    saidas: { quantidade: 69, valor: 26892660, pecas: 512 },
-    retornos: { quantidade: 80, valor: 25750228, pecas: 498 },
+    saidas: { quantidade: 69, valor: 26892660, pecas: 294 },
+    retornos: { quantidade: 80, valor: 25750228, pecas: 309 },
+    emAberto: { pecas: 146, valor: 10406273, doPeriodo: 110 },
     periodo: 'de 01/11/2026 a 17/11/2026',
   };
 
@@ -64,30 +65,85 @@ describe('as consignacoes', () => {
 
     expect(r.status).toBe('OK');
     expect(r.linhas).toEqual([
-      `Saíram em consignação: 69 — ${moeda(26892660)}`,
-      `Voltaram: 80 — ${moeda(25750228)}`,
+      `Saíram em consignação: 69 documentos — 294 peças, ${moeda(26892660)}`,
+      `Voltaram: 80 documentos — 309 peças, ${moeda(25750228)}`,
+      'Voltou mais do que saiu porque parte do que voltou tinha saído em meses anteriores: as duas linhas acima são o movimento do período, e não um saldo.',
+      `Ainda fora, hoje (todo o histórico): 146 peças, ${moeda(10406273)}` +
+        ' — sendo 110 que saíram neste período e 36 de meses anteriores',
     ]);
   });
 
   /**
-   * O "EM ABERTO" NAO SAI DAQUI, e a ausencia e deliberada: 80 − 69 da −11,
-   * que lido como "onze a mais voltaram do que sairam" esta certo, e lido
-   * como saldo de mercadoria esta errado. Os documentos nao casam um a um.
+   * O "EM ABERTO" EXISTE, MAS NAO E A SUBTRACAO — 18/11/2026.
+   *
+   * ======================================================================
+   * EU PROIBI UMA PERGUNTA LEGITIMA, E FOI ERRO MEU.
+   *
+   * A primeira versao recusava "quanto esta em aberto" porque os DOCUMENTOS
+   * nao casam: 80 retornos contra 69 consignacoes em novembro, e a maleta
+   * sai num documento e volta em pedacos. Isso continua verdade, e 80 − 69
+   * segue sem significado nenhum.
+   *
+   * Mas por PECA a conta fecha. Medido na copia em 18/11, no historico todo:
+   *
+   *   5.807 pecas ja sairam em consignacao
+   *   5.640 voltaram inteiras
+   *   1.591 viraram venda em algum momento
+   *     146 AINDA FORA — R$ 10.406.273,00
+   *
+   * Recusar pergunta que tem resposta e o que mais empurra a agente a
+   * improvisar: ela fica sem numero e com a pergunta na mao.
+   *
+   * E A TERCEIRA LINHA E UMA POSICAO, NAO UM PERIODO: "ainda fora HOJE" nao
+   * depende da janela, e o rotulo tem de dizer isso — senao alguem soma o
+   * em aberto de novembro com o de outubro.
+   * ======================================================================
    */
-  it('nao inventa um saldo subtraindo uma ponta da outra', async () => {
+  it('o em aberto nao e a diferenca entre as duas pontas', async () => {
+    const { ferramentas } = montar(NOVEMBRO);
+
+    const r = await ferramentas.gestaoConsignacoes({ periodo: 'MES' });
+    const emAberto = r.linhas.find((l) => l.includes('Ainda fora'));
+
+    expect(emAberto).toBeDefined();
+    // 80 − 69 = 11, e nao 146. Sao contas diferentes, de proposito.
+    expect(emAberto).not.toContain('11 peças');
+    expect(emAberto).toContain('146 peças');
+  });
+
+  it('o em aberto diz que e de HOJE, e nao do periodo', async () => {
     const { ferramentas } = montar(NOVEMBRO);
 
     const r = await ferramentas.gestaoConsignacoes({ periodo: 'MES' });
 
-    for (const linha of r.linhas) {
-      expect(linha).not.toMatch(/aberto|saldo|pendente|em poder/i);
-    }
+    const linha = r.linhas.find((l) => l.includes('Ainda fora'));
+    expect(linha).toContain('hoje');
+    // E QUE E O HISTORICO INTEIRO, e nao o periodo: em 18/11 as 146 pecas
+    // fora vinham de 11/2026 (110), 10/2026 (9), 07/2026 (12) e ate de
+    // 02/2024. Sem dizer isso, 69 saiu / 80 voltou / 146 fora nao fecha na
+    // cabeca de quem le — foi a leitura do Lucas em 18/11.
+    expect(linha).toContain('todo o histórico');
+    // E A PONTE: sem ela, 294 saíram / 309 voltaram / 146 fora não fecha.
+    expect(linha).toContain('110 que saíram neste período');
+    expect(linha).toContain('36 de meses anteriores');
+  });
+
+  it('sem nada fora, a linha nao aparece', async () => {
+    const { ferramentas } = montar({
+      ...NOVEMBRO,
+      emAberto: { pecas: 0, valor: 0, doPeriodo: 0 },
+    });
+
+    const r = await ferramentas.gestaoConsignacoes({ periodo: 'MES' });
+
+    expect(r.linhas.some((l) => l.includes('Ainda fora'))).toBe(false);
   });
 
   it('periodo sem consignacao nenhuma devolve lista vazia', async () => {
     const { ferramentas } = montar({
       saidas: { quantidade: 0, valor: 0, pecas: 0 },
       retornos: { quantidade: 0, valor: 0, pecas: 0 },
+      emAberto: { pecas: 0, valor: 0, doPeriodo: 0 },
       periodo: 'de 01/01/2020 a 31/01/2020',
     });
 
@@ -101,12 +157,15 @@ describe('as consignacoes', () => {
     const { ferramentas } = montar({
       saidas: { quantidade: 3, valor: 150000, pecas: 9 },
       retornos: { quantidade: 0, valor: 0, pecas: 0 },
+      emAberto: { pecas: 0, valor: 0, doPeriodo: 0 },
       periodo: 'de 01/11/2026 a 02/11/2026',
     });
 
     const r = await ferramentas.gestaoConsignacoes({ periodo: 'MES' });
 
-    expect(r.linhas).toEqual([`Saíram em consignação: 3 — ${moeda(150000)}`]);
+    expect(r.linhas).toEqual([
+      `Saíram em consignação: 3 documentos — 9 peças, ${moeda(150000)}`,
+    ]);
   });
 
   /**

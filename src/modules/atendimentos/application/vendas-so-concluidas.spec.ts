@@ -127,6 +127,43 @@ describe('as vendas uma a uma: só o que foi concluído', () => {
     expect(relatorio.guardar.mock.calls[0][1].nota).toContain('Só devoluções');
   });
 
+  /**
+   * O FURO DA TROCA DE NOME — producao, 18/11/2026, 13:39.
+   *
+   *   — "Quantas pecas devolvidas em Novembro de 2026"
+   *   — tabela intitulada "Listagem de Vendas - novembro de 2026",
+   *     com tres linhas "Devolvida" dentro.
+   *
+   * A troca existia desde 27/10 e estava ancorada em `^Vendas`. O titulo
+   * padrao, sem recorte de nome, e "LISTAGEM de Vendas" — que nao comeca
+   * com "Vendas". A protecao passava batido justo no caso mais comum: a
+   * pergunta geral, sem cliente e sem vendedora.
+   */
+  it('sem recorte de nome, o papel de devolucoes tambem troca de nome', async () => {
+    const { servico, relatorio } = montar([UMA_DEVOLUCAO]);
+
+    await servico
+      .montar({ verLoja: true, chaveDaConversa: 'gestao:ad-1' })
+      .gestaoVendasDetalhadas({ periodo: 'MES', somente: 'DEVOLVIDAS' });
+
+    const titulo = relatorio.guardar.mock.calls[0][1].titulo;
+    expect(titulo).toContain('Devoluções');
+    // E NAO PODE SOBRAR "Vendas": o papel diz o que leva.
+    expect(titulo).not.toContain('Vendas');
+  });
+
+  it('e o mesmo vale para TODAS, que tinha o mesmo furo', async () => {
+    const { servico, relatorio } = montar([UMA_VENDA, UMA_DEVOLUCAO]);
+
+    await servico
+      .montar({ verLoja: true, chaveDaConversa: 'gestao:ad-1' })
+      .gestaoVendasDetalhadas({ periodo: 'MES', somente: 'TODAS' });
+
+    expect(relatorio.guardar.mock.calls[0][1].titulo).toContain(
+      'Vendas e devoluções',
+    );
+  });
+
   it('"tudo junto" vira TODAS, e o papel diz que tem os dois', async () => {
     const { servico, detalhadas, relatorio } = montar([
       UMA_VENDA,

@@ -17,6 +17,7 @@ import {
 import type {
   ComparacaoAnual,
   ConsignacoesDoPeriodo,
+  DevolucoesDoPeriodo,
   FiltroVendasDetalhadas,
   IVendasMovimentacaoRepository,
   ItemDaVenda,
@@ -360,6 +361,41 @@ export class VendasMovimentacaoRepository
       [janela.de, janela.ate, vendedoras],
     );
 
+    // O QUE AINDA ESTA FORA e uma POSICAO: nao leva a janela, so o recorte
+    // de vendedoras. Ver o comentario na porta.
+    const [aberto] = await this.ds.query<
+      { pecas: string; valor: string; do_periodo: string }[]
+    >(
+      `
+      WITH por_peca AS (
+        SELECT i.produto_id,
+               sum(i.quantidade) FILTER (WHERE ${ehConsignacao('m')}
+                 AND upper(COALESCE(o.nome, '')) NOT LIKE 'RETORNO%')  AS saiu,
+               sum(i.quantidade) FILTER (WHERE ${ehConsignacao('m')}
+                 AND upper(COALESCE(o.nome, '')) LIKE 'RETORNO%')      AS voltou,
+               sum(i.quantidade) FILTER (WHERE ${ehVenda('m')})          AS vendida,
+               max(i.quantidade * i.valor_unitario) FILTER (
+                 WHERE ${ehConsignacao('m')})                            AS preco,
+               max(m.data_movimentacao) FILTER (WHERE ${ehConsignacao('m')}
+                 AND upper(COALESCE(o.nome, '')) NOT LIKE 'RETORNO%')    AS ultima_saida
+          FROM movimentacoes m
+          JOIN movimentacoes_itens i ON i.movimentacao_id = m.id AND i.ativo
+          LEFT JOIN operacoes o ON o.id = m.operacao_id
+         WHERE m.ativo AND i.produto_id IS NOT NULL
+           AND ($1::uuid[] IS NULL OR m.vendedora_id = ANY($1::uuid[]))
+         GROUP BY i.produto_id
+      )
+      SELECT COALESCE(count(*), 0)       AS pecas,
+             COALESCE(sum(preco), 0)     AS valor,
+             -- A PONTE: destas, quantas sairam dentro da janela. Ver a porta.
+             COALESCE(count(*) FILTER (
+               WHERE ultima_saida BETWEEN $2 AND $3), 0) AS do_periodo
+        FROM por_peca
+       WHERE COALESCE(saiu, 0) > COALESCE(voltou, 0) + COALESCE(vendida, 0)
+      `,
+      [vendedoras, janela.de, janela.ate],
+    );
+
     return {
       saidas: {
         quantidade: Number(linha?.saidas ?? 0),
@@ -371,6 +407,51 @@ export class VendasMovimentacaoRepository
         valor: Number(linha?.valor_retornos ?? 0),
         pecas: Number(linha?.pecas_retornos ?? 0),
       },
+      emAberto: {
+        pecas: Number(aberto?.pecas ?? 0),
+        valor: Number(aberto?.valor ?? 0),
+        doPeriodo: Number(aberto?.do_periodo ?? 0),
+      },
+    };
+  }
+
+  /**
+   * AS DEVOLUCOES DE VENDA, EM NUMERO — 18/11/2026. Ver a porta.
+   *
+   * DOCUMENTO E PECA SAO DUAS CONTAS, e e por isso que as pecas vem de
+   * subconsulta e nao de JOIN: juntar os itens multiplicaria `m.valor` por
+   * item e o valor sairia inflado.
+   *
+   * NAO CONFUNDIR COM RETORNO DE CONSIGNACAO: aqui e ENTRADA SEM SAIDA, de
+   * peca que foi vendida e voltou. O retorno tem as duas bandeiras.
+   */
+  async devolucoes(
+    janela: JanelaDeVendas,
+    vendedoras: string[] | null = null,
+  ): Promise<DevolucoesDoPeriodo> {
+    const [linha] = await this.ds.query<
+      { documentos: string; pecas: string; valor: string }[]
+    >(
+      `
+      SELECT count(*)                       AS documentos,
+             COALESCE(sum(m.valor), 0)      AS valor,
+             COALESCE(sum((
+               SELECT sum(i.quantidade)
+                 FROM movimentacoes_itens i
+                WHERE i.movimentacao_id = m.id AND i.ativo
+             )), 0)                         AS pecas
+        FROM movimentacoes m
+       WHERE ${ehDevolucao('m')}
+         AND m.data_movimentacao BETWEEN $1 AND $2
+         AND ($3::uuid[] IS NULL OR m.vendedora_id = ANY($3::uuid[]))
+      `,
+      [janela.de, janela.ate, vendedoras],
+    );
+
+    return {
+      documentos: Number(linha?.documentos ?? 0),
+      pecas: Number(linha?.pecas ?? 0),
+      valor: Number(linha?.valor ?? 0),
     };
   }
 
@@ -400,8 +481,18 @@ export class VendasMovimentacaoRepository
              v.nome                                              AS nome,
              v.codigo_erp                                        AS codigo_erp,
              count(*) FILTER (WHERE ${ehVenda('m')})                     AS quantidade,
-             COALESCE(sum(m.valor) FILTER (WHERE ${ehVenda('m')}), 0)
-               - COALESCE(sum(m.valor) FILTER (WHERE ${ehDevolucao('m')}), 0) AS valor,
+             -- O VALOR SEGUE AS PECAS, E NAO ABATE — 18/11/2026.
+             --
+             -- Ele descontava a devolucao enquanto as pecas logo abaixo nao
+             -- descontavam desde 02/10, pelo motivo escrito ali. A conta era a
+             -- mesma e a resposta era outra: em 18/11, na MESMA conversa, a
+             -- Bianca saiu com R$ 381.150,80 em "quanto ela vendeu" e
+             -- R$ 368.624,80 em "quem mais vendeu".
+             --
+             -- O devolvido continua vindo ao lado, nas duas colunas abaixo, e
+             -- e assim que a agente diz "1 devolvida (R$ 12.526,00)" sem
+             -- esconder nada nem embutir no total.
+             COALESCE(sum(m.valor) FILTER (WHERE ${ehVenda('m')}), 0)     AS valor,
              -- AS PECAS SAO AS VENDIDAS, e o que voltou vem ao lado em vez de
              -- abater (02/10/2026). Abatendo, a Ylka era "2 vendas, 0 pecas":
              -- ela vendeu duas, e as duas que voltaram eram de outro mes.

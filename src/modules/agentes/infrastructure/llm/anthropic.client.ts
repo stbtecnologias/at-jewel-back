@@ -174,6 +174,36 @@ const DATAS_LIVRES = {
   },
 };
 
+/**
+ * A ORDEM DE COPIAR O VALOR — 18/11/2026.
+ *
+ * ==========================================================================
+ * ELA REESCREVEU UM NUMERO QUE RECEBEU PRONTO. Producao, 15:17:
+ *
+ *   a frase dela:       "3 devolucoes em novembro, somando R$ 31.566,00"
+ *   a tabela, embaixo:  "Total | -R$ 32.966,00"
+ *
+ * Uma mensagem, dois valores. A tabela e escrita pelo nosso codigo; a frase,
+ * por ela. As tres devolucoes de novembro somam R$ 32.966,00 — medidas na
+ * copia documento por documento —, e e o que a ferramenta devolveu.
+ *
+ * Ela acertou tudo o que consertamos naquele dia: chamou a ferramenta de
+ * "quantas", nao imprimiu tabela para quem pediu um numero, acertou
+ * documentos e pecas. E corrompeu o valor.
+ *
+ * O REMEDIO E O QUE JA FUNCIONOU COM O PERIODO. "Repasse como veio" e brando
+ * e nao segurou; a ordem NOMEADA segurou — ver o fim do
+ * `textoDaLeituraDeGestao`, que mandou dizer o periodo "com essas palavras" e
+ * acabou com o "ultimos 30 dias".
+ *
+ * NAO E O CONSERTO DEFINITIVO. Enquanto o numero falado passar pelo modelo,
+ * isto e remendo: o conserto e o numero sair do nosso codigo, como a lista de
+ * 27/10 ja faz.
+ * ==========================================================================
+ */
+export const COPIE_OS_VALORES =
+  ' E COPIE OS VALORES EXATAMENTE COMO ESTAO ACIMA, digito por digito: nao refaca a conta, nao arredonde e nao some as linhas de novo — o valor ja vem somado. Se um numero que voce escrever nao for identico ao de cima, O DE CIMA E O CERTO.';
+
 const VENDAS_TOOL: Anthropic.Tool = {
   name: 'consultar_vendas',
   description:
@@ -736,11 +766,55 @@ function deQuem(escopo: 'LOJA' | 'EQUIPE' | 'VENDEDORA'): string {
 const GESTAO_CONSIGNACOES_TOOL: Anthropic.Tool = {
   name: 'consignacoes',
   description:
-    'A MERCADORIA EM CONSIGNACAO num periodo: quantas pecas sairam para ficar com alguem, e quantas voltaram. ' +
+    'A MERCADORIA EM CONSIGNACAO: quanto saiu e quanto voltou no periodo, e quanto segue fora hoje. ' +
+    'REPASSE A UNIDADE QUE VEM ESCRITA. A linha diz "69 documentos — 294 pecas": sao DUAS grandezas, e trocar uma pela outra muda a resposta em cinco vezes. Nao diga "69 pecas". ' +
+    'A TERCEIRA LINHA E DE OUTRA NATUREZA: "Ainda fora, hoje (todo o historico)" nao e do periodo perguntado e NAO se reconcilia com as duas de cima — sao pecas acumuladas de meses, algumas de anos atras. Repasse-a com o rotulo inteiro, inclusive o "hoje" e o "todo o historico". ' +
     'E A FERRAMENTA DE "CONSIGNACAO": "quantas consignacoes tivemos em novembro", "quanto saiu em consignacao", "quantas ja foram devolvidas", "quanto voltou". ' +
     'NAO E VENDA, E NUNCA FOI. Consignacao e joia saindo para a cliente ver ou para a mao da vendedora; retorno e ela voltando. Nenhum dos dois entra no faturamento. Se perguntarem o VALOR DAS VENDAS, e o valor_das_vendas, e la a consignacao ja esta fora. ' +
-    'OS DOIS NUMEROS NAO SE SUBTRAEM. Nao calcule "o que esta em aberto" nem "quanto falta voltar": uma maleta sai num documento e volta em pedacos, em documentos diferentes, e no historico ha MAIS retornos que consignacoes. Repasse as duas linhas como vieram e nao invente saldo. ' +
+    'O QUE ESTA EM ABERTO JA VEM PRONTO, na linha "Ainda fora, hoje" — use ELA e nao faca conta. E um saldo POR PECA (saiu menos voltou menos vendida) e vale PARA HOJE, nao para o periodo: diga "hoje" ao repassar. Se a linha nao vier, nao ha nada fora. ' +
+    'E NUNCA SUBTRAIA AS DUAS PRIMEIRAS LINHAS uma da outra: documento nao casa com documento, a maleta sai num e volta em pedacos, e no historico ha MAIS retornos que consignacoes. A diferenca entre elas nao e saldo de nada. ' +
     'E O VALOR E A PRECO DE VENDA, de mercadoria que circulou — nao e dinheiro que entrou. Se o numero parecer alto demais, e porque e isso mesmo: a mesma peca conta de novo cada vez que sai.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      periodo: {
+        type: 'string',
+        enum: ['HOJE', 'ONTEM', 'SEMANA', 'MES', 'ANO'],
+        description: 'Recorte de tempo. O padrao e MES.',
+      },
+      ...DATAS_LIVRES,
+    },
+    required: [],
+  },
+};
+/**
+ * AS DEVOLUCOES EM NUMERO, SEM A TABELA — 18/11/2026.
+ *
+ * ==========================================================================
+ * ELE PERGUNTOU UM NUMERO E LEVOU UMA TABELA COM NOME DE CLIENTE.
+ *
+ *   — "Quantas pecas devolvidas em Novembro de 2026"
+ *   — "foram 3 pecas devolvidas, somando R$ 32.966,00"
+ *   — e logo abaixo, sozinha, a listagem inteira, cliente por cliente.
+ *
+ * *"Pedi uma coisa.. acho que veio mais coisas.. so pedi devolucao e veio
+ * listagem de vendas?"*
+ *
+ * A AGENTE NAO ESCOLHEU MANDAR A TABELA: nao havia outra porta. Devolucao so
+ * existia dentro do `vendas_detalhadas`, que imprime a lista como efeito de
+ * ser chamado. E o mesmo buraco que a consignacao tinha ate 18/11 de manha,
+ * e o mesmo conserto.
+ * ==========================================================================
+ */
+const GESTAO_DEVOLUCOES_TOOL: Anthropic.Tool = {
+  name: 'devolucoes',
+  description:
+    'QUANTAS devolucoes de venda houve no periodo, em NUMEROS e SEM LISTA: documentos, pecas e valor. Nao imprime tabela nenhuma. ' +
+    'E ESTA A FERRAMENTA DO "QUANTAS": "quantas devolucoes tivemos em novembro", "quantas pecas foram devolvidas", "teve devolucao esse mes", "quanto foi devolvido". ' +
+    'NAO E A FERRAMENTA DE "QUAIS": "quais as devolucoes", "me lista as devolucoes", "me traga o que foi devolvido" pedem as LINHAS, e ai e o vendas_detalhadas com somente=DEVOLVIDAS, que imprime a tabela. A pergunta com QUANTAS, QUANTO ou TEVE pede numero; a com QUAIS, LISTA ou TRAGA pede linhas. ' +
+    'REPASSE A UNIDADE QUE VEM ESCRITA. A linha diz "3 documentos — 3 pecas": sao DUAS grandezas e podem ser diferentes. Em agosto de 2026 foram 7 documentos e 8 pecas. Nao troque uma palavra pela outra. ' +
+    'DEVOLUCAO DE VENDA NAO E RETORNO DE CONSIGNACAO, e misturar os dois erra por vinte vezes. Devolucao e peca que foi VENDIDA e voltou; retorno de consignacao e peca que NUNCA foi vendida, saiu para a cliente ver e voltou. Em novembro de 2026 foram 3 devolucoes contra 80 retornos. Se perguntarem por consignacao ou por retorno, e a ferramenta consignacoes. ' +
+    'E O VALOR E O DO DOCUMENTO DEVOLVIDO, positivo. Nao o subtraia do valor das vendas por conta propria: o valor_das_vendas ja responde o numero que a gestao usa.',
   input_schema: {
     type: 'object',
     properties: {
@@ -921,7 +995,7 @@ const GESTAO_VENDAS_DETALHADAS_TOOL: Anthropic.Tool = {
         type: 'string',
         enum: ['DEVOLVIDAS', 'TODAS'],
         description:
-          'OMITA SEMPRE, menos nestes dois casos: "quais as devolucoes", "o que foi devolvido", "teve devolucao?" sao DEVOLVIDAS; "vendas e devolucoes juntas", "tudo junto, com as devolvidas" sao TODAS. Pergunta sobre VENDA nao leva este parametro — devolucao nao e venda.',
+          'OMITA SEMPRE, menos nestes dois casos: "quais as devolucoes", "me lista o que foi devolvido" sao DEVOLVIDAS; "vendas e devolucoes juntas", "tudo junto, com as devolvidas" sao TODAS. Pergunta sobre VENDA nao leva este parametro — devolucao nao e venda. E QUANTAS devolucoes houve NAO E AQUI: "quantas devolucoes", "quantas pecas devolvidas", "teve devolucao esse mes" vao para a ferramenta devolucoes, que responde em numero e nao imprime tabela — chamar esta manda a listagem inteira para quem pediu um numero.',
       },
       ...DATAS_LIVRES,
     },
@@ -2625,6 +2699,9 @@ export class AnthropicClient implements ILlmClient {
     }
     if (params.gestaoConsignacoes && params.gestaoConsignacoesDisponivel) {
       tools.push(GESTAO_CONSIGNACOES_TOOL);
+    }
+    if (params.gestaoDevolucoes && params.gestaoDevolucoesDisponivel) {
+      tools.push(GESTAO_DEVOLUCOES_TOOL);
     }
     if (params.gestaoPorMetal && params.gestaoPorMetalDisponivel) {
       tools.push(GESTAO_POR_METAL_TOOL);
@@ -4717,7 +4794,38 @@ export class AnthropicClient implements ILlmClient {
               }
               return (
                 `Consignacoes — ${deQuem(r.escopo)}, ${r.periodo}:\n${r.linhas.map((l) => `- ${l}`).join(`\n`)}\n\n` +
-                'Repasse as duas linhas como vieram. NAO subtraia uma da outra, NAO calcule o que esta em aberto e NAO chame isso de venda: e mercadoria que circulou, a preco de venda.'
+                'Repasse as linhas como vieram, inclusive a de "Ainda fora, hoje" se ela existir. NAO subtraia uma linha da outra e NAO chame nada disso de venda: e mercadoria que circulou, a preco de venda.' +
+                COPIE_OS_VALORES
+              );
+            },
+          ),
+        );
+      } else if (toolUse.name === 'devolucoes' && params.gestaoDevolucoes) {
+        toolResults.push(
+          await this.executarLeitura(
+            toolUse,
+            params.aoResponderConsulta,
+            async () => {
+              const e = toolUse.input as {
+                periodo?: 'HOJE' | 'ONTEM' | 'SEMANA' | 'MES' | 'ANO';
+                de?: string;
+                ate?: string;
+              };
+              const r = await params.gestaoDevolucoes!({
+                periodo: e.periodo,
+                de: e.de ? String(e.de) : undefined,
+                ate: e.ate ? String(e.ate) : undefined,
+              });
+              if (r.status === 'INDISPONIVEL') {
+                return 'Esta consulta nao esta disponivel por aqui. Diga isso em uma frase, sem mencionar permissao nem limitacao de acesso.';
+              }
+              if (r.linhas.length === 0) {
+                return `Nao houve devolucao de venda nenhuma em ${deQuem(r.escopo)}, em ${r.periodo}. DIGA O PERIODO ao responder.`;
+              }
+              return (
+                `Devolucoes — ${deQuem(r.escopo)}, ${r.periodo}:\n${r.linhas.map((l) => `- ${l}`).join(`\n`)}\n\n` +
+                'Repasse a linha como veio, com a unidade escrita: documentos e pecas sao grandezas diferentes. NAO imprima a lista das devolucoes — quem quiser as linhas pede "quais as devolucoes", e ai e outra ferramenta. E NAO chame isso de retorno de consignacao.' +
+                COPIE_OS_VALORES
               );
             },
           ),
@@ -4749,7 +4857,8 @@ export class AnthropicClient implements ILlmClient {
               }
               return (
                 `Valor das vendas — ${deQuem(r.escopo)}, ${r.periodo}:\n${r.linhas.map((l) => `- ${l}`).join(`\n`)}\n\n` +
-                'Responda com estes numeros e PARE, sem listar venda nenhuma — ela pediu o valor, nao a lista. NAO acrescente devolucao, consignacao nem explicacao de como o numero saiu: ele ja vem pronto.'
+                'Responda com estes numeros e PARE, sem listar venda nenhuma — ela pediu o valor, nao a lista. NAO acrescente devolucao, consignacao nem explicacao de como o numero saiu: ele ja vem pronto.' +
+                COPIE_OS_VALORES
               );
             },
           ),
@@ -4866,7 +4975,12 @@ export class AnthropicClient implements ILlmClient {
                 );
               }
               if (r.linhas.length === 0) {
-                return 'Nenhuma venda nesse recorte. Diga isso em uma frase, e ofereca outro periodo.';
+                // E "nenhuma DEVOLUCAO" quando foi devolucao que ela
+                // pediu: dizer "nenhuma venda" responde outra pergunta.
+                return (
+                  `Nenhuma ${substantivoDaLista(r.somente, 1)} nesse recorte. ` +
+                  'Diga isso em uma frase, e ofereca outro periodo.'
+                );
               }
               // ==============================================================
               // A FAIXA NO LUGAR DO AVISO MUDO — 27/10/2026.
@@ -4930,11 +5044,15 @@ export class AnthropicClient implements ILlmClient {
               // agora com valor. Entao a soma sai COM NOME, e com a conta da
               // diferenca dita na frente.
               // ============================================================
+              // O SUBSTANTIVO SAI DO RECORTE — 18/11/2026. Ver
+              // `substantivoDaLista`: aqui estava "vendas" fixo, e uma
+              // lista de devolucoes chegava ao modelo chamada de venda.
+              const oQueSao = substantivoDaLista(r.somente, quantas);
               const comSoma = r.soma
                 ? r.quantasPedidas
                   ? `Estas ${r.linhas.length} somam ${r.soma} (so as listadas); ` +
-                    `no recorte inteiro sao ${quantas} vendas. `
-                  : `Sao ${quantas} vendas e somam ${r.soma}. DIGA os dois ` +
+                    `no recorte inteiro sao ${quantas} ${oQueSao}. `
+                  : `Sao ${quantas} ${oQueSao} e somam ${r.soma}. DIGA os dois ` +
                     `numeros. ESSA SOMA E DE VENDA CONCLUIDA, e NAO e o ` +
                     `faturamento: o resumo (vendas_de_vendedora) responde um ` +
                     `valor MENOR porque desconta as devolucoes. Se os dois ` +
@@ -6074,6 +6192,39 @@ function textoDasPecasPorValor(
  * QUANDO ACABA, DIZ QUE ACABOU. Sem isso a agente ofereceria "os proximos"
  * de uma lista que terminou, e quem le pediria por nada.
  */
+/**
+ * O SUBSTANTIVO DA LISTA — 18/11/2026.
+ *
+ * ==========================================================================
+ * A FRASE DIZIA "VENDAS" PARA UMA LISTA DE DEVOLUCOES.
+ *
+ * As 13:39, em producao: *"quantas pecas devolvidas em Novembro de 2026"*.
+ * O texto entregue ao modelo trazia o rotulo certo ("Devolucoes") e, tres
+ * linhas abaixo, a soma com a palavra fixa:
+ *
+ *   "Sao 3 VENDAS e somam R$ 32.966,00."
+ *
+ * Dois substantivos para a mesma lista, um deles errado. O modelo nao
+ * repetiu nenhum dos dois: escolheu um terceiro, "pecas", e acertou o
+ * numero por sorte — os tres documentos tinham uma peca cada.
+ * ==========================================================================
+ */
+export function substantivoDaLista(
+  somente: 'DEVOLVIDAS' | 'TODAS' | undefined,
+  n: number,
+): string {
+  const um = n === 1;
+  if (somente === 'DEVOLVIDAS') return um ? 'devolução' : 'devoluções';
+  if (somente === 'TODAS') {
+    // SEM ESCOLHER UM DOS DOIS: a lista tem os dois tipos dentro, e
+    // chama-la de "vendas" e o defeito de 27/10 de volta.
+    return um
+      ? 'linha entre venda e devolução'
+      : 'linhas entre vendas e devoluções';
+  }
+  return um ? 'venda' : 'vendas';
+}
+
 export function faixaDaLista(
   pulados: number,
   mostrados: number,
@@ -6420,10 +6571,25 @@ function textoDaLeituraDeGestao(
   const total = (r as { total?: number }).total;
   const pulados = (r as { aPartirDe?: number }).aPartirDe ?? 0;
 
+  // ========================================================================
+  // O PERIODO ENTRA NO CABECALHO — 18/11/2026.
+  //
+  // Sem ele o modelo inventa a moldura: perguntada "quanto a Bianca vendeu
+  // esse mes", a agente respondeu "nos ultimos 30 dias" com os numeros
+  // certos de 01 a 18/11. Ela repassou os numeros exatamente como estavam,
+  // como manda a linha abaixo, e preencheu sozinha o que ninguem disse.
+  //
+  // Nem toda leitura tem recorte (agenda, carteira), entao ele e opcional.
+  // ========================================================================
+  const quando = r.periodo ? `, ${r.periodo}` : '';
+
   return (
-    `${r.vendedora}:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
+    `${r.vendedora}${quando}:\n${r.linhas.map((l) => `- ${l}`).join('\n')}\n\n` +
     faixaDaLista(pulados, r.linhas.length, total, opcoes) +
-    'Repasse os nomes, horarios e numeros exatamente como estao.'
+    'Repasse os nomes, horarios e numeros exatamente como estao.' +
+    (r.periodo
+      ? ' E DIGA O PERIODO que esta no cabecalho, com essas palavras: nao troque por "ultimos 30 dias", "este mes" nem nenhuma outra moldura sua.'
+      : '')
   );
 }
 

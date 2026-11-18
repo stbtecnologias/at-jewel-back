@@ -45,6 +45,7 @@ import type {
   GestaoEpocaHandler,
   GestaoPorMetalHandler,
   GestaoConsignacoesHandler,
+  GestaoDevolucoesHandler,
   GestaoValorDasVendasHandler,
   GestaoPorPedraHandler,
   GestaoQuemVendePedraHandler,
@@ -351,6 +352,7 @@ export interface FerramentasGestao {
   gestaoPorMetal: GestaoPorMetalHandler;
   gestaoValorDasVendas: GestaoValorDasVendasHandler;
   gestaoConsignacoes: GestaoConsignacoesHandler;
+  gestaoDevolucoes: GestaoDevolucoesHandler;
   gestaoPorTipo: GestaoPorTipoHandler;
   gestaoPorPedra: GestaoPorPedraHandler;
   gestaoQuemVendePedra: GestaoQuemVendePedraHandler;
@@ -413,6 +415,7 @@ export interface FerramentasGestao {
   gestaoPorMetalDisponivel?: boolean;
   gestaoValorDasVendasDisponivel?: boolean;
   gestaoConsignacoesDisponivel?: boolean;
+  gestaoDevolucoesDisponivel?: boolean;
   gestaoPorTipoDisponivel?: boolean;
   gestaoPorPedraDisponivel?: boolean;
   gestaoQuemVendePedraDisponivel?: boolean;
@@ -687,6 +690,7 @@ export class FerramentasGestaoService {
       gestaoPorMetalDisponivel: podeQuebrar,
       gestaoValorDasVendasDisponivel: podeQuebrar,
       gestaoConsignacoesDisponivel: podeQuebrar,
+      gestaoDevolucoesDisponivel: podeQuebrar,
       gestaoPorTipoDisponivel: podeQuebrar,
       gestaoPorPedraDisponivel: podeQuebrar,
       gestaoQuemVendePedraDisponivel: podeQuebrar,
@@ -745,30 +749,48 @@ export class FerramentasGestaoService {
         return { status: 'OK' as const, linhas };
       },
 
-      gestaoVendas: async ({ vendedora, periodo, de, ate }) =>
-        this.comVendedora(equipe, vendedora, async (id) => {
+      /**
+       * "Quanto a Bianca vendeu esse mês?" — e O PERÍODO VAI JUNTO.
+       *
+       * ================================================================
+       * UM BURACO NA INSTRUÇÃO VIRA UMA FRASE INVENTADA — 18/11/2026.
+       *
+       * Às 11:11 a agente respondeu *"a Bianca fez 6 vendas NOS ÚLTIMOS
+       * 30 DIAS"* para a pergunta *"quanto a Bianca vendeu esse mês?"*.
+       * Os números estavam certos e a janela também — `MES` é
+       * `setDate(1)`, do dia primeiro até agora. O que faltava era dizer
+       * QUAL janela foi usada: o texto que ia ao modelo tinha a linha e o
+       * nome, e mais nada.
+       *
+       * Ele repassou os números exatamente como estavam, e inventou a
+       * moldura. E a moldura inventada soa igual às verdadeiras.
+       *
+       * O CAMINHO AGORA É O MESMO DE "QUANTO A LOJA VENDEU": o
+       * `valorDasVendas` já devolve o rótulo do período e já aplica a
+       * venda limpa. O recorte vira uma lista de uma — o mesmo parâmetro
+       * que dá à gerente só o time dela.
+       * ================================================================
+       */
+      gestaoVendas: async ({ vendedora, periodo, de, ate }) => {
+        let rotulo = '';
+        const r = await this.comVendedora(equipe, vendedora, async (id) => {
           const datas = datasDeRecorte(de, ate);
-          const v = datas
-            ? await this.consultarVendas
-                .resumoEntre(datas.de, datas.ate, id)
-                // A MESMA REGRA DO OUTRO CAMINHO: sem isto, "as vendas da
-                // Camila em novembro" responderia um numero por periodo
-                // livre e outro por periodo nomeado. Ver `vendaLimpa`.
-                .then((r) => {
-                  const v = vendaLimpa(r);
-                  return {
-                    quantidade: v.quantidade,
-                    receita: v.valor,
-                    ticketMedio: v.ticketMedio,
-                  };
-                })
-            : await this.desempenho.vendas(id, periodo ?? 'SEMANA');
+          const v = await this.consultarVendas.valorDasVendas(
+            datas ? undefined : (periodo ?? 'MES'),
+            datas?.de,
+            datas?.ate,
+            undefined,
+            [id],
+          );
+          rotulo = v.periodo;
           if (v.quantidade === 0) return [];
           return [
             `${v.quantidade} ${v.quantidade === 1 ? 'venda' : 'vendas'}, ` +
-              `${moeda(v.receita)} em receita, ticket médio ${moeda(v.ticketMedio)}`,
+              `${moeda(v.bruto)}, ticket médio ${moeda(v.ticketMedio)}`,
           ];
-        }),
+        });
+        return rotulo ? { ...r, periodo: rotulo } : r;
+      },
 
       // ====================================================================
       // A ESTRATÉGIA DE VENDAS — RF38, 22/10/2026.
@@ -1311,6 +1333,41 @@ export class FerramentasGestaoService {
           status: 'OK' as const,
           linhas: linhasDeConsignacao(c),
           periodo: c.periodo,
+          escopo: escopoDaResposta,
+        };
+      },
+
+      /**
+       * "Quantas pecas devolvidas em novembro?" — 18/11/2026.
+       *
+       * NASCEU DE UMA TABELA QUE NINGUEM PEDIU. Ver `devolucoes.spec.ts`:
+       * a pergunta era um numero e a resposta veio com a listagem inteira
+       * atras, porque devolucao so existia dentro do
+       * `gestaoVendasDetalhadas`, que imprime sempre que e chamado.
+       *
+       * A MESMA TRAVA DA CONSIGNACAO: e movimento da loja.
+       */
+      gestaoDevolucoes: async ({ periodo, de, ate }) => {
+        if (!podeQuebrar) {
+          return {
+            status: 'INDISPONIVEL' as const,
+            linhas: [],
+            periodo: '',
+            escopo: escopoDaResposta,
+          };
+        }
+        const datas = datasDeRecorte(de, ate);
+        const d = await this.consultarVendas.devolucoes(
+          datas ? undefined : periodo,
+          datas?.de,
+          datas?.ate,
+          undefined,
+          recorteDeVendedoras,
+        );
+        return {
+          status: 'OK' as const,
+          linhas: linhasDeDevolucao(d),
+          periodo: d.periodo,
           escopo: escopoDaResposta,
         };
       },
@@ -5066,11 +5123,29 @@ function tituloDeVendas(
   // O PAPEL DIZ O QUE LEVA. "Vendas da Ylka" com cinco devolucoes dentro
   // seria o mesmo defeito da conversa, agora impresso.
   const base = tituloBaseDeVendas(cliente, vendedora, documento, empresa);
+  // ====================================================================
+  // A ÂNCORA `^` DEIXAVA PASSAR O CASO MAIS COMUM — 18/11/2026.
+  //
+  // Em produção, às 13:39: *"quantas peças devolvidas em novembro"* saiu
+  // num papel intitulado "Listagem de Vendas — novembro de 2026", com as
+  // três linhas "Devolvida" dentro. A troca existia desde 27/10 e estava
+  // presa a `^Vendas` — e o título padrão, sem recorte de nome, é
+  // "LISTAGEM de Vendas", que não começa com "Vendas".
+  //
+  // A proteção escrita para impedir exatamente este defeito só funcionava
+  // quando havia cliente ou vendedora no título. A pergunta geral, que é
+  // a mais comum, passava batido.
+  //
+  // Sem âncora, e com a forma singular junto: o título de um documento é
+  // "Venda 1157", e ele também precisa virar "Devolução 1157".
+  // ====================================================================
+  const trocandoAPalavra = (plural: string, singular: string) =>
+    base.replace(/\bVendas?\b/, (m) => (m === 'Venda' ? singular : plural));
   const comStatus =
     quando?.somente === 'DEVOLVIDAS'
-      ? base.replace(/^Vendas/, 'Devoluções')
+      ? trocandoAPalavra('Devoluções', 'Devolução')
       : quando?.somente === 'TODAS'
-        ? base.replace(/^Vendas/, 'Vendas e devoluções')
+        ? trocandoAPalavra('Vendas e devoluções', 'Venda e devolução')
         : base;
 
   return tituloComRecorte(
@@ -5314,20 +5389,102 @@ function linhaDaVendedoraComPedra(v: {
  * subtracao daria saldo negativo de mercadoria, que nao quer dizer nada.
  * ==========================================================================
  */
+/** "69 documentos" / "1 documento" — a unidade sempre escrita. */
+function docs(n: number): string {
+  return `${n} ${n === 1 ? 'documento' : 'documentos'}`;
+}
+
+/** "294 peças" / "1 peça". */
+function pecasDe(n: number): string {
+  return `${n} ${n === 1 ? 'peça' : 'peças'}`;
+}
+
 function linhasDeConsignacao(c: {
   saidas: { quantidade: number; valor: number; pecas: number };
   retornos: { quantidade: number; valor: number; pecas: number };
+  emAberto: { pecas: number; valor: number; doPeriodo: number };
 }): string[] {
+  // A UNIDADE TEM DE ESTAR ESCRITA — 18/11/2026.
+  //
+  // A linha saía como "Saíram em consignação: 69 — R$ 26.892.660,00", e a
+  // agente escreveu "69 PEÇAS". São 69 DOCUMENTOS; em peças foram 294. O
+  // campo estava vazio e o modelo o preencheu, como no "últimos 30 dias".
   const linhas: string[] = [];
   if (c.saidas.quantidade > 0) {
     linhas.push(
-      `Saíram em consignação: ${c.saidas.quantidade} — ${moeda(c.saidas.valor)}`,
+      `Saíram em consignação: ${docs(c.saidas.quantidade)} — ` +
+        `${pecasDe(c.saidas.pecas)}, ${moeda(c.saidas.valor)}`,
     );
   }
   if (c.retornos.quantidade > 0) {
-    linhas.push(`Voltaram: ${c.retornos.quantidade} — ${moeda(c.retornos.valor)}`);
+    linhas.push(
+      `Voltaram: ${docs(c.retornos.quantidade)} — ` +
+        `${pecasDe(c.retornos.pecas)}, ${moeda(c.retornos.valor)}`,
+    );
+  }
+  // ========================================================================
+  // ESTA LINHA É DE OUTRA NATUREZA, E TEM DE DIZER ISSO DUAS VEZES.
+  //
+  // "69 saíram, 80 voltaram, 146 ainda fora" não fecha na cabeça de quem
+  // lê — foi a leitura do Lucas em 18/11, e ele tem razão. São três
+  // grandezas diferentes:
+  //
+  //   69 e 80  -> DOCUMENTOS, do PERÍODO
+  //   146      -> PEÇAS, do HISTÓRICO INTEIRO, posição de HOJE
+  //
+  // As 146 vinham de 11/2026 (110), 10/2026 (9), 07/2026 (12) e até de
+  // 02/2024. Por isso o rótulo carrega "hoje" E "todo o histórico": sem o
+  // primeiro alguém soma o em aberto de dois meses; sem o segundo, tenta
+  // reconciliar com as duas linhas de cima.
+  // ========================================================================
+  // VOLTOU MAIS DO QUE SAIU é normal, e precisa ser dito: a devolução de
+  // novembro pode ser de peça que saiu em outubro. Sem esta linha, 294
+  // saíram e 309 voltaram parece erro de conta — foi a leitura do Lucas.
+  if (c.retornos.pecas > c.saidas.pecas) {
+    linhas.push(
+      'Voltou mais do que saiu porque parte do que voltou tinha saído em meses anteriores: as duas linhas acima são o movimento do período, e não um saldo.',
+    );
+  }
+  if (c.emAberto.pecas > 0) {
+    // A PONTE, e é ela que faz os três números fecharem: das que estão
+    // fora, quantas saíram no período perguntado e quantas vêm de antes.
+    const deAntes = c.emAberto.pecas - c.emAberto.doPeriodo;
+    const quebra =
+      deAntes > 0
+        ? ` — sendo ${c.emAberto.doPeriodo} que saíram neste período e ${deAntes} de meses anteriores`
+        : '';
+    linhas.push(
+      `Ainda fora, hoje (todo o histórico): ${pecasDe(c.emAberto.pecas)}, ` +
+        `${moeda(c.emAberto.valor)}${quebra}`,
+    );
   }
   return linhas;
+}
+
+/**
+ * A DEVOLUCAO EM UMA LINHA, COM AS DUAS UNIDADES ESCRITAS — 18/11/2026.
+ *
+ * ==========================================================================
+ * "3 PECAS DEVOLVIDAS" ERAM 3 DOCUMENTOS, E ACERTOU POR SORTE.
+ *
+ * Os tres documentos de novembro tinham uma peca cada, entao a palavra
+ * errada deu no numero certo. Em agosto de 2026 foram 7 documentos e 8
+ * pecas — ali a mesma frase teria mentido.
+ *
+ * E o padrao do dia inteiro: campo vazio na ferramenta vira frase inventada
+ * pela agente. O conserto nunca e instruir mais; e escrever a unidade.
+ * Mesmo desenho do `linhasDeConsignacao`.
+ * ==========================================================================
+ */
+function linhasDeDevolucao(d: {
+  documentos: number;
+  pecas: number;
+  valor: number;
+}): string[] {
+  if (d.documentos === 0) return [];
+  return [
+    `Devoluções de venda: ${docs(d.documentos)} — ${pecasDe(d.pecas)}, ${moeda(d.valor)}`,
+  ];
 }
 
 function linhasDoValor(v: {
