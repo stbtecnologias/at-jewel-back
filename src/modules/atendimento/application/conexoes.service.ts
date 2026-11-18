@@ -116,6 +116,17 @@ export class ConexoesService {
    * 404 e nao 400 de proposito: para quem chama, uma sessao que nao e nossa e
    * uma sessao que nao existe.
    */
+  /**
+   * ESTA SESSAO E DE AGENTE DA CASA? — 18/11/2026.
+   *
+   * Delega ao `SessoesDaCasaService`, que ja sabia a resposta, para que o
+   * controller nao precise injetar mais um colaborador so para perguntar.
+   * E o mesmo `papel === LOJA` que a tela ja recebe.
+   */
+  ehDeAgente(sessao: string): boolean {
+    return this.sessoes.ehDaCasa(sessao);
+  }
+
   async exigirValida(sessao: string): Promise<void> {
     if (this.sessoes.ehDaCasa(sessao)) return;
 

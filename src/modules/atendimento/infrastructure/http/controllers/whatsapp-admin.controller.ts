@@ -1,8 +1,19 @@
-import { Controller, Get, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  ForbiddenException,
+  Get,
+  Param,
+  Post,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import { JwtAuthGuard } from '../../../../auth/infrastructure/http/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../../../auth/infrastructure/http/guards/permissions.guard';
 import { Permissions } from '../../../../auth/infrastructure/http/decorators/permissions.decorator';
+import { PermissionsService } from '../../../../auth/application/permissions.service';
 import { ConexoesService } from '../../../application/conexoes.service';
 import { WahaAdminClient } from '../../whatsapp/waha-admin.client';
 
@@ -25,7 +36,43 @@ export class WhatsappAdminController {
   constructor(
     private readonly waha: WahaAdminClient,
     private readonly conexoes: ConexoesService,
+    private readonly permissoes: PermissionsService,
   ) {}
+
+  /**
+   * A SEGUNDA PORTA, E SO PARA OS NUMEROS DA CASA — 18/11/2026.
+   *
+   * ====================================================================
+   * ELA ADMINISTRA AS VENDEDORAS; AS AGENTES SAO OUTRA COISA.
+   *
+   * Derrubar a Anastasia cala a agente para a loja inteira, e liga-la e
+   * escanear o QR com o telefone da empresa — o cadastro em si. Pedido
+   * do Lucas em 18/11, depois de a gerente de vendas ganhar o
+   * conectar/desconectar das vendedoras.
+   *
+   * POR QUE AQUI E NAO NUM `@Permissions`: a regra depende da SESSAO que
+   * chega no caminho, e o decorador so enxerga a rota. As tres rotas
+   * seguem exigindo `whatsapp:manage` pela classe; esta e uma segunda
+   * porta, atravessada so quando a sessao e da casa.
+   *
+   * ANTES DE CHAMAR O WAHA, sempre: o logout nao tem volta, e recusar
+   * depois de derrubar o numero nao desfaz nada.
+   * ====================================================================
+   */
+  private async exigirPoderSobreAgente(
+    sessao: string,
+    req: { user?: { role?: string } },
+  ): Promise<void> {
+    if (!this.conexoes.ehDeAgente(sessao)) return;
+
+    const papel = req.user?.role;
+    if (papel && (await this.permissoes.possui(papel, 'whatsapp:agentes'))) {
+      return;
+    }
+    throw new ForbiddenException(
+      'Este número é de uma agente da loja. Fale com quem administra o WhatsApp.',
+    );
+  }
 
   /**
    * A lista da tela: a loja e uma linha por vendedora ativa, com o estado de
@@ -46,15 +93,23 @@ export class WhatsappAdminController {
 
   /** Inicia/garante a sessao. O front chama ao clicar em "Conectar". */
   @Post('conexoes/:sessao/conectar')
-  async conectar(@Param('sessao') sessao: string) {
+  async conectar(
+    @Param('sessao') sessao: string,
+    @Req() req: { user?: { role?: string } },
+  ) {
     await this.conexoes.exigirValida(sessao);
+    await this.exigirPoderSobreAgente(sessao, req);
     return this.waha.conectar(sessao);
   }
 
   /** QR code (data URL) para escanear. Valido enquanto status = SCAN_QR_CODE. */
   @Get('conexoes/:sessao/qr')
-  async qr(@Param('sessao') sessao: string) {
+  async qr(
+    @Param('sessao') sessao: string,
+    @Req() req: { user?: { role?: string } },
+  ) {
     await this.conexoes.exigirValida(sessao);
+    await this.exigirPoderSobreAgente(sessao, req);
     return { qr: await this.waha.qrDataUrl(sessao) };
   }
 
@@ -158,8 +213,12 @@ export class WhatsappAdminController {
 
   /** Desconecta o numero (logout). */
   @Post('conexoes/:sessao/desconectar')
-  async desconectar(@Param('sessao') sessao: string) {
+  async desconectar(
+    @Param('sessao') sessao: string,
+    @Req() req: { user?: { role?: string } },
+  ) {
     await this.conexoes.exigirValida(sessao);
+    await this.exigirPoderSobreAgente(sessao, req);
     await this.waha.desconectar(sessao);
     return { ok: true };
   }

@@ -116,6 +116,26 @@ export const PERMISSOES: PermissaoDef[] = [
   // ====================================================================
   { chave: 'whatsapp:manage', label: 'Gerenciar conexões do WhatsApp', grupo: 'Administração' },
   { chave: 'whatsapp:conversas', label: 'Ler as conversas do WhatsApp', grupo: 'Administração' },
+  // ====================================================================
+  // O NUMERO DA AGENTE NAO SE MEXE DE QUALQUER LUGAR — 18/11/2026.
+  //
+  // Pedido do Lucas: *"ela vai conectar e desconectar as vendedoras.. no
+  // caso de agentes da loja.. acredito que ela nao pode tbm cadastrar..
+  // apenas quem tiver permissao"*.
+  //
+  // O `whatsapp:manage` continua sendo a chave de administrar conexao, e
+  // ela vale para as VENDEDORAS: religar quem caiu, desligar quem
+  // precisa. Os numeros DA CASA sao outra natureza — derrubar um deles
+  // cala a agente para a loja inteira, e liga-lo e escanear o QR com o
+  // telefone da empresa, que e o cadastro em si.
+  //
+  // ESTA CHAVE NAO CABE NUM `@Permissions`: a regra depende da SESSAO, e
+  // o decorador so enxerga a rota. Ela e checada no corpo das tres rotas
+  // de escrita, como segunda porta. Ver `whatsapp-agentes.permissao.spec`.
+  //
+  // NASCE SEM NENHUM PAPEL MARCADO (RN-03), como a de 17/11.
+  // ====================================================================
+  { chave: 'whatsapp:agentes', label: 'Conectar e desconectar os números das agentes', grupo: 'Administração' },
   { chave: 'usuarios:manage', label: 'Gerenciar usuários', grupo: 'Administração' },
   { chave: 'roles:manage', label: 'Gerenciar papéis e permissões', grupo: 'Administração' },
   { chave: 'prompts:manage', label: 'Editar prompts das agentes', grupo: 'Administração' },
