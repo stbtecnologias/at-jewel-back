@@ -1,11 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-// A REGRA DA RECEITA VEM DO SHARED. A quebra por empresa nasceu em 02/10,
-// quando o fragmento ja existia; as consultas antigas deste arquivo seguem
-// com a condicao escrita a mao, e sao de 25/09.
+// A REGRA DA VENDA VEM DO SHARED, EM TODAS AS CONSULTAS DESTE ARQUIVO.
+// Ate 18/11/2026 as antigas (de 25/09) filtravam `m.saida` a mao, e foi por
+// isso que a consignacao passou tres anos contando como venda: o helper
+// existia e a maioria das consultas nao passava por ele. Ver
+// `sem-filtro-cru.spec.ts`, que agora quebra a suite se alguem voltar atras.
 import {
   devolucaoEfetiva,
+  ehConsignacao,
+  ehDevolucao,
+  ehVenda,
   receitaLiquida,
   vendaEfetiva,
 } from '../../../../../../shared/database/sql/movimentacao-como-venda';
@@ -90,8 +95,13 @@ export class VendasMovimentacaoRepository
     // As outras onze consultas desta classe sempre filtraram `m.saida`;
     // esta era a unica fora da regra. Ver `FiltroVendasDetalhadas.status`.
     // ====================================================================
-    if (filtro.status === 'DEVOLVIDAS') conds.push('m.entrada');
-    else if (filtro.status !== 'TODAS') conds.push('m.saida');
+    // CONSIGNACAO NAO E NENHUM DOS DOIS, nem mesmo em 'TODAS' — 18/11/2026.
+    // 'TODAS' significa venda E devolucao, e nao "tudo que ha na tabela": as
+    // 149 consignacoes de novembro apareciam aqui marcadas "Concluída".
+    if (filtro.status === 'DEVOLVIDAS') conds.push(ehDevolucao('m'));
+    else if (filtro.status === 'TODAS') {
+      conds.push(`(${ehVenda('m')} OR ${ehDevolucao('m')})`);
+    } else conds.push(ehVenda('m'));
 
     if (filtro.janela) {
       params.push(filtro.janela.de, filtro.janela.ate);
@@ -138,7 +148,14 @@ export class VendasMovimentacaoRepository
              c.nome                          AS cliente,
              v.nome                          AS vendedora,
              m.valor                         AS valor,
-             CASE WHEN m.entrada THEN 'devolvida' ELSE 'concluida' END AS status,
+             -- A CONSIGNACAO TAMBEM TEM A BANDEIRA DE ENTRADA, e sem o
+             -- primeiro ramo ela sairia rotulada "Devolvida" — foi o que a
+             -- gestao viu em 17/11. Hoje o WHERE ja a exclui; o ramo fica
+             -- porque um filtro futuro pode traze-la, e rotular errado e
+             -- pior do que nao mostrar.
+             CASE WHEN ${ehConsignacao('m')} THEN 'consignacao'
+                  WHEN ${ehDevolucao('m')}   THEN 'devolvida'
+                  ELSE                            'concluida' END AS status,
              -- NUMERO AQUI, TEXTO LA. Ver o comentario em ItemDaVenda.
              (SELECT jsonb_agg(
                        jsonb_build_object(
@@ -242,13 +259,13 @@ export class VendasMovimentacaoRepository
     >(
       `
       SELECT
-        count(*) FILTER (WHERE m.saida)                       AS quantidade,
-        COALESCE(sum(m.valor) FILTER (WHERE m.saida), 0)      AS valor_vendas,
-        count(*) FILTER (WHERE m.entrada)                     AS devolucoes,
-        COALESCE(sum(m.valor) FILTER (WHERE m.entrada), 0)    AS valor_devolvido,
+        count(*) FILTER (WHERE ${ehVenda('m')})                       AS quantidade,
+        COALESCE(sum(m.valor) FILTER (WHERE ${ehVenda('m')}), 0)      AS valor_vendas,
+        count(*) FILTER (WHERE ${ehDevolucao('m')})                     AS devolucoes,
+        COALESCE(sum(m.valor) FILTER (WHERE ${ehDevolucao('m')}), 0)    AS valor_devolvido,
         -- CLIENTES DISTINTOS, na mesma varredura: quem comprou tres vezes
         -- conta 1 aqui e 3 na quantidade, e as duas perguntas existem.
-        count(DISTINCT m.cliente_id) FILTER (WHERE m.saida)   AS clientes
+        count(DISTINCT m.cliente_id) FILTER (WHERE ${ehVenda('m')})   AS clientes
         FROM movimentacoes m
        WHERE m.ativo
          AND m.data_movimentacao >= $1
@@ -303,15 +320,15 @@ export class VendasMovimentacaoRepository
       SELECT v.id                                                AS vendedora_id,
              v.nome                                              AS nome,
              v.codigo_erp                                        AS codigo_erp,
-             count(*) FILTER (WHERE m.saida)                     AS quantidade,
-             COALESCE(sum(m.valor) FILTER (WHERE m.saida), 0)
-               - COALESCE(sum(m.valor) FILTER (WHERE m.entrada), 0) AS valor,
+             count(*) FILTER (WHERE ${ehVenda('m')})                     AS quantidade,
+             COALESCE(sum(m.valor) FILTER (WHERE ${ehVenda('m')}), 0)
+               - COALESCE(sum(m.valor) FILTER (WHERE ${ehDevolucao('m')}), 0) AS valor,
              -- AS PECAS SAO AS VENDIDAS, e o que voltou vem ao lado em vez de
              -- abater (02/10/2026). Abatendo, a Ylka era "2 vendas, 0 pecas":
              -- ela vendeu duas, e as duas que voltaram eram de outro mes.
-             COALESCE(sum(qi.qtd) FILTER (WHERE m.saida), 0)       AS pecas,
-             COALESCE(sum(qi.qtd) FILTER (WHERE m.entrada), 0)     AS devolvidas,
-             COALESCE(sum(m.valor) FILTER (WHERE m.entrada), 0)    AS valor_devolvido,
+             COALESCE(sum(qi.qtd) FILTER (WHERE ${ehVenda('m')}), 0)       AS pecas,
+             COALESCE(sum(qi.qtd) FILTER (WHERE ${ehDevolucao('m')}), 0)     AS devolvidas,
+             COALESCE(sum(m.valor) FILTER (WHERE ${ehDevolucao('m')}), 0)    AS valor_devolvido,
              -- A QUEBRA POR TIPO, numa subconsulta por vendedora (02/10/2026).
              -- Agrupar por familia no mesmo GROUP BY daria uma linha por tipo,
              -- e a vendedora apareceria varias vezes no ranking.
@@ -332,7 +349,7 @@ export class VendasMovimentacaoRepository
                     LEFT JOIN produtos p ON p.id = i.produto_id
                    WHERE mm.vendedora_id = v.id
                      AND mm.ativo
-                     AND mm.saida
+                     AND ${ehVenda('mm')}
                      AND mm.data_movimentacao >= $1
                      AND mm.data_movimentacao <= $2
                    GROUP BY 1
@@ -351,7 +368,7 @@ export class VendasMovimentacaoRepository
                     LEFT JOIN produtos p ON p.id = i.produto_id
                    WHERE mm.vendedora_id = v.id
                      AND mm.ativo
-                     AND mm.entrada
+                     AND ${ehDevolucao('mm')}
                      AND mm.data_movimentacao >= $1
                      AND mm.data_movimentacao <= $2
                    GROUP BY 1
@@ -369,7 +386,7 @@ export class VendasMovimentacaoRepository
          AND m.data_movimentacao >= $1
          AND m.data_movimentacao <= $2
        GROUP BY v.id, v.nome, v.codigo_erp
-      HAVING count(*) FILTER (WHERE m.saida) > 0
+      HAVING count(*) FILTER (WHERE ${ehVenda('m')}) > 0
        ORDER BY valor DESC
        LIMIT $3
       `,
@@ -430,7 +447,7 @@ export class VendasMovimentacaoRepository
               COALESCE(sum(i.quantidade * i.valor_unitario), 0) AS valor
          FROM movimentacoes_itens i
          JOIN movimentacoes m ON m.id = i.movimentacao_id
-         ${ONDE} AND m.saida`,
+         ${ONDE} AND ${ehVenda('m')}`,
       p,
     );
 
@@ -440,7 +457,7 @@ export class VendasMovimentacaoRepository
       `SELECT COALESCE(sum(i.quantidade), 0) AS pecas
          FROM movimentacoes_itens i
          JOIN movimentacoes m ON m.id = i.movimentacao_id
-         ${ONDE} AND m.entrada`,
+         ${ONDE} AND ${ehDevolucao('m')}`,
       p,
     );
 
@@ -453,7 +470,7 @@ export class VendasMovimentacaoRepository
          FROM movimentacoes_itens i
          JOIN movimentacoes m ON m.id = i.movimentacao_id
          LEFT JOIN vendedoras v ON v.id = m.vendedora_id
-         ${ONDE} AND m.saida
+         ${ONDE} AND ${ehVenda('m')}
         GROUP BY v.nome
         ORDER BY pecas DESC, valor DESC`,
       p,
@@ -484,7 +501,7 @@ export class VendasMovimentacaoRepository
          LEFT JOIN produtos pr  ON pr.id = i.produto_id
          LEFT JOIN clientes c   ON c.id = m.cliente_id
          LEFT JOIN vendedoras v ON v.id = m.vendedora_id
-         ${ONDE} AND m.saida
+         ${ONDE} AND ${ehVenda('m')}
         -- O DESEMPATE POR DATA E CODIGO existe para paginar: so por valor,
         -- duas pecas do mesmo preco trocam de lugar entre as paginas e uma
         -- delas some. Mesma licao de 05/10.
@@ -545,7 +562,7 @@ export class VendasMovimentacaoRepository
         JOIN movimentacoes m ON m.id = i.movimentacao_id
         JOIN produtos p      ON p.id = i.produto_id
        WHERE m.ativo
-         AND m.saida
+         AND ${ehVenda('m')}
          AND i.ativo
          AND m.data_movimentacao >= $1
          AND m.data_movimentacao <= $2
@@ -607,7 +624,7 @@ export class VendasMovimentacaoRepository
         JOIN movimentacoes m ON m.id = i.movimentacao_id
         JOIN produtos p      ON p.id = i.produto_id
        WHERE m.ativo
-         AND m.saida
+         AND ${ehVenda('m')}
          AND i.ativo
          AND ($1::timestamptz IS NULL OR m.data_movimentacao >= $1)
          AND ($2::timestamptz IS NULL OR m.data_movimentacao <= $2)
@@ -684,7 +701,7 @@ export class VendasMovimentacaoRepository
         JOIN movimentacoes m ON m.id = i.movimentacao_id
         JOIN produtos p      ON p.id = i.produto_id
        WHERE m.ativo
-         AND m.saida
+         AND ${ehVenda('m')}
          AND i.ativo
          AND (
               $1::timestamptz IS NULL
@@ -768,7 +785,7 @@ export class VendasMovimentacaoRepository
         JOIN produtos p      ON p.id = i.produto_id
         LEFT JOIN vendedoras v ON v.id = m.vendedora_id
        WHERE m.ativo
-         AND m.saida
+         AND ${ehVenda('m')}
          AND i.ativo
          AND (
               $1::timestamptz IS NULL
@@ -857,7 +874,7 @@ export class VendasMovimentacaoRepository
        WHERE m.ativo
          AND i.ativo
          -- A LINHA QUE DEFINE A PERGUNTA. Ver o bloco acima.
-         AND m.saida
+         AND ${ehVenda('m')}
          AND m.data_movimentacao >= $1
          AND m.data_movimentacao <= $2
          AND (
@@ -883,8 +900,8 @@ export class VendasMovimentacaoRepository
       -- QUEM SO DEVOLVEU NO PERIODO FICA DE FORA: sem esta linha ela
       -- apareceria com quantidade negativa no ranking de "quem mais vende",
       -- que e verdade sobre o saldo e absurdo como resposta.
-      HAVING COALESCE(sum(i.quantidade) FILTER (WHERE m.saida), 0)
-               - COALESCE(sum(i.quantidade) FILTER (WHERE m.entrada), 0) > 0
+      HAVING COALESCE(sum(i.quantidade) FILTER (WHERE ${ehVenda('m')}), 0)
+               - COALESCE(sum(i.quantidade) FILTER (WHERE ${ehDevolucao('m')}), 0) > 0
        ORDER BY quantidade DESC, valor DESC
        LIMIT $4
       `,
@@ -933,21 +950,21 @@ export class VendasMovimentacaoRepository
       SELECT extract(year from m.data_movimentacao)::int AS ano,
 
              COALESCE(sum(m.valor) FILTER (
-               WHERE m.saida
+               WHERE ${ehVenda('m')}
                  AND ($2::int IS NULL OR extract(day from m.data_movimentacao) <= $2::int)
              ), 0)
              - COALESCE(sum(m.valor) FILTER (
-               WHERE m.entrada
+               WHERE ${ehDevolucao('m')}
                  AND ($2::int IS NULL OR extract(day from m.data_movimentacao) <= $2::int)
              ), 0) AS receita,
 
              count(*) FILTER (
-               WHERE m.saida
+               WHERE ${ehVenda('m')}
                  AND ($2::int IS NULL OR extract(day from m.data_movimentacao) <= $2::int)
              ) AS quantidade,
 
-             COALESCE(sum(m.valor) FILTER (WHERE m.saida), 0)
-             - COALESCE(sum(m.valor) FILTER (WHERE m.entrada), 0) AS receita_fechada
+             COALESCE(sum(m.valor) FILTER (WHERE ${ehVenda('m')}), 0)
+             - COALESCE(sum(m.valor) FILTER (WHERE ${ehDevolucao('m')}), 0) AS receita_fechada
 
         FROM movimentacoes m
        WHERE m.ativo
@@ -988,11 +1005,11 @@ export class VendasMovimentacaoRepository
     >(
       `
       SELECT extract(year from m.data_movimentacao)::int AS ano,
-             COALESCE(sum(m.valor) FILTER (WHERE m.saida), 0)
-             - COALESCE(sum(m.valor) FILTER (WHERE m.entrada), 0) AS receita,
-             count(*) FILTER (WHERE m.saida) AS quantidade,
-             COALESCE(sum(m.valor) FILTER (WHERE m.saida), 0)
-             - COALESCE(sum(m.valor) FILTER (WHERE m.entrada), 0) AS receita_fechada
+             COALESCE(sum(m.valor) FILTER (WHERE ${ehVenda('m')}), 0)
+             - COALESCE(sum(m.valor) FILTER (WHERE ${ehDevolucao('m')}), 0) AS receita,
+             count(*) FILTER (WHERE ${ehVenda('m')}) AS quantidade,
+             COALESCE(sum(m.valor) FILTER (WHERE ${ehVenda('m')}), 0)
+             - COALESCE(sum(m.valor) FILTER (WHERE ${ehDevolucao('m')}), 0) AS receita_fechada
         FROM movimentacoes m
        WHERE m.ativo
          AND (extract(month from m.data_movimentacao),
@@ -1052,7 +1069,7 @@ export class VendasMovimentacaoRepository
          WHERE m.ativo
            AND i.ativo
            -- A LINHA QUE DEFINE A PERGUNTA. Ver o bloco acima.
-           AND m.saida
+           AND ${ehVenda('m')}
            AND extract(month from m.data_movimentacao) = $1
            AND (
              -- O TIPO DA PECA, E NAO A COLUNA "familia" — 16/11/2026.
