@@ -1,6 +1,9 @@
 import {
   STATUS_DE_MOVIMENTACAO,
   devolucaoEfetiva,
+  ehConsignacao,
+  ehDevolucao,
+  ehVenda,
   formaPagamentoDe,
   itemAssinado,
   receitaLiquida,
@@ -59,20 +62,39 @@ describe('movimentacao lida como venda — o fragmento', () => {
     it('SUBTRAI a devolucao — e e isto que alinha a tela ao WhatsApp', () => {
       const sql = semEspacos(receitaLiquida('m'));
 
-      expect(sql).toContain('- COALESCE(sum(m.valor) FILTER (WHERE m.entrada AND m.ativo), 0)');
-      expect(sql.startsWith('COALESCE(sum(m.valor) FILTER (WHERE m.saida AND m.ativo), 0)')).toBe(
-        true,
+      expect(sql).toContain(
+        '- COALESCE(sum(m.valor) FILTER (WHERE m.entrada AND NOT m.saida AND m.ativo), 0)',
       );
+      expect(
+        sql.startsWith(
+          'COALESCE(sum(m.valor) FILTER (WHERE m.saida AND NOT m.entrada AND m.ativo), 0)',
+        ),
+      ).toBe(true);
+    });
+
+    /**
+     * A CONSIGNACAO SE CANCELAVA, e por isso a receita ficou certa tres anos.
+     *
+     * Ela entrava somando (tem `saida`) e subtraindo (tem `entrada`), no mesmo
+     * valor. O numero final nao mudou com esta correcao — R$ 1.860.578 antes e
+     * depois, em 01 a 17/11. O que mudou foi tudo o mais: contagem, bruto,
+     * ticket, lista.
+     */
+    it('a consignacao nao entra em nenhum dos dois lados', () => {
+      const sql = semEspacos(receitaLiquida('m'));
+
+      expect(sql.match(/NOT m\.entrada/g)).toHaveLength(1);
+      expect(sql.match(/NOT m\.saida/g)).toHaveLength(1);
     });
 
     it('a saida entra positiva e a entrada negativa, nunca o contrario', () => {
       const sql = semEspacos(receitaLiquida());
-      const iSaida = sql.indexOf('m.saida');
       const iMenos = sql.indexOf(' - ');
-      const iEntrada = sql.indexOf('m.entrada');
-
-      expect(iSaida).toBeLessThan(iMenos);
-      expect(iMenos).toBeLessThan(iEntrada);
+      // O lado positivo abre com `m.saida`; o negativo, depois do menos, abre
+      // com `m.entrada`. As negacoes aparecem nos dois lados, entao a prova e
+      // pela ABERTURA de cada parcela, e nao pela primeira ocorrencia.
+      expect(sql.slice(0, iMenos)).toContain('WHERE m.saida AND NOT m.entrada');
+      expect(sql.slice(iMenos)).toContain('WHERE m.entrada AND NOT m.saida');
     });
 
     it('o alias e parametro — dentro da CTE a tabela se chama `f`', () => {
@@ -102,6 +124,22 @@ describe('movimentacao lida como venda — o fragmento', () => {
 
     it('devolucao entra negativa', () => {
       expect(semEspacos(valorAssinado('m'))).toContain('WHEN m.entrada THEN -m.valor');
+    });
+
+    /**
+     * O RAMO DA CONSIGNACAO VEM ANTES DO DA DEVOLUCAO, e a ordem e a regra.
+     *
+     * Consignacao tem `entrada` ligada. Com o ramo depois, ela cairia no da
+     * devolucao e entraria NEGATIVA na serie mensal — pior que o defeito
+     * antigo, em que ela ao menos se cancelava.
+     */
+    it('consignacao vale ZERO, e o ramo vem antes do da devolucao', () => {
+      const sql = semEspacos(valorAssinado('m'));
+
+      expect(sql).toContain('WHEN m.saida AND m.entrada THEN 0');
+      expect(sql.indexOf('m.saida AND m.entrada')).toBeLessThan(
+        sql.indexOf('WHEN m.entrada THEN'),
+      );
     });
 
     it('da o MESMO total que a receita agregada', () => {
@@ -157,6 +195,22 @@ describe('movimentacao lida como venda — o fragmento', () => {
       expect(semEspacos(itemAssinado('m', 'i'))).toContain('WHEN NOT m.ativo THEN 0');
     });
 
+    /**
+     * A PECA CONSIGNADA NAO CONTA PARA A META, e isto muda metas passadas.
+     *
+     * Tres de cada quatro pecas vendidas passaram antes por uma consignacao
+     * (1.591 de 2.183, medido em 18/11). Contar as duas pernas fazia a mesma
+     * peca bater meta duas vezes.
+     */
+    it('a peca em consignacao vale ZERO, e o ramo vem antes do da devolucao', () => {
+      const sql = semEspacos(itemAssinado('m', 'i'));
+
+      expect(sql).toContain('WHEN m.saida AND m.entrada THEN 0');
+      expect(sql.indexOf('m.saida AND m.entrada')).toBeLessThan(
+        sql.indexOf('WHEN m.entrada THEN'),
+      );
+    });
+
     it('os dois aliases sao parametro — a movimentacao da o sinal, o item o valor', () => {
       const sql = itemAssinado('mov', 'it');
 
@@ -166,15 +220,87 @@ describe('movimentacao lida como venda — o fragmento', () => {
     });
   });
 
-  describe('venda e devolucao efetivas', () => {
-    it('as duas exigem `ativo`', () => {
-      expect(vendaEfetiva('m')).toBe('m.saida AND m.ativo');
-      expect(devolucaoEfetiva('m')).toBe('m.entrada AND m.ativo');
+  /**
+   * CONSIGNACAO NAO E VENDA NEM DEVOLUCAO — 18/11/2026.
+   *
+   * ========================================================================
+   * UMA CHAVE CONTAVA A MESMA JOIA DUAS VEZES.
+   *
+   * O ERP tem QUATRO operacoes, e as bandeiras as seguem sem excecao em 8.240
+   * documentos:
+   *
+   *   VENDA ................... saida, sem entrada ...... 1.729 docs
+   *   DEVOLUCAO DE VENDA ...... entrada, sem saida ......   129 docs
+   *   CONSIGNACAO ............. AS DUAS ................. 2.822 docs
+   *   RETORNO DE CONSIGNACAO .. AS DUAS ................. 3.560 docs
+   *
+   * Ate aqui `vendaEfetiva` era so `saida AND ativo`, entao toda consignacao
+   * entrava como venda — e, por ter `entrada` tambem, entrava como devolucao
+   * no mesmo folego. Em 01 a 17/11/2026 isso deu "178 vendas, R$ 54.536.432"
+   * onde ha 29 vendas e R$ 1.893.544. A RECEITA ficava certa por acidente: a
+   * consignacao somava de um lado e subtraia do outro, cancelando-se.
+   *
+   * A REGRA E A BANDEIRA, E NAO O NOME DA OPERACAO. O nome pode virar
+   * "REMESSA" ou "CONDICIONAL" amanha; "saiu e entrou ao mesmo tempo" descreve
+   * o que a coisa E. E e a mesma leitura que `Movimentacao.pontaDoTerceiro`
+   * faz desde sempre: `if (props.saida === props.entrada) return null`.
+   * ========================================================================
+   */
+  describe('os tres conceitos: venda, devolucao e consignacao', () => {
+    /* ESTE E O TESTE. */
+    it('venda e saida SEM entrada — a consignacao fica de fora', () => {
+      expect(ehVenda('m')).toBe('m.saida AND NOT m.entrada AND m.ativo');
     });
 
-    it('sao excludentes: uma olha saida, a outra entrada', () => {
-      expect(vendaEfetiva()).not.toContain('entrada');
-      expect(devolucaoEfetiva()).not.toContain('saida');
+    it('devolucao e entrada SEM saida — o retorno de consignacao fica de fora', () => {
+      expect(ehDevolucao('m')).toBe('m.entrada AND NOT m.saida AND m.ativo');
+    });
+
+    it('consignacao e as duas ao mesmo tempo', () => {
+      expect(ehConsignacao('m')).toBe('m.saida AND m.entrada AND m.ativo');
+    });
+
+    it('os tres sao mutuamente exclusivos, por construcao', () => {
+      // Nao da para rodar SQL aqui, mas da para provar a forma: venda nega
+      // entrada, devolucao nega saida, e consignacao exige as duas. Nenhuma
+      // movimentacao satisfaz dois deles.
+      expect(ehVenda()).toContain('NOT m.entrada');
+      expect(ehDevolucao()).toContain('NOT m.saida');
+      expect(ehConsignacao()).not.toContain('NOT ');
+    });
+
+    it('os tres exigem `ativo`: cancelada nao e nada disso', () => {
+      for (const sql of [ehVenda('m'), ehDevolucao('m'), ehConsignacao('m')]) {
+        expect(sql).toContain('m.ativo');
+      }
+    });
+
+    it('o alias e parametro — dentro da CTE a tabela se chama `f`', () => {
+      expect(ehVenda('f')).toBe('f.saida AND NOT f.entrada AND f.ativo');
+      expect(ehVenda('f')).not.toContain('m.');
+    });
+  });
+
+  describe('venda e devolucao efetivas', () => {
+    /**
+     * OS DOIS NOMES ANTIGOS CONTINUAM, e agora sao apelidos dos conceitos.
+     *
+     * Sete arquivos os chamam. Renomea-los seria mexer em todos eles nesta
+     * tarefa, e o valor esta em a REGRA mudar, nao o nome.
+     */
+    it('`vendaEfetiva` e `ehVenda`, e nao mais `saida AND ativo`', () => {
+      expect(vendaEfetiva('m')).toBe(ehVenda('m'));
+    });
+
+    it('`devolucaoEfetiva` e `ehDevolucao`', () => {
+      expect(devolucaoEfetiva('m')).toBe(ehDevolucao('m'));
+    });
+
+    it('as duas EXCLUEM a consignacao, cada uma pelo seu lado', () => {
+      // Era aqui que estava o defeito: "uma olha saida, a outra entrada" era
+      // verdade, e era exatamente o que deixava a consignacao passar nas duas.
+      expect(vendaEfetiva()).toContain('NOT m.entrada');
+      expect(devolucaoEfetiva()).toContain('NOT m.saida');
     });
   });
 });

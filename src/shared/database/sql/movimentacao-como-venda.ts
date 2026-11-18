@@ -49,14 +49,76 @@ export const STATUS_DE_MOVIMENTACAO = `
     ELSE                     'concluida'
   END`;
 
-/** A venda que conta: saída e ativa. É o equivalente a `status = 'concluida'`. */
-export function vendaEfetiva(alias = 'm'): string {
-  return `${alias}.saida AND ${alias}.ativo`;
+/**
+ * OS TRÊS CONCEITOS, ONDE HAVIA DOIS — 18/11/2026.
+ *
+ * ==========================================================================
+ * CONSIGNAÇÃO NÃO É VENDA NEM DEVOLUÇÃO. É A MESMA JOIA MUDANDO DE LUGAR.
+ *
+ * O ERP tem quatro operações, e as bandeiras as seguem sem exceção nenhuma
+ * em 8.240 documentos (medido na cópia de produção, 18/11):
+ *
+ *   VENDA ................... saída, sem entrada .....  1.729 · R$ 73,2 mi
+ *   DEVOLUCAO DE VENDA ...... entrada, sem saída .....    129 · R$  4,6 mi
+ *   CONSIGNACAO ............. AS DUAS ...............  2.822 · R$  2,2 bi
+ *   RETORNO DE CONSIGNACAO .. AS DUAS ...............  3.560 · R$  2,7 bi
+ *
+ * Até aqui `vendaEfetiva` era `saida AND ativo`, e `devolucaoEfetiva` era
+ * `entrada AND ativo`. A consignação tem as duas bandeiras, então entrava
+ * nas DUAS — como venda e como devolução, no mesmo fôlego.
+ *
+ * O estrago apareceu em 17/11, quando a gestora perguntou o total do mês e a
+ * Anastasia respondeu *"o total das 178 vendas foi R$ 54.536.432,00"*. São
+ * 29 vendas e R$ 1.893.544; os outros 149 documentos e R$ 52,6 milhões eram
+ * joia indo e voltando.
+ *
+ * A RECEITA FICAVA CERTA POR ACIDENTE, e é esse o disfarce que o escondeu
+ * por três anos: a consignação somava de um lado e subtraía do outro, no
+ * mesmo valor. Errado estava tudo o que CONTA documento ou soma só a saída —
+ * a contagem, o bruto, o ticket médio e a lista detalhada.
+ *
+ * A REGRA É A BANDEIRA, E NÃO O NOME DA OPERAÇÃO. O nome pode virar
+ * "REMESSA" ou "CONDICIONAL" amanhã; "saiu e entrou ao mesmo tempo" descreve
+ * o que a coisa É. E é a mesma leitura que `Movimentacao.pontaDoTerceiro`
+ * faz desde sempre: `if (props.saida === props.entrada) return null`.
+ * ==========================================================================
+ */
+
+/** Venda de verdade: saiu e NÃO voltou no mesmo documento. */
+export function ehVenda(alias = 'm'): string {
+  return `${alias}.saida AND NOT ${alias}.entrada AND ${alias}.ativo`;
 }
 
-/** A devolução que conta: entrada e ativa. Documento próprio, não estorno. */
+/** Devolução de venda: entrou e não saiu. Documento próprio, não estorno. */
+export function ehDevolucao(alias = 'm'): string {
+  return `${alias}.entrada AND NOT ${alias}.saida AND ${alias}.ativo`;
+}
+
+/**
+ * Consignação, ida ou retorno: as duas bandeiras.
+ *
+ * Não entra em venda nem em devolução. Existe nomeada para quem precisar
+ * CONSULTÁ-LA — "quantas consignações tivemos em novembro" é pergunta
+ * legítima da gestão, e sem este fragmento ela viraria `saida AND entrada`
+ * escrito à mão na próxima consulta.
+ */
+export function ehConsignacao(alias = 'm'): string {
+  return `${alias}.saida AND ${alias}.entrada AND ${alias}.ativo`;
+}
+
+/**
+ * A venda que conta. É o equivalente a `status = 'concluida'`.
+ *
+ * Apelido de `ehVenda`: sete arquivos chamam este nome, e o que mudou em
+ * 18/11 foi a REGRA, não o nome.
+ */
+export function vendaEfetiva(alias = 'm'): string {
+  return ehVenda(alias);
+}
+
+/** A devolução que conta. Apelido de `ehDevolucao` — ver `vendaEfetiva`. */
 export function devolucaoEfetiva(alias = 'm'): string {
-  return `${alias}.entrada AND ${alias}.ativo`;
+  return ehDevolucao(alias);
 }
 
 /**
@@ -81,8 +143,12 @@ export function receitaLiquida(alias = 'm', campo = 'valor'): string {
  * tabela.
  */
 export function valorAssinado(alias = 'm', campo = 'valor'): string {
+  // A ORDEM DOS RAMOS É A REGRA. A consignação tem `entrada` ligada, então
+  // com o ramo dela DEPOIS ela cairia no da devolução e entraria NEGATIVA na
+  // série mensal — pior que o defeito antigo, em que ao menos se cancelava.
   return `CASE
     WHEN NOT ${alias}.ativo THEN 0
+    WHEN ${alias}.saida AND ${alias}.entrada THEN 0
     WHEN ${alias}.entrada   THEN -${alias}.${campo}
     ELSE                          ${alias}.${campo}
   END`;
@@ -121,8 +187,13 @@ export function formaPagamentoDe(alias = 'mp'): string {
  */
 export function itemAssinado(mov = 'm', item = 'i'): string {
   const total = `${item}.quantidade * ${item}.valor_unitario`;
+  // A PECA CONSIGNADA NAO CONTA PARA A META — 18/11/2026. Tres de cada quatro
+  // pecas vendidas passaram antes por uma consignacao (1.591 de 2.183), entao
+  // contar as duas pernas fazia a mesma peca bater meta duas vezes. A ordem
+  // importa pelo mesmo motivo do `valorAssinado`.
   return `CASE
     WHEN NOT ${mov}.ativo THEN 0
+    WHEN ${mov}.saida AND ${mov}.entrada THEN 0
     WHEN ${mov}.entrada   THEN -(${total})
     ELSE                        (${total})
   END`;
