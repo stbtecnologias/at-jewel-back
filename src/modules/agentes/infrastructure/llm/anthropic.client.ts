@@ -704,7 +704,7 @@ const GESTAO_QUEM_VENDE_PEDRA_TOOL: Anthropic.Tool = {
     'O ranking das vendedoras para UMA PEDRA — "quem vendeu mais diamante", "qual vendedora mais vendeu esmeralda esse ano", "quem vende mais perola". Conta PECAS e traz o valor de cada uma. ' +
     'O NOME DA PEDRA VAI COMO ELA FALOU: diamante, esmeralda, safira, rubi, topazio, opala, perola, turquesa, ametista, citrino, agua marinha e outras. Acento e plural nao atrapalham. Se a pedra nao existir no catalogo, a resposta traz a LISTA das que existem — repasse e pergunte qual. ' +
     'UMA PECA COM DUAS PEDRAS CONTA NAS DUAS: quem vendeu um colar de esmeralda e diamante aparece nos dois rankings. ' +
-    'SEM `periodo` E SEM DATAS E O HISTORICO INTEIRO, e e o padrao CERTO quando ela nao disser recorte. NAO escolha MES por conta propria: o mes corrente pode estar vazio e a resposta parece dizer que nunca houve venda. ' + +
+    'SEM `periodo` E SEM DATAS E O HISTORICO INTEIRO, e e o padrao CERTO quando ela nao disser recorte. NAO escolha MES por conta propria: o mes corrente pode estar vazio e a resposta parece dizer que nunca houve venda. ' +
     'Para a quebra de TODAS as pedras de uma vez, sem vendedora, use vendas_por_pedra. Para ranking por TIPO de peca, use quem_mais_vende.',
   input_schema: {
     type: 'object',
@@ -4545,7 +4545,7 @@ export class AnthropicClient implements ILlmClient {
               }
               return (
                 `Vendas por tipo de ouro — ${deQuem(r.escopo)}, ${r.periodo}:\n${r.linhas.map((l) => `- ${l}`).join(`\n`)}\n\n` +
-                'Repasse os nomes e numeros exatamente como estao. A linha QUANDO O CABECALHO DISSER A SUA EQUIPE, a resposta TEM de dizer que o numero e da EQUIPE dela e nao da loja: ela nao enxerga a loja, e numero sem dono parece ser da loja inteira. "Sem classificacao de metal", se vier, TEM de ser repassada — sem ela a soma nao fecha com o faturamento. Nao some os metais por conta propria.'
+                'Repasse os nomes e numeros exatamente como estao. A linha "Sem classificacao de metal", se vier, TEM de ser repassada — sem ela a soma nao fecha com o faturamento. Nao some os metais por conta propria. QUANDO O CABECALHO DISSER A SUA EQUIPE, a resposta TEM de dizer que o numero e da EQUIPE dela e nao da loja: ela nao enxerga a loja, e numero sem dono parece ser da loja inteira.'
               );
             },
           ),
@@ -4588,7 +4588,7 @@ export class AnthropicClient implements ILlmClient {
               }
               return (
                 blocos.join('\n\n') +
-                '\n\nRepasse os nomes, numeros E ANOS exatamente como estao QUANDO O CABECALHO DISSER A SUA EQUIPE, a resposta TEM de dizer que o numero e da EQUIPE dela e nao da loja: ela nao enxerga a loja, e numero sem dono parece ser da loja inteira. — quem le precisa saber qual numero e de qual ano. O total de joia JA ESTA SOMADO — nao some os tipos por conta propria. As linhas de fora da joia so entram se perguntarem, ou em uma frase curta no fim.'
+                '\n\nRepasse os nomes, numeros E ANOS exatamente como estao — quem le precisa saber qual numero e de qual ano. O total de joia JA ESTA SOMADO — nao some os tipos por conta propria. As linhas de fora da joia so entram se perguntarem, ou em uma frase curta no fim. QUANDO O CABECALHO DISSER A SUA EQUIPE, a resposta TEM de dizer que o numero e da EQUIPE dela e nao da loja: ela nao enxerga a loja, e numero sem dono parece ser da loja inteira.'
               );
             },
           ),
@@ -4622,7 +4622,7 @@ export class AnthropicClient implements ILlmClient {
               }
               return (
                 `Vendas por pedra — ${deQuem(r.escopo)}, ${r.periodo}:\n${r.linhas.map((l) => `- ${l}`).join(`\n`)}\n\n${r.nota ?? ''}` +
-                '\n\nRepasse os nomes e numeros exatamente como estao, E REPASSE A NOTA QUANDO O CABECALHO DISSER A SUA EQUIPE, a resposta TEM de dizer que o numero e da EQUIPE dela e nao da loja: ela nao enxerga a loja, e numero sem dono parece ser da loja inteira.: uma peca com duas pedras conta nas duas, entao a soma das linhas passa do numero de pecas. Sem a nota, quem somar acha que a conta esta errada.'
+                '\n\nRepasse os nomes e numeros exatamente como estao, E REPASSE A NOTA: uma peca com duas pedras conta nas duas, entao a soma das linhas passa do numero de pecas. Sem a nota, quem somar acha que a conta esta errada. QUANDO O CABECALHO DISSER A SUA EQUIPE, a resposta TEM de dizer que o numero e da EQUIPE dela e nao da loja: ela nao enxerga a loja, e numero sem dono parece ser da loja inteira.'
               );
             },
           ),
@@ -4664,7 +4664,7 @@ export class AnthropicClient implements ILlmClient {
               }
               return (
                 `Quem mais vendeu ${r.pedra} — ${deQuem(r.escopo)}, ${r.periodo}:\n${r.linhas.map((l) => `- ${l}`).join(`\n`)}\n\n` +
-                'Repasse os nomes e numeros exatamente como estao. Uma peca com duas pedras conta nas duas QUANDO O CABECALHO DISSER A SUA EQUIPE, a resposta TEM de dizer que o numero e da EQUIPE dela e nao da loja: ela nao enxerga a loja, e numero sem dono parece ser da loja inteira., entao somar este ranking com o de outra pedra nao da o total de pecas da vendedora.'
+                'Repasse os nomes e numeros exatamente como estao. Uma peca com duas pedras conta nas duas, entao somar este ranking com o de outra pedra nao da o total de pecas da vendedora. QUANDO O CABECALHO DISSER A SUA EQUIPE, a resposta TEM de dizer que o numero e da EQUIPE dela e nao da loja: ela nao enxerga a loja, e numero sem dono parece ser da loja inteira.'
               );
             },
           ),
