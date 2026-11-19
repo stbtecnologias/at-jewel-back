@@ -9,6 +9,8 @@ import { ResumoConsignacoesUseCase } from './application/use-cases/resumo-consig
 import { CONSIGNACAO_REPOSITORY } from './domain/ports/injection-tokens';
 import { ConsignacaoOrmEntity } from './infrastructure/database/typeorm/entities/consignacao.orm-entity';
 import { ConsignacaoRepository } from './infrastructure/database/typeorm/repositories/consignacao.repository';
+import { ConsignacoesDeMovimentacaoRepository } from './infrastructure/database/typeorm/repositories/consignacoes-de-movimentacao.repository';
+import { ConsignacoesUnidasRepository } from './infrastructure/database/typeorm/repositories/consignacoes-unidas.repository';
 import { ConsignacoesController } from './infrastructure/http/controllers/consignacoes.controller';
 
 // AuthModule e OBRIGATORIO: o controller usa PermissionsGuard, cuja
@@ -22,7 +24,13 @@ import { ConsignacoesController } from './infrastructure/http/controllers/consig
     BuscarConsignacaoUseCase,
     CriarConsignacaoUseCase,
     AtualizarConsignacaoUseCase,
-    { provide: CONSIGNACAO_REPOSITORY, useClass: ConsignacaoRepository },
+    // AS DUAS FONTES — 19/11/2026. A tela passou a ler a movimentacao, que
+    // e onde a consignacao de verdade esta: a tabela tinha ZERO linhas
+    // desde 09/11. O cadastro manual continua gravando nela, e por isso a
+    // leitura une as duas. Ver `ConsignacoesUnidasRepository`.
+    ConsignacaoRepository,
+    ConsignacoesDeMovimentacaoRepository,
+    { provide: CONSIGNACAO_REPOSITORY, useClass: ConsignacoesUnidasRepository },
   ],
   exports: [CONSIGNACAO_REPOSITORY],
 })
