@@ -10,7 +10,7 @@ import type {
 import { MetaOrmEntity } from '../entities/meta.orm-entity';
 import {
   itemAssinado,
-  receitaLiquida,
+  totalVendido,
 } from '../../../../../../shared/database/sql/movimentacao-como-venda';
 
 @Injectable()
@@ -108,7 +108,10 @@ export class MetaRepository implements IMetaRepository {
 
     const rows = await this.repo.manager.query<{ total: number }[]>(
       `
-      SELECT COALESCE(${receitaLiquida('m')}, 0)::float AS total
+      -- O MESMO NUMERO DO CARD AO LADO — 19/11/2026. Se a meta medisse o
+      -- liquido e o card mostrasse o vendido, a tela discordaria de si
+      -- mesma no mesmo cabecalho. Ver 'totalVendido'.
+      SELECT COALESCE(${totalVendido('m')}, 0)::float AS total
       FROM movimentacoes m
       WHERE m.ativo AND m.data_movimentacao BETWEEN $1 AND $2 ${filtro}
       `,

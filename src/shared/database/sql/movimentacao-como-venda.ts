@@ -42,11 +42,32 @@ export const MOVIMENTACOES = 'movimentacoes';
  * Os dois usos TÊM que concordar: filtrar por `concluida` e receber linhas
  * marcadas de outro jeito seria um defeito mudo.
  */
+/**
+ * O TERCEIRO RAMO CHEGOU AQUI UM DIA DEPOIS — 19/11/2026.
+ *
+ * ==========================================================================
+ * 152 LINHAS "DEVOLVIDA" EM NOVEMBRO, E SÓ 3 ERAM.
+ *
+ * A tela de Vendas listava 181 documentos no mês — 29 vendas, 3 devoluções
+ * e 149 CONSIGNAÇÕES, todas rotuladas "Devolvida". O Lucas viu pelos
+ * valores: R$ 696.600,00 numa "devolução" é maleta, não peça que voltou.
+ *
+ * A consignação tem `entrada`, então caía no ramo da devolução — o mesmo
+ * defeito de 18/11, sobrevivendo neste canto. A lista das AGENTES ganhou o
+ * terceiro ramo naquele dia; esta constante, que a TELA usa, ficou para
+ * trás. Duas cópias da mesma regra, e só uma consertada.
+ *
+ * A ORDEM É A REGRA, e vale para os três: cancelada antes de tudo, porque
+ * uma consignação cancelada é cancelada; consignação antes de devolvida,
+ * porque ela tem `entrada` e cairia lá.
+ * ==========================================================================
+ */
 export const STATUS_DE_MOVIMENTACAO = `
   CASE
-    WHEN NOT m.ativo    THEN 'cancelada'
-    WHEN m.entrada      THEN 'devolvida'
-    ELSE                     'concluida'
+    WHEN NOT m.ativo           THEN 'cancelada'
+    WHEN m.saida AND m.entrada THEN 'consignacao'
+    WHEN m.entrada             THEN 'devolvida'
+    ELSE                            'concluida'
   END`;
 
 /**
@@ -119,6 +140,39 @@ export function vendaEfetiva(alias = 'm'): string {
 /** A devolução que conta. Apelido de `ehDevolucao` — ver `vendaEfetiva`. */
 export function devolucaoEfetiva(alias = 'm'): string {
   return ehDevolucao(alias);
+}
+
+/**
+ * O TOTAL VENDIDO: soma das vendas, SEM descontar devolução.
+ *
+ * ==========================================================================
+ * DESCONTAR MISTURA PERÍODOS, E FOI ISSO QUE QUEBROU A TELA.
+ *
+ * Em 19/11 a tela de Vendas dizia R$ 1.860.578,00 em novembro e a
+ * Anastasia dizia R$ 1.893.544,00. Os dois certos pela própria regra, e
+ * ninguém conseguia dizer qual mentia olhando a tela.
+ *
+ * A devolução de novembro NÃO É de uma venda de novembro. Medido na cópia:
+ *
+ *   doc 1582071  devolvido 05/11/2026   vendido em 20/04/2026
+ *   doc 1582590  devolvido 05/11/2026   vendido em 23/09/2026
+ *   doc 1588504  devolvido 10/11/2026   vendido em 02/05/2025
+ *
+ * As três conferidas peça a peça, pelo `valor_unitario` dos dois lados. O
+ * card tirava R$ 32.966 de um mês em que esse dinheiro nunca entrou — e a
+ * Bianca "perdia" R$ 12.526 por uma peça que vendeu em maio do ano
+ * passado.
+ *
+ * É o mesmo defeito do "294 saíram, 309 voltaram" da consignação: dois
+ * fluxos de períodos diferentes subtraídos um do outro. Lá dava para ver,
+ * porque eram duas linhas. Aqui estava somado num número só.
+ *
+ * O `receitaLiquida` CONTINUA VALENDO para quem quer o líquido — carteira,
+ * fidelidade e Analytics seguem nele. O que mudou foi quem a tela usa.
+ * ==========================================================================
+ */
+export function totalVendido(alias = 'm', campo = 'valor'): string {
+  return `COALESCE(sum(${alias}.${campo}) FILTER (WHERE ${vendaEfetiva(alias)}), 0)`;
 }
 
 /**

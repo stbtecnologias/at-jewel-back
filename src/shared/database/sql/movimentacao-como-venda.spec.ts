@@ -7,6 +7,7 @@ import {
   formaPagamentoDe,
   itemAssinado,
   receitaLiquida,
+  totalVendido,
   valorAssinado,
   vendaEfetiva,
 } from './movimentacao-como-venda';
@@ -51,9 +52,81 @@ describe('movimentacao lida como venda — o fragmento', () => {
       expect(STATUS_DE_MOVIMENTACAO).not.toContain('pendente');
     });
 
+    /**
+     * ==================================================================
+     * 152 LINHAS "DEVOLVIDA" EM NOVEMBRO, E SO 3 ERAM — 19/11/2026.
+     *
+     * A tela de Vendas listava 181 documentos no mes: 29 vendas, 3
+     * devolucoes e 149 CONSIGNACOES, todas rotuladas "Devolvida". O
+     * Lucas viu pelos valores — R$ 696.600 numa "devolucao" e maleta,
+     * nao peca que voltou.
+     *
+     * A causa era este CASE, que ficou com a regra de DOIS conceitos
+     * depois de 18/11: consignacao tem `entrada`, entao caia no ramo da
+     * devolucao. O `vendas-movimentacao.repository` (a lista das
+     * agentes) ganhou o terceiro ramo naquele dia; esta constante, que
+     * a TELA usa, ficou para tras. Duas copias da mesma regra, e so uma
+     * consertada.
+     *
+     * E A VARREDURA NAO PEGA: ela procura `m.saida`/`m.entrada` escritos
+     * a mao FORA dos helpers, e esta expressao E um helper. A trava nao
+     * cobre o helper estar errado por dentro — por isso o teste aqui.
+     * ==================================================================
+     */
+    it('a consignacao tem ramo proprio, e vem ANTES do da devolucao', () => {
+      const sql = semEspacos(STATUS_DE_MOVIMENTACAO);
+
+      expect(sql).toContain("'consignacao'");
+      // A ORDEM E A REGRA, de novo: consignacao tem `entrada`, entao se
+      // o ramo dela vier depois, ela cai no da devolucao e nada muda.
+      expect(sql.indexOf('consignacao')).toBeLessThan(sql.indexOf("'devolvida'"));
+      // E depois de cancelada, pelo mesmo motivo de sempre.
+      expect(sql.indexOf('cancelada')).toBeLessThan(sql.indexOf('consignacao'));
+    });
+
     it('usa o alias `m`, que e o da tabela nas consultas', () => {
       expect(STATUS_DE_MOVIMENTACAO).toContain('m.ativo');
       expect(STATUS_DE_MOVIMENTACAO).toContain('m.entrada');
+    });
+  });
+
+  /**
+   * ====================================================================
+   * O TOTAL VENDIDO — 19/11/2026.
+   *
+   * A tela de Vendas dizia R$ 1.860.578,00 em novembro e a Anastasia,
+   * R$ 1.893.544,00. Os dois estavam certos pela propria regra: a tela
+   * descontava a devolucao, a agente nao.
+   *
+   * E DESCONTAR ESTAVA ERRADO, e nao e questao de gosto: as tres
+   * devolucoes de novembro sao de vendas de ABRIL/2026, SETEMBRO/2026 e
+   * MAIO/2025. Nenhuma e de novembro. O card tirava R$ 32.966 de um mes
+   * em que esse dinheiro nunca entrou — o mesmo defeito do "294 sairam,
+   * 309 voltaram" da consignacao, so que somado num numero so, onde
+   * ninguem ve.
+   *
+   * O `receitaLiquida` CONTINUA EXISTINDO para quem a quer: carteira,
+   * fidelidade e Analytics seguem nele. O que mudou foi quem a tela de
+   * Vendas usa.
+   * ====================================================================
+   */
+  describe('o total vendido', () => {
+    /* ESTE E O TESTE. */
+    it('soma a venda e NAO desconta a devolucao', () => {
+      const sql = semEspacos(totalVendido('m'));
+
+      expect(sql).toBe(
+        'COALESCE(sum(m.valor) FILTER (WHERE m.saida AND NOT m.entrada AND m.ativo), 0)',
+      );
+      // E A PROVA PELO AVESSO: nenhuma subtracao de entrada.
+      expect(sql).not.toContain('-');
+      expect(sql).not.toContain('m.entrada AND NOT m.saida');
+    });
+
+    it('aceita outro campo, como o receitaLiquida', () => {
+      expect(semEspacos(totalVendido('v', 'quantidade'))).toContain(
+        'sum(v.quantidade)',
+      );
     });
   });
 

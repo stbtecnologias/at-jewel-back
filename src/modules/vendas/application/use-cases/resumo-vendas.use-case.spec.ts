@@ -34,7 +34,7 @@ describe('ResumoVendasUseCase', () => {
       receitaTotal: 900,
       ticketMedio: 300,
       totalItens: 7,
-      porStatus: { concluida: 3, cancelada: 1, pendente: 2, devolvida: 0 },
+      porStatus: { concluida: 3, cancelada: 1, pendente: 2, devolvida: 0, consignacao: 0 },
     });
 
     const resultado = await useCase.execute({
@@ -53,7 +53,7 @@ describe('ResumoVendasUseCase', () => {
       receitaTotal: 900,
       ticketMedio: 300,
       totalItens: 7,
-      porStatus: { concluida: 3, cancelada: 1, pendente: 2, devolvida: 0 },
+      porStatus: { concluida: 3, cancelada: 1, pendente: 2, devolvida: 0, consignacao: 0 },
       periodo: { de: dataDe, ate: dataAte },
     });
   });
@@ -68,7 +68,7 @@ describe('ResumoVendasUseCase', () => {
       receitaTotal: 250,
       ticketMedio: 250,
       totalItens: 1,
-      porStatus: { concluida: 1, cancelada: 0, pendente: 0, devolvida: 0 },
+      porStatus: { concluida: 1, cancelada: 0, pendente: 0, devolvida: 0, consignacao: 0 },
     });
 
     await useCase.execute({ formaPagamento: ['pix'] });
@@ -82,7 +82,7 @@ describe('ResumoVendasUseCase', () => {
       receitaTotal: 0,
       ticketMedio: 0,
       totalItens: 0,
-      porStatus: { concluida: 0, cancelada: 0, pendente: 0, devolvida: 0 },
+      porStatus: { concluida: 0, cancelada: 0, pendente: 0, devolvida: 0, consignacao: 0 },
     });
 
     const resultado = await useCase.execute({});
@@ -99,7 +99,7 @@ describe('ResumoVendasUseCase', () => {
       receitaTotal: 500,
       ticketMedio: 250,
       totalItens: 4,
-      porStatus: { concluida: 2, cancelada: 0, pendente: 0, devolvida: 0 },
+      porStatus: { concluida: 2, cancelada: 0, pendente: 0, devolvida: 0, consignacao: 0 },
     });
 
     const resultado = await useCase.execute({ status: ['concluida'] });
@@ -113,6 +113,9 @@ describe('ResumoVendasUseCase', () => {
       // movimentacao: a tabela `vendas` nao distingue devolucao de
       // cancelamento, e a movimentacao distingue.
       devolvida: 0,
+      // E A CONSIGNACAO em 19/11/2026, pelo mesmo motivo: ela vinha somada
+      // as devolvidas, e em novembro eram 149 de 152.
+      consignacao: 0,
     });
   });
 });

@@ -20,7 +20,22 @@
  * `devolvida` nao exigiu migracao — ver `VendasDeMovimentacaoRepository`.
  * ==========================================================================
  */
-export type StatusVenda = 'concluida' | 'cancelada' | 'pendente' | 'devolvida';
+/**
+ * O QUE A MOVIMENTACAO PODE SER — 19/11/2026.
+ *
+ * `consignacao` entrou porque ela existe no dado e nao tinha nome: 149
+ * documentos de novembro apareciam como "devolvida" na tela.
+ *
+ * `pendente` ficou, e e da tabela `vendas` antiga (zero linhas): o `CASE`
+ * nunca o produz, e por isso ele NAO aparece no filtro da tela. Ver
+ * `STATUS_DE_MOVIMENTACAO`.
+ */
+export type StatusVenda =
+  | 'concluida'
+  | 'cancelada'
+  | 'pendente'
+  | 'devolvida'
+  | 'consignacao';
 
 export type FormaPagamento =
   | 'dinheiro'

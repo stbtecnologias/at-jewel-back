@@ -129,6 +129,14 @@ export interface ResumoVendas {
      * distingue devolucao de cancelamento.
      */
     devolvida: number;
+    /**
+     * A CONSIGNACAO — 19/11/2026.
+     *
+     * Ela existia no dado e nao tinha onde ser contada, entao vinha
+     * somada ao `devolvida`: em novembro eram 149 de 152. Ver
+     * `STATUS_DE_MOVIMENTACAO`.
+     */
+    consignacao: number;
   };
 }
 

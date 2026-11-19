@@ -6,10 +6,11 @@ import { DataSource } from 'typeorm';
 import {
   EMPRESAS_DO_GRUPO,
   STATUS_DE_MOVIMENTACAO as STATUS_SQL,
+  ehConsignacao,
   ehDevolucao,
   ehVenda,
   formaPagamentoDe,
-  receitaLiquida,
+  totalVendido,
 } from '../../../../../../shared/database/sql/movimentacao-como-venda';
 import { FUSO_DA_LOJA } from '../../../../../../shared/erp/data-do-erp';
 import type { StatusVenda } from '../../../../domain/entities/enums';
@@ -153,6 +154,7 @@ export class VendasDeMovimentacaoRepository implements IVendasLeituraRepository 
     const params: unknown[] = [];
     const { where, joinPagamento } = this.filtro(filtros, params);
 
+
     params.push(Math.min(filtros.limit ?? LIMIT_PADRAO, LIMIT_MAXIMO));
     const iLimit = params.length;
     params.push(filtros.offset ?? 0);
@@ -252,10 +254,16 @@ export class VendasDeMovimentacaoRepository implements IVendasLeituraRepository 
       )
       SELECT
         count(*) FILTER (WHERE ${ehVenda('f')})                    AS concluidas,
-        ${receitaLiquida('f')}
+        -- O TOTAL VENDIDO, E NAO O LIQUIDO — 19/11/2026. A devolucao de um
+        -- mes e quase sempre de venda de outro: as tres de novembro vieram
+        -- de abril/26, setembro/26 e maio/25. Ver 'totalVendido'.
+        ${totalVendido('f')}
                                                                        AS receita,
         count(*) FILTER (WHERE ${ehDevolucao('f')})                  AS devolvidas,
         count(*) FILTER (WHERE NOT f.ativo)                            AS canceladas,
+        -- A CONSIGNACAO TEM ONDE SER CONTADA — 19/11/2026. Antes vinha
+        -- somada as devolvidas: em novembro, 149 de 152.
+        count(*) FILTER (WHERE ${ehConsignacao('f')})                AS consignacoes,
         COALESCE((
           SELECT sum(i.quantidade)
             FROM movimentacoes_itens i
@@ -279,6 +287,7 @@ export class VendasDeMovimentacaoRepository implements IVendasLeituraRepository 
         concluida: totalVendas,
         devolvida: Number(linha?.devolvidas ?? 0),
         cancelada: Number(linha?.canceladas ?? 0),
+        consignacao: Number(linha?.consignacoes ?? 0),
         // Nao existe venda pendente numa movimentacao; fica zero e a tela
         // deixa de mostrar um estado que nunca acontece.
         pendente: 0,
@@ -298,7 +307,10 @@ export class VendasDeMovimentacaoRepository implements IVendasLeituraRepository 
         m.vendedora_id,
         vd.nome                                        AS vendedora_nome,
         count(*) FILTER (WHERE ${ehVenda('m')})                AS total_vendas,
-        ${receitaLiquida('m')}
+        -- O TOTAL VENDIDO, E NAO O LIQUIDO — 19/11/2026. A devolucao de um
+        -- mes e quase sempre de venda de outro: as tres de novembro vieram
+        -- de abril/26, setembro/26 e maio/25. Ver 'totalVendido'.
+        ${totalVendido('m')}
                                                        AS receita,
         COALESCE(sum(qi.qtd) FILTER (WHERE ${ehVenda('m')}), 0) AS qtd_pecas,
         count(DISTINCT m.cliente_id) FILTER (WHERE ${ehVenda('m')})
@@ -365,7 +377,8 @@ export class VendasDeMovimentacaoRepository implements IVendasLeituraRepository 
       ),
       vendas AS (
         SELECT date_trunc('month', m.data_movimentacao AT TIME ZONE $${iFuso}) AS mes,
-               ${receitaLiquida('m')} AS receita,
+               -- Ver 'totalVendido' — o mesmo de 19/11.
+               ${totalVendido('m')} AS receita,
                count(*) FILTER (WHERE ${ehVenda('m')})                        AS total
           FROM movimentacoes m
          WHERE m.ativo
@@ -427,6 +440,7 @@ interface LinhaListagem {
 
 interface LinhaResumo {
   concluidas: string;
+  consignacoes: string;
   receita: string;
   devolvidas: string;
   canceladas: string;

@@ -603,7 +603,16 @@ export class VendaRepository implements IVendaRepository {
     // `devolvida` nunca sai daqui: esta consulta le a tabela `vendas`, que
     // nao tem esse estado. Ela existe no contrato para o read-model da
     // movimentacao, que e quem sabe distinguir devolucao de cancelamento.
-    const porStatus = { concluida: 0, cancelada: 0, pendente: 0, devolvida: 0 };
+    // `devolvida` e `consignacao` nunca saem daqui, pelo mesmo motivo: a
+    // tabela `vendas` nao tem esses estados. Existem no contrato para o
+    // read-model da movimentacao, que e quem sabe distinguir os quatro.
+    const porStatus = {
+      concluida: 0,
+      cancelada: 0,
+      pendente: 0,
+      devolvida: 0,
+      consignacao: 0,
+    };
     for (const r of statusRows) {
       if (r.status in porStatus) {
         porStatus[r.status] = Number(r.total);

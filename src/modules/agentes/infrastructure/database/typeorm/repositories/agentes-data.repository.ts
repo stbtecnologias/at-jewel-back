@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import {
-  receitaLiquida,
+  totalVendido,
   vendaEfetiva,
 } from '../../../../../../shared/database/sql/movimentacao-como-venda';
 import {
@@ -41,7 +41,9 @@ export class AgentesDataRepository implements IAgentesDataRepository {
     // a devolucao abate a receita e nao vira venda negativa.
     const rows = await this.ds.query<{ receitaTotal: number; totalVendas: number }[]>(
       `
-      SELECT COALESCE(${receitaLiquida('m')}, 0)::float             AS "receitaTotal",
+      -- SEGUE A TELA, e e o ponto desta linha desde 01/10. Em 19/11 a
+      -- tela trocou o liquido pelo total vendido, e esta veio junto.
+      SELECT COALESCE(${totalVendido('m')}, 0)::float               AS "receitaTotal",
              COUNT(*) FILTER (WHERE ${vendaEfetiva('m')})::int      AS "totalVendas"
       FROM movimentacoes m
       WHERE m.ativo ${filtro}
